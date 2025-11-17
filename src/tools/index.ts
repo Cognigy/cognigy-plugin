@@ -168,13 +168,13 @@ export const tools: ToolDefinition[] = [
   // 4. Flow Management
   {
     name: 'manage_flows',
-    description: 'Create, update, list flows and create flow nodes. Operations: create, update, list, create_node.',
+    description: 'Create, update, list flows and manage flow nodes. Operations: create, update, list, create_node, get_node, update_node.',
     inputSchema: {
       type: 'object',
       properties: {
         operation: {
           type: 'string',
-          enum: ['create', 'update', 'list', 'create_node'],
+          enum: ['create', 'update', 'list', 'create_node', 'get_node', 'update_node'],
           description: 'The operation to perform',
         },
         projectId: {
@@ -183,7 +183,15 @@ export const tools: ToolDefinition[] = [
         },
         flowId: {
           type: 'string',
-          description: 'The flow ID (required for update/create_node)',
+          description: 'The flow ID (required for update/create_node/get_node/update_node)',
+        },
+        nodeId: {
+          type: 'string',
+          description: 'The node ID (required for get_node/update_node)',
+        },
+        localeId: {
+          type: 'string',
+          description: 'The locale ID (optional for get_node/update_node)',
         },
         name: {
           type: 'string',
@@ -203,7 +211,11 @@ export const tools: ToolDefinition[] = [
         },
         config: {
           type: 'object',
-          description: 'Node configuration',
+          description: 'Node configuration (for create_node/update_node)',
+        },
+        comment: {
+          type: 'string',
+          description: 'Node comment (for update_node)',
         },
         limit: {
           type: 'number',

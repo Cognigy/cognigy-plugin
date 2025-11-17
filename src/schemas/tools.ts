@@ -115,6 +115,21 @@ export const flowNodeCreateSchema = z.object({
   mode: z.string().optional(),
 });
 
+export const flowNodeUpdateSchema = z.object({
+  flowId: z.string(), // MongoDB _id
+  nodeId: z.string(), // MongoDB _id of the node
+  localeId: z.string().optional(),
+  config: z.record(z.any()).optional(),
+  label: z.string().optional(),
+  comment: z.string().optional(),
+});
+
+export const flowNodeGetSchema = z.object({
+  flowId: z.string(), // MongoDB _id
+  nodeId: z.string(), // MongoDB _id of the node
+  localeId: z.string().optional(),
+});
+
 // 5. Intent & NLU Management
 export const intentCreateSchema = z.object({
   flowId: idSchema,

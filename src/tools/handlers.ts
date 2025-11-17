@@ -221,6 +221,29 @@ To iterate: Update job description, then talk_to_agent again to compare response
         // API uses /chart/nodes, and flowId must be MongoDB _id (not UUID)
         return await this.apiClient.post(`/v2.0/flows/${nodeFlowId}/chart/nodes`, nodePayload);
 
+      case 'get_node':
+        const getNodeData = schemas.flowNodeGetSchema.parse(params);
+        const getParams: any = {};
+        if (getNodeData.localeId) getParams.preferredLocaleId = getNodeData.localeId;
+        return await this.apiClient.get(
+          `/v2.0/flows/${getNodeData.flowId}/chart/nodes/${getNodeData.nodeId}`,
+          { params: getParams }
+        );
+
+      case 'update_node':
+        const updateNodeData = schemas.flowNodeUpdateSchema.parse(params);
+        const { flowId: updateFlowId, nodeId, ...updateNodePayload } = updateNodeData;
+        // Build the payload - only include fields that are provided
+        const patchPayload: any = {};
+        if (updateNodePayload.localeId) patchPayload.localeId = updateNodePayload.localeId;
+        if (updateNodePayload.config) patchPayload.config = updateNodePayload.config;
+        if (updateNodePayload.label) patchPayload.label = updateNodePayload.label;
+        if (updateNodePayload.comment !== undefined) patchPayload.comment = updateNodePayload.comment;
+        return await this.apiClient.patch(
+          `/v2.0/flows/${updateFlowId}/chart/nodes/${nodeId}`,
+          patchPayload
+        );
+
       default:
         throw new Error(`Unknown operation: ${operation}`);
     }
