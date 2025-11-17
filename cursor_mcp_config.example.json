@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "cognigy": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/cognigy/services/mcp-server/dist/index.js"
+      ],
+      "env": {
+        "COGNIGY_API_BASE_URL": "https://api-trial.cognigy.ai",
+        "COGNIGY_API_KEY": "your-api-key-here",
+        "LOG_LEVEL": "info"
+      }
+    }
+  }
+}
+
