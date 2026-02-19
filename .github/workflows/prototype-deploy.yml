@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       is_prototype: ${{ steps.topics.outputs.is_prototype }}
+      is_showcase: ${{ steps.topics.outputs.is_showcase }}
       topics_csv: ${{ steps.topics.outputs.topics_csv }}
     steps:
       - name: Resolve repository topics
@@ -32,8 +33,10 @@ jobs:
 
             const topics = topicData.names || [];
             const hasPrototype = topics.includes("prototype");
+            const hasShowcase = topics.includes("showcase");
 
             core.setOutput("is_prototype", String(hasPrototype));
+            core.setOutput("is_showcase", String(hasShowcase));
             core.setOutput("topics_csv", topics.sort().join(", "));
 
       - name: Publish classification summary
@@ -44,11 +47,16 @@ jobs:
             echo ""
             echo "- Topics: ${{ steps.topics.outputs.topics_csv || 'none' }}"
             echo "- Is prototype: ${{ steps.topics.outputs.is_prototype }}"
+            echo "- Is showcase: ${{ steps.topics.outputs.is_showcase }}"
+            if [ "${{ steps.topics.outputs.is_prototype }}" = "true" ] && [ "${{ steps.topics.outputs.is_showcase }}" != "true" ]; then
+              echo ""
+              echo "> **Note:** This repo has topic \`prototype\` but not \`showcase\`. The deploy workflow syncs files but will not build or deploy. Add topic \`showcase\` to enable deployment."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   build-and-push:
     needs: classify
-    if: ${{ needs.classify.outputs.is_prototype == 'true' }}
+    if: ${{ needs.classify.outputs.is_prototype == 'true' && needs.classify.outputs.is_showcase == 'true' }}
     runs-on: ubuntu-latest
     outputs:
       image: ${{ steps.meta.outputs.image }}
@@ -470,7 +478,7 @@ jobs:
 
   skipped:
     needs: classify
-    if: ${{ needs.classify.outputs.is_prototype != 'true' }}
+    if: ${{ needs.classify.outputs.is_prototype != 'true' || needs.classify.outputs.is_showcase != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Explain skip reason
@@ -479,5 +487,9 @@ jobs:
           {
             echo "### Prototype deployment skipped"
             echo ""
-            echo "- Add topic \`prototype\` to enable build and push."
+            if [ "${{ needs.classify.outputs.is_prototype }}" != "true" ]; then
+              echo "- Missing topic \`prototype\`. Add it to enable syncing."
+            elif [ "${{ needs.classify.outputs.is_showcase }}" != "true" ]; then
+              echo "- Missing topic \`showcase\`. This repo receives synced files but will not build or deploy until \`showcase\` is added."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
