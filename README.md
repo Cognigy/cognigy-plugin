@@ -82,30 +82,23 @@ The **`talk_to_agent`** tool enables a powerful iterative improvement workflow:
 
 **Human in the loop**: You provide feedback, suggest improvements, and approve changes!
 
-## Quick Start (3 Steps!)
+## Quick Start
 
-### 1. Build
+### Prerequisites
 
-```bash
-cd /path/to/cognigy/services/mcp-server
-npm install
-npm run build
-```
+- **Node.js 20+** (check with `node -v`)
+- **A Cognigy API key** — Cognigy.AI → User Menu → My Profile → API Keys → Create New
 
-### 2. Configure for Cursor/Claude
+### Add to your MCP client
 
-**Cursor:** Edit `~/Library/Application Support/Cursor/User/globalStorage/mcp/mcp.json`
-
-**Claude Desktop:** Edit `~/Library/Application Support/Claude/claude_desktop_config.json`
+Add the following to your MCP client's config file. No build step, no cloning — `npx` handles everything automatically.
 
 ```json
 {
   "mcpServers": {
     "cognigy": {
-      "command": "node",
-      "args": [
-        "/ABSOLUTE/PATH/TO/cognigy/services/mcp-server/dist/index.js"
-      ],
+      "command": "npx",
+      "args": ["-y", "@cognigy/mcp-server"],
       "env": {
         "COGNIGY_API_BASE_URL": "https://api-trial.cognigy.ai",
         "COGNIGY_API_KEY": "your-api-key-here"
@@ -115,32 +108,45 @@ npm run build
 }
 ```
 
-**Get API Key:** Cognigy.AI → User Menu → My Profile → API Keys → Create New
-
-### 3. Restart & Test
-
-Restart Cursor/Claude, then try:
+Restart your MCP client, then try:
 ```
 @cognigy List my Cognigy projects
 ```
 
-**See `QUICK_START.md` for detailed usage examples!**
+**See [QUICK_START.md](QUICK_START.md) for detailed usage examples!**
+
+## Setup by MCP Client
+
+### Claude Desktop
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json` and add the config block above. Restart Claude Desktop.
+
+### Cursor IDE
+
+Edit the MCP config file directly, or go to **Cursor > Settings > Cursor Settings > MCP > Add MCP Server**.
+
+**Config file location:**
+- macOS: `~/Library/Application Support/Cursor/User/globalStorage/mcp/mcp.json`
+- Windows: `%APPDATA%\Cursor\User\globalStorage\mcp\mcp.json`
+- Linux: `~/.config/Cursor/User/globalStorage/mcp/mcp.json`
+
+Add the config block above. Restart Cursor. Open the AI chat and type `@cognigy` to use the tools.
+
+### ChatGPT / Windsurf / Other MCP Clients
+
+Any MCP client that supports the **stdio** transport works. Add the same config block to your client's MCP settings.
 
 ## Configuration
 
-**For MCP usage (Cursor/Claude):** Configuration is in the MCP config file (see Quick Start above). No `.env` file needed!
+All configuration is passed via the `env` block in the MCP config. No `.env` file needed.
 
-**For standalone usage:** Create `.env` file:
-
-```bash
-COGNIGY_API_BASE_URL=https://api-trial.cognigy.ai
-COGNIGY_API_KEY=your-api-key-here
-
-# Optional
-LOG_LEVEL=info                    # debug, info, warn, error
-RATE_LIMIT_MAX_REQUESTS=100      # requests per window
-RATE_LIMIT_WINDOW_MS=60000       # window duration in ms
-```
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `COGNIGY_API_BASE_URL` | Yes | — | Your Cognigy API URL |
+| `COGNIGY_API_KEY` | Yes | — | Your Cognigy API key |
+| `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn`, `error` |
+| `RATE_LIMIT_MAX_REQUESTS` | No | `100` | Max requests per window |
+| `RATE_LIMIT_WINDOW_MS` | No | `60000` | Rate limit window (ms) |
 
 ### Getting Your API Key
 
@@ -150,20 +156,26 @@ RATE_LIMIT_WINDOW_MS=60000       # window duration in ms
 4. Click **Create API Key**
 5. Copy the key
 
-## Usage with AI Assistants
+<details>
+<summary>Local development setup (for contributors)</summary>
 
-### Claude Desktop
+If you're developing the MCP server itself:
 
-Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+```bash
+git clone <repo-url>
+cd cognigy-mcp
+npm install
+npm run build
+```
+
+Then point your MCP client to the local build:
 
 ```json
 {
   "mcpServers": {
     "cognigy": {
       "command": "node",
-      "args": [
-        "/Users/dscheier/Workspace/cognigy/services/mcp-server/dist/index.js"
-      ],
+      "args": ["/absolute/path/to/cognigy-mcp/dist/index.js"],
       "env": {
         "COGNIGY_API_BASE_URL": "https://api-trial.cognigy.ai",
         "COGNIGY_API_KEY": "your-api-key-here"
@@ -173,44 +185,9 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 }
 ```
 
-Restart Claude Desktop to load the MCP server.
+Or use the interactive setup: `npm run setup`
 
-### Cursor IDE
-
-1. Open Cursor Settings: `Cmd/Ctrl + Shift + J` or `Cursor > Settings > Cursor Settings`
-2. Navigate to **MCP** section
-3. Click **Add MCP Server** or edit the config file directly
-
-**Config location**: 
-- macOS: `~/Library/Application Support/Cursor/User/globalStorage/mcp/mcp.json`
-- Windows: `%APPDATA%\Cursor\User\globalStorage\mcp\mcp.json`
-- Linux: `~/.config/Cursor/User/globalStorage/mcp/mcp.json`
-
-**Config format**:
-```json
-{
-  "mcpServers": {
-    "cognigy": {
-      "command": "node",
-      "args": [
-        "/Users/dscheier/Workspace/cognigy/services/mcp-server/dist/index.js"
-      ],
-      "env": {
-        "COGNIGY_API_BASE_URL": "https://api-trial.cognigy.ai",
-        "COGNIGY_API_KEY": "your-api-key-here"
-      }
-    }
-  }
-}
-```
-
-4. **Restart Cursor** to load the MCP server
-5. Open Cursor's AI chat and type `@cognigy` to use the MCP tools
-
-**Testing in Cursor:**
-- Open AI chat panel
-- Type: `@cognigy what tools do you have?`
-- Or: `@cognigy help me create an AI agent`
+</details>
 
 ### System Prompt (Included!)
 

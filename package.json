@@ -3,21 +3,32 @@
   "version": "1.0.0",
   "description": "Model Context Protocol server for Cognigy.AI REST API",
   "main": "dist/index.js",
+  "bin": {
+    "cognigy-mcp": "dist/index.js"
+  },
   "type": "module",
+  "files": [
+    "dist",
+    "README.md",
+    "QUICK_START.md"
+  ],
   "scripts": {
-    "build": "tsc",
+    "build": "npx tsc",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "test": "jest",
     "lint": "eslint src --ext .ts",
     "setup": "bash scripts/setup.sh",
-    "test-connection": "bash scripts/test-connection.sh"
+    "test-connection": "bash scripts/test-connection.sh",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "mcp",
     "cognigy",
     "ai",
-    "model-context-protocol"
+    "model-context-protocol",
+    "mcp-server",
+    "conversational-ai"
   ],
   "author": "Cognigy",
   "license": "MIT",
