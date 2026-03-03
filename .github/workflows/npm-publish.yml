@@ -19,6 +19,9 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'release:') }}
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -89,7 +92,7 @@ jobs:
 
       - name: Publish to npm
         if: steps.bump_type.outputs.value != ''
-        run: npm publish --access public
+        run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -110,5 +113,6 @@ jobs:
               echo "- Bump: \`${{ steps.bump_type.outputs.value }}\` (${{ steps.version.outputs.old }} → ${{ steps.version.outputs.new }})"
               echo "- Package: [\`@cognigy/mcp-server@${{ steps.version.outputs.new }}\`](https://www.npmjs.com/package/@cognigy/mcp-server)"
               echo "- Tag: \`v${{ steps.version.outputs.new }}\`"
+              echo "- Provenance: ✓ (signed build attestation)"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
