@@ -60,12 +60,31 @@ No git clone, no build step, no account needed. `npx` downloads the package once
 
 ## Requirements
 
-### Developer side (one-time publish)
+### Developer side (one-time setup)
 
 - **npm access**: Publish rights to the `@cognigy` scope on npmjs.com
-- **Publish command**: `npm login && npm publish --access public`
-- **Updates**: Bump version in `package.json`, then `npm publish` again
-- The `prepublishOnly` script auto-builds before every publish
+- **GitHub secret**: Add `NPM_TOKEN` to the repo (Settings → Secrets → Actions)
+
+### Releasing (automated)
+
+Publishing is fully automated via GitHub Actions (`.github/workflows/npm-publish.yml`).
+
+**On every push to `main`**, the workflow:
+1. Runs tests
+2. Detects the version bump type from the merged PR's label
+3. Bumps `package.json` version
+4. Publishes to npm
+5. Commits the version change back to `main` and creates a git tag
+
+**PR labels control the bump type:**
+
+| PR label | Version bump | Example |
+|---|---|---|
+| `major` | Major | 0.1.0 → 1.0.0 |
+| `minor` | Minor | 0.1.0 → 0.2.0 |
+| No label (default) | Patch | 0.1.0 → 0.1.1 |
+
+**Manual release** is also available: Actions → "Publish to npm" → Run workflow → pick bump type.
 
 ### User side (to connect to the MCP)
 
