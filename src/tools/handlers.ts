@@ -7,7 +7,10 @@ import { logger } from '../utils/logger.js';
 import * as schemas from '../schemas/tools.js';
 
 export class ToolHandlers {
-  constructor(private apiClient: CognigyApiClient) {}
+  constructor(
+    private apiClient: CognigyApiClient,
+    private endpointBaseUrl: string,
+  ) {}
 
   /**
    * 1. AI Agent Management (with automatic flow + endpoint creation)
@@ -76,7 +79,7 @@ export class ToolHandlers {
             flow,
             endpoint,
             endpointUrl: endpoint.URLToken 
-              ? `https://endpoint-trial.cognigy.ai/${endpoint.URLToken}`
+              ? `${this.endpointBaseUrl}/${endpoint.URLToken}`
               : 'URL not available',
             message: '🎉 COMPLETE! Created AI Agent, Flow, AI Agent Job Node, and REST Endpoint! Ready to use!',
             instructions: `The agent is ready to use with talk_to_agent tool!

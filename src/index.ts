@@ -40,7 +40,7 @@ async function main() {
     });
 
     // Initialize tool handlers
-    const toolHandlers = new ToolHandlers(apiClient);
+    const toolHandlers = new ToolHandlers(apiClient, config.endpointBaseUrl);
 
     // Initialize rate limiter
     const rateLimiter = new RateLimiter(config.rateLimit);
