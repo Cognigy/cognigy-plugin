@@ -1,6 +1,6 @@
 {
   "name": "@cognigy/mcp-server",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Model Context Protocol server for Cognigy.AI REST API",
   "main": "dist/index.js",
   "bin": {
