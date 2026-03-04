@@ -180,6 +180,6 @@ jobs:
               echo "- Bump: \`${{ steps.bump_type.outputs.value }}\` (${{ steps.version.outputs.old }} → ${{ steps.version.outputs.new }})"
               echo "- npm: [\`@cognigy/mcp-server@${{ steps.version.outputs.new }}\`](https://www.npmjs.com/package/@cognigy/mcp-server)"
               echo "- GitHub release: \`v${{ steps.version.outputs.new }}\` (with \`.mcpb\` bundle)"
-              echo "- Provenance: ✓ (signed build attestation)"
+              echo "Not signed. To enable provenance, replace \`npm publish --access public\` with \`npm publish --access public --provenance\` in the run command of the step: Publish to npm"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
