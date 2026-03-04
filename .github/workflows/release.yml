@@ -100,7 +100,7 @@ jobs:
 
       - name: Publish to npm
         if: steps.bump_type.outputs.value != ''
-        run: npm publish --access public --provenance
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
