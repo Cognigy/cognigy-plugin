@@ -1,4 +1,4 @@
-name: Publish to npm
+name: Release
 
 on:
   push:
@@ -87,6 +87,13 @@ jobs:
           OLD_VERSION=$(node -p "require('./package.json').version")
           npm version ${{ steps.bump_type.outputs.value }} --no-git-tag-version
           NEW_VERSION=$(node -p "require('./package.json').version")
+          # Sync version into manifest.json
+          node -e "
+            const fs = require('fs');
+            const m = JSON.parse(fs.readFileSync('manifest.json','utf8'));
+            m.version = '$NEW_VERSION';
+            fs.writeFileSync('manifest.json', JSON.stringify(m, null, 2) + '\n');
+          "
           echo "old=$OLD_VERSION" >> "$GITHUB_OUTPUT"
           echo "new=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
@@ -96,23 +103,83 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Build MCPB bundle
+        if: steps.bump_type.outputs.value != ''
+        run: npx @anthropic-ai/mcpb pack
+
       - name: Commit version bump and tag
         if: steps.bump_type.outputs.value != ''
         run: |
-          git add package.json
+          git add package.json manifest.json
           git commit -m "release: v${{ steps.version.outputs.new }}"
           git tag "v${{ steps.version.outputs.new }}"
           git push origin main --tags
+
+      - name: Create GitHub release with MCPB bundle
+        if: steps.bump_type.outputs.value != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const glob = require('glob');
+
+            const tag = `v${{ steps.version.outputs.new }}`;
+            const version = `${{ steps.version.outputs.new }}`;
+
+            const release = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tag,
+              name: tag,
+              body: [
+                `## @cognigy/mcp-server@${version}`,
+                '',
+                '### Install',
+                '',
+                '**Claude Desktop (one-click):** Download the `.mcpb` file below and double-click it.',
+                '',
+                '**All other MCP clients (Cursor, ChatGPT, Windsurf, etc.):**',
+                '```json',
+                '{',
+                '  "mcpServers": {',
+                '    "cognigy": {',
+                '      "command": "npx",',
+                '      "args": ["-y", "@cognigy/mcp-server"],',
+                '      "env": {',
+                '        "COGNIGY_API_BASE_URL": "https://api-trial.cognigy.ai",',
+                '        "COGNIGY_API_KEY": "your-api-key-here"',
+                '      }',
+                '    }',
+                '  }',
+                '}',
+                '```',
+              ].join('\n'),
+              draft: false,
+              prerelease: version.startsWith('0.'),
+            });
+
+            const mcpbFiles = fs.readdirSync('.').filter(f => f.endsWith('.mcpb'));
+            for (const file of mcpbFiles) {
+              const data = fs.readFileSync(file);
+              await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.data.id,
+                name: file,
+                data: data,
+              });
+              core.info(`Uploaded ${file} to release ${tag}`);
+            }
 
       - name: Summary
         run: |
           {
             if [ -n "${{ steps.bump_type.outputs.value }}" ]; then
-              echo "### Published to npm"
+              echo "### Published"
               echo ""
               echo "- Bump: \`${{ steps.bump_type.outputs.value }}\` (${{ steps.version.outputs.old }} → ${{ steps.version.outputs.new }})"
-              echo "- Package: [\`@cognigy/mcp-server@${{ steps.version.outputs.new }}\`](https://www.npmjs.com/package/@cognigy/mcp-server)"
-              echo "- Tag: \`v${{ steps.version.outputs.new }}\`"
+              echo "- npm: [\`@cognigy/mcp-server@${{ steps.version.outputs.new }}\`](https://www.npmjs.com/package/@cognigy/mcp-server)"
+              echo "- GitHub release: \`v${{ steps.version.outputs.new }}\` (with \`.mcpb\` bundle)"
               echo "- Provenance: ✓ (signed build attestation)"
             fi
           } >> "$GITHUB_STEP_SUMMARY"

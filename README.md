@@ -1,8 +1,31 @@
 # Cognigy MCP Server
 
-> **📚 New here?** See **[INDEX.md](INDEX.md)** for quick navigation to the right documentation for your needs!
+A Model Context Protocol (MCP) server that provides AI assistants with access to the Cognigy.AI REST API.
 
-A production-ready Model Context Protocol (MCP) server that provides AI assistants (Claude Desktop, Cursor IDE) with access to the Cognigy.AI REST API.
+## Install
+
+**Claude Desktop** — Download the `.mcpb` file from the [latest release](https://github.com/Cognigy/cognigy-mcp/releases/latest) and double-click it. No Node.js required.
+
+**Cursor / ChatGPT / Windsurf / any MCP client** — Add to your MCP config:
+
+```json
+{
+  "mcpServers": {
+    "cognigy": {
+      "command": "npx",
+      "args": ["-y", "@cognigy/mcp-server"],
+      "env": {
+        "COGNIGY_API_BASE_URL": "https://api-trial.cognigy.ai",
+        "COGNIGY_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+Requires [Node.js 20+](https://nodejs.org). Get your API key from Cognigy.AI → User Menu → My Profile → API Keys.
+
+---
 
 ## 🎯 Key Feature: Self-Improving AI Agents
 
@@ -117,9 +140,11 @@ Restart your MCP client, then try:
 
 ## Setup by MCP Client
 
-### Claude Desktop
+### Claude Desktop (one-click install)
 
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json` and add the config block above. Restart Claude Desktop.
+Download the `.mcpb` file from [Releases](https://github.com/Cognigy/cognigy-mcp/releases) and double-click it. Claude Desktop will open an install dialog where you enter your API URL and API key — no config files to edit, no Node.js required.
+
+Alternatively, use the npx config approach: edit `~/Library/Application Support/Claude/claude_desktop_config.json` and add the config block above.
 
 ### Cursor IDE
 

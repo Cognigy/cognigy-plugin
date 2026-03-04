@@ -20,7 +20,8 @@
     "lint": "eslint src --ext .ts",
     "setup": "bash scripts/setup.sh",
     "test-connection": "bash scripts/test-connection.sh",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "mcpb:pack": "npm run build && npx @anthropic-ai/mcpb pack"
   },
   "keywords": [
     "mcp",
