@@ -19,13 +19,24 @@ describe('ToolHandlers', () => {
       put: jest.fn(),
     } as any;
 
-    toolHandlers = new ToolHandlers(mockApiClient);
+    toolHandlers = new ToolHandlers(mockApiClient, 'https://endpoint-trial.cognigy.ai');
   });
 
   describe('handleAiAgents', () => {
-    it('should create an AI agent', async () => {
-      const mockResponse = { _id: '507f1f77bcf86cd799439011', name: 'Test Agent' };
-      mockApiClient.post.mockResolvedValue(mockResponse);
+    it('should create an AI agent with automatic setup', async () => {
+      const mockAgent = { _id: '507f1f77bcf86cd799439011', name: 'Test Agent', referenceId: 'ref-uuid' };
+      const mockFlow = { _id: 'flow123', referenceId: 'flow-ref-uuid', name: 'Test Agent Flow' };
+      const mockEndpoint = { _id: 'ep123', URLToken: 'abc123' };
+
+      mockApiClient.post
+        .mockResolvedValueOnce(mockAgent)
+        .mockResolvedValueOnce(mockFlow)
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce(mockEndpoint);
+
+      mockApiClient.get.mockResolvedValueOnce({
+        items: [{ _id: 'node1', isEntryPoint: true }],
+      });
 
       const result = await toolHandlers.handleAiAgents({
         operation: 'create',
@@ -34,7 +45,9 @@ describe('ToolHandlers', () => {
         description: 'A test agent',
       });
 
-      expect(result).toEqual(mockResponse);
+      expect(result.agent).toEqual(mockAgent);
+      expect(result.flow).toEqual(mockFlow);
+      expect(result.endpoint).toEqual(mockEndpoint);
       expect(mockApiClient.post).toHaveBeenCalledWith('/v2.0/aiagents', {
         projectId: '507f1f77bcf86cd799439011',
         name: 'Test Agent',

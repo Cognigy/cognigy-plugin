@@ -3,6 +3,7 @@
  */
 export interface Config {
   apiBaseUrl: string;
+  endpointBaseUrl: string;
   apiKey: string;
   serverName: string;
   serverVersion: string;
@@ -11,6 +12,23 @@ export interface Config {
     maxRequests: number;
     windowMs: number;
   };
+}
+
+/**
+ * Derive the endpoint base URL from the API base URL.
+ * Pattern: https://api-{env}.cognigy.ai -> https://endpoint-{env}.cognigy.ai
+ */
+function deriveEndpointBaseUrl(apiBaseUrl: string): string {
+  try {
+    const url = new URL(apiBaseUrl);
+    const match = url.hostname.match(/^api-(.+)$/);
+    if (match) {
+      return `${url.protocol}//endpoint-${match[1]}`;
+    }
+  } catch {
+    // fall through
+  }
+  return apiBaseUrl.replace(/\/api-/, '/endpoint-');
 }
 
 /**
@@ -28,8 +46,12 @@ export function loadConfig(): Config {
     throw new Error('COGNIGY_API_KEY environment variable is required');
   }
 
+  const endpointBaseUrl =
+    process.env.COGNIGY_ENDPOINT_BASE_URL || deriveEndpointBaseUrl(apiBaseUrl);
+
   return {
     apiBaseUrl,
+    endpointBaseUrl,
     apiKey,
     serverName: process.env.MCP_SERVER_NAME || 'cognigy-api-mcp',
     serverVersion: process.env.MCP_SERVER_VERSION || '1.0.0',

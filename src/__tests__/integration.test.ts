@@ -12,6 +12,7 @@ import { ToolHandlers } from '../tools/handlers.js';
 const INTEGRATION_TEST = process.env.INTEGRATION_TEST === 'true';
 const API_KEY = process.env.COGNIGY_API_KEY || 'test-key';
 const API_BASE_URL = process.env.COGNIGY_API_BASE_URL || 'https://api-trial.cognigy.ai';
+const ENDPOINT_BASE_URL = process.env.COGNIGY_ENDPOINT_BASE_URL || 'https://endpoint-trial.cognigy.ai';
 
 describe.skip('Integration Tests', () => {
   let apiClient: CognigyApiClient;
@@ -29,7 +30,7 @@ describe.skip('Integration Tests', () => {
       apiKey: API_KEY,
     });
 
-    toolHandlers = new ToolHandlers(apiClient);
+    toolHandlers = new ToolHandlers(apiClient, ENDPOINT_BASE_URL);
   });
 
   describe('Project Management', () => {
