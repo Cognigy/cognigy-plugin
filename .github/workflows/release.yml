@@ -122,7 +122,6 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const glob = require('glob');
 
             const tag = `v${{ steps.version.outputs.new }}`;
             const version = `${{ steps.version.outputs.new }}`;
