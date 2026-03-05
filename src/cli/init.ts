@@ -13,7 +13,14 @@ import * as path from 'path';
 import * as os from 'os';
 import * as readline from 'readline';
 
-const CLIENTS: Record<string, { name: string; configPath: () => string; wrapKey?: string }> = {
+interface ClientConfig {
+  name: string;
+  configPath: () => string;
+  wrapKey?: string;
+  gitignoreEntry?: string;
+}
+
+const CLIENTS: Record<string, ClientConfig> = {
   cursor: {
     name: 'Cursor',
     configPath: () => {
@@ -43,11 +50,13 @@ const CLIENTS: Record<string, { name: string; configPath: () => string; wrapKey?
   'claude-code': {
     name: 'Claude Code',
     configPath: () => path.join(process.cwd(), '.mcp.json'),
+    gitignoreEntry: '.mcp.json',
   },
   vscode: {
     name: 'VS Code',
     configPath: () => path.join(process.cwd(), '.vscode', 'mcp.json'),
     wrapKey: 'servers',
+    gitignoreEntry: '.vscode/mcp.json',
   },
 };
 
@@ -60,31 +69,32 @@ function prompt(rl: readline.Interface, question: string, defaultValue?: string)
   });
 }
 
-function generateServerBlock() {
+function generateServerBlock(apiBaseUrl: string, apiKey: string) {
   return {
     command: 'npx',
     args: ['-y', '@cognigy/mcp-server'],
     env: {
-      COGNIGY_API_BASE_URL: '${COGNIGY_API_BASE_URL}',
-      COGNIGY_API_KEY: '${COGNIGY_API_KEY}',
+      COGNIGY_API_BASE_URL: apiBaseUrl,
+      COGNIGY_API_KEY: apiKey,
     },
   };
 }
 
-function mergeConfig(configPath: string, wrapKey?: string, apiBaseUrl?: string, apiKey?: string) {
+function mergeConfig(configPath: string, apiBaseUrl: string, apiKey: string, wrapKey?: string) {
   let config: any = {};
 
   if (fs.existsSync(configPath)) {
+    const raw = fs.readFileSync(configPath, 'utf-8');
     try {
-      config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      config = JSON.parse(raw);
     } catch {
-      config = {};
+      throw new Error(
+        `Could not parse ${configPath} as JSON. Please fix or remove the file and try again.`,
+      );
     }
   }
 
-  const serverBlock = generateServerBlock();
-  if (apiBaseUrl) serverBlock.env.COGNIGY_API_BASE_URL = apiBaseUrl;
-  if (apiKey) serverBlock.env.COGNIGY_API_KEY = apiKey;
+  const serverBlock = generateServerBlock(apiBaseUrl, apiKey);
 
   if (wrapKey) {
     config[wrapKey] = config[wrapKey] || {};
@@ -136,11 +146,37 @@ export async function runInit(args: string[]) {
       if (!apiKey) console.log('  API key is required.');
     }
 
-    mergeConfig(configPath, client.wrapKey, apiBaseUrl, apiKey);
+    mergeConfig(configPath, apiBaseUrl, apiKey, client.wrapKey);
 
     console.log('');
     console.log(`  ✓ ${client.name} configured`);
     console.log(`    ${configPath}`);
+
+    if (client.gitignoreEntry) {
+      const gitignorePath = path.join(process.cwd(), '.gitignore');
+      let alreadyIgnored = false;
+
+      if (fs.existsSync(gitignorePath)) {
+        const content = fs.readFileSync(gitignorePath, 'utf-8');
+        alreadyIgnored = content.split('\n').some(
+          (line) => line.trim() === client.gitignoreEntry,
+        );
+      }
+
+      if (!alreadyIgnored) {
+        console.log('');
+        console.log(`  ⚠ ${client.gitignoreEntry} contains your API key.`);
+        const answer = await prompt(rl, `Add ${client.gitignoreEntry} to .gitignore?`, 'Y');
+        if (answer.toLowerCase() === 'y') {
+          const newline = fs.existsSync(gitignorePath) && !fs.readFileSync(gitignorePath, 'utf-8').endsWith('\n') ? '\n' : '';
+          fs.appendFileSync(gitignorePath, `${newline}${client.gitignoreEntry}\n`);
+          console.log(`  ✓ Added to .gitignore`);
+        } else {
+          console.log(`  → Remember to add ${client.gitignoreEntry} to .gitignore manually.`);
+        }
+      }
+    }
+
     console.log('');
     console.log(`  Restart ${client.name} to load the Cognigy MCP server.`);
     console.log('');
