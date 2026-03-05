@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "cognigy-mcp-server",
   "display_name": "Cognigy AI Agent MCP Server",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Connect your AI assistant to Cognigy.AI — create, test, and improve LLM-based AI Agents through a self-improvement loop.",
   "long_description": "A Model Context Protocol server that exposes the Cognigy.AI API through 9 high-level workflow tools focused on LLM-based AI Agents.\n\nCreate a complete AI Agent setup in one tool call (Agent + Flow + Job Node + Endpoint), then talk to it, evaluate responses, and iterate until it's perfect.\n\nSupports: AI Agent management, knowledge stores, conversation history, flow management, analytics, and direct agent testing via REST endpoints.",
   "author": {
