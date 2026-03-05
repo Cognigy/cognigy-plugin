@@ -23,16 +23,7 @@ interface ClientConfig {
 const CLIENTS: Record<string, ClientConfig> = {
   cursor: {
     name: 'Cursor',
-    configPath: () => {
-      switch (process.platform) {
-        case 'darwin':
-          return path.join(os.homedir(), 'Library', 'Application Support', 'Cursor', 'User', 'globalStorage', 'mcp', 'mcp.json');
-        case 'win32':
-          return path.join(process.env.APPDATA || '', 'Cursor', 'User', 'globalStorage', 'mcp', 'mcp.json');
-        default:
-          return path.join(os.homedir(), '.config', 'Cursor', 'User', 'globalStorage', 'mcp', 'mcp.json');
-      }
-    },
+    configPath: () => path.join(os.homedir(), '.cursor', 'mcp.json'),
   },
   claude: {
     name: 'Claude Desktop',
@@ -138,6 +129,21 @@ export async function runInit(args: string[]) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
   try {
+    if (client.gitignoreEntry) {
+      console.log(`  Config will be written to: ${configPath}`);
+      console.log(`  (project directory: ${process.cwd()})`);
+      console.log('');
+      const confirm = await prompt(rl, 'Is this the correct project directory?', 'Y');
+      if (confirm.toLowerCase() !== 'y') {
+        console.log('');
+        console.log('  Run this command again from your project directory:');
+        console.log(`    cd /path/to/your/project`);
+        console.log(`    npx @cognigy/mcp-server init --client ${clientKey}`);
+        console.log('');
+        process.exit(0);
+      }
+    }
+
     const apiBaseUrl = await prompt(rl, 'Cognigy API URL', 'https://api-trial.cognigy.ai');
 
     let apiKey = '';

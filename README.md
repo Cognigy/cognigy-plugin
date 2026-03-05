@@ -170,10 +170,7 @@ Alternatively, use the npx config approach: edit `~/Library/Application Support/
 
 Edit the MCP config file directly, or go to **Cursor > Settings > Cursor Settings > MCP > Add MCP Server**.
 
-**Config file location:**
-- macOS: `~/Library/Application Support/Cursor/User/globalStorage/mcp/mcp.json`
-- Windows: `%APPDATA%\Cursor\User\globalStorage\mcp\mcp.json`
-- Linux: `~/.config/Cursor/User/globalStorage/mcp/mcp.json`
+**Config file location:** `~/.cursor/mcp.json` (all platforms)
 
 Add the config block above. Restart Cursor. Open the AI chat and type `@cognigy` to use the tools.
 
