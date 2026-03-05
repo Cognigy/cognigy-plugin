@@ -846,6 +846,11 @@ function getWorkflowExamples(): string {
 `;
 }
 
-// Start the server
-main();
+// CLI dispatch: `init` subcommand runs the setup CLI, otherwise start the MCP server
+const subcommand = process.argv[2];
+if (subcommand === 'init') {
+  import('./cli/init.js').then(({ runInit }) => runInit(process.argv.slice(2)));
+} else {
+  main();
+}
 

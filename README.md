@@ -4,9 +4,27 @@ A Model Context Protocol (MCP) server that provides AI assistants with access to
 
 ## Install
 
-**Claude Desktop** — Download the `.mcpb` file from the [latest release](https://github.com/Cognigy/cognigy-mcp/releases/latest) and double-click it. No Node.js required.
+### One-command setup
 
-**Cursor / ChatGPT / Windsurf / any MCP client** — Add to your MCP config:
+Requires [Node.js 20+](https://nodejs.org) installed on your machine. Run the command for your MCP client:
+
+| MCP Client | Command |
+|---|---|
+| Cursor | `npx @cognigy/mcp-server init --client cursor` |
+| Claude Desktop | `npx @cognigy/mcp-server init --client claude` |
+| Claude Code | `npx @cognigy/mcp-server init --client claude-code` |
+| VS Code (Copilot) | `npx @cognigy/mcp-server init --client vscode` |
+
+The command will prompt you for your Cognigy API URL and API key, then automatically configure your client. Restart your client after setup.
+
+### Claude Desktop (one-click)
+
+Download the `.mcpb` file from the [latest release](https://github.com/Cognigy/cognigy-mcp/releases/latest) and double-click it. No Node.js required.
+
+<details>
+<summary>Manual config (if you prefer)</summary>
+
+Add to your MCP client's config file:
 
 ```json
 {
@@ -22,6 +40,8 @@ A Model Context Protocol (MCP) server that provides AI assistants with access to
   }
 }
 ```
+
+</details>
 
 Requires [Node.js 20+](https://nodejs.org). Get your API key from Cognigy.AI → User Menu → My Profile → API Keys.
 
