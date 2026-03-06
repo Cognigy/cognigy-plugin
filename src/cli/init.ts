@@ -60,6 +60,42 @@ function prompt(rl: readline.Interface, question: string, defaultValue?: string)
   });
 }
 
+function promptSecret(question: string): Promise<string> {
+  return new Promise((resolve) => {
+    process.stdout.write(`  ${question}: `);
+    const stdin = process.stdin;
+    const wasRaw = stdin.isRaw;
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+
+    let input = '';
+    const onData = (chunk: string) => {
+      for (const ch of chunk) {
+        if (ch === '\r' || ch === '\n') {
+          stdin.removeListener('data', onData);
+          stdin.setRawMode(wasRaw);
+          stdin.pause();
+          process.stdout.write('\n');
+          resolve(input);
+          return;
+        } else if (ch === '\u0003') {
+          process.exit(0);
+        } else if (ch === '\u007F' || ch === '\b') {
+          if (input.length > 0) {
+            input = input.slice(0, -1);
+            process.stdout.write('\b \b');
+          }
+        } else {
+          input += ch;
+          process.stdout.write('*');
+        }
+      }
+    };
+    stdin.on('data', onData);
+  });
+}
+
 function generateServerBlock(apiBaseUrl: string, apiKey: string) {
   return {
     command: 'npx',
@@ -108,8 +144,12 @@ export async function runInit(args: string[]) {
   const clientKey = clientIdx !== -1 ? args[clientIdx + 1] : undefined;
 
   console.log('');
-  console.log('  Cognigy MCP Server — Setup');
-  console.log('  ──────────────────────────');
+  console.log('  ╔═══════════════════════════════════════════════╗');
+  console.log('  ║                                               ║');
+  console.log('  ║       C O G N I G Y   M C P   S E R V E R     ║');
+  console.log('  ║              Installation Setup               ║');
+  console.log('  ║                                               ║');
+  console.log('  ╚═══════════════════════════════════════════════╝');
   console.log('');
 
   if (!clientKey || !CLIENTS[clientKey]) {
@@ -146,9 +186,10 @@ export async function runInit(args: string[]) {
 
     const apiBaseUrl = await prompt(rl, 'Cognigy API URL', 'https://api-trial.cognigy.ai');
 
+    rl.close();
     let apiKey = '';
     while (!apiKey) {
-      apiKey = await prompt(rl, 'Cognigy API Key');
+      apiKey = await promptSecret('Cognigy API Key');
       if (!apiKey) console.log('  API key is required.');
     }
 
@@ -170,9 +211,11 @@ export async function runInit(args: string[]) {
       }
 
       if (!alreadyIgnored) {
+        const rl2 = readline.createInterface({ input: process.stdin, output: process.stdout });
         console.log('');
         console.log(`  ⚠ ${client.gitignoreEntry} contains your API key.`);
-        const answer = await prompt(rl, `Add ${client.gitignoreEntry} to .gitignore?`, 'Y');
+        const answer = await prompt(rl2, `Add ${client.gitignoreEntry} to .gitignore?`, 'Y');
+        rl2.close();
         if (answer.toLowerCase() === 'y') {
           const newline = fs.existsSync(gitignorePath) && !fs.readFileSync(gitignorePath, 'utf-8').endsWith('\n') ? '\n' : '';
           fs.appendFileSync(gitignorePath, `${newline}${client.gitignoreEntry}\n`);
@@ -186,7 +229,7 @@ export async function runInit(args: string[]) {
     console.log('');
     console.log(`  Restart ${client.name} to load the Cognigy MCP server.`);
     console.log('');
-  } finally {
-    rl.close();
+  } catch (error) {
+    throw error;
   }
 }
