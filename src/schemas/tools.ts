@@ -1,31 +1,22 @@
-/**
- * Zod schemas for MCP tool inputs
- */
-
 import { z } from 'zod';
 
-// Common schemas
-const idSchema = z.string().regex(/^[a-z0-9]{24}$/, 'Invalid ID format');
-const paginationSchema = z.object({
+const idSchema = z.string().regex(/^[a-f0-9]{24}$/, 'Must be a 24-char hex ID');
+
+const paginationSchema = {
   limit: z.number().int().min(1).max(100).optional(),
   skip: z.number().int().min(0).optional(),
-});
+};
 
-// 1. AI Agent Management
-export const aiAgentCreateSchema = z.object({
-  projectId: idSchema,
+// Tool 1: create_ai_agent
+export const createAiAgentSchema = z.object({
+  projectId: idSchema.optional(),
   name: z.string().min(1).max(200),
   description: z.string().optional(),
-  // Note: "job description" is configured via AI Agent Job Node in Flow, not here
   knowledgeReferenceId: z.string().uuid().optional(),
-  image: z.string().optional(),
-  speakingStyle: z.object({
-    completeness: z.string().optional(),
-    formality: z.string().optional(),
-  }).optional(),
 });
 
-export const aiAgentUpdateSchema = z.object({
+// Tool 2: update_ai_agent
+export const updateAiAgentSchema = z.object({
   aiAgentId: idSchema,
   name: z.string().min(1).max(200).optional(),
   description: z.string().optional(),
@@ -33,203 +24,91 @@ export const aiAgentUpdateSchema = z.object({
   tools: z.array(z.string()).optional(),
 });
 
-export const aiAgentListSchema = z.object({
+// Tool 3: setup_llm
+export const setupLlmSchema = z.object({
   projectId: idSchema,
-  ...paginationSchema.shape,
+  provider: z.enum(['openAI', 'azureOpenAI', 'anthropic', 'google', 'mistral']),
+  modelType: z.string().min(1),
+  name: z.string().optional(),
+  apiKey: z.string().optional(),
+  connectionId: z.string().optional(),
+  isDefault: z.boolean().optional(),
 });
 
-export const aiAgentGetSchema = z.object({
-  aiAgentId: idSchema,
+// Tool 4: talk_to_agent
+export const talkToAgentSchema = z.object({
+  endpointUrl: z.string().url(),
+  message: z.string().min(1),
+  sessionId: z.string().optional(),
+  userId: z.string().optional(),
+  data: z.record(z.any()).optional(),
+  verbose: z.boolean().optional(),
 });
 
-export const aiAgentDeleteSchema = z.object({
-  aiAgentId: idSchema,
+// Tool 5: list_resources
+export const listResourcesSchema = z.object({
+  resourceType: z.enum([
+    'project', 'agent', 'flow', 'endpoint', 'llm_model',
+    'knowledge_store', 'conversation', 'extension', 'function', 'tool',
+  ]),
+  projectId: idSchema.optional(),
+  aiAgentId: idSchema.optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  channel: z.string().optional(),
+  ...paginationSchema,
 });
 
-export const aiAgentHireSchema = z.object({
-  aiAgentId: idSchema,
-  templateId: z.string().optional(),
+// Tool 6: get_resource
+export const getResourceSchema = z.object({
+  resourceType: z.enum([
+    'agent', 'flow', 'endpoint', 'project', 'conversation',
+    'session_state', 'llm_model', 'knowledge_store', 'extension', 'function',
+  ]),
+  id: z.string().min(1),
+  projectId: idSchema.optional(),
+  raw: z.boolean().optional(),
 });
 
-// 2. Knowledge Management
-export const knowledgeStoreCreateSchema = z.object({
-  projectId: idSchema,
-  name: z.string().min(1).max(200),
+// Tool 7: delete_resource
+export const deleteResourceSchema = z.object({
+  resourceType: z.enum([
+    'agent', 'flow', 'endpoint', 'llm_model', 'knowledge_store', 'function', 'tool',
+  ]),
+  id: z.string().min(1),
+  projectId: idSchema.optional(),
+  aiAgentId: idSchema.optional(),
+});
+
+// Tool 8: manage_knowledge
+export const manageKnowledgeSchema = z.object({
+  operation: z.enum(['create_store', 'create_source', 'list_chunks']),
+  projectId: idSchema.optional(),
+  knowledgeStoreId: idSchema.optional(),
+  sourceId: idSchema.optional(),
+  name: z.string().min(1).max(200).optional(),
   description: z.string().optional(),
-  embeddingModel: z.string().optional(),
-});
-
-export const knowledgeSourceCreateSchema = z.object({
-  knowledgeStoreId: idSchema,
-  type: z.enum(['url', 'file', 'text']),
-  content: z.string(),
-  metadata: z.record(z.any()).optional(),
-});
-
-export const knowledgeChunkSearchSchema = z.object({
-  knowledgeStoreId: idSchema,
-  query: z.string().min(1),
+  type: z.enum(['url', 'manual']).optional(),
+  url: z.string().url().optional(),
+  text: z.string().optional(),
+  filter: z.string().optional(),
   limit: z.number().int().min(1).max(50).optional(),
 });
 
-// 3. Conversation Management
-export const conversationListSchema = z.object({
-  projectId: idSchema,
-  ...paginationSchema.shape,
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-  channel: z.string().optional(),
-});
-
-export const conversationGetSchema = z.object({
-  sessionId: z.string(),
-});
-
-export const sessionStateGetSchema = z.object({
-  sessionId: z.string(),
-});
-
-// 4. Flow Management
-export const flowCreateSchema = z.object({
-  projectId: idSchema,
+// Tool 9: create_tool
+export const createToolSchema = z.object({
+  aiAgentId: idSchema,
+  toolType: z.enum(['tool', 'knowledge', 'send_email', 'mcp']),
   name: z.string().min(1).max(200),
-  description: z.string().optional(),
+  config: z.object({
+    toolId: z.string().optional(),
+    description: z.string().optional(),
+    parameters: z.string().optional(),
+    knowledgeStoreId: z.string().optional(),
+    topK: z.number().int().min(1).max(50).optional(),
+    recipient: z.string().optional(),
+    mcpServerUrl: z.string().optional(),
+    mcpName: z.string().optional(),
+    timeout: z.number().optional(),
+  }),
 });
-
-export const flowUpdateSchema = z.object({
-  flowId: idSchema,
-  name: z.string().min(1).max(200).optional(),
-  description: z.string().optional(),
-});
-
-export const flowListSchema = z.object({
-  projectId: idSchema,
-  ...paginationSchema.shape,
-});
-
-export const flowNodeCreateSchema = z.object({
-  flowId: z.string(), // Can be either MongoDB _id OR UUID - accept both
-  type: z.string(),
-  label: z.string().optional(),
-  config: z.record(z.any()).optional(),
-  mode: z.string().optional(),
-});
-
-export const flowNodeUpdateSchema = z.object({
-  flowId: z.string(), // MongoDB _id
-  nodeId: z.string(), // MongoDB _id of the node
-  localeId: z.string().optional(),
-  config: z.record(z.any()).optional(),
-  label: z.string().optional(),
-  comment: z.string().optional(),
-});
-
-export const flowNodeGetSchema = z.object({
-  flowId: z.string(), // MongoDB _id
-  nodeId: z.string(), // MongoDB _id of the node
-  localeId: z.string().optional(),
-});
-
-// 5. Intent & NLU Management
-export const intentCreateSchema = z.object({
-  flowId: idSchema,
-  name: z.string().min(1).max(200),
-  sentences: z.array(z.string()).optional(),
-});
-
-export const intentUpdateSchema = z.object({
-  intentId: idSchema,
-  name: z.string().min(1).max(200).optional(),
-  sentences: z.array(z.string()).optional(),
-});
-
-export const intentListSchema = z.object({
-  flowId: idSchema,
-  ...paginationSchema.shape,
-});
-
-export const intentTrainSchema = z.object({
-  flowId: idSchema,
-  localeId: idSchema.optional(),
-});
-
-// 6. Analytics & Monitoring
-export const analyticsConversationCountSchema = z.object({
-  projectId: idSchema,
-  year: z.number().int().min(2020),
-  month: z.number().int().min(1).max(12).optional(),
-  channel: z.string().optional(),
-});
-
-export const analyticsCallCountSchema = z.object({
-  projectId: idSchema,
-  year: z.number().int().min(2020),
-  month: z.number().int().min(1).max(12).optional(),
-});
-
-export const logsListSchema = z.object({
-  projectId: idSchema,
-  ...paginationSchema.shape,
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-  level: z.enum(['debug', 'info', 'warn', 'error']).optional(),
-});
-
-export const auditEventsListSchema = z.object({
-  projectId: idSchema,
-  ...paginationSchema.shape,
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-  userId: idSchema.optional(),
-});
-
-// 7. Project & Endpoint Management
-export const projectCreateSchema = z.object({
-  name: z.string().min(1).max(200),
-  description: z.string().optional(),
-  defaultLocale: z.string().optional(),
-});
-
-export const projectListSchema = z.object({
-  ...paginationSchema.shape,
-});
-
-export const endpointCreateSchema = z.object({
-  projectId: idSchema,
-  channel: z.string(), // e.g., "rest", "webchat3", "voiceGateway2"
-  flowId: z.string().uuid(), // Flow uses UUID (referenceId), not MongoDB _id
-  name: z.string().min(1).max(200).optional(),
-  localeId: idSchema.optional(),
-  settings: z.record(z.any()).optional(),
-});
-
-export const endpointListSchema = z.object({
-  projectId: idSchema,
-  ...paginationSchema.shape,
-});
-
-// 8. Extension Management
-export const extensionListSchema = z.object({
-  projectId: idSchema,
-  ...paginationSchema.shape,
-});
-
-export const functionCreateSchema = z.object({
-  projectId: idSchema,
-  name: z.string().min(1).max(200),
-  code: z.string(),
-  description: z.string().optional(),
-});
-
-export const functionUpdateSchema = z.object({
-  functionId: idSchema,
-  name: z.string().min(1).max(200).optional(),
-  code: z.string().optional(),
-  description: z.string().optional(),
-});
-
-export const functionListSchema = z.object({
-  projectId: idSchema,
-  ...paginationSchema.shape,
-});
-

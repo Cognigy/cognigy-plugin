@@ -15,6 +15,24 @@ export interface Config {
 }
 
 /**
+ * Normalise the API base URL so it always points to the API host.
+ * Users may supply the bare UI URL (e.g. https://dev.cognigy.ai) instead of the
+ * API URL (https://api-dev.cognigy.ai).  We detect this and prepend "api-".
+ */
+function normalizeApiBaseUrl(raw: string): string {
+  try {
+    const url = new URL(raw);
+    if (!url.hostname.startsWith('api-') && url.hostname.endsWith('.cognigy.ai')) {
+      url.hostname = `api-${url.hostname}`;
+      return url.toString().replace(/\/+$/, '');
+    }
+  } catch {
+    // fall through
+  }
+  return raw.replace(/\/+$/, '');
+}
+
+/**
  * Derive the endpoint base URL from the API base URL.
  * Pattern: https://api-{env}.cognigy.ai -> https://endpoint-{env}.cognigy.ai
  */
@@ -46,15 +64,17 @@ export function loadConfig(): Config {
     throw new Error('COGNIGY_API_KEY environment variable is required');
   }
 
+  const normalizedApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
+
   const endpointBaseUrl =
-    process.env.COGNIGY_ENDPOINT_BASE_URL || deriveEndpointBaseUrl(apiBaseUrl);
+    process.env.COGNIGY_ENDPOINT_BASE_URL || deriveEndpointBaseUrl(normalizedApiBaseUrl);
 
   return {
-    apiBaseUrl,
+    apiBaseUrl: normalizedApiBaseUrl,
     endpointBaseUrl,
     apiKey,
     serverName: process.env.MCP_SERVER_NAME || 'cognigy-api-mcp',
-    serverVersion: process.env.MCP_SERVER_VERSION || '1.0.0',
+    serverVersion: process.env.MCP_SERVER_VERSION || '2.0.0',
     logLevel: (process.env.LOG_LEVEL as Config['logLevel']) || 'info',
     rateLimit: {
       maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
