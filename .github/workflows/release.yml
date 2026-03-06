@@ -173,10 +173,10 @@ jobs:
               echo "- Bump: \`${{ steps.bump_type.outputs.value }}\` (${{ steps.version.outputs.old }} → ${{ steps.version.outputs.new }})"
               echo "- npm: [\`@cognigy/mcp-server@${{ steps.version.outputs.new }}\`](https://www.npmjs.com/package/@cognigy/mcp-server)"
               echo "- GitHub release: \`v${{ steps.version.outputs.new }}\` (with \`.mcpb\` bundle)"
-              if grep -q -- '--provenance' .github/workflows/release.yml; then
+              if grep -q 'npm publish.*--provenance' .github/workflows/release.yml; then
                 echo "- Provenance: Signed"
               else
-                echo "- Provenance: Not signed. To enable, add \`--provenance\` to \`npm publish\` in the Publish to npm step."
+                echo "- Provenance: Not signed"
               fi
             fi
           } >> "$GITHUB_STEP_SUMMARY"
