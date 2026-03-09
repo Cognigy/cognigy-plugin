@@ -14,7 +14,7 @@ export const tools: ToolDefinition[] = [
   {
     name: 'create_ai_agent',
     description:
-      'Create a complete AI Agent with auto-provisioned flow, AI Agent Job Node, and REST endpoint. Returns everything needed for talk_to_agent.\n\nIf projectId is omitted, a new project is auto-created using the agent name. An LLM resource should exist in the project (use setup_llm) for the agent to generate responses.\n\nReturns: agent, flow, endpoint objects, endpointUrl, llmStatus, and the projectId used.\nIf llmStatus is \'missing\', read cognigy://guide/agent-creation for next steps.',
+      'Create a complete AI Agent with auto-provisioned flow, AI Agent Job Node, and REST endpoint. Returns everything needed for talk_to_agent.\n\nBEFORE USING THIS TOOL: Read cognigy://guide/agent-creation for the full setup workflow, prerequisites, and required steps.\n\nIf projectId is omitted, a new project is auto-created using the agent name.\n\nLLM SETUP (required for the agent to generate responses):\n1. Use setup_llm to create an LLM resource in the project (with isDefault: true, the default).\n2. If the LLM is not set as default, assign it via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: "<llm referenceId>" } }.\n\nReturns: agent, flow, endpoint objects, endpointUrl, llmStatus, and the projectId used.\nIf llmStatus is \'missing\', read cognigy://guide/agent-creation for next steps.',
     annotations: {
       title: 'Create AI Agent',
       readOnlyHint: false,
@@ -50,7 +50,7 @@ export const tools: ToolDefinition[] = [
   {
     name: 'update_ai_agent',
     description:
-      "Update an AI Agent's configuration to improve its behavior. Change the description to refine how the agent responds, update the job instructions, add/remove tools, or attach knowledge stores.\n\nRequires: aiAgentId (from create_ai_agent or list_resources { resourceType: 'agent' }).\nAfter updating, use talk_to_agent to test the changes.",
+      "Update an AI Agent's configuration. This tool can update both the AI Agent resource (name, description, instructions, knowledge) and the AI Agent Job Node config (LLM assignment, job name/description/instructions, temperature, maxTokens).\n\nAgent-level fields (name, description, instructions, knowledgeReferenceId) update the agent resource directly.\nJob-level fields (passed via jobConfig) update the AI Agent Job Node in the flow — this is where the LLM, job instructions, and model parameters are configured.\n\nIMPORTANT: After creating an LLM with setup_llm, assign it to the agent by passing jobConfig.llmProviderReferenceId with the LLM's referenceId (from setup_llm or list_resources { resourceType: 'llm_model' }). Without this, the agent uses the project default LLM.\n\nRequires: aiAgentId (from create_ai_agent or list_resources { resourceType: 'agent' }).\nAfter updating, use talk_to_agent to test the changes.",
     annotations: {
       title: 'Update AI Agent',
       readOnlyHint: false,
@@ -65,20 +65,48 @@ export const tools: ToolDefinition[] = [
           type: 'string',
           description: '24-char hex AI Agent ID (from create_ai_agent response or list_resources)',
         },
-        name: { type: 'string', description: 'New agent name' },
+        name: { type: 'string', description: 'New agent name (agent-level)' },
         description: {
           type: 'string',
-          description: 'New agent description — this is the primary way to change agent behavior',
+          description: 'New agent description — defines the agent persona and behavior (agent-level)',
         },
-        job: {
+        instructions: {
           type: 'string',
-          description: 'Job description text — detailed instructions for the agent',
+          description: 'Agent instructions — high-level guidance for the agent (agent-level, up to 1000 chars)',
         },
-        tools: {
-          type: 'array',
-          items: { type: 'string' },
-          description:
-            "Tool reference IDs available to the agent. Use create_tool to create tools first, then attach them here. Use list_resources { resourceType: 'tool', aiAgentId } to see available tools.",
+        knowledgeReferenceId: {
+          type: ['string', 'null'],
+          description: 'UUID of a knowledge store to attach (agent-level). Pass null to detach.',
+        },
+        jobConfig: {
+          type: 'object',
+          description: 'AI Agent Job Node configuration. These fields control the LLM, job-level instructions, and model parameters.',
+          properties: {
+            llmProviderReferenceId: {
+              type: 'string',
+              description: "LLM referenceId to assign to this agent (from setup_llm response or list_resources { resourceType: 'llm_model' }). This determines which LLM the agent uses for generating responses.",
+            },
+            jobName: {
+              type: 'string',
+              description: "Job name — the role title (e.g., 'Customer Support Specialist')",
+            },
+            jobDescription: {
+              type: 'string',
+              description: 'Job description — detailed description of what the agent does in this job',
+            },
+            jobInstructions: {
+              type: 'string',
+              description: 'Job-level instructions — specific behavioral rules and constraints for the job',
+            },
+            temperature: {
+              type: 'number',
+              description: 'LLM temperature (0-1). Lower = more deterministic, higher = more creative. Default: 0.7',
+            },
+            maxTokens: {
+              type: 'number',
+              description: 'Max tokens for LLM response (100-8000). Default: 4000',
+            },
+          },
         },
       },
       required: ['aiAgentId'],
@@ -89,7 +117,7 @@ export const tools: ToolDefinition[] = [
   {
     name: 'setup_llm',
     description:
-      "Create an LLM resource (GPT-4, Claude, etc.) in a project. An LLM resource must exist before an AI Agent can generate responses.\n\nFor valid provider names and model strings, read cognigy://guide/llm-providers.\nTo list existing LLMs: use list_resources { resourceType: 'llm_model', projectId }.\nTo delete: use delete_resource { resourceType: 'llm_model', id }.",
+      "Create an LLM resource (GPT-4, Claude, etc.) in a project. An LLM resource must exist before an AI Agent can generate responses.\n\nIf isDefault is true (the default), agents in the project will automatically use this LLM. If isDefault is false, you must explicitly assign it to the agent via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: '<referenceId from this response>' } }.\n\nThe response includes the LLM's referenceId — use this value for jobConfig.llmProviderReferenceId if assigning manually.\n\nFor valid provider names and model strings, read cognigy://guide/llm-providers.\nTo list existing LLMs: use list_resources { resourceType: 'llm_model', projectId }.\nTo delete: use delete_resource { resourceType: 'llm_model', id }.",
     annotations: {
       title: 'Setup LLM',
       readOnlyHint: false,
@@ -291,7 +319,7 @@ export const tools: ToolDefinition[] = [
   {
     name: 'manage_knowledge',
     description:
-      "Manage knowledge bases for RAG. Create stores, add sources (URLs or text), and list chunks to verify content.\n\nFor URL sources: provide type 'url' and url field — the page is scraped and ingested automatically.\nFor text sources: provide text field (type defaults to 'manual') — a source and chunk are created.\nTo verify content: use list_chunks with knowledgeStoreId (and optionally sourceId, filter).\n\nFor setup steps, read cognigy://guide/knowledge-setup.\nTo list stores: list_resources { resourceType: 'knowledge_store' }.\nTo delete: delete_resource { resourceType: 'knowledge_store', id }.",
+      "Manage knowledge bases for RAG. Create stores, add sources (URLs or text), and list chunks to verify content.\n\nBEFORE USING THIS TOOL: Read cognigy://guide/knowledge-setup for the full setup workflow, prerequisites, and required steps.\n\nPREREQUISITE: An embedding model must be configured in the project before creating or using knowledge stores. Use setup_llm to create an embedding model first (e.g., setup_llm { projectId, provider: 'openAI', modelType: 'text-embedding-ada-002', apiKey }).\n\nFor URL sources: provide type 'url' and url field — the page is scraped and ingested automatically.\nFor text sources: provide text field (type defaults to 'manual') — a source and chunk are created.\nTo verify content: use list_chunks with knowledgeStoreId (and optionally sourceId, filter).\n\nTo list stores: list_resources { resourceType: 'knowledge_store' }.\nTo delete: delete_resource { resourceType: 'knowledge_store', id }.",
     annotations: {
       title: 'Manage Knowledge',
       readOnlyHint: false,

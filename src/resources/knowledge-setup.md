@@ -1,5 +1,10 @@
 # Adding Knowledge to an Agent
 
+## Prerequisites
+- An **embedding model** must be configured in the project before creating knowledge stores.
+  Use setup_llm to create one first (e.g., `setup_llm { projectId, provider: "openAI", modelType: "text-embedding-ada-002", apiKey }`).
+  To check: `list_resources { resourceType: "llm_model", projectId }` — look for an embedding model.
+
 ## Steps
 1. manage_knowledge { operation: "create_store", projectId, name }
 2. manage_knowledge { operation: "create_source", knowledgeStoreId, type, content }

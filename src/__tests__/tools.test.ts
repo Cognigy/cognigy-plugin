@@ -120,7 +120,7 @@ describe('ToolHandlers v2', () => {
   // update_ai_agent
   // =========================================================================
   describe('update_ai_agent', () => {
-    it('patches and returns filtered response', async () => {
+    it('patches agent-level fields and returns filtered response', async () => {
       const raw = {
         _id: ID.agent,
         referenceId: 'uuid',
@@ -136,9 +136,39 @@ describe('ToolHandlers v2', () => {
         description: 'New desc',
       });
 
+      expect(result.updated).toContain('agent');
       expect(result.name).toBe('Updated');
       expect(result.internalField).toBeUndefined();
       expect(api.patch).toHaveBeenCalledWith(`/v2.0/aiagents/${ID.agent}`, { description: 'New desc' });
+    });
+
+    it('patches job node config when jobConfig is provided', async () => {
+      const mockAgent = { _id: ID.agent, referenceId: 'ref-uuid', name: 'Agent', flowId: ID.flow };
+      const mockJobNode = { _id: 'job-node-id-000000000001', type: 'aiAgentJob' };
+
+      api.get
+        .mockResolvedValueOnce(mockAgent)
+        .mockResolvedValueOnce({ items: [mockJobNode] });
+      api.patch.mockResolvedValue({ _id: 'job-node-id-000000000001' });
+
+      const result = await h.handleToolCall('update_ai_agent', {
+        aiAgentId: ID.agent,
+        jobConfig: { llmProviderReferenceId: 'llm-ref-uuid', temperature: 0.5 },
+      });
+
+      expect(result.updated).toContain('jobNode');
+      expect(api.patch).toHaveBeenCalledWith(
+        `/v2.0/flows/${ID.flow}/chart/nodes/job-node-id-000000000001`,
+        { config: { llmProviderReferenceId: 'llm-ref-uuid', temperature: 0.5 } },
+      );
+    });
+
+    it('returns error when nothing to update', async () => {
+      const result = await h.handleToolCall('update_ai_agent', {
+        aiAgentId: ID.agent,
+      });
+
+      expect(result.error).toContain('Nothing to update');
     });
   });
 

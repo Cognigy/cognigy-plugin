@@ -8,7 +8,7 @@ import * as schemas from '../schemas/tools.js';
 // Constants
 // ---------------------------------------------------------------------------
 
-const DEFAULT_AGENT_IMAGE = 'default-avatar:0';
+const DEFAULT_AGENT_IMAGE = 'default-avatar:1';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -168,6 +168,7 @@ export class ToolHandlers {
         projectId,
         name: data.name,
         image: DEFAULT_AGENT_IMAGE,
+        imageOptimizedFormat: true,
       };
       if (data.description) agentPayload.description = data.description;
       if (data.knowledgeReferenceId) agentPayload.knowledgeReferenceId = data.knowledgeReferenceId;
@@ -262,9 +263,87 @@ export class ToolHandlers {
   // Tool 2: update_ai_agent
   // =========================================================================
   async handleUpdateAiAgent(args: any): Promise<any> {
-    const { aiAgentId, ...payload } = schemas.updateAiAgentSchema.parse(args);
-    const result = await this.apiClient.patch(`/v2.0/aiagents/${aiAgentId}`, payload);
-    return filterResponse('agent', result);
+    const { aiAgentId, jobConfig, ...rest } = schemas.updateAiAgentSchema.parse(args);
+
+    const updatedParts: string[] = [];
+
+    // Step 1: Patch AI Agent resource if any agent-level fields provided
+    const agentPayload: Record<string, any> = {};
+    if (rest.name !== undefined) agentPayload.name = rest.name;
+    if (rest.description !== undefined) agentPayload.description = rest.description;
+    if (rest.instructions !== undefined) agentPayload.instructions = rest.instructions;
+    if (rest.knowledgeReferenceId !== undefined) agentPayload.knowledgeReferenceId = rest.knowledgeReferenceId;
+
+    let agentResult: any;
+    if (Object.keys(agentPayload).length > 0) {
+      agentResult = await this.apiClient.patch(`/v2.0/aiagents/${aiAgentId}`, agentPayload);
+      updatedParts.push('agent');
+    }
+
+    // Step 2: Patch AI Agent Job Node config if any job-level fields provided
+    let jobNodeResult: any;
+    if (jobConfig && Object.keys(jobConfig).length > 0) {
+      const resolved = await resolveFlowForAgent(this.apiClient, aiAgentId);
+      if (!resolved) {
+        return withHints(
+          { error: 'Could not find a flow associated with this agent. Job config was not updated.' },
+          {
+            resource: 'cognigy://guide/agent-creation',
+            action: 'Ensure the agent was created via create_ai_agent, which provisions the flow and Job Node.',
+          },
+        );
+      }
+
+      const nodes: any = await this.apiClient.get(`/v2.0/flows/${resolved.flowId}/chart/nodes`, {
+        params: { limit: 100 },
+      });
+      const allNodes = nodes.items ?? nodes;
+      const jobNode = (Array.isArray(allNodes) ? allNodes : []).find(
+        (n: any) => n.type === 'aiAgentJob',
+      );
+      if (!jobNode) {
+        return withHints(
+          { error: 'No AI Agent Job Node found in the flow. Job config was not updated.' },
+          {
+            resource: 'cognigy://guide/agent-creation',
+            action: 'Ensure the agent was created via create_ai_agent.',
+          },
+        );
+      }
+
+      const nodeConfigPatch: Record<string, any> = {};
+      if (jobConfig.llmProviderReferenceId !== undefined) nodeConfigPatch.llmProviderReferenceId = jobConfig.llmProviderReferenceId;
+      if (jobConfig.jobName !== undefined) nodeConfigPatch.name = jobConfig.jobName;
+      if (jobConfig.jobDescription !== undefined) nodeConfigPatch.description = jobConfig.jobDescription;
+      if (jobConfig.jobInstructions !== undefined) nodeConfigPatch.instructions = jobConfig.jobInstructions;
+      if (jobConfig.temperature !== undefined) nodeConfigPatch.temperature = jobConfig.temperature;
+      if (jobConfig.maxTokens !== undefined) nodeConfigPatch.maxTokens = jobConfig.maxTokens;
+
+      const jobNodeId = jobNode._id || jobNode.id;
+      jobNodeResult = await this.apiClient.patch(
+        `/v2.0/flows/${resolved.flowId}/chart/nodes/${jobNodeId}`,
+        { config: nodeConfigPatch },
+      );
+      updatedParts.push('jobNode');
+    }
+
+    if (updatedParts.length === 0) {
+      return withHints(
+        { error: 'Nothing to update. Provide agent-level fields (name, description, instructions, knowledgeReferenceId) and/or jobConfig fields.' },
+        { action: 'Include at least one field to update.' },
+      );
+    }
+
+    // Build response from what was updated
+    const response: any = { updated: updatedParts };
+    if (agentResult) {
+      Object.assign(response, filterResponse('agent', agentResult));
+    }
+    if (jobNodeResult) {
+      response.jobNode = { id: jobNodeResult._id || jobNodeResult.id, configUpdated: Object.keys(jobConfig!) };
+    }
+
+    return response;
   }
 
   // =========================================================================
@@ -912,12 +991,27 @@ export class ToolHandlers {
       }
 
       // Step 3: Create the HTTP Request node
+      // The Cognigy httpRequest descriptor uses `type` for the HTTP method,
+      // `payloadType`+`payloadJSON`/`payloadText` for the body, and
+      // `headers` as a JSON string — NOT `method`, `body`, or object headers.
+      const httpMethod = data.http.method || 'GET';
       const httpConfig: any = {
         url: data.http.url,
-        method: data.http.method || 'GET',
+        type: httpMethod,
       };
-      if (data.http.headers) httpConfig.headers = data.http.headers;
-      if (data.http.body) httpConfig.body = data.http.body;
+      if (data.http.headers) {
+        httpConfig.headers = JSON.stringify(data.http.headers);
+      }
+      if (data.http.body) {
+        try {
+          const parsed = JSON.parse(data.http.body);
+          httpConfig.payloadType = 'json';
+          httpConfig.payloadJSON = parsed;
+        } catch {
+          httpConfig.payloadType = 'text';
+          httpConfig.payloadText = data.http.body;
+        }
+      }
 
       const appendTarget = preProcessNodeId ?? toolNodeId;
       const httpNode: any = await this.apiClient.post(
@@ -1073,9 +1167,18 @@ export class ToolHandlers {
         if (httpNode) {
           const httpPatch: any = {};
           if (data.http.url) httpPatch.url = data.http.url;
-          if (data.http.method) httpPatch.method = data.http.method;
-          if (data.http.headers) httpPatch.headers = data.http.headers;
-          if (data.http.body) httpPatch.body = data.http.body;
+          if (data.http.method) httpPatch.type = data.http.method;
+          if (data.http.headers) httpPatch.headers = JSON.stringify(data.http.headers);
+          if (data.http.body) {
+            try {
+              const parsed = JSON.parse(data.http.body);
+              httpPatch.payloadType = 'json';
+              httpPatch.payloadJSON = parsed;
+            } catch {
+              httpPatch.payloadType = 'text';
+              httpPatch.payloadText = data.http.body;
+            }
+          }
           await this.apiClient.patch(
             `/v2.0/flows/${flowId}/chart/nodes/${httpNode._id || httpNode.id}`,
             { config: httpPatch },

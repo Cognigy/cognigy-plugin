@@ -20,8 +20,16 @@ export const updateAiAgentSchema = z.object({
   aiAgentId: idSchema,
   name: z.string().min(1).max(200).optional(),
   description: z.string().optional(),
-  job: z.string().optional(),
-  tools: z.array(z.string()).optional(),
+  instructions: z.string().optional(),
+  knowledgeReferenceId: z.string().optional().nullable(),
+  jobConfig: z.object({
+    llmProviderReferenceId: z.string().optional(),
+    jobName: z.string().optional(),
+    jobDescription: z.string().optional(),
+    jobInstructions: z.string().optional(),
+    temperature: z.number().min(0).max(1).optional(),
+    maxTokens: z.number().int().min(100).max(8000).optional(),
+  }).optional(),
 });
 
 // Tool 3: setup_llm
