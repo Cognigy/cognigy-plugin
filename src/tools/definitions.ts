@@ -389,4 +389,153 @@ export const tools: ToolDefinition[] = [
       required: ['aiAgentId', 'toolType', 'name', 'config'],
     },
   },
+
+  // 10. create_custom_http_tool
+  {
+    name: 'create_custom_http_tool',
+    description:
+      "Create a custom HTTP tool for an AI Agent. This creates an aiAgentJobTool node with an HTTP Request child node, and optional Code nodes for pre-processing (before the HTTP call) and/or post-processing (after the HTTP call).\n\nUse this when the agent needs to call an external API and optionally transform data before sending or after receiving.\n\nThe node hierarchy created:\n  aiAgentJobTool (the tool node the LLM sees)\n    └─ [Code node: pre-process] (optional — runs before HTTP call)\n    └─ HTTP Request node (makes the API call)\n    └─ [Code node: post-process] (optional — runs after HTTP call)\n\nPrerequisites: Agent must exist (created via create_ai_agent).\nAfter creating, use talk_to_agent to test.",
+    annotations: {
+      title: 'Create Custom HTTP Tool',
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        aiAgentId: {
+          type: 'string',
+          description: "24-char hex AI Agent ID (from create_ai_agent or list_resources { resourceType: 'agent' })",
+        },
+        name: {
+          type: 'string',
+          description: "Tool display name (e.g., 'Fetch Weather', 'Create Order')",
+        },
+        toolId: {
+          type: 'string',
+          description: "Tool identifier the LLM uses to invoke this tool (e.g., 'fetch_weather', 'create_order')",
+        },
+        description: {
+          type: 'string',
+          description: 'Description shown to the LLM explaining what this tool does and when to use it',
+        },
+        parameters: {
+          type: 'string',
+          description: 'JSON Schema string defining the tool parameters the LLM can pass (optional)',
+        },
+        http: {
+          type: 'object',
+          description: 'HTTP Request configuration',
+          properties: {
+            url: { type: 'string', description: "HTTP endpoint URL (e.g., 'https://api.example.com/v1/data')" },
+            method: {
+              type: 'string',
+              enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+              description: 'HTTP method (default: GET)',
+            },
+            headers: {
+              type: 'object',
+              description: 'HTTP headers as key-value pairs (e.g., { "Authorization": "Bearer ..." })',
+            },
+            body: {
+              type: 'string',
+              description: 'Request body template. Use Cognigy CognigyScript tokens like {{input.data.param}} for dynamic values.',
+            },
+          },
+          required: ['url'],
+        },
+        preProcessCode: {
+          type: 'string',
+          description: "Optional JavaScript code to run BEFORE the HTTP request. Use this to transform input data, set headers dynamically, etc. The code runs in Cognigy's Code Node environment with access to `input`, `context`, `actions`, etc.",
+        },
+        postProcessCode: {
+          type: 'string',
+          description: "Optional JavaScript code to run AFTER the HTTP response. Use this to transform the response, extract fields, format data, etc. The code runs in Cognigy's Code Node environment with access to `input`, `context`, `actions`, etc.",
+        },
+      },
+      required: ['aiAgentId', 'name', 'toolId', 'description', 'http'],
+    },
+  },
+
+  // 11. update_tool
+  {
+    name: 'update_tool',
+    description:
+      "Update an existing tool node's configuration in an AI Agent's flow. Accepts the same config fields as create_tool and create_custom_http_tool.\n\nRequires: aiAgentId (to resolve the flow) and toolNodeId (the node ID from create_tool, create_custom_http_tool, or list_resources { resourceType: 'tool', aiAgentId }).\n\nYou can update the name (display label), tool-type-specific config, HTTP settings, and/or code node contents. For custom HTTP tools, if you provide http/preProcessCode/postProcessCode, the handler will also update the child HTTP Request and Code nodes.\n\nAfter updating, use talk_to_agent to test the changes.",
+    annotations: {
+      title: 'Update Tool',
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        aiAgentId: {
+          type: 'string',
+          description: "24-char hex AI Agent ID (from create_ai_agent or list_resources { resourceType: 'agent' })",
+        },
+        toolNodeId: {
+          type: 'string',
+          description: "24-char hex tool node ID (from create_tool, create_custom_http_tool, or list_resources { resourceType: 'tool', aiAgentId })",
+        },
+        name: {
+          type: 'string',
+          description: 'New display name for the tool node (optional)',
+        },
+        toolType: {
+          type: 'string',
+          enum: ['tool', 'knowledge', 'send_email', 'mcp'],
+          description: 'Tool type hint — helps the handler know which config fields to map. Optional if only updating name.',
+        },
+        config: {
+          type: 'object',
+          description: 'Tool-specific configuration — same fields as create_tool config. Merged with existing config on the node.',
+          properties: {
+            toolId: { type: 'string', description: 'Tool identifier for the LLM (tool, knowledge, send_email)' },
+            description: { type: 'string', description: 'Tool description for the LLM (tool, knowledge, send_email)' },
+            parameters: { type: 'string', description: 'JSON Schema string defining tool parameters (tool only)' },
+            knowledgeStoreId: { type: 'string', description: 'Knowledge store reference ID (knowledge only)' },
+            topK: { type: 'number', description: 'Number of results to return (knowledge only)' },
+            recipient: { type: 'string', description: 'Email recipient address(es) (send_email only)' },
+            mcpServerUrl: { type: 'string', description: 'MCP server URL (mcp only)' },
+            mcpName: { type: 'string', description: 'MCP connection name (mcp only)' },
+            timeout: { type: 'number', description: 'Timeout in seconds (mcp only)' },
+          },
+        },
+        http: {
+          type: 'object',
+          description: 'Updated HTTP Request config — for custom HTTP tools. Updates the child HTTP Request node.',
+          properties: {
+            url: { type: 'string', description: 'HTTP endpoint URL' },
+            method: {
+              type: 'string',
+              enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+              description: 'HTTP method',
+            },
+            headers: {
+              type: 'object',
+              description: 'HTTP headers as key-value pairs',
+            },
+            body: {
+              type: 'string',
+              description: 'Request body template',
+            },
+          },
+        },
+        preProcessCode: {
+          type: 'string',
+          description: 'Updated JavaScript code for the pre-process Code node (custom HTTP tools only). Updates the existing pre-process child node.',
+        },
+        postProcessCode: {
+          type: 'string',
+          description: 'Updated JavaScript code for the post-process Code node (custom HTTP tools only). Updates the existing post-process child node.',
+        },
+      },
+      required: ['aiAgentId', 'toolNodeId'],
+    },
+  },
 ];

@@ -5,6 +5,12 @@ import { filterResponse, filterList, withHints } from './filters.js';
 import * as schemas from '../schemas/tools.js';
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const DEFAULT_AGENT_IMAGE = 'default-avatar:0';
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -158,7 +164,11 @@ export class ToolHandlers {
       }
 
       // Step 1: Create agent resource
-      const agentPayload: any = { projectId, name: data.name };
+      const agentPayload: any = {
+        projectId,
+        name: data.name,
+        image: DEFAULT_AGENT_IMAGE,
+      };
       if (data.description) agentPayload.description = data.description;
       if (data.knowledgeReferenceId) agentPayload.knowledgeReferenceId = data.knowledgeReferenceId;
       const agent: any = await this.apiClient.post('/v2.0/aiagents', agentPayload);
@@ -821,6 +831,297 @@ export class ToolHandlers {
   }
 
   // =========================================================================
+  // Tool 10: create_custom_http_tool
+  // =========================================================================
+  async handleCreateCustomHttpTool(args: any): Promise<any> {
+    const data = schemas.createCustomHttpToolSchema.parse(args);
+
+    const resolved = await resolveFlowForAgent(this.apiClient, data.aiAgentId);
+    if (!resolved) {
+      return withHints(
+        { error: 'Could not find a flow associated with this agent.' },
+        {
+          likely_cause: 'create_custom_http_tool requires an agent created via create_ai_agent (which auto-provisions the flow).',
+          resource: 'cognigy://guide/tools-setup',
+          action: 'Read the tools guide, ensure agent was created via create_ai_agent, then retry.',
+        },
+      );
+    }
+    const { flowId } = resolved;
+
+    const nodes: any = await this.apiClient.get(`/v2.0/flows/${flowId}/chart/nodes`, {
+      params: { limit: 100 },
+    });
+    const allNodes = nodes.items ?? nodes;
+    const jobNode = (Array.isArray(allNodes) ? allNodes : []).find(
+      (n: any) => n.type === 'aiAgentJob',
+    );
+
+    if (!jobNode) {
+      return withHints(
+        { error: 'No aiAgentJob node found in the flow.' },
+        {
+          resource: 'cognigy://guide/tools-setup',
+          action: 'Ensure the agent was created via create_ai_agent.',
+        },
+      );
+    }
+
+    const createdNodeIds: string[] = [];
+    try {
+      // Step 1: Create the aiAgentJobTool node (parent tool node)
+      const toolConfig: any = {
+        toolId: data.toolId,
+        description: data.description,
+      };
+      if (data.parameters) {
+        toolConfig.useParameters = true;
+        toolConfig.parameters = data.parameters;
+      }
+
+      const toolNode: any = await this.apiClient.post(
+        `/v2.0/flows/${flowId}/chart/nodes`,
+        {
+          type: 'aiAgentJobTool',
+          extension: '@cognigy/basic-nodes',
+          mode: 'appendChild',
+          target: jobNode._id,
+          label: data.name,
+          config: toolConfig,
+        },
+      );
+      const toolNodeId = toolNode._id || toolNode.id;
+      createdNodeIds.push(toolNodeId);
+
+      // Step 2: Optionally create pre-process Code node
+      let preProcessNodeId: string | undefined;
+      if (data.preProcessCode) {
+        const preNode: any = await this.apiClient.post(
+          `/v2.0/flows/${flowId}/chart/nodes`,
+          {
+            type: 'code',
+            extension: '@cognigy/basic-nodes',
+            mode: 'appendChild',
+            target: toolNodeId,
+            label: `${data.name} - Pre-Process`,
+            config: { code: data.preProcessCode },
+          },
+        );
+        preProcessNodeId = preNode._id || preNode.id;
+        if (preProcessNodeId) createdNodeIds.push(preProcessNodeId);
+      }
+
+      // Step 3: Create the HTTP Request node
+      const httpConfig: any = {
+        url: data.http.url,
+        method: data.http.method || 'GET',
+      };
+      if (data.http.headers) httpConfig.headers = data.http.headers;
+      if (data.http.body) httpConfig.body = data.http.body;
+
+      const appendTarget = preProcessNodeId ?? toolNodeId;
+      const httpNode: any = await this.apiClient.post(
+        `/v2.0/flows/${flowId}/chart/nodes`,
+        {
+          type: 'httpRequest',
+          extension: '@cognigy/basic-nodes',
+          mode: preProcessNodeId ? 'append' : 'appendChild',
+          target: appendTarget,
+          label: `${data.name} - HTTP Request`,
+          config: httpConfig,
+        },
+      );
+      const httpNodeId = httpNode._id || httpNode.id;
+      createdNodeIds.push(httpNodeId);
+
+      // Step 4: Optionally create post-process Code node
+      let postProcessNodeId: string | undefined;
+      if (data.postProcessCode) {
+        const postNode: any = await this.apiClient.post(
+          `/v2.0/flows/${flowId}/chart/nodes`,
+          {
+            type: 'code',
+            extension: '@cognigy/basic-nodes',
+            mode: 'append',
+            target: httpNodeId,
+            label: `${data.name} - Post-Process`,
+            config: { code: data.postProcessCode },
+          },
+        );
+        postProcessNodeId = postNode._id || postNode.id;
+        if (postProcessNodeId) createdNodeIds.push(postProcessNodeId);
+      }
+
+      return {
+        toolId: toolNodeId,
+        name: data.name,
+        toolType: 'custom_http',
+        childNodes: {
+          ...(preProcessNodeId ? { preProcessNodeId } : {}),
+          httpNodeId,
+          ...(postProcessNodeId ? { postProcessNodeId } : {}),
+        },
+      };
+    } catch (error: any) {
+      // Rollback in reverse order
+      for (const nodeId of createdNodeIds.reverse()) {
+        try { await this.apiClient.delete(`/v2.0/flows/${flowId}/chart/nodes/${nodeId}`); } catch { /* swallow */ }
+      }
+      return withHints(
+        { error: error.message },
+        {
+          resource: 'cognigy://guide/tools-setup',
+          action: 'Check HTTP config and code snippets, then retry.',
+        },
+      );
+    }
+  }
+
+  // =========================================================================
+  // Tool 11: update_tool
+  // =========================================================================
+  async handleUpdateTool(args: any): Promise<any> {
+    const data = schemas.updateToolSchema.parse(args);
+
+    const resolved = await resolveFlowForAgent(this.apiClient, data.aiAgentId);
+    if (!resolved) {
+      return withHints(
+        { error: 'Could not find a flow associated with this agent.' },
+        {
+          likely_cause: 'update_tool requires an agent created via create_ai_agent.',
+          resource: 'cognigy://guide/tools-setup',
+          action: 'Ensure agent was created via create_ai_agent, then retry.',
+        },
+      );
+    }
+    const { flowId } = resolved;
+
+    const hasToolNodeUpdate = data.name || data.config;
+    const hasChildUpdates = data.http || data.preProcessCode !== undefined || data.postProcessCode !== undefined;
+
+    if (!hasToolNodeUpdate && !hasChildUpdates) {
+      return withHints(
+        { error: 'Nothing to update. Provide at least name, config, http, preProcessCode, or postProcessCode.' },
+        { action: 'Include fields to update in the request.' },
+      );
+    }
+
+    // Step 1: Update the tool node itself (label and/or config)
+    const updatedFields: string[] = [];
+
+    if (hasToolNodeUpdate) {
+      const patchPayload: any = {};
+      if (data.name) patchPayload.label = data.name;
+
+      if (data.config) {
+        const nodeConfig: any = {};
+        const cfg = data.config;
+        const toolType = data.toolType;
+
+        if (toolType === 'tool' || !toolType) {
+          if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
+          if (cfg.description) nodeConfig.description = cfg.description;
+          if (cfg.parameters) {
+            nodeConfig.useParameters = true;
+            nodeConfig.parameters = cfg.parameters;
+          }
+        }
+        if (toolType === 'knowledge') {
+          if (cfg.knowledgeStoreId) nodeConfig.knowledgeStoreId = cfg.knowledgeStoreId;
+          if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
+          if (cfg.description) nodeConfig.description = cfg.description;
+          if (cfg.topK) nodeConfig.topK = cfg.topK;
+        }
+        if (toolType === 'send_email') {
+          if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
+          if (cfg.description) nodeConfig.description = cfg.description;
+          if (cfg.recipient) nodeConfig.recipient = cfg.recipient;
+        }
+        if (toolType === 'mcp') {
+          if (cfg.mcpName) nodeConfig.name = cfg.mcpName;
+          if (cfg.mcpServerUrl) nodeConfig.mcpServerUrl = cfg.mcpServerUrl;
+          if (cfg.timeout) nodeConfig.timeout = cfg.timeout;
+        }
+
+        if (Object.keys(nodeConfig).length > 0) {
+          patchPayload.config = nodeConfig;
+        }
+      }
+
+      if (Object.keys(patchPayload).length > 0) {
+        await this.apiClient.patch(
+          `/v2.0/flows/${flowId}/chart/nodes/${data.toolNodeId}`,
+          patchPayload,
+        );
+        if (data.name) updatedFields.push('name');
+        if (patchPayload.config) updatedFields.push('config');
+      }
+    }
+
+    // Step 2: Update child nodes for custom HTTP tools (http, code nodes)
+    if (hasChildUpdates) {
+      const nodes: any = await this.apiClient.get(`/v2.0/flows/${flowId}/chart/nodes`, {
+        params: { limit: 100 },
+      });
+      const allNodes = nodes.items ?? nodes;
+      const childNodes = (Array.isArray(allNodes) ? allNodes : []).filter(
+        (n: any) => n.parentId === data.toolNodeId || n.parent === data.toolNodeId,
+      );
+
+      if (data.http) {
+        const httpNode = childNodes.find((n: any) => n.type === 'httpRequest');
+        if (httpNode) {
+          const httpPatch: any = {};
+          if (data.http.url) httpPatch.url = data.http.url;
+          if (data.http.method) httpPatch.method = data.http.method;
+          if (data.http.headers) httpPatch.headers = data.http.headers;
+          if (data.http.body) httpPatch.body = data.http.body;
+          await this.apiClient.patch(
+            `/v2.0/flows/${flowId}/chart/nodes/${httpNode._id || httpNode.id}`,
+            { config: httpPatch },
+          );
+          updatedFields.push('http');
+        }
+      }
+
+      if (data.preProcessCode !== undefined) {
+        const codeNodes = childNodes.filter((n: any) => n.type === 'code');
+        const preNode = codeNodes.find((n: any) =>
+          n.label?.includes('Pre-Process') || n.label?.includes('pre-process'),
+        ) ?? codeNodes[0];
+        if (preNode) {
+          await this.apiClient.patch(
+            `/v2.0/flows/${flowId}/chart/nodes/${preNode._id || preNode.id}`,
+            { config: { code: data.preProcessCode } },
+          );
+          updatedFields.push('preProcessCode');
+        }
+      }
+
+      if (data.postProcessCode !== undefined) {
+        const codeNodes = childNodes.filter((n: any) => n.type === 'code');
+        const postNode = codeNodes.find((n: any) =>
+          n.label?.includes('Post-Process') || n.label?.includes('post-process'),
+        ) ?? (codeNodes.length > 1 ? codeNodes[codeNodes.length - 1] : undefined);
+        if (postNode) {
+          await this.apiClient.patch(
+            `/v2.0/flows/${flowId}/chart/nodes/${postNode._id || postNode.id}`,
+            { config: { code: data.postProcessCode } },
+          );
+          updatedFields.push('postProcessCode');
+        }
+      }
+    }
+
+    return {
+      toolId: data.toolNodeId,
+      name: data.name ?? undefined,
+      updated: true,
+      updatedFields,
+    };
+  }
+
+  // =========================================================================
   // Main dispatcher
   // =========================================================================
   async handleToolCall(toolName: string, args: any): Promise<any> {
@@ -855,6 +1156,12 @@ export class ToolHandlers {
           break;
         case 'create_tool':
           result = await this.handleCreateTool(args);
+          break;
+        case 'create_custom_http_tool':
+          result = await this.handleCreateCustomHttpTool(args);
+          break;
+        case 'update_tool':
+          result = await this.handleUpdateTool(args);
           break;
         default:
           throw new Error(`Unknown tool: ${toolName}`);

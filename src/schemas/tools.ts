@@ -112,3 +112,47 @@ export const createToolSchema = z.object({
     timeout: z.number().optional(),
   }),
 });
+
+// Tool 10: create_custom_http_tool
+export const createCustomHttpToolSchema = z.object({
+  aiAgentId: idSchema,
+  name: z.string().min(1).max(200),
+  toolId: z.string().min(1).max(200),
+  description: z.string().min(1),
+  parameters: z.string().optional(),
+  http: z.object({
+    url: z.string().min(1),
+    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).default('GET'),
+    headers: z.record(z.string()).optional(),
+    body: z.string().optional(),
+  }),
+  preProcessCode: z.string().optional(),
+  postProcessCode: z.string().optional(),
+});
+
+// Tool 11: update_tool
+export const updateToolSchema = z.object({
+  aiAgentId: idSchema,
+  toolNodeId: idSchema,
+  name: z.string().min(1).max(200).optional(),
+  toolType: z.enum(['tool', 'knowledge', 'send_email', 'mcp']).optional(),
+  config: z.object({
+    toolId: z.string().optional(),
+    description: z.string().optional(),
+    parameters: z.string().optional(),
+    knowledgeStoreId: z.string().optional(),
+    topK: z.number().int().min(1).max(50).optional(),
+    recipient: z.string().optional(),
+    mcpServerUrl: z.string().optional(),
+    mcpName: z.string().optional(),
+    timeout: z.number().optional(),
+  }).optional(),
+  http: z.object({
+    url: z.string().min(1).optional(),
+    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+    headers: z.record(z.string()).optional(),
+    body: z.string().optional(),
+  }).optional(),
+  preProcessCode: z.string().optional(),
+  postProcessCode: z.string().optional(),
+});
