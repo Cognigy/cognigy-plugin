@@ -1,7 +1,10 @@
+import { readFileSync, existsSync } from 'fs';
+import { basename } from 'path';
 import axios from 'axios';
 import { CognigyApiClient } from '../api/client.js';
 import { logger } from '../utils/logger.js';
 import { filterResponse, filterList, withHints } from './filters.js';
+import { buildWebchatSettings } from './webchatSettings.js';
 import * as schemas from '../schemas/tools.js';
 
 // ---------------------------------------------------------------------------
@@ -45,7 +48,36 @@ const TOOL_TYPE_MAP: Record<string, { type: string; extension: string }> = {
   knowledge: { type: 'knowledgeTool', extension: '@cognigy/basic-nodes' },
   send_email: { type: 'sendEmailTool', extension: '@cognigy/basic-nodes' },
   mcp: { type: 'aiAgentJobMCPTool', extension: '@cognigy/basic-nodes' },
+  http: { type: 'aiAgentJobTool', extension: '@cognigy/basic-nodes' },
 };
+
+/**
+ * Translate user-friendly HTTP fields (method, body, headers-as-object) into
+ * the Cognigy httpRequest node descriptor field names (type, payloadType/
+ * payloadJSON/payloadText, headers-as-JSON-string).
+ */
+function buildHttpNodeConfig(http: {
+  url?: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+}): Record<string, any> {
+  const cfg: any = {};
+  if (http.url) cfg.url = http.url;
+  if (http.method) cfg.type = http.method;
+  else if (http.url) cfg.type = 'GET';
+  if (http.headers) cfg.headers = JSON.stringify(http.headers);
+  if (http.body) {
+    try {
+      cfg.payloadType = 'json';
+      cfg.payloadJSON = JSON.parse(http.body);
+    } catch {
+      cfg.payloadType = 'text';
+      cfg.payloadText = http.body;
+    }
+  }
+  return cfg;
+}
 
 const AI_AGENT_TOOL_TYPES = new Set([
   'aiAgentJobDefault', 'aiAgentJobTool', 'aiAgentJobMCPTool',
@@ -137,6 +169,7 @@ export class ToolHandlers {
   constructor(
     private apiClient: CognigyApiClient,
     private endpointBaseUrl: string,
+    private webchatBaseUrl: string = '',
   ) {}
 
   // =========================================================================
@@ -699,7 +732,66 @@ export class ToolHandlers {
       case 'create_source': {
         if (!data.knowledgeStoreId) throw new Error('knowledgeStoreId is required for create_source');
         const storeId = data.knowledgeStoreId;
-        const sourceType = data.type ?? (data.url ? 'url' : 'manual');
+        const sourceType = data.type ?? (data.url ? 'url' : data.filePath ? 'file' : 'manual');
+
+        if (sourceType === 'file') {
+          if (!data.filePath) {
+            throw new Error('filePath is required for type "file" — provide an absolute path to the local file');
+          }
+
+          const resolvedPath = data.filePath.startsWith('~')
+            ? data.filePath.replace(/^~/, process.env.HOME || '')
+            : data.filePath;
+
+          if (!existsSync(resolvedPath)) {
+            throw new Error(`File not found: ${resolvedPath}`);
+          }
+
+          const fileName = basename(resolvedPath);
+          const ext = fileName.split('.').pop()?.toLowerCase();
+          const ALLOWED_EXTS = ['pdf', 'txt', 'text', 'docx', 'ctxt', 'pptx'];
+          if (!ext || !ALLOWED_EXTS.includes(ext)) {
+            throw new Error(
+              `Unsupported file type ".${ext}" (${fileName}). Supported: ${ALLOWED_EXTS.join(', ')}`,
+            );
+          }
+
+          const fileBuffer = readFileSync(resolvedPath);
+
+          const MAX_FILE_SIZE = 10 * 1024 * 1024;
+          if (fileBuffer.length > MAX_FILE_SIZE) {
+            throw new Error(
+              `File too large: ${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB (max 10MB). File: ${fileName}`,
+            );
+          }
+
+          if (fileBuffer.length === 0) {
+            throw new Error(`File is empty: ${fileName}`);
+          }
+
+          const result: any = await this.apiClient.uploadFile(
+            `/v2.0/knowledgestores/${storeId}/sources/upload`,
+            fileBuffer,
+            fileName,
+          );
+
+          return withHints(
+            {
+              source: {
+                taskId: result.taskData?.taskId || result._id || result.id,
+                type: 'file',
+                fileName,
+                fileSize: `${(fileBuffer.length / 1024).toFixed(0)}KB`,
+                status: 'ingesting',
+              },
+            },
+            {
+              warning: 'File ingestion is async — content will be processed and chunked automatically. This may take 10-60 seconds.',
+              resource: 'cognigy://guide/knowledge-setup',
+              action: 'Wait, then use list_chunks to verify the content was ingested.',
+            },
+          );
+        }
 
         if (sourceType === 'url') {
           if (!data.url) throw new Error('url is required for type "url"');
@@ -871,110 +963,70 @@ export class ToolHandlers {
         if (cfg.mcpServerUrl) nodeConfig.mcpServerUrl = cfg.mcpServerUrl;
         if (cfg.timeout) nodeConfig.timeout = cfg.timeout;
         break;
+      case 'http':
+        if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
+        if (cfg.description) nodeConfig.description = cfg.description;
+        if (cfg.parameters) {
+          nodeConfig.useParameters = true;
+          nodeConfig.parameters = cfg.parameters;
+        }
+        break;
     }
 
-    let createdNodeId: string | null = null;
-    try {
-      const nodePayload: any = {
-        type: mapping.type,
-        extension: mapping.extension,
-        mode: 'appendChild',
-        target: jobNode._id,
-        label: data.name,
-        config: nodeConfig,
-      };
-
-      const createdNode: any = await this.apiClient.post(
-        `/v2.0/flows/${flowId}/chart/nodes`,
-        nodePayload,
-      );
-      createdNodeId = createdNode._id || createdNode.id;
-
-      return {
-        toolId: createdNodeId,
-        name: data.name,
-        toolType: data.toolType,
-      };
-    } catch (error: any) {
-      if (createdNodeId) {
-        try { await this.apiClient.delete(`/v2.0/flows/${flowId}/chart/nodes/${createdNodeId}`); } catch { /* swallow */ }
+    // For non-http tools, simple single-node creation
+    if (data.toolType !== 'http') {
+      let createdNodeId: string | null = null;
+      try {
+        const createdNode: any = await this.apiClient.post(
+          `/v2.0/flows/${flowId}/chart/nodes`,
+          {
+            type: mapping.type,
+            extension: mapping.extension,
+            mode: 'appendChild',
+            target: jobNode._id,
+            label: data.name,
+            config: nodeConfig,
+          },
+        );
+        createdNodeId = createdNode._id || createdNode.id;
+        return { toolId: createdNodeId, name: data.name, toolType: data.toolType };
+      } catch (error: any) {
+        if (createdNodeId) {
+          try { await this.apiClient.delete(`/v2.0/flows/${flowId}/chart/nodes/${createdNodeId}`); } catch { /* swallow */ }
+        }
+        return withHints(
+          { error: error.message },
+          { resource: 'cognigy://guide/tools-setup', action: 'Check tool type and config, then retry.' },
+        );
       }
-      return withHints(
-        { error: error.message },
-        {
-          resource: 'cognigy://guide/tools-setup',
-          action: 'Check tool type and config, then retry.',
-        },
-      );
     }
-  }
 
-  // =========================================================================
-  // Tool 10: create_custom_http_tool
-  // =========================================================================
-  async handleCreateCustomHttpTool(args: any): Promise<any> {
-    const data = schemas.createCustomHttpToolSchema.parse(args);
-
-    const resolved = await resolveFlowForAgent(this.apiClient, data.aiAgentId);
-    if (!resolved) {
+    // HTTP tool: parent aiAgentJobTool + child httpRequest (+ optional Code nodes)
+    if (!cfg.url) {
       return withHints(
-        { error: 'Could not find a flow associated with this agent.' },
-        {
-          likely_cause: 'create_custom_http_tool requires an agent created via create_ai_agent (which auto-provisions the flow).',
-          resource: 'cognigy://guide/tools-setup',
-          action: 'Read the tools guide, ensure agent was created via create_ai_agent, then retry.',
-        },
-      );
-    }
-    const { flowId } = resolved;
-
-    const nodes: any = await this.apiClient.get(`/v2.0/flows/${flowId}/chart/nodes`, {
-      params: { limit: 100 },
-    });
-    const allNodes = nodes.items ?? nodes;
-    const jobNode = (Array.isArray(allNodes) ? allNodes : []).find(
-      (n: any) => n.type === 'aiAgentJob',
-    );
-
-    if (!jobNode) {
-      return withHints(
-        { error: 'No aiAgentJob node found in the flow.' },
-        {
-          resource: 'cognigy://guide/tools-setup',
-          action: 'Ensure the agent was created via create_ai_agent.',
-        },
+        { error: 'url is required in config for http tool type.' },
+        { resource: 'cognigy://guide/tools-setup', action: 'Provide config.url and retry.' },
       );
     }
 
     const createdNodeIds: string[] = [];
     try {
-      // Step 1: Create the aiAgentJobTool node (parent tool node)
-      const toolConfig: any = {
-        toolId: data.toolId,
-        description: data.description,
-      };
-      if (data.parameters) {
-        toolConfig.useParameters = true;
-        toolConfig.parameters = data.parameters;
-      }
-
       const toolNode: any = await this.apiClient.post(
         `/v2.0/flows/${flowId}/chart/nodes`,
         {
-          type: 'aiAgentJobTool',
-          extension: '@cognigy/basic-nodes',
+          type: mapping.type,
+          extension: mapping.extension,
           mode: 'appendChild',
           target: jobNode._id,
           label: data.name,
-          config: toolConfig,
+          config: nodeConfig,
         },
       );
       const toolNodeId = toolNode._id || toolNode.id;
       createdNodeIds.push(toolNodeId);
 
-      // Step 2: Optionally create pre-process Code node
       let preProcessNodeId: string | undefined;
-      if (data.preProcessCode) {
+      if (cfg.preProcessCode) {
         const preNode: any = await this.apiClient.post(
           `/v2.0/flows/${flowId}/chart/nodes`,
           {
@@ -983,36 +1035,19 @@ export class ToolHandlers {
             mode: 'appendChild',
             target: toolNodeId,
             label: `${data.name} - Pre-Process`,
-            config: { code: data.preProcessCode },
+            config: { code: cfg.preProcessCode },
           },
         );
         preProcessNodeId = preNode._id || preNode.id;
         if (preProcessNodeId) createdNodeIds.push(preProcessNodeId);
       }
 
-      // Step 3: Create the HTTP Request node
-      // The Cognigy httpRequest descriptor uses `type` for the HTTP method,
-      // `payloadType`+`payloadJSON`/`payloadText` for the body, and
-      // `headers` as a JSON string — NOT `method`, `body`, or object headers.
-      const httpMethod = data.http.method || 'GET';
-      const httpConfig: any = {
-        url: data.http.url,
-        type: httpMethod,
-      };
-      if (data.http.headers) {
-        httpConfig.headers = JSON.stringify(data.http.headers);
-      }
-      if (data.http.body) {
-        try {
-          const parsed = JSON.parse(data.http.body);
-          httpConfig.payloadType = 'json';
-          httpConfig.payloadJSON = parsed;
-        } catch {
-          httpConfig.payloadType = 'text';
-          httpConfig.payloadText = data.http.body;
-        }
-      }
-
+      const httpConfig = buildHttpNodeConfig({
+        url: cfg.url,
+        method: cfg.method,
+        headers: cfg.headers,
+        body: cfg.body,
+      });
       const appendTarget = preProcessNodeId ?? toolNodeId;
       const httpNode: any = await this.apiClient.post(
         `/v2.0/flows/${flowId}/chart/nodes`,
@@ -1028,9 +1063,8 @@ export class ToolHandlers {
       const httpNodeId = httpNode._id || httpNode.id;
       createdNodeIds.push(httpNodeId);
 
-      // Step 4: Optionally create post-process Code node
       let postProcessNodeId: string | undefined;
-      if (data.postProcessCode) {
+      if (cfg.postProcessCode) {
         const postNode: any = await this.apiClient.post(
           `/v2.0/flows/${flowId}/chart/nodes`,
           {
@@ -1039,7 +1073,7 @@ export class ToolHandlers {
             mode: 'append',
             target: httpNodeId,
             label: `${data.name} - Post-Process`,
-            config: { code: data.postProcessCode },
+            config: { code: cfg.postProcessCode },
           },
         );
         postProcessNodeId = postNode._id || postNode.id;
@@ -1049,7 +1083,7 @@ export class ToolHandlers {
       return {
         toolId: toolNodeId,
         name: data.name,
-        toolType: 'custom_http',
+        toolType: 'http',
         childNodes: {
           ...(preProcessNodeId ? { preProcessNodeId } : {}),
           httpNodeId,
@@ -1057,22 +1091,18 @@ export class ToolHandlers {
         },
       };
     } catch (error: any) {
-      // Rollback in reverse order
       for (const nodeId of createdNodeIds.reverse()) {
         try { await this.apiClient.delete(`/v2.0/flows/${flowId}/chart/nodes/${nodeId}`); } catch { /* swallow */ }
       }
       return withHints(
         { error: error.message },
-        {
-          resource: 'cognigy://guide/tools-setup',
-          action: 'Check HTTP config and code snippets, then retry.',
-        },
+        { resource: 'cognigy://guide/tools-setup', action: 'Check HTTP config and code snippets, then retry.' },
       );
     }
   }
 
   // =========================================================================
-  // Tool 11: update_tool
+  // Tool 10: update_tool
   // =========================================================================
   async handleUpdateTool(args: any): Promise<any> {
     const data = schemas.updateToolSchema.parse(args);
@@ -1090,70 +1120,70 @@ export class ToolHandlers {
     }
     const { flowId } = resolved;
 
-    const hasToolNodeUpdate = data.name || data.config;
-    const hasChildUpdates = data.http || data.preProcessCode !== undefined || data.postProcessCode !== undefined;
-
-    if (!hasToolNodeUpdate && !hasChildUpdates) {
+    if (!data.name && !data.config) {
       return withHints(
-        { error: 'Nothing to update. Provide at least name, config, http, preProcessCode, or postProcessCode.' },
+        { error: 'Nothing to update. Provide at least name or config.' },
         { action: 'Include fields to update in the request.' },
       );
     }
 
-    // Step 1: Update the tool node itself (label and/or config)
     const updatedFields: string[] = [];
+    const cfg = data.config;
+    const toolType = data.toolType;
 
-    if (hasToolNodeUpdate) {
-      const patchPayload: any = {};
-      if (data.name) patchPayload.label = data.name;
+    // Detect whether config contains HTTP child-node fields
+    const hasHttpUpdates = cfg && (cfg.url || cfg.method || cfg.headers || cfg.body);
+    const hasCodeUpdates = cfg && (cfg.preProcessCode !== undefined || cfg.postProcessCode !== undefined);
+    const hasChildUpdates = hasHttpUpdates || hasCodeUpdates;
 
-      if (data.config) {
-        const nodeConfig: any = {};
-        const cfg = data.config;
-        const toolType = data.toolType;
+    // Step 1: Update the tool node itself (label and/or tool-node config)
+    const patchPayload: any = {};
+    if (data.name) patchPayload.label = data.name;
 
-        if (toolType === 'tool' || !toolType) {
-          if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
-          if (cfg.description) nodeConfig.description = cfg.description;
-          if (cfg.parameters) {
-            nodeConfig.useParameters = true;
-            nodeConfig.parameters = cfg.parameters;
-          }
-        }
-        if (toolType === 'knowledge') {
-          if (cfg.knowledgeStoreId) nodeConfig.knowledgeStoreId = cfg.knowledgeStoreId;
-          if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
-          if (cfg.description) nodeConfig.description = cfg.description;
-          if (cfg.topK) nodeConfig.topK = cfg.topK;
-        }
-        if (toolType === 'send_email') {
-          if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
-          if (cfg.description) nodeConfig.description = cfg.description;
-          if (cfg.recipient) nodeConfig.recipient = cfg.recipient;
-        }
-        if (toolType === 'mcp') {
-          if (cfg.mcpName) nodeConfig.name = cfg.mcpName;
-          if (cfg.mcpServerUrl) nodeConfig.mcpServerUrl = cfg.mcpServerUrl;
-          if (cfg.timeout) nodeConfig.timeout = cfg.timeout;
-        }
+    if (cfg) {
+      const nodeConfig: any = {};
 
-        if (Object.keys(nodeConfig).length > 0) {
-          patchPayload.config = nodeConfig;
+      if (toolType === 'tool' || toolType === 'http' || !toolType) {
+        if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
+        if (cfg.description) nodeConfig.description = cfg.description;
+        if (cfg.parameters) {
+          nodeConfig.useParameters = true;
+          nodeConfig.parameters = cfg.parameters;
         }
       }
+      if (toolType === 'knowledge') {
+        if (cfg.knowledgeStoreId) nodeConfig.knowledgeStoreId = cfg.knowledgeStoreId;
+        if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
+        if (cfg.description) nodeConfig.description = cfg.description;
+        if (cfg.topK) nodeConfig.topK = cfg.topK;
+      }
+      if (toolType === 'send_email') {
+        if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
+        if (cfg.description) nodeConfig.description = cfg.description;
+        if (cfg.recipient) nodeConfig.recipient = cfg.recipient;
+      }
+      if (toolType === 'mcp') {
+        if (cfg.mcpName) nodeConfig.name = cfg.mcpName;
+        if (cfg.mcpServerUrl) nodeConfig.mcpServerUrl = cfg.mcpServerUrl;
+        if (cfg.timeout) nodeConfig.timeout = cfg.timeout;
+      }
 
-      if (Object.keys(patchPayload).length > 0) {
-        await this.apiClient.patch(
-          `/v2.0/flows/${flowId}/chart/nodes/${data.toolNodeId}`,
-          patchPayload,
-        );
-        if (data.name) updatedFields.push('name');
-        if (patchPayload.config) updatedFields.push('config');
+      if (Object.keys(nodeConfig).length > 0) {
+        patchPayload.config = nodeConfig;
       }
     }
 
-    // Step 2: Update child nodes for custom HTTP tools (http, code nodes)
-    if (hasChildUpdates) {
+    if (Object.keys(patchPayload).length > 0) {
+      await this.apiClient.patch(
+        `/v2.0/flows/${flowId}/chart/nodes/${data.toolNodeId}`,
+        patchPayload,
+      );
+      if (data.name) updatedFields.push('name');
+      if (patchPayload.config) updatedFields.push('config');
+    }
+
+    // Step 2: Update child nodes for http tools (httpRequest + Code nodes)
+    if (hasChildUpdates && cfg) {
       const nodes: any = await this.apiClient.get(`/v2.0/flows/${flowId}/chart/nodes`, {
         params: { limit: 100 },
       });
@@ -1162,32 +1192,26 @@ export class ToolHandlers {
         (n: any) => n.parentId === data.toolNodeId || n.parent === data.toolNodeId,
       );
 
-      if (data.http) {
+      if (hasHttpUpdates) {
         const httpNode = childNodes.find((n: any) => n.type === 'httpRequest');
         if (httpNode) {
-          const httpPatch: any = {};
-          if (data.http.url) httpPatch.url = data.http.url;
-          if (data.http.method) httpPatch.type = data.http.method;
-          if (data.http.headers) httpPatch.headers = JSON.stringify(data.http.headers);
-          if (data.http.body) {
-            try {
-              const parsed = JSON.parse(data.http.body);
-              httpPatch.payloadType = 'json';
-              httpPatch.payloadJSON = parsed;
-            } catch {
-              httpPatch.payloadType = 'text';
-              httpPatch.payloadText = data.http.body;
-            }
+          const httpPatch = buildHttpNodeConfig({
+            url: cfg.url,
+            method: cfg.method,
+            headers: cfg.headers,
+            body: cfg.body,
+          });
+          if (Object.keys(httpPatch).length > 0) {
+            await this.apiClient.patch(
+              `/v2.0/flows/${flowId}/chart/nodes/${httpNode._id || httpNode.id}`,
+              { config: httpPatch },
+            );
+            updatedFields.push('http');
           }
-          await this.apiClient.patch(
-            `/v2.0/flows/${flowId}/chart/nodes/${httpNode._id || httpNode.id}`,
-            { config: httpPatch },
-          );
-          updatedFields.push('http');
         }
       }
 
-      if (data.preProcessCode !== undefined) {
+      if (cfg.preProcessCode !== undefined) {
         const codeNodes = childNodes.filter((n: any) => n.type === 'code');
         const preNode = codeNodes.find((n: any) =>
           n.label?.includes('Pre-Process') || n.label?.includes('pre-process'),
@@ -1195,13 +1219,13 @@ export class ToolHandlers {
         if (preNode) {
           await this.apiClient.patch(
             `/v2.0/flows/${flowId}/chart/nodes/${preNode._id || preNode.id}`,
-            { config: { code: data.preProcessCode } },
+            { config: { code: cfg.preProcessCode } },
           );
           updatedFields.push('preProcessCode');
         }
       }
 
-      if (data.postProcessCode !== undefined) {
+      if (cfg.postProcessCode !== undefined) {
         const codeNodes = childNodes.filter((n: any) => n.type === 'code');
         const postNode = codeNodes.find((n: any) =>
           n.label?.includes('Post-Process') || n.label?.includes('post-process'),
@@ -1209,7 +1233,7 @@ export class ToolHandlers {
         if (postNode) {
           await this.apiClient.patch(
             `/v2.0/flows/${flowId}/chart/nodes/${postNode._id || postNode.id}`,
-            { config: { code: data.postProcessCode } },
+            { config: { code: cfg.postProcessCode } },
           );
           updatedFields.push('postProcessCode');
         }
@@ -1222,6 +1246,224 @@ export class ToolHandlers {
       updated: true,
       updatedFields,
     };
+  }
+
+  // =========================================================================
+  // Tool 11: manage_webchat
+  // =========================================================================
+  async handleManageWebchat(args: any): Promise<any> {
+    const data = schemas.manageWebchatSchema.parse(args);
+
+    const webchatSettings = buildWebchatSettings(data);
+    const settingsKeys = Object.keys(webchatSettings).filter((k) => k !== 'demoWebchat');
+    const hasSettings = settingsKeys.length > 0;
+
+    let endpointId = data.endpointId ?? null;
+    let existingEndpoint: any = null;
+
+    // Auto-detect: find existing webchat3 endpoint in project
+    if (!endpointId && data.projectId) {
+      try {
+        const endpoints: any = await this.apiClient.get('/v2.0/endpoints', {
+          params: { projectId: data.projectId, limit: 100 },
+        });
+        const items = endpoints.items ?? endpoints;
+        const webchat = (Array.isArray(items) ? items : []).find(
+          (ep: any) => ep.channel === 'webchat3',
+        );
+        if (webchat) {
+          endpointId = webchat._id || webchat.id;
+          existingEndpoint = webchat;
+        }
+      } catch {
+        // Fall through to create
+      }
+    }
+
+    // CREATE: no existing endpoint found
+    if (!endpointId) {
+      if (!data.projectId) {
+        return withHints(
+          { error: 'projectId is required to create a webchat endpoint.' },
+          {
+            resource: 'cognigy://guide/webchat-setup',
+            action: "Provide projectId. Use list_resources { resourceType: 'project' } to find one.",
+          },
+        );
+      }
+      if (!data.flowId) {
+        return withHints(
+          { error: 'flowId is required to create a webchat endpoint (no existing webchat3 endpoint found in this project).' },
+          {
+            resource: 'cognigy://guide/webchat-setup',
+            action: "Provide flowId. Use list_resources { resourceType: 'flow', projectId } to find one, or create an agent first with create_ai_agent.",
+          },
+        );
+      }
+
+      let localeId: string | undefined;
+      try {
+        const flow: any = await this.apiClient.get(`/v2.0/flows/${data.flowId}`);
+        localeId = flow?.localeReference;
+      } catch {
+        // Non-critical
+      }
+
+      const createPayload: any = {
+        projectId: data.projectId,
+        entrypoint: data.projectId,
+        channel: 'webchat3',
+        flowId: data.flowId,
+        name: data.name || 'Webchat',
+        targetType: 'flow',
+        agentId: '',
+      };
+      if (localeId) createPayload.localeId = localeId;
+
+      try {
+        const createdEndpoint: any = await this.apiClient.post('/v2.0/endpoints', createPayload);
+        endpointId = createdEndpoint._id || createdEndpoint.id;
+
+        // Re-fetch to guarantee URLToken and full settings are available
+        let endpoint: any = await this.apiClient.get(`/v2.0/endpoints/${endpointId}`);
+
+        // Apply settings via read-merge-write pattern
+        if (hasSettings) {
+          try {
+            const mergedSettings = this.mergeWebchatSettings(endpoint.settings ?? {}, webchatSettings);
+            await this.apiClient.patch(`/v2.0/endpoints/${endpointId}`, { settings: mergedSettings });
+            endpoint = await this.apiClient.get(`/v2.0/endpoints/${endpointId}`);
+          } catch {
+            // Settings patch failed but endpoint was created — continue
+          }
+        }
+
+        return this.buildWebchatResponse({ created: true, endpointId: endpointId!, endpoint, settingsKeys });
+      } catch (error: any) {
+        return withHints(
+          { error: `Failed to create webchat endpoint: ${error.message}` },
+          {
+            resource: 'cognigy://guide/webchat-setup',
+            action: 'Check projectId and flowId, then retry.',
+          },
+        );
+      }
+    }
+
+    // UPDATE: patch existing endpoint
+    if (!data.name && !hasSettings) {
+      const ep = existingEndpoint ?? await this.safeGetEndpoint(endpointId);
+      if (ep) {
+        return this.buildWebchatResponse({ endpointId: endpointId!, endpoint: ep, settingsKeys: [], note: 'No changes requested. Returning current endpoint info.' });
+      }
+      return withHints(
+        { error: 'Nothing to update. Provide at least one setting group or name.' },
+        {
+          resource: 'cognigy://guide/webchat-setup',
+          action: 'Include layout, behavior, homeScreen, or other setting groups.',
+        },
+      );
+    }
+
+    try {
+      // Read-merge-write: fetch full settings, merge our changes, send complete object
+      const fullEndpoint: any = await this.apiClient.get(`/v2.0/endpoints/${endpointId}`);
+      const existingSettings = fullEndpoint.settings ?? {};
+      const mergedSettings = this.mergeWebchatSettings(existingSettings, webchatSettings);
+
+      const patchPayload: any = { settings: mergedSettings };
+      if (data.name) patchPayload.name = data.name;
+      if (data.flowId) patchPayload.flowId = data.flowId;
+
+      await this.apiClient.patch(`/v2.0/endpoints/${endpointId}`, patchPayload);
+      const endpoint: any = await this.apiClient.get(`/v2.0/endpoints/${endpointId}`);
+
+      return this.buildWebchatResponse({ updated: true, endpointId: endpointId!, endpoint, settingsKeys });
+    } catch (error: any) {
+      return withHints(
+        { error: `Failed to update webchat endpoint: ${error.message}` },
+        {
+          resource: 'cognigy://guide/webchat-setup',
+          action: 'Verify endpointId and settings, then retry.',
+        },
+      );
+    }
+  }
+
+  /**
+   * Build a consistent webchat response. The demo URL is always the top-level
+   * field so the LLM surfaces it by default. Integration details (configUrl,
+   * embeddingSnippet) are nested under _integration so the LLM only mentions
+   * them when the user explicitly asks about embedding.
+   */
+  private buildWebchatResponse(opts: {
+    created?: boolean;
+    updated?: boolean;
+    endpointId: string;
+    endpoint: any;
+    settingsKeys: string[];
+    note?: string;
+  }): any {
+    const { endpoint } = opts;
+    const demoWebchatUrl = this.buildDemoWebchatUrl(endpoint);
+    const configUrl = this.buildConfigUrl(endpoint);
+
+    const result: any = {};
+    if (opts.created) result.created = true;
+    if (opts.updated) result.updated = true;
+    result.endpointId = opts.endpointId;
+    result.name = endpoint.name;
+    result.channel = endpoint.channel ?? 'webchat3';
+    result.demoWebchatUrl = demoWebchatUrl;
+    if (opts.settingsKeys.length > 0) result.settingsApplied = opts.settingsKeys;
+    if (opts.note) result.note = opts.note;
+
+    result._integration = {
+      configUrl,
+      embeddingSnippet: `<script src="https://github.com/Cognigy/Webchat/releases/latest/download/webchat.js"></script>\n<script>window.cognigyWebchat.open({ configUrl: "${configUrl}" });</script>`,
+    };
+
+    result._instruction = 'ALWAYS show demoWebchatUrl to the user as a clickable link. This is the live demo page they can open in a browser right now. Only mention _integration details if the user asks about embedding or deploying to their website.';
+
+    return result;
+  }
+
+  /**
+   * Merge partial webchat settings into a full existing settings object.
+   * The v3 API validation destructures nested groups (colors, layout, behavior,
+   * startBehavior, demoWebchat, fileStorageSettings, chatOptions) and crashes
+   * if any top-level group is missing. We must send the complete settings object.
+   */
+  private mergeWebchatSettings(existing: Record<string, any>, updates: Record<string, any>): Record<string, any> {
+    const result = { ...existing };
+    for (const key of Object.keys(updates)) {
+      const val = updates[key];
+      if (val !== undefined && typeof val === 'object' && val !== null && !Array.isArray(val) &&
+          typeof result[key] === 'object' && result[key] !== null && !Array.isArray(result[key])) {
+        result[key] = { ...result[key], ...val };
+      } else if (val !== undefined) {
+        result[key] = val;
+      }
+    }
+    return result;
+  }
+
+  private async safeGetEndpoint(endpointId: string): Promise<any> {
+    try {
+      return await this.apiClient.get(`/v2.0/endpoints/${endpointId}`);
+    } catch {
+      return null;
+    }
+  }
+
+  private buildDemoWebchatUrl(endpoint: any): string | undefined {
+    if (!endpoint.URLToken || !this.webchatBaseUrl) return undefined;
+    return `${this.webchatBaseUrl}/v3/${endpoint.URLToken}`;
+  }
+
+  private buildConfigUrl(endpoint: any): string {
+    if (!endpoint.URLToken) return 'URL not available';
+    return `${this.endpointBaseUrl}/${endpoint.URLToken}`;
   }
 
   // =========================================================================
@@ -1260,11 +1502,11 @@ export class ToolHandlers {
         case 'create_tool':
           result = await this.handleCreateTool(args);
           break;
-        case 'create_custom_http_tool':
-          result = await this.handleCreateCustomHttpTool(args);
-          break;
         case 'update_tool':
           result = await this.handleUpdateTool(args);
+          break;
+        case 'manage_webchat':
+          result = await this.handleManageWebchat(args);
           break;
         default:
           throw new Error(`Unknown tool: ${toolName}`);

@@ -4,6 +4,7 @@
 export interface Config {
   apiBaseUrl: string;
   endpointBaseUrl: string;
+  webchatBaseUrl: string;
   apiKey: string;
   serverName: string;
   serverVersion: string;
@@ -50,6 +51,23 @@ function deriveEndpointBaseUrl(apiBaseUrl: string): string {
 }
 
 /**
+ * Derive the webchat demo base URL from the API base URL.
+ * Pattern: https://api-{env}.cognigy.ai -> https://webchat-{env}.cognigy.ai
+ */
+function deriveWebchatBaseUrl(apiBaseUrl: string): string {
+  try {
+    const url = new URL(apiBaseUrl);
+    const match = url.hostname.match(/^api-(.+)$/);
+    if (match) {
+      return `${url.protocol}//webchat-${match[1]}`;
+    }
+  } catch {
+    // fall through
+  }
+  return apiBaseUrl.replace(/\/api-/, '/webchat-');
+}
+
+/**
  * Load configuration from environment variables
  */
 export function loadConfig(): Config {
@@ -69,9 +87,13 @@ export function loadConfig(): Config {
   const endpointBaseUrl =
     process.env.COGNIGY_ENDPOINT_BASE_URL || deriveEndpointBaseUrl(normalizedApiBaseUrl);
 
+  const webchatBaseUrl =
+    process.env.COGNIGY_WEBCHAT_BASE_URL || deriveWebchatBaseUrl(normalizedApiBaseUrl);
+
   return {
     apiBaseUrl: normalizedApiBaseUrl,
     endpointBaseUrl,
+    webchatBaseUrl,
     apiKey,
     serverName: process.env.MCP_SERVER_NAME || 'cognigy-api-mcp',
     serverVersion: process.env.MCP_SERVER_VERSION || '2.0.0',

@@ -26,14 +26,29 @@ export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
     name: r.name,
     createdAt: r.createdAt,
   }),
-  endpoint: (r) => ({
-    id: rid(r),
-    name: r.name,
-    channel: r.channel,
-    flowId: r.flowId,
-    URLToken: r.URLToken,
-    createdAt: r.createdAt,
-  }),
+  endpoint: (r) => {
+    const base: any = {
+      id: rid(r),
+      name: r.name,
+      channel: r.channel,
+      flowId: r.flowId,
+      URLToken: r.URLToken,
+      createdAt: r.createdAt,
+    };
+    if (r.channel === 'webchat3' && r.settings) {
+      base.webchatConfigured = true;
+      const s = r.settings;
+      // GET returns nested, POST/PATCH may return either format
+      base.webchatSummary = {
+        ...(s.colors?.primaryColor ? { primaryColor: s.colors.primaryColor } : s.colorScheme ? { primaryColor: s.colorScheme } : {}),
+        ...(s.layout?.chatWindowWidth ? { chatWindowWidth: s.layout.chatWindowWidth } : {}),
+        ...(s.homeScreen?.enabled ? { homeScreen: true } : {}),
+        ...(s.layout?.enablePersistentMenu || s.enablePersistentMenu ? { persistentMenu: true } : {}),
+        ...(s.businessHours?.enabled ? { businessHours: true } : {}),
+      };
+    }
+    return base;
+  },
   llm_model: (r) => ({
     id: rid(r),
     referenceId: r.referenceId,

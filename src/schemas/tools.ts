@@ -96,17 +96,18 @@ export const manageKnowledgeSchema = z.object({
   sourceId: idSchema.optional(),
   name: z.string().min(1).max(200).optional(),
   description: z.string().optional(),
-  type: z.enum(['url', 'manual']).optional(),
+  type: z.enum(['url', 'manual', 'file']).optional(),
   url: z.string().url().optional(),
   text: z.string().optional(),
+  filePath: z.string().optional(),
   filter: z.string().optional(),
   limit: z.number().int().min(1).max(50).optional(),
 });
 
-// Tool 9: create_tool
+// Tool 9: create_tool (includes http tool type, formerly create_custom_http_tool)
 export const createToolSchema = z.object({
   aiAgentId: idSchema,
-  toolType: z.enum(['tool', 'knowledge', 'send_email', 'mcp']),
+  toolType: z.enum(['tool', 'knowledge', 'send_email', 'mcp', 'http']),
   name: z.string().min(1).max(200),
   config: z.object({
     toolId: z.string().optional(),
@@ -118,32 +119,21 @@ export const createToolSchema = z.object({
     mcpServerUrl: z.string().optional(),
     mcpName: z.string().optional(),
     timeout: z.number().optional(),
-  }),
-});
-
-// Tool 10: create_custom_http_tool
-export const createCustomHttpToolSchema = z.object({
-  aiAgentId: idSchema,
-  name: z.string().min(1).max(200),
-  toolId: z.string().min(1).max(200),
-  description: z.string().min(1),
-  parameters: z.string().optional(),
-  http: z.object({
-    url: z.string().min(1),
-    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).default('GET'),
+    url: z.string().optional(),
+    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
     headers: z.record(z.string()).optional(),
     body: z.string().optional(),
+    preProcessCode: z.string().optional(),
+    postProcessCode: z.string().optional(),
   }),
-  preProcessCode: z.string().optional(),
-  postProcessCode: z.string().optional(),
 });
 
-// Tool 11: update_tool
+// Tool 10: update_tool
 export const updateToolSchema = z.object({
   aiAgentId: idSchema,
   toolNodeId: idSchema,
   name: z.string().min(1).max(200).optional(),
-  toolType: z.enum(['tool', 'knowledge', 'send_email', 'mcp']).optional(),
+  toolType: z.enum(['tool', 'knowledge', 'send_email', 'mcp', 'http']).optional(),
   config: z.object({
     toolId: z.string().optional(),
     description: z.string().optional(),
@@ -154,13 +144,207 @@ export const updateToolSchema = z.object({
     mcpServerUrl: z.string().optional(),
     mcpName: z.string().optional(),
     timeout: z.number().optional(),
-  }).optional(),
-  http: z.object({
-    url: z.string().min(1).optional(),
+    url: z.string().optional(),
     method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
     headers: z.record(z.string()).optional(),
     body: z.string().optional(),
+    preProcessCode: z.string().optional(),
+    postProcessCode: z.string().optional(),
   }).optional(),
-  preProcessCode: z.string().optional(),
-  postProcessCode: z.string().optional(),
+});
+
+// Tool 11: manage_webchat
+
+const conversationStarterSchema = z.object({
+  title: z.string(),
+  type: z.enum(['postback', 'url']),
+  value: z.string(),
+});
+
+const webchatColorsSchema = z.object({
+  primaryColor: z.string().optional(),
+  secondaryColor: z.string().optional(),
+  chatBackground: z.string().optional(),
+  agentMessageBg: z.string().optional(),
+  userMessageBg: z.string().optional(),
+  textLink: z.string().optional(),
+}).optional();
+
+const webchatLayoutSchema = z.object({
+  title: z.string().optional(),
+  logoUrl: z.string().optional(),
+  colors: webchatColorsSchema,
+  chatWindowWidth: z.number().int().min(200).max(2000).optional(),
+  botOutputMaxWidth: z.number().int().min(1).max(100).optional(),
+  disableBotOutputBorder: z.boolean().optional(),
+  maxInputRows: z.number().int().min(1).max(50).optional(),
+  enableInputCollation: z.boolean().optional(),
+  inputCollationTimeout: z.number().int().min(100).max(10000).optional(),
+  dynamicImageAspectRatio: z.boolean().optional(),
+  disableInputAutocomplete: z.boolean().optional(),
+  enableGenericHtml: z.boolean().optional(),
+  allowJsInHtml: z.boolean().optional(),
+  allowJsInUrls: z.boolean().optional(),
+  useAgentAvatars: z.boolean().optional(),
+  botAvatarName: z.string().optional(),
+  botAvatarLogoUrl: z.string().optional(),
+  humanAvatarName: z.string().optional(),
+  humanAvatarLogoUrl: z.string().optional(),
+}).optional();
+
+const webchatBehaviorSchema = z.object({
+  scrollingBehavior: z.enum(['alwaysScroll', 'scrollToLastInput']).optional(),
+  collateStreamedOutputs: z.boolean().optional(),
+  progressiveMessageRendering: z.boolean().optional(),
+  renderMarkdown: z.boolean().optional(),
+  enableTypingIndicator: z.boolean().optional(),
+  inputPlaceholder: z.string().optional(),
+  messageDelay: z.number().int().min(0).max(10000).optional(),
+  focusInputAfterPostback: z.boolean().optional(),
+  enableConnectionStatusIndicator: z.boolean().optional(),
+  enableStt: z.boolean().optional(),
+  enableTts: z.boolean().optional(),
+  collectMetadata: z.boolean().optional(),
+  displayAIAgentNotice: z.boolean().optional(),
+  aiAgentNoticeText: z.string().optional(),
+  enableScrollButton: z.boolean().optional(),
+}).optional();
+
+const webchatStartBehaviorSchema = z.object({
+  mode: z.enum(['textField', 'button', 'autoSend']).optional(),
+  textPayload: z.string().optional(),
+  dataPayload: z.string().optional(),
+  displayText: z.string().optional(),
+  buttonTitle: z.string().optional(),
+}).optional();
+
+const webchatHomeScreenSchema = z.object({
+  enabled: z.boolean().optional(),
+  welcomeText: z.string().optional(),
+  backgroundImage: z.string().optional(),
+  backgroundColor: z.string().optional(),
+  startConversationButtonText: z.string().optional(),
+  conversationStarters: z.array(conversationStarterSchema).max(5).optional(),
+  previousConversations: z.object({
+    enabled: z.boolean().optional(),
+    enableDeleteAll: z.boolean().optional(),
+    buttonText: z.string().optional(),
+    title: z.string().optional(),
+    startNewButtonText: z.string().optional(),
+  }).optional(),
+}).optional();
+
+const webchatTeaserMessageSchema = z.object({
+  text: z.string().optional(),
+  showInChat: z.boolean().optional(),
+  conversationStarters: z.array(conversationStarterSchema).max(5).optional(),
+}).optional();
+
+const webchatChatOptionsSchema = z.object({
+  enabled: z.boolean().optional(),
+  title: z.string().optional(),
+  enableDeleteConversation: z.boolean().optional(),
+  quickReplies: z.object({
+    enabled: z.boolean().optional(),
+    sectionTitle: z.string().optional(),
+    items: z.array(conversationStarterSchema).max(5).optional(),
+  }).optional(),
+  textToSpeech: z.object({
+    showToggle: z.boolean().optional(),
+    toggleLabel: z.string().optional(),
+    activateByDefault: z.boolean().optional(),
+  }).optional(),
+  rating: z.object({
+    enabled: z.boolean().optional(),
+    titleText: z.string().optional(),
+    commentPlaceholder: z.string().optional(),
+    submitButtonText: z.string().optional(),
+    submittedBannerText: z.string().optional(),
+  }).optional(),
+  footer: z.object({
+    enabled: z.boolean().optional(),
+    items: z.array(z.object({ title: z.string(), url: z.string() })).max(2).optional(),
+  }).optional(),
+}).optional();
+
+const webchatPrivacyNoticeSchema = z.object({
+  enabled: z.boolean().optional(),
+  title: z.string().optional(),
+  text: z.string().optional(),
+  submitButton: z.string().optional(),
+  policyLinkTitle: z.string().optional(),
+  policyLinkUrl: z.string().optional(),
+}).optional();
+
+const webchatBusinessHoursSchema = z.object({
+  enabled: z.boolean().optional(),
+  mode: z.enum(['inform', 'disable', 'hide']).optional(),
+  informationText: z.string().optional(),
+  informationTitle: z.string().optional(),
+  timezone: z.string().optional(),
+  schedule: z.array(z.object({
+    dayOfWeek: z.string(),
+    startTime: z.string(),
+    endTime: z.string(),
+  })).optional(),
+}).optional();
+
+const webchatUnreadMessagesSchema = z.object({
+  enableTitleIndicator: z.boolean().optional(),
+  enableBadge: z.boolean().optional(),
+  enablePreview: z.boolean().optional(),
+  enableSound: z.boolean().optional(),
+}).optional();
+
+const webchatMaintenanceSchema = z.object({
+  enabled: z.boolean().optional(),
+  mode: z.enum(['inform', 'disable', 'hide']).optional(),
+  informationText: z.string().optional(),
+  informationTitle: z.string().optional(),
+}).optional();
+
+const webchatWatermarkSchema = z.object({
+  type: z.enum(['default', 'custom', 'none']).optional(),
+  text: z.string().optional(),
+  url: z.string().optional(),
+}).optional();
+
+const webchatPersistentMenuSchema = z.object({
+  enabled: z.boolean().optional(),
+  title: z.string().optional(),
+  items: z.array(z.object({ title: z.string(), payload: z.string() })).optional(),
+}).optional();
+
+const webchatAttachmentUploadSchema = z.object({
+  enabled: z.boolean().optional(),
+  dropzoneText: z.string().optional(),
+}).optional();
+
+const webchatIconSchema = z.object({
+  animation: z.enum(['none', 'bounce', 'swing', 'pulse']).optional(),
+  animationInterval: z.number().min(1).max(60).optional(),
+  animationSpeed: z.enum(['slow', 'normal', 'fast', 'superfast']).optional(),
+}).optional();
+
+export const manageWebchatSchema = z.object({
+  endpointId: idSchema.optional(),
+  projectId: idSchema.optional(),
+  flowId: z.string().optional(),
+  name: z.string().min(1).max(200).optional(),
+  stylePreset: z.enum(['classic', 'modern', 'slick']).optional(),
+  layout: webchatLayoutSchema,
+  behavior: webchatBehaviorSchema,
+  startBehavior: webchatStartBehaviorSchema,
+  homeScreen: webchatHomeScreenSchema,
+  teaserMessage: webchatTeaserMessageSchema,
+  chatOptions: webchatChatOptionsSchema,
+  privacyNotice: webchatPrivacyNoticeSchema,
+  businessHours: webchatBusinessHoursSchema,
+  unreadMessages: webchatUnreadMessagesSchema,
+  maintenance: webchatMaintenanceSchema,
+  watermark: webchatWatermarkSchema,
+  persistentMenu: webchatPersistentMenuSchema,
+  attachmentUpload: webchatAttachmentUploadSchema,
+  webchatIcon: webchatIconSchema,
+  customJson: z.string().optional(),
 });

@@ -53,6 +53,11 @@ const RESOURCE_MAP: Record<string, { name: string; description: string; file: st
     description: 'Available tool types, configuration, and prerequisites',
     file: 'tools-setup.md',
   },
+  'cognigy://guide/webchat-setup': {
+    name: 'Webchat v3 Setup Guide',
+    description: 'Full settings reference, style presets, common recipes, and embedding for Webchat v3 endpoints',
+    file: 'webchat-setup.md',
+  },
 };
 
 async function main() {
@@ -62,7 +67,7 @@ async function main() {
     logger.info('Starting Cognigy MCP Server', { name: config.serverName, version: config.serverVersion });
 
     const apiClient = new CognigyApiClient({ baseUrl: config.apiBaseUrl, apiKey: config.apiKey });
-    const toolHandlers = new ToolHandlers(apiClient, config.endpointBaseUrl);
+    const toolHandlers = new ToolHandlers(apiClient, config.endpointBaseUrl, config.webchatBaseUrl);
     const rateLimiter = new RateLimiter(config.rateLimit);
 
     const server = new Server(

@@ -7,7 +7,6 @@ Tools give an AI Agent capabilities beyond conversation — calling APIs, execut
 1. Create the agent first: create_ai_agent { projectId, name, description }
    (create_tool requires an agent with an auto-provisioned flow)
 2. create_tool { aiAgentId, toolType, name, config }
-   — or use create_custom_http_tool for HTTP tools with optional code processing
 3. The tool is automatically wired into the agent's flow
 4. Test with talk_to_agent
 
@@ -61,45 +60,47 @@ create_tool {
   }
 }
 
-## Custom HTTP Tool (create_custom_http_tool)
+### http — Call an external HTTP API
 
-For tools that need to call an external HTTP API with optional data transformation before and/or after the call. Creates a composite node structure:
+Creates a composite node structure with optional pre/post-processing Code nodes:
 
-  aiAgentJobTool
+  aiAgentJobTool (the tool node the LLM sees)
     └─ [Code node: pre-process] (optional)
-    └─ HTTP Request node
+    └─ HTTP Request node (makes the API call)
     └─ [Code node: post-process] (optional)
 
-### Example — API call with post-processing
-create_custom_http_tool {
+#### Example — simple GET with post-processing
+create_tool {
   aiAgentId: "...",
+  toolType: "http",
   name: "Get Weather",
-  toolId: "get_weather",
-  description: "Fetches current weather for a location",
-  parameters: '{"type":"object","properties":{"city":{"type":"string"}}}',
-  http: {
+  config: {
+    toolId: "get_weather",
+    description: "Fetches current weather for a location",
+    parameters: '{"type":"object","properties":{"city":{"type":"string"}}}',
     url: "https://api.weather.com/v1/current?q={{input.data.city}}",
     method: "GET",
-    headers: { "X-Api-Key": "your-api-key" }
-  },
-  postProcessCode: "input.weather = input.httpResponse.body.current; delete input.httpResponse;"
+    headers: { "X-Api-Key": "your-api-key" },
+    postProcessCode: "input.weather = input.httpResponse.body.current; delete input.httpResponse;"
+  }
 }
 
-### Example — API call with pre- and post-processing
-create_custom_http_tool {
+#### Example — POST with pre- and post-processing
+create_tool {
   aiAgentId: "...",
+  toolType: "http",
   name: "Create Order",
-  toolId: "create_order",
-  description: "Creates a new order in the order management system",
-  parameters: '{"type":"object","properties":{"items":{"type":"array"},"customerId":{"type":"string"}}}',
-  http: {
+  config: {
+    toolId: "create_order",
+    description: "Creates a new order in the order management system",
+    parameters: '{"type":"object","properties":{"items":{"type":"array"},"customerId":{"type":"string"}}}',
     url: "https://api.example.com/orders",
     method: "POST",
     headers: { "Authorization": "Bearer {{context.apiToken}}" },
-    body: "{{JSON.stringify(input.orderPayload)}}"
-  },
-  preProcessCode: "input.orderPayload = { items: input.data.items, customer: input.data.customerId, timestamp: new Date().toISOString() };",
-  postProcessCode: "input.orderResult = { orderId: input.httpResponse.body.id, status: input.httpResponse.body.status }; delete input.httpResponse;"
+    body: "{{JSON.stringify(input.orderPayload)}}",
+    preProcessCode: "input.orderPayload = { items: input.data.items, customer: input.data.customerId, timestamp: new Date().toISOString() };",
+    postProcessCode: "input.orderResult = { orderId: input.httpResponse.body.id, status: input.httpResponse.body.status }; delete input.httpResponse;"
+  }
 }
 
 ## Updating tools (update_tool)
@@ -108,15 +109,26 @@ Modify an existing tool node's label or config:
 update_tool {
   aiAgentId: "...",
   toolNodeId: "...",
-  label: "Updated Weather Tool",
+  name: "Updated Weather Tool",
   config: { description: "Updated description for the LLM" }
+}
+
+For http tools, include HTTP fields in config to update child nodes:
+update_tool {
+  aiAgentId: "...",
+  toolNodeId: "...",
+  toolType: "http",
+  config: {
+    url: "https://api.weather.com/v2/current",
+    postProcessCode: "input.result = input.httpResponse.body;"
+  }
 }
 
 ## Managing tools
 - List: list_resources { resourceType: "tool", aiAgentId }
 - Remove: delete_resource { resourceType: "tool", id: toolId, aiAgentId }
-- Update: update_tool { aiAgentId, toolNodeId, label?, config? }
-- Tool IDs come from create_tool / create_custom_http_tool response or list_resources
+- Update: update_tool { aiAgentId, toolNodeId, name?, config? }
+- Tool IDs come from create_tool response or list_resources
 
 ## Prerequisites
 - Agent MUST be created via create_ai_agent (not manually) — tools need the auto-provisioned flow

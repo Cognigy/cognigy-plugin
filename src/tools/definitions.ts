@@ -319,7 +319,7 @@ export const tools: ToolDefinition[] = [
   {
     name: 'manage_knowledge',
     description:
-      "Manage knowledge bases for RAG. Create stores, add sources (URLs or text), and list chunks to verify content.\n\nBEFORE USING THIS TOOL: Read cognigy://guide/knowledge-setup for the full setup workflow, prerequisites, and required steps.\n\nPREREQUISITE: An embedding model must be configured in the project before creating or using knowledge stores. Use setup_llm to create an embedding model first (e.g., setup_llm { projectId, provider: 'openAI', modelType: 'text-embedding-ada-002', apiKey }).\n\nFor URL sources: provide type 'url' and url field — the page is scraped and ingested automatically.\nFor text sources: provide text field (type defaults to 'manual') — a source and chunk are created.\nTo verify content: use list_chunks with knowledgeStoreId (and optionally sourceId, filter).\n\nTo list stores: list_resources { resourceType: 'knowledge_store' }.\nTo delete: delete_resource { resourceType: 'knowledge_store', id }.",
+      "Manage knowledge bases for RAG. Create stores, add sources (URLs, text, or files), and list chunks to verify content.\n\nBEFORE USING THIS TOOL: Read cognigy://guide/knowledge-setup for the full setup workflow, prerequisites, and required steps.\n\nPREREQUISITE: An embedding model must be configured in the project before creating or using knowledge stores. Use setup_llm to create an embedding model first (e.g., setup_llm { projectId, provider: 'openAI', modelType: 'text-embedding-ada-002', apiKey }).\n\nFor URL sources: provide type 'url' and url field — the page is scraped and ingested automatically.\nFor text sources: provide text field (type defaults to 'manual') — a source and chunk are created.\nFor file sources (PDF, TXT, DOCX, CTXT, PPTX): provide type 'file' with filePath pointing to a local file. The server reads the file from disk and uploads it. Ingestion is async.\nTo verify content: use list_chunks with knowledgeStoreId (and optionally sourceId, filter).\n\nTo list stores: list_resources { resourceType: 'knowledge_store' }.\nTo delete: delete_resource { resourceType: 'knowledge_store', id }.",
     annotations: {
       title: 'Manage Knowledge',
       readOnlyHint: false,
@@ -333,7 +333,7 @@ export const tools: ToolDefinition[] = [
         operation: {
           type: 'string',
           enum: ['create_store', 'create_source', 'list_chunks'],
-          description: 'create_store: new knowledge base. create_source: add content from URL or text. list_chunks: list/filter chunks in a source.',
+          description: 'create_store: new knowledge base. create_source: add content from URL, text, or file. list_chunks: list/filter chunks in a source.',
         },
         projectId: {
           type: 'string',
@@ -351,8 +351,8 @@ export const tools: ToolDefinition[] = [
         description: { type: 'string', description: 'Store or source description' },
         type: {
           type: 'string',
-          enum: ['url', 'manual'],
-          description: "Source type (create_source). 'url' scrapes a web page. 'manual' stores text directly. Defaults to 'url' if url is provided, otherwise 'manual'.",
+          enum: ['url', 'manual', 'file'],
+          description: "Source type (create_source). 'url' scrapes a web page. 'manual' stores text directly. 'file' uploads a local document. Auto-detected from provided fields if omitted.",
         },
         url: {
           type: 'string',
@@ -361,6 +361,10 @@ export const tools: ToolDefinition[] = [
         text: {
           type: 'string',
           description: 'Text content to store as a knowledge chunk (required when type is manual)',
+        },
+        filePath: {
+          type: 'string',
+          description: "Absolute path to a local file to upload (required when type is file). Supported formats: PDF, TXT, DOCX, CTXT, PPTX. Max 10MB. Example: '/Users/me/docs/report.pdf'.",
         },
         filter: { type: 'string', description: 'Text filter for list_chunks — matches against chunk text' },
         limit: { type: 'number', description: 'Max results (1-50)' },
@@ -373,7 +377,7 @@ export const tools: ToolDefinition[] = [
   {
     name: 'create_tool',
     description:
-      "Create a tool as a child of an AI Agent's Job node. Tools extend what the agent can do.\n\nTool types:\n- tool: General-purpose tool with custom logic branch. Provide toolId, description, and optional parameters (JSON Schema).\n- knowledge: Search a Knowledge Store. Provide knowledgeStoreId, toolId, description.\n- send_email: Send emails. Provide toolId, description, recipient.\n- mcp: Connect to a remote MCP server. Provide mcpName, mcpServerUrl, timeout.\n\nPrerequisites: Agent must exist (created via create_ai_agent).\nTo list tools: list_resources { resourceType: 'tool', aiAgentId }.\nTo delete: delete_resource { resourceType: 'tool', id: toolId, aiAgentId }.\nAfter creating, use talk_to_agent to test.",
+      "Create a tool as a child of an AI Agent's Job node. Tools extend what the agent can do.\n\nTool types:\n- tool: General-purpose tool with custom logic branch. Provide toolId, description, and optional parameters (JSON Schema).\n- knowledge: Search a Knowledge Store. Provide knowledgeStoreId, toolId, description.\n- send_email: Send emails. Provide toolId, description, recipient.\n- mcp: Connect to a remote MCP server. Provide mcpName, mcpServerUrl, timeout.\n- http: Call an external HTTP API. Provide toolId, description, url, method, and optionally headers, body, preProcessCode, postProcessCode. Creates an aiAgentJobTool with child HTTP Request node (and optional pre/post-process Code nodes).\n\nPrerequisites: Agent must exist (created via create_ai_agent).\nTo list tools: list_resources { resourceType: 'tool', aiAgentId }.\nTo delete: delete_resource { resourceType: 'tool', id: toolId, aiAgentId }.\nAfter creating, use talk_to_agent to test.",
     annotations: {
       title: 'Create Tool',
       readOnlyHint: false,
@@ -391,8 +395,8 @@ export const tools: ToolDefinition[] = [
         },
         toolType: {
           type: 'string',
-          enum: ['tool', 'knowledge', 'send_email', 'mcp'],
-          description: 'tool: general-purpose with custom logic. knowledge: search a Knowledge Store. send_email: send emails. mcp: connect to MCP server.',
+          enum: ['tool', 'knowledge', 'send_email', 'mcp', 'http'],
+          description: 'tool: general-purpose with custom logic. knowledge: search a Knowledge Store. send_email: send emails. mcp: connect to MCP server. http: call an external HTTP API.',
         },
         name: {
           type: 'string',
@@ -402,15 +406,37 @@ export const tools: ToolDefinition[] = [
           type: 'object',
           description: 'Tool-specific configuration — fields depend on toolType.',
           properties: {
-            toolId: { type: 'string', description: 'Tool identifier for the LLM (tool, knowledge, send_email)' },
-            description: { type: 'string', description: 'Tool description for the LLM (tool, knowledge, send_email)' },
-            parameters: { type: 'string', description: 'JSON Schema string defining tool parameters (tool only)' },
+            toolId: { type: 'string', description: 'Tool identifier for the LLM (tool, knowledge, send_email, http)' },
+            description: { type: 'string', description: 'Tool description for the LLM (tool, knowledge, send_email, http)' },
+            parameters: { type: 'string', description: 'JSON Schema string defining tool parameters (tool, http)' },
             knowledgeStoreId: { type: 'string', description: 'Knowledge store reference ID (knowledge only)' },
             topK: { type: 'number', description: 'Number of results to return (knowledge only, default varies)' },
             recipient: { type: 'string', description: 'Email recipient address(es) (send_email only)' },
             mcpServerUrl: { type: 'string', description: 'MCP server URL (mcp only)' },
             mcpName: { type: 'string', description: 'MCP connection name (mcp only)' },
             timeout: { type: 'number', description: 'Timeout in seconds (mcp only)' },
+            url: { type: 'string', description: "HTTP endpoint URL, e.g. 'https://api.example.com/v1/data' (http only)" },
+            method: {
+              type: 'string',
+              enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+              description: 'HTTP method, default: GET (http only)',
+            },
+            headers: {
+              type: 'object',
+              description: 'HTTP headers as key-value pairs, e.g. { "Authorization": "Bearer ..." } (http only)',
+            },
+            body: {
+              type: 'string',
+              description: 'Request body template. Use CognigyScript tokens like {{input.data.param}} for dynamic values (http only).',
+            },
+            preProcessCode: {
+              type: 'string',
+              description: "JavaScript code to run BEFORE the HTTP request. Runs in Cognigy's Code Node environment with access to input, context, actions (http only).",
+            },
+            postProcessCode: {
+              type: 'string',
+              description: "JavaScript code to run AFTER the HTTP response. Runs in Cognigy's Code Node environment with access to input, context, actions (http only).",
+            },
           },
         },
       },
@@ -418,80 +444,11 @@ export const tools: ToolDefinition[] = [
     },
   },
 
-  // 10. create_custom_http_tool
-  {
-    name: 'create_custom_http_tool',
-    description:
-      "Create a custom HTTP tool for an AI Agent. This creates an aiAgentJobTool node with an HTTP Request child node, and optional Code nodes for pre-processing (before the HTTP call) and/or post-processing (after the HTTP call).\n\nUse this when the agent needs to call an external API and optionally transform data before sending or after receiving.\n\nThe node hierarchy created:\n  aiAgentJobTool (the tool node the LLM sees)\n    └─ [Code node: pre-process] (optional — runs before HTTP call)\n    └─ HTTP Request node (makes the API call)\n    └─ [Code node: post-process] (optional — runs after HTTP call)\n\nPrerequisites: Agent must exist (created via create_ai_agent).\nAfter creating, use talk_to_agent to test.",
-    annotations: {
-      title: 'Create Custom HTTP Tool',
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: false,
-      openWorldHint: true,
-    },
-    inputSchema: {
-      type: 'object',
-      properties: {
-        aiAgentId: {
-          type: 'string',
-          description: "24-char hex AI Agent ID (from create_ai_agent or list_resources { resourceType: 'agent' })",
-        },
-        name: {
-          type: 'string',
-          description: "Tool display name (e.g., 'Fetch Weather', 'Create Order')",
-        },
-        toolId: {
-          type: 'string',
-          description: "Tool identifier the LLM uses to invoke this tool (e.g., 'fetch_weather', 'create_order')",
-        },
-        description: {
-          type: 'string',
-          description: 'Description shown to the LLM explaining what this tool does and when to use it',
-        },
-        parameters: {
-          type: 'string',
-          description: 'JSON Schema string defining the tool parameters the LLM can pass (optional)',
-        },
-        http: {
-          type: 'object',
-          description: 'HTTP Request configuration',
-          properties: {
-            url: { type: 'string', description: "HTTP endpoint URL (e.g., 'https://api.example.com/v1/data')" },
-            method: {
-              type: 'string',
-              enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-              description: 'HTTP method (default: GET)',
-            },
-            headers: {
-              type: 'object',
-              description: 'HTTP headers as key-value pairs (e.g., { "Authorization": "Bearer ..." })',
-            },
-            body: {
-              type: 'string',
-              description: 'Request body template. Use Cognigy CognigyScript tokens like {{input.data.param}} for dynamic values.',
-            },
-          },
-          required: ['url'],
-        },
-        preProcessCode: {
-          type: 'string',
-          description: "Optional JavaScript code to run BEFORE the HTTP request. Use this to transform input data, set headers dynamically, etc. The code runs in Cognigy's Code Node environment with access to `input`, `context`, `actions`, etc.",
-        },
-        postProcessCode: {
-          type: 'string',
-          description: "Optional JavaScript code to run AFTER the HTTP response. Use this to transform the response, extract fields, format data, etc. The code runs in Cognigy's Code Node environment with access to `input`, `context`, `actions`, etc.",
-        },
-      },
-      required: ['aiAgentId', 'name', 'toolId', 'description', 'http'],
-    },
-  },
-
-  // 11. update_tool
+  // 10. update_tool
   {
     name: 'update_tool',
     description:
-      "Update an existing tool node's configuration in an AI Agent's flow. Accepts the same config fields as create_tool and create_custom_http_tool.\n\nRequires: aiAgentId (to resolve the flow) and toolNodeId (the node ID from create_tool, create_custom_http_tool, or list_resources { resourceType: 'tool', aiAgentId }).\n\nYou can update the name (display label), tool-type-specific config, HTTP settings, and/or code node contents. For custom HTTP tools, if you provide http/preProcessCode/postProcessCode, the handler will also update the child HTTP Request and Code nodes.\n\nAfter updating, use talk_to_agent to test the changes.",
+      "Update an existing tool node's configuration in an AI Agent's flow. Accepts the same config fields as create_tool.\n\nRequires: aiAgentId (to resolve the flow) and toolNodeId (the node ID from create_tool or list_resources { resourceType: 'tool', aiAgentId }).\n\nYou can update the name (display label) and/or tool-type-specific config fields. For http tools, config fields like url, method, headers, body update the child HTTP Request node, and preProcessCode/postProcessCode update the child Code nodes.\n\nAfter updating, use talk_to_agent to test the changes.",
     annotations: {
       title: 'Update Tool',
       readOnlyHint: false,
@@ -508,7 +465,7 @@ export const tools: ToolDefinition[] = [
         },
         toolNodeId: {
           type: 'string',
-          description: "24-char hex tool node ID (from create_tool, create_custom_http_tool, or list_resources { resourceType: 'tool', aiAgentId })",
+          description: "24-char hex tool node ID (from create_tool or list_resources { resourceType: 'tool', aiAgentId })",
         },
         name: {
           type: 'string',
@@ -516,54 +473,343 @@ export const tools: ToolDefinition[] = [
         },
         toolType: {
           type: 'string',
-          enum: ['tool', 'knowledge', 'send_email', 'mcp'],
+          enum: ['tool', 'knowledge', 'send_email', 'mcp', 'http'],
           description: 'Tool type hint — helps the handler know which config fields to map. Optional if only updating name.',
         },
         config: {
           type: 'object',
           description: 'Tool-specific configuration — same fields as create_tool config. Merged with existing config on the node.',
           properties: {
-            toolId: { type: 'string', description: 'Tool identifier for the LLM (tool, knowledge, send_email)' },
-            description: { type: 'string', description: 'Tool description for the LLM (tool, knowledge, send_email)' },
-            parameters: { type: 'string', description: 'JSON Schema string defining tool parameters (tool only)' },
+            toolId: { type: 'string', description: 'Tool identifier for the LLM (tool, knowledge, send_email, http)' },
+            description: { type: 'string', description: 'Tool description for the LLM (tool, knowledge, send_email, http)' },
+            parameters: { type: 'string', description: 'JSON Schema string defining tool parameters (tool, http)' },
             knowledgeStoreId: { type: 'string', description: 'Knowledge store reference ID (knowledge only)' },
             topK: { type: 'number', description: 'Number of results to return (knowledge only)' },
             recipient: { type: 'string', description: 'Email recipient address(es) (send_email only)' },
             mcpServerUrl: { type: 'string', description: 'MCP server URL (mcp only)' },
             mcpName: { type: 'string', description: 'MCP connection name (mcp only)' },
             timeout: { type: 'number', description: 'Timeout in seconds (mcp only)' },
-          },
-        },
-        http: {
-          type: 'object',
-          description: 'Updated HTTP Request config — for custom HTTP tools. Updates the child HTTP Request node.',
-          properties: {
-            url: { type: 'string', description: 'HTTP endpoint URL' },
+            url: { type: 'string', description: 'HTTP endpoint URL (http only)' },
             method: {
               type: 'string',
               enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-              description: 'HTTP method',
+              description: 'HTTP method (http only)',
             },
             headers: {
               type: 'object',
-              description: 'HTTP headers as key-value pairs',
+              description: 'HTTP headers as key-value pairs (http only)',
             },
             body: {
               type: 'string',
-              description: 'Request body template',
+              description: 'Request body template (http only)',
+            },
+            preProcessCode: {
+              type: 'string',
+              description: 'JavaScript code for the pre-process Code node (http only)',
+            },
+            postProcessCode: {
+              type: 'string',
+              description: 'JavaScript code for the post-process Code node (http only)',
             },
           },
         },
-        preProcessCode: {
-          type: 'string',
-          description: 'Updated JavaScript code for the pre-process Code node (custom HTTP tools only). Updates the existing pre-process child node.',
-        },
-        postProcessCode: {
-          type: 'string',
-          description: 'Updated JavaScript code for the post-process Code node (custom HTTP tools only). Updates the existing post-process child node.',
-        },
       },
       required: ['aiAgentId', 'toolNodeId'],
+    },
+  },
+
+  // 11. manage_webchat
+  {
+    name: 'manage_webchat',
+    description:
+      "Create or configure a Webchat v3 Endpoint. This is the primary tool for deploying an AI Agent as an embeddable website chat widget.\n\nBEFORE USING THIS TOOL: Read cognigy://guide/webchat-setup for the full settings reference, style presets, and common recipes.\n\nCREATE vs UPDATE:\n- To create: provide projectId + flowId (+ optional name). A new webchat3 endpoint is created.\n- To update: provide endpointId. Settings are merged with existing configuration.\n- Auto-detect: provide projectId without endpointId — the tool finds the first webchat3 endpoint in the project and updates it. If none exists and flowId is provided, it creates one.\n\nSTYLE PRESETS: Use stylePreset ('classic', 'modern', 'slick') to apply a predefined look. You can override individual fields in the same call.\n\nSETTINGS are organized into semantic groups (layout, behavior, startBehavior, homeScreen, teaserMessage, chatOptions, privacyNotice, businessHours, unreadMessages, maintenance, watermark, persistentMenu, attachmentUpload, webchatIcon). Only include groups/fields you want to change — everything else is preserved.\n\nFor advanced customization not covered by the groups, use customJson (raw JSON string for Webchat Custom Settings).\n\nRESPONSE HANDLING — CRITICAL:\nThe response always contains demoWebchatUrl — a direct browser link to test the webchat. You MUST ALWAYS present this URL to the user as a clickable link after every successful create or update. Do NOT tell the user to go to the UI to find it. The _integration section contains configUrl and embeddingSnippet — only mention these if the user explicitly asks about embedding or deploying to their website.",
+    annotations: {
+      title: 'Manage Webchat',
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        endpointId: {
+          type: 'string',
+          description: '24-char hex endpoint ID. If provided, updates the existing endpoint. If omitted, creates or auto-finds.',
+        },
+        projectId: {
+          type: 'string',
+          description: '24-char hex project ID. Required for create, optional for update.',
+        },
+        flowId: {
+          type: 'string',
+          description: 'Flow referenceId to connect the webchat endpoint to. Required for create.',
+        },
+        name: {
+          type: 'string',
+          description: 'Endpoint display name (e.g. "Customer Support Webchat")',
+        },
+        stylePreset: {
+          type: 'string',
+          enum: ['classic', 'modern', 'slick'],
+          description: 'Apply a predefined style. classic: compact 460px. modern: wide 900px with streaming. slick: medium 600px with grey bubbles.',
+        },
+        layout: {
+          type: 'object',
+          description: 'Visual layout: title, logo, chat window size, bot output width, input behavior, HTML settings, agent avatars.',
+          properties: {
+            title: { type: 'string', description: 'Webchat title bar text' },
+            logoUrl: { type: 'string', description: 'Header logo URL (28x28px JPG/PNG/SVG/GIF)' },
+            colors: {
+              type: 'object',
+              description: 'Color scheme',
+              properties: {
+                primaryColor: { type: 'string', description: 'Primary color (hex, e.g. "#0052cc")' },
+                secondaryColor: { type: 'string', description: 'Secondary color' },
+                chatBackground: { type: 'string', description: 'Chat interface background' },
+                agentMessageBg: { type: 'string', description: 'Bot message background (default: "#ffffff")' },
+                userMessageBg: { type: 'string', description: 'User message background' },
+                textLink: { type: 'string', description: 'Text link color' },
+              },
+            },
+            chatWindowWidth: { type: 'number', description: 'Chat window width in px (default: 460)' },
+            botOutputMaxWidth: { type: 'number', description: 'Bot output max-width percentage 1-100 (default: 73)' },
+            disableBotOutputBorder: { type: 'boolean', description: 'Hide chat bubble border' },
+            maxInputRows: { type: 'number', description: 'Max lines in reply field before scrollbar' },
+            enableInputCollation: { type: 'boolean', description: 'Combine rapid inputs into one message' },
+            inputCollationTimeout: { type: 'number', description: 'Input collation delay in ms (default: 1000)' },
+            dynamicImageAspectRatio: { type: 'boolean', description: 'Maintain original image proportions' },
+            disableInputAutocomplete: { type: 'boolean', description: 'Disable browser autocomplete' },
+            enableGenericHtml: { type: 'boolean', description: 'Style HTML in text messages' },
+            allowJsInHtml: { type: 'boolean', description: 'Allow JS in HTML messages (security risk)' },
+            allowJsInUrls: { type: 'boolean', description: 'Allow javascript: URLs (security risk)' },
+            useAgentAvatars: { type: 'boolean', description: 'Show separate avatar/name for bot vs human' },
+            botAvatarName: { type: 'string', description: 'Name above bot messages' },
+            botAvatarLogoUrl: { type: 'string', description: 'Logo above bot messages' },
+            humanAvatarName: { type: 'string', description: 'Name above human agent messages' },
+            humanAvatarLogoUrl: { type: 'string', description: 'Logo above human agent messages' },
+          },
+        },
+        behavior: {
+          type: 'object',
+          description: 'Chat behavior: scrolling, streaming, markdown, typing indicators, STT/TTS, message delay.',
+          properties: {
+            scrollingBehavior: { type: 'string', enum: ['alwaysScroll', 'scrollToLastInput'], description: 'Scroll behavior on new messages' },
+            collateStreamedOutputs: { type: 'boolean', description: 'Merge streamed text into one bubble' },
+            progressiveMessageRendering: { type: 'boolean', description: 'Show text appearing progressively' },
+            renderMarkdown: { type: 'boolean', description: 'Render markdown in bot outputs (default: true)' },
+            enableTypingIndicator: { type: 'boolean', description: 'Show typing animation' },
+            inputPlaceholder: { type: 'string', description: 'Reply field placeholder (default: "Type something…")' },
+            messageDelay: { type: 'number', description: 'Delay ms before bot response (default: 500)' },
+            focusInputAfterPostback: { type: 'boolean', description: 'Focus input after button click' },
+            enableConnectionStatusIndicator: { type: 'boolean', description: 'Show warning on lost connection' },
+            enableStt: { type: 'boolean', description: 'Speech-to-text microphone button' },
+            enableTts: { type: 'boolean', description: 'Text-to-speech for bot messages' },
+            collectMetadata: { type: 'boolean', description: 'Collect browser metadata' },
+            displayAIAgentNotice: { type: 'boolean', description: 'Show AI agent notice (default: true)' },
+            aiAgentNoticeText: { type: 'string', description: 'AI agent notice text' },
+            enableScrollButton: { type: 'boolean', description: 'Show scroll-to-bottom button (default: true)' },
+          },
+        },
+        startBehavior: {
+          type: 'object',
+          description: 'How conversation starts: text field, button click, or auto-send.',
+          properties: {
+            mode: { type: 'string', enum: ['textField', 'button', 'autoSend'], description: 'Start mode' },
+            textPayload: { type: 'string', description: 'First message to agent (button/autoSend)' },
+            dataPayload: { type: 'string', description: 'Additional data to flow (button/autoSend)' },
+            displayText: { type: 'string', description: 'Simulated user input bubble (button/autoSend)' },
+            buttonTitle: { type: 'string', description: 'Start button label (button mode only)' },
+          },
+        },
+        homeScreen: {
+          type: 'object',
+          description: 'Home screen with welcome message, background, conversation starters, and previous conversations.',
+          properties: {
+            enabled: { type: 'boolean', description: 'Show home screen on launch' },
+            welcomeText: { type: 'string', description: 'Greeting message' },
+            backgroundImage: { type: 'string', description: 'Background image URL (460x608px)' },
+            backgroundColor: { type: 'string', description: 'CSS color/gradient for background' },
+            startConversationButtonText: { type: 'string', description: 'Button text (default: "Start conversation")' },
+            conversationStarters: {
+              type: 'array',
+              description: 'Up to 5 starters',
+              items: {
+                type: 'object',
+                properties: {
+                  title: { type: 'string' },
+                  type: { type: 'string', enum: ['postback', 'url'] },
+                  value: { type: 'string' },
+                },
+                required: ['title', 'type', 'value'],
+              },
+            },
+            previousConversations: {
+              type: 'object',
+              properties: {
+                enabled: { type: 'boolean' },
+                enableDeleteAll: { type: 'boolean' },
+                buttonText: { type: 'string' },
+                title: { type: 'string' },
+                startNewButtonText: { type: 'string' },
+              },
+            },
+          },
+        },
+        teaserMessage: {
+          type: 'object',
+          description: 'Teaser message beside webchat icon with optional conversation starters.',
+          properties: {
+            text: { type: 'string', description: 'Message beside webchat icon' },
+            showInChat: { type: 'boolean', description: 'Also show teaser inside chat' },
+            conversationStarters: {
+              type: 'array',
+              description: 'Up to 5 starters',
+              items: {
+                type: 'object',
+                properties: {
+                  title: { type: 'string' },
+                  type: { type: 'string', enum: ['postback', 'url'] },
+                  value: { type: 'string' },
+                },
+                required: ['title', 'type', 'value'],
+              },
+            },
+          },
+        },
+        chatOptions: {
+          type: 'object',
+          description: 'Chat options menu: quick replies, TTS toggle, conversation rating, footer links.',
+          properties: {
+            enabled: { type: 'boolean', description: 'Enable chat options menu' },
+            title: { type: 'string', description: 'Options screen title' },
+            enableDeleteConversation: { type: 'boolean', description: 'Let users delete current conversation' },
+            quickReplies: {
+              type: 'object',
+              properties: {
+                enabled: { type: 'boolean' },
+                sectionTitle: { type: 'string' },
+                items: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, type: { type: 'string', enum: ['postback', 'url'] }, value: { type: 'string' } }, required: ['title', 'type', 'value'] } },
+              },
+            },
+            textToSpeech: {
+              type: 'object',
+              properties: {
+                showToggle: { type: 'boolean' },
+                toggleLabel: { type: 'string' },
+                activateByDefault: { type: 'boolean' },
+              },
+            },
+            rating: {
+              type: 'object',
+              properties: {
+                enabled: { type: 'boolean' },
+                titleText: { type: 'string' },
+                commentPlaceholder: { type: 'string' },
+                submitButtonText: { type: 'string' },
+                submittedBannerText: { type: 'string' },
+              },
+            },
+            footer: {
+              type: 'object',
+              properties: {
+                enabled: { type: 'boolean' },
+                items: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, url: { type: 'string' } }, required: ['title', 'url'] } },
+              },
+            },
+          },
+        },
+        privacyNotice: {
+          type: 'object',
+          description: 'Privacy notice shown before chat begins.',
+          properties: {
+            enabled: { type: 'boolean' },
+            title: { type: 'string' },
+            text: { type: 'string', description: 'Supports Markdown' },
+            submitButton: { type: 'string' },
+            policyLinkTitle: { type: 'string' },
+            policyLinkUrl: { type: 'string' },
+          },
+        },
+        businessHours: {
+          type: 'object',
+          description: 'Restrict webchat availability to business hours.',
+          properties: {
+            enabled: { type: 'boolean' },
+            mode: { type: 'string', enum: ['inform', 'disable', 'hide'] },
+            informationText: { type: 'string' },
+            informationTitle: { type: 'string' },
+            timezone: { type: 'string', description: 'IANA timezone (e.g. "Europe/Berlin")' },
+            schedule: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: { dayOfWeek: { type: 'string' }, startTime: { type: 'string' }, endTime: { type: 'string' } },
+                required: ['dayOfWeek', 'startTime', 'endTime'],
+              },
+            },
+          },
+        },
+        unreadMessages: {
+          type: 'object',
+          description: 'Unread message notifications.',
+          properties: {
+            enableTitleIndicator: { type: 'boolean' },
+            enableBadge: { type: 'boolean' },
+            enablePreview: { type: 'boolean' },
+            enableSound: { type: 'boolean' },
+          },
+        },
+        maintenance: {
+          type: 'object',
+          description: 'Maintenance mode settings.',
+          properties: {
+            enabled: { type: 'boolean' },
+            mode: { type: 'string', enum: ['inform', 'disable', 'hide'] },
+            informationText: { type: 'string' },
+            informationTitle: { type: 'string' },
+          },
+        },
+        watermark: {
+          type: 'object',
+          description: 'Bottom watermark branding.',
+          properties: {
+            type: { type: 'string', enum: ['default', 'custom', 'none'] },
+            text: { type: 'string' },
+            url: { type: 'string' },
+          },
+        },
+        persistentMenu: {
+          type: 'object',
+          description: 'Persistent menu with quick-access items.',
+          properties: {
+            enabled: { type: 'boolean' },
+            title: { type: 'string' },
+            items: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, payload: { type: 'string' } }, required: ['title', 'payload'] } },
+          },
+        },
+        attachmentUpload: {
+          type: 'object',
+          description: 'File upload settings.',
+          properties: {
+            enabled: { type: 'boolean' },
+            dropzoneText: { type: 'string' },
+          },
+        },
+        webchatIcon: {
+          type: 'object',
+          description: 'Webchat icon animation settings.',
+          properties: {
+            animation: { type: 'string', enum: ['none', 'bounce', 'swing', 'pulse'] },
+            animationInterval: { type: 'number', description: 'Seconds between animations (default: 5)' },
+            animationSpeed: { type: 'string', enum: ['slow', 'normal', 'fast', 'superfast'] },
+          },
+        },
+        customJson: {
+          type: 'string',
+          description: 'Raw JSON string for advanced Webchat Custom Settings not covered by other fields.',
+        },
+      },
     },
   },
 ];

@@ -1,4 +1,5 @@
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
+import FormData from 'form-data';
 import { logger } from '../utils/logger.js';
 
 export interface CognigyApiClientConfig {
@@ -113,6 +114,29 @@ export class CognigyApiClient {
 
   async delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
     const response: AxiosResponse<T> = await this.client.delete(url, config);
+    return response.data;
+  }
+
+  async uploadFile<T = any>(
+    url: string,
+    fileBuffer: Buffer,
+    fileName: string,
+    extraFields?: Record<string, string>,
+  ): Promise<T> {
+    const form = new FormData();
+    form.append('file', fileBuffer, { filename: fileName });
+    if (extraFields) {
+      for (const [key, value] of Object.entries(extraFields)) {
+        form.append(key, value);
+      }
+    }
+    const response: AxiosResponse<T> = await this.client.post(url, form, {
+      headers: {
+        ...form.getHeaders(),
+        'X-API-Key': this.apiKey,
+      },
+      timeout: 120000,
+    });
     return response.data;
   }
 }
