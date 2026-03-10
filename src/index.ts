@@ -19,6 +19,7 @@ import { ToolHandlers } from './tools/handlers.js';
 import { tools } from './tools/index.js';
 import { logger } from './utils/logger.js';
 import { RateLimiter } from './utils/rateLimiter.js';
+import { createAuthProvider } from './auth/createAuthProvider.js';
 
 /**
  * Initialize and start the MCP server
@@ -31,12 +32,16 @@ async function main() {
     logger.info('Starting Cognigy MCP Server', {
       name: config.serverName,
       version: config.serverVersion,
+      authMode: config.authMode,
     });
+
+    const authProvider = createAuthProvider(config);
+    const principal = await authProvider.getPrincipal();
 
     // Initialize API client
     const apiClient = new CognigyApiClient({
       baseUrl: config.apiBaseUrl,
-      apiKey: config.apiKey,
+      authProvider,
     });
 
     // Initialize tool handlers
@@ -76,7 +81,7 @@ async function main() {
       logger.info(`Tool call received: ${name}`);
 
       // Check rate limit
-      const rateLimitKey = config.apiKey.substring(0, 10); // Use first 10 chars as key
+      const rateLimitKey = await authProvider.getRateLimitKey();
       if (!rateLimiter.check(rateLimitKey)) {
         const remaining = rateLimiter.getRemaining(rateLimitKey);
         logger.warn('Rate limit exceeded', { remaining });
@@ -234,7 +239,10 @@ async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
 
-    logger.info('Cognigy MCP Server started successfully');
+    logger.info('Cognigy MCP Server started successfully', {
+      principalId: principal?.id,
+      organizationId: principal?.organizationId,
+    });
 
     // Handle shutdown
     process.on('SIGINT', async () => {
@@ -858,4 +866,3 @@ if (subcommand === 'init') {
 } else {
   main();
 }
-

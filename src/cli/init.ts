@@ -20,6 +20,8 @@ interface ClientConfig {
   gitignoreEntry?: string;
 }
 
+type AuthMode = 'api-key' | 'oauth';
+
 const CLIENTS: Record<string, ClientConfig> = {
   cursor: {
     name: 'Cursor',
@@ -60,6 +62,16 @@ function prompt(rl: readline.Interface, question: string, defaultValue?: string)
   });
 }
 
+async function promptAuthMode(rl: readline.Interface): Promise<AuthMode> {
+  while (true) {
+    const answer = (await prompt(rl, 'Authentication mode (oauth/api-key)', 'oauth')).toLowerCase();
+    if (answer === 'oauth' || answer === 'api-key') {
+      return answer;
+    }
+    console.log('  Please enter either "oauth" or "api-key".');
+  }
+}
+
 function promptSecret(question: string): Promise<string> {
   return new Promise((resolve) => {
     process.stdout.write(`  ${question}: `);
@@ -96,18 +108,15 @@ function promptSecret(question: string): Promise<string> {
   });
 }
 
-function generateServerBlock(apiBaseUrl: string, apiKey: string) {
+function generateServerBlock(env: Record<string, string>) {
   return {
     command: 'npx',
     args: ['-y', '@cognigy/mcp-server'],
-    env: {
-      COGNIGY_API_BASE_URL: apiBaseUrl,
-      COGNIGY_API_KEY: apiKey,
-    },
+    env,
   };
 }
 
-function mergeConfig(configPath: string, apiBaseUrl: string, apiKey: string, wrapKey?: string) {
+function mergeConfig(configPath: string, env: Record<string, string>, wrapKey?: string) {
   let config: any = {};
 
   if (fs.existsSync(configPath)) {
@@ -121,7 +130,7 @@ function mergeConfig(configPath: string, apiBaseUrl: string, apiKey: string, wra
     }
   }
 
-  const serverBlock = generateServerBlock(apiBaseUrl, apiKey);
+  const serverBlock = generateServerBlock(env);
 
   if (wrapKey) {
     config[wrapKey] = config[wrapKey] || {};
@@ -185,15 +194,43 @@ export async function runInit(args: string[]) {
     }
 
     const apiBaseUrl = await prompt(rl, 'Cognigy API URL', 'https://api-trial.cognigy.ai');
+    const authMode = await promptAuthMode(rl);
 
-    rl.close();
-    let apiKey = '';
-    while (!apiKey) {
-      apiKey = await promptSecret('Cognigy API Key');
-      if (!apiKey) console.log('  API key is required.');
+    const env: Record<string, string> = {
+      COGNIGY_API_BASE_URL: apiBaseUrl,
+      COGNIGY_AUTH_MODE: authMode,
+    };
+
+    if (authMode === 'api-key') {
+      rl.close();
+      let apiKey = '';
+      while (!apiKey) {
+        apiKey = await promptSecret('Cognigy API Key');
+        if (!apiKey) console.log('  API key is required.');
+      }
+      env.COGNIGY_API_KEY = apiKey;
+    } else {
+      const issuerBaseUrl = await prompt(rl, 'Cognigy OAuth issuer URL', apiBaseUrl);
+      const clientId = await prompt(rl, 'Cognigy OAuth client ID', 'cognigy-mcp');
+      const redirectUri = await prompt(
+        rl,
+        'Cognigy OAuth redirect URI',
+        'http://127.0.0.1:8789/oauth/callback'
+      );
+      const scopes = await prompt(rl, 'Cognigy OAuth scopes', 'mcp:access');
+      const organizationId = await prompt(rl, 'Cognigy organisation ID (optional)');
+      rl.close();
+
+      env.COGNIGY_OAUTH_ISSUER_BASE_URL = issuerBaseUrl;
+      env.COGNIGY_OAUTH_CLIENT_ID = clientId;
+      env.COGNIGY_OAUTH_REDIRECT_URI = redirectUri;
+      env.COGNIGY_OAUTH_SCOPES = scopes;
+      if (organizationId) {
+        env.COGNIGY_ORGANISATION_ID = organizationId;
+      }
     }
 
-    mergeConfig(configPath, apiBaseUrl, apiKey, client.wrapKey);
+    mergeConfig(configPath, env, client.wrapKey);
 
     console.log('');
     console.log(`  ✓ ${client.name} configured`);
@@ -213,7 +250,7 @@ export async function runInit(args: string[]) {
       if (!alreadyIgnored) {
         const rl2 = readline.createInterface({ input: process.stdin, output: process.stdout });
         console.log('');
-        console.log(`  ⚠ ${client.gitignoreEntry} contains your API key.`);
+        console.log(`  ⚠ ${client.gitignoreEntry} contains your Cognigy MCP credentials.`);
         const answer = await prompt(rl2, `Add ${client.gitignoreEntry} to .gitignore?`, 'Y');
         rl2.close();
         if (answer.toLowerCase() === 'y') {

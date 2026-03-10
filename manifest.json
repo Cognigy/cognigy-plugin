@@ -32,12 +32,25 @@
         "${__dirname}/dist/index.js"
       ],
       "env": {
+        "COGNIGY_AUTH_MODE": "${user_config.cognigy_auth_mode}",
         "COGNIGY_API_BASE_URL": "${user_config.cognigy_api_base_url}",
-        "COGNIGY_API_KEY": "${user_config.cognigy_api_key}"
+        "COGNIGY_API_KEY": "${user_config.cognigy_api_key}",
+        "COGNIGY_OAUTH_ISSUER_BASE_URL": "${user_config.cognigy_oauth_issuer_base_url}",
+        "COGNIGY_OAUTH_CLIENT_ID": "${user_config.cognigy_oauth_client_id}",
+        "COGNIGY_OAUTH_REDIRECT_URI": "${user_config.cognigy_oauth_redirect_uri}",
+        "COGNIGY_OAUTH_SCOPES": "${user_config.cognigy_oauth_scopes}",
+        "COGNIGY_ORGANISATION_ID": "${user_config.cognigy_organisation_id}"
       }
     }
   },
   "user_config": {
+    "cognigy_auth_mode": {
+      "type": "string",
+      "title": "Authentication Mode",
+      "description": "Use 'oauth' for browser login or 'api-key' for legacy API key authentication",
+      "default": "oauth",
+      "required": true
+    },
     "cognigy_api_base_url": {
       "type": "string",
       "title": "Cognigy API URL",
@@ -48,9 +61,43 @@
     "cognigy_api_key": {
       "type": "string",
       "title": "Cognigy API Key",
-      "description": "Your Cognigy API key (Cognigy.AI → User Menu → My Profile → API Keys)",
+      "description": "Only needed when auth mode is 'api-key'",
       "sensitive": true,
-      "required": true
+      "required": false
+    },
+    "cognigy_oauth_issuer_base_url": {
+      "type": "string",
+      "title": "Cognigy OAuth Issuer URL",
+      "description": "Usually the same as your Cognigy API URL",
+      "default": "https://api-trial.cognigy.ai",
+      "required": false
+    },
+    "cognigy_oauth_client_id": {
+      "type": "string",
+      "title": "Cognigy OAuth Client ID",
+      "description": "OAuth client id registered by Cognigy service-api",
+      "default": "cognigy-mcp",
+      "required": false
+    },
+    "cognigy_oauth_redirect_uri": {
+      "type": "string",
+      "title": "Cognigy OAuth Redirect URI",
+      "description": "Local redirect handled by the MCP server process",
+      "default": "http://127.0.0.1:8789/oauth/callback",
+      "required": false
+    },
+    "cognigy_oauth_scopes": {
+      "type": "string",
+      "title": "Cognigy OAuth Scopes",
+      "description": "Space-separated scopes requested during OAuth login",
+      "default": "mcp:access",
+      "required": false
+    },
+    "cognigy_organisation_id": {
+      "type": "string",
+      "title": "Cognigy Organisation ID",
+      "description": "Optional. Needed if the user belongs to multiple organisations.",
+      "required": false
     }
   },
   "tools": [

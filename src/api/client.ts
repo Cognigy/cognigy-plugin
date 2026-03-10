@@ -4,18 +4,20 @@
 
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { logger } from '../utils/logger.js';
+import type { AuthProvider } from '../auth/types.js';
 
 export interface CognigyApiClientConfig {
   baseUrl: string;
-  apiKey: string;
+  authProvider: AuthProvider;
 }
 
+/** Wraps HTTP calls to Cognigy and delegates auth headers to a provider. */
 export class CognigyApiClient {
   private client: AxiosInstance;
-  private apiKey: string;
+  private authProvider: AuthProvider;
 
   constructor(config: CognigyApiClientConfig) {
-    this.apiKey = config.apiKey;
+    this.authProvider = config.authProvider;
     this.client = axios.create({
       baseURL: config.baseUrl,
       headers: {
@@ -27,8 +29,9 @@ export class CognigyApiClient {
 
     // Add request interceptor for authentication
     this.client.interceptors.request.use(
-      (config) => {
-        config.headers['X-API-Key'] = this.apiKey;
+      async (config) => {
+        config.headers = config.headers || {};
+        Object.assign(config.headers, await this.authProvider.getAuthHeaders());
         logger.debug(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
         return config;
       },
@@ -118,4 +121,3 @@ export class CognigyApiClient {
     return response.data;
   }
 }
-

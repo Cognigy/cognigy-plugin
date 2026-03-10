@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeAll } from '@jest/globals';
 import { CognigyApiClient } from '../api/client.js';
 import { ToolHandlers } from '../tools/handlers.js';
+import { ApiKeyAuthProvider } from '../auth/apiKeyAuthProvider.js';
 
 const INTEGRATION_TEST = process.env.INTEGRATION_TEST === 'true';
 const API_KEY = process.env.COGNIGY_API_KEY || 'test-key';
@@ -27,7 +28,7 @@ describe.skip('Integration Tests', () => {
 
     apiClient = new CognigyApiClient({
       baseUrl: API_BASE_URL,
-      apiKey: API_KEY,
+      authProvider: new ApiKeyAuthProvider(API_KEY),
     });
 
     toolHandlers = new ToolHandlers(apiClient, ENDPOINT_BASE_URL);
@@ -143,4 +144,3 @@ describe.skip('Integration Tests', () => {
  * 
  * npm test -- integration.test.ts
  */
-
