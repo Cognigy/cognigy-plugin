@@ -204,7 +204,6 @@ export class ToolHandlers {
         imageOptimizedFormat: true,
       };
       if (data.description) agentPayload.description = data.description;
-      if (data.knowledgeReferenceId) agentPayload.knowledgeReferenceId = data.knowledgeReferenceId;
       const agent: any = await this.apiClient.post('/v2.0/aiagents', agentPayload);
       agentId = agent._id || agent.id;
 
@@ -220,7 +219,7 @@ export class ToolHandlers {
       const entryNode = await retryGetEntryNode(this.apiClient, flowId!);
 
       // Step 4: Create AI Agent Job Node
-      await this.apiClient.post(`/v2.0/flows/${flowId}/chart/nodes`, {
+      const jobNode: any = await this.apiClient.post(`/v2.0/flows/${flowId}/chart/nodes`, {
         mode: 'append',
         target: entryNode._id,
         type: 'aiAgentJob',
@@ -231,6 +230,32 @@ export class ToolHandlers {
           outputImmediately: true,
         },
       });
+      const jobNodeId = jobNode._id || jobNode.id;
+
+      // Step 4b: If knowledge store provided, create a knowledge tool on the job node
+      let knowledgeToolId: string | null = null;
+      if (data.knowledgeStoreReferenceId) {
+        try {
+          const knowledgeToolNode: any = await this.apiClient.post(
+            `/v2.0/flows/${flowId}/chart/nodes`,
+            {
+              type: 'knowledgeTool',
+              extension: '@cognigy/basic-nodes',
+              mode: 'appendChild',
+              target: jobNodeId,
+              label: 'Search Knowledge',
+              config: {
+                knowledgeStoreId: data.knowledgeStoreReferenceId,
+                toolId: 'search_knowledge',
+                description: 'Search the knowledge base for relevant information',
+              },
+            },
+          );
+          knowledgeToolId = knowledgeToolNode._id || knowledgeToolNode.id;
+        } catch (knowledgeError: any) {
+          logger.warn('Failed to create knowledge tool — agent was created without it', { error: knowledgeError.message });
+        }
+      }
 
       // Step 5: Create REST endpoint
       const endpoint: any = await this.apiClient.post('/v2.0/endpoints', {
@@ -264,6 +289,10 @@ export class ToolHandlers {
           : 'URL not available',
         llmStatus,
       };
+
+      if (knowledgeToolId) {
+        result.knowledgeTool = { toolId: knowledgeToolId, knowledgeStoreReferenceId: data.knowledgeStoreReferenceId };
+      }
 
       if (llmStatus === 'missing') {
         return withHints(result, {
@@ -305,7 +334,6 @@ export class ToolHandlers {
     if (rest.name !== undefined) agentPayload.name = rest.name;
     if (rest.description !== undefined) agentPayload.description = rest.description;
     if (rest.instructions !== undefined) agentPayload.instructions = rest.instructions;
-    if (rest.knowledgeReferenceId !== undefined) agentPayload.knowledgeReferenceId = rest.knowledgeReferenceId;
 
     let agentResult: any;
     if (Object.keys(agentPayload).length > 0) {
@@ -362,7 +390,7 @@ export class ToolHandlers {
 
     if (updatedParts.length === 0) {
       return withHints(
-        { error: 'Nothing to update. Provide agent-level fields (name, description, instructions, knowledgeReferenceId) and/or jobConfig fields.' },
+        { error: 'Nothing to update. Provide agent-level fields (name, description, instructions) and/or jobConfig fields.' },
         { action: 'Include at least one field to update.' },
       );
     }
@@ -940,6 +968,7 @@ export class ToolHandlers {
     const cfg = data.config;
     switch (data.toolType) {
       case 'tool':
+        nodeConfig.name = data.name;
         if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
         if (cfg.description) nodeConfig.description = cfg.description;
         if (cfg.parameters) {
@@ -948,22 +977,25 @@ export class ToolHandlers {
         }
         break;
       case 'knowledge':
+        nodeConfig.name = data.name;
         if (cfg.knowledgeStoreId) nodeConfig.knowledgeStoreId = cfg.knowledgeStoreId;
         if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
         if (cfg.description) nodeConfig.description = cfg.description;
         if (cfg.topK) nodeConfig.topK = cfg.topK;
         break;
       case 'send_email':
+        nodeConfig.name = data.name;
         if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
         if (cfg.description) nodeConfig.description = cfg.description;
         if (cfg.recipient) nodeConfig.recipient = cfg.recipient;
         break;
       case 'mcp':
-        if (cfg.mcpName) nodeConfig.name = cfg.mcpName;
+        nodeConfig.name = cfg.mcpName ?? data.name;
         if (cfg.mcpServerUrl) nodeConfig.mcpServerUrl = cfg.mcpServerUrl;
         if (cfg.timeout) nodeConfig.timeout = cfg.timeout;
         break;
       case 'http':
+        nodeConfig.name = data.name;
         if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
         if (cfg.description) nodeConfig.description = cfg.description;
         if (cfg.parameters) {
@@ -1011,6 +1043,7 @@ export class ToolHandlers {
 
     const createdNodeIds: string[] = [];
     try {
+      // 1. Create the tool node as a child of the Job Node
       const toolNode: any = await this.apiClient.post(
         `/v2.0/flows/${flowId}/chart/nodes`,
         {
@@ -1025,6 +1058,25 @@ export class ToolHandlers {
       const toolNodeId = toolNode._id || toolNode.id;
       createdNodeIds.push(toolNodeId);
 
+      // 2. Create the Resolve Tool node — must be created before the HTTP node
+      //    so the flow tree is wired correctly (matches UI creation order).
+      const resolveNode: any = await this.apiClient.post(
+        `/v2.0/flows/${flowId}/chart/nodes`,
+        {
+          type: 'aiAgentToolAnswer',
+          extension: '@cognigy/basic-nodes',
+          mode: 'append',
+          target: toolNodeId,
+          label: 'Resolve Tool Action',
+          config: {
+            answer: '{{JSON.stringify(input.httprequest)}}',
+          },
+        },
+      );
+      const resolveNodeId = resolveNode._id || resolveNode.id;
+      createdNodeIds.push(resolveNodeId);
+
+      // 3. Create optional pre-process Code node
       let preProcessNodeId: string | undefined;
       if (cfg.preProcessCode) {
         const preNode: any = await this.apiClient.post(
@@ -1032,7 +1084,7 @@ export class ToolHandlers {
           {
             type: 'code',
             extension: '@cognigy/basic-nodes',
-            mode: 'appendChild',
+            mode: 'append',
             target: toolNodeId,
             label: `${data.name} - Pre-Process`,
             config: { code: cfg.preProcessCode },
@@ -1042,20 +1094,20 @@ export class ToolHandlers {
         if (preProcessNodeId) createdNodeIds.push(preProcessNodeId);
       }
 
+      // 4. Create the HTTP Request node
       const httpConfig = buildHttpNodeConfig({
         url: cfg.url,
         method: cfg.method,
         headers: cfg.headers,
         body: cfg.body,
       });
-      const appendTarget = preProcessNodeId ?? toolNodeId;
       const httpNode: any = await this.apiClient.post(
         `/v2.0/flows/${flowId}/chart/nodes`,
         {
           type: 'httpRequest',
           extension: '@cognigy/basic-nodes',
-          mode: preProcessNodeId ? 'append' : 'appendChild',
-          target: appendTarget,
+          mode: 'append',
+          target: preProcessNodeId ?? toolNodeId,
           label: `${data.name} - HTTP Request`,
           config: httpConfig,
         },
@@ -1063,6 +1115,7 @@ export class ToolHandlers {
       const httpNodeId = httpNode._id || httpNode.id;
       createdNodeIds.push(httpNodeId);
 
+      // 5. Create optional post-process Code node
       let postProcessNodeId: string | undefined;
       if (cfg.postProcessCode) {
         const postNode: any = await this.apiClient.post(
@@ -1088,6 +1141,7 @@ export class ToolHandlers {
           ...(preProcessNodeId ? { preProcessNodeId } : {}),
           httpNodeId,
           ...(postProcessNodeId ? { postProcessNodeId } : {}),
+          resolveNodeId,
         },
       };
     } catch (error: any) {

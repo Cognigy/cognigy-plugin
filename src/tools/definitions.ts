@@ -14,7 +14,7 @@ export const tools: ToolDefinition[] = [
   {
     name: 'create_ai_agent',
     description:
-      'Create a complete AI Agent with auto-provisioned flow, AI Agent Job Node, and REST endpoint. Returns everything needed for talk_to_agent.\n\nBEFORE USING THIS TOOL: Read cognigy://guide/agent-creation for the full setup workflow, prerequisites, and required steps.\n\nIf projectId is omitted, a new project is auto-created using the agent name.\n\nLLM SETUP (required for the agent to generate responses):\n1. Use setup_llm to create an LLM resource in the project (with isDefault: true, the default).\n2. If the LLM is not set as default, assign it via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: "<llm referenceId>" } }.\n\nReturns: agent, flow, endpoint objects, endpointUrl, llmStatus, and the projectId used.\nIf llmStatus is \'missing\', read cognigy://guide/agent-creation for next steps.',
+      'Create a complete AI Agent with auto-provisioned flow, AI Agent Job Node, and REST endpoint. Returns everything needed for talk_to_agent.\n\nBEFORE USING THIS TOOL: Read cognigy://guide/agent-creation for the full setup workflow, prerequisites, and required steps.\n\nIf projectId is omitted, a new project is auto-created using the agent name.\n\nLLM SETUP (required for the agent to generate responses):\n1. Use setup_llm to create an LLM resource in the project (with isDefault: true, the default).\n2. If the LLM is not set as default, assign it via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: "<llm referenceId>" } }.\n\nKNOWLEDGE: If knowledgeStoreReferenceId is provided, a knowledge search tool is automatically created on the agent\'s Job Node. This is the preferred way to give agents access to knowledge stores.\n\nReturns: agent, flow, endpoint objects, endpointUrl, llmStatus, and the projectId used. If a knowledge tool was created, it is included in the response.\nIf llmStatus is \'missing\', read cognigy://guide/agent-creation for next steps.',
     annotations: {
       title: 'Create AI Agent',
       readOnlyHint: false,
@@ -37,9 +37,9 @@ export const tools: ToolDefinition[] = [
           type: 'string',
           description: "Agent description — defines the agent's persona and behavior",
         },
-        knowledgeReferenceId: {
+        knowledgeStoreReferenceId: {
           type: 'string',
-          description: 'UUID of a knowledge store to attach (optional)',
+          description: 'Reference ID of a knowledge store to attach as a knowledge search tool on the agent (optional). This automatically creates a knowledge tool on the AI Agent Job Node. Use manage_knowledge { operation: "create_store" } first to get the store reference ID.',
         },
       },
       required: ['name'],
@@ -50,7 +50,7 @@ export const tools: ToolDefinition[] = [
   {
     name: 'update_ai_agent',
     description:
-      "Update an AI Agent's configuration. This tool can update both the AI Agent resource (name, description, instructions, knowledge) and the AI Agent Job Node config (LLM assignment, job name/description/instructions, temperature, maxTokens).\n\nAgent-level fields (name, description, instructions, knowledgeReferenceId) update the agent resource directly.\nJob-level fields (passed via jobConfig) update the AI Agent Job Node in the flow — this is where the LLM, job instructions, and model parameters are configured.\n\nIMPORTANT: After creating an LLM with setup_llm, assign it to the agent by passing jobConfig.llmProviderReferenceId with the LLM's referenceId (from setup_llm or list_resources { resourceType: 'llm_model' }). Without this, the agent uses the project default LLM.\n\nRequires: aiAgentId (from create_ai_agent or list_resources { resourceType: 'agent' }).\nAfter updating, use talk_to_agent to test the changes.",
+      "Update an AI Agent's configuration. This tool can update both the AI Agent resource (name, description, instructions) and the AI Agent Job Node config (LLM assignment, job name/description/instructions, temperature, maxTokens).\n\nAgent-level fields (name, description, instructions) update the agent resource directly.\nJob-level fields (passed via jobConfig) update the AI Agent Job Node in the flow — this is where the LLM, job instructions, and model parameters are configured.\n\nKNOWLEDGE: To give an agent access to a knowledge store, use create_tool { toolType: 'knowledge' } — this creates a dedicated search tool the agent can invoke.\n\nIMPORTANT: After creating an LLM with setup_llm, assign it to the agent by passing jobConfig.llmProviderReferenceId with the LLM's referenceId (from setup_llm or list_resources { resourceType: 'llm_model' }). Without this, the agent uses the project default LLM.\n\nRequires: aiAgentId (from create_ai_agent or list_resources { resourceType: 'agent' }).\nAfter updating, use talk_to_agent to test the changes.",
     annotations: {
       title: 'Update AI Agent',
       readOnlyHint: false,
@@ -73,10 +73,6 @@ export const tools: ToolDefinition[] = [
         instructions: {
           type: 'string',
           description: 'Agent instructions — high-level guidance for the agent (agent-level, up to 1000 chars)',
-        },
-        knowledgeReferenceId: {
-          type: ['string', 'null'],
-          description: 'UUID of a knowledge store to attach (agent-level). Pass null to detach.',
         },
         jobConfig: {
           type: 'object',

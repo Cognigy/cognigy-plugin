@@ -12,7 +12,7 @@ export const createAiAgentSchema = z.object({
   projectId: idSchema.optional(),
   name: z.string().min(1).max(200),
   description: z.string().optional(),
-  knowledgeReferenceId: z.string().uuid().optional(),
+  knowledgeStoreReferenceId: z.string().optional(),
 });
 
 // Tool 2: update_ai_agent
@@ -21,7 +21,6 @@ export const updateAiAgentSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   description: z.string().optional(),
   instructions: z.string().optional(),
-  knowledgeReferenceId: z.string().optional().nullable(),
   jobConfig: z.object({
     llmProviderReferenceId: z.string().optional(),
     jobName: z.string().optional(),

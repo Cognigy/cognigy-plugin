@@ -16,9 +16,11 @@
 3. manage_knowledge { operation: "list_chunks", knowledgeStoreId }
    - Verify content was ingested correctly
    - If no results right after create_source, wait and retry
-4. Attach to agent:
-   - create_ai_agent { projectId, name, knowledgeReferenceId: storeId }
-   - Or: update_ai_agent to add knowledge reference to existing agent
+4. Attach to agent — use one of these approaches:
+   - **During agent creation** — create_ai_agent { projectId, name, knowledgeStoreReferenceId: storeReferenceId }
+     This automatically creates a knowledge search tool on the agent's Job Node.
+   - **After agent creation** — create_tool { aiAgentId, toolType: "knowledge", name: "Search KB", config: { knowledgeStoreId: storeReferenceId, toolId: "search_kb", description: "Search the knowledge base" } }
+     This creates a dedicated search tool the agent can invoke to query the knowledge store.
 
 ## File Upload Notes
 - Supported formats: PDF, TXT, DOCX, CTXT, PPTX
@@ -32,3 +34,5 @@
 - For URLs, ensure the page is publicly accessible
 - Text sources are best for structured FAQ content
 - File sources are best for existing documents (PDFs, Word docs, etc.)
+- Knowledge is always attached via a knowledge tool (either automatically via knowledgeStoreReferenceId on create_ai_agent, or manually via create_tool with toolType "knowledge")
+- Knowledge tools give the agent a dedicated search capability it can invoke during conversations

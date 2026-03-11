@@ -31,9 +31,10 @@
 ## Key facts
 - create_ai_agent auto-provisions: flow, AI Agent Job Node, REST endpoint
 - create_tool auto-provisions: flow nodes for tools. Do NOT create tool nodes manually.
-- update_ai_agent updates two things: the AI Agent resource (name, description, instructions, knowledge) and the Job Node config (LLM, job instructions, temperature, maxTokens)
+- update_ai_agent updates two things: the AI Agent resource (name, description, instructions) and the Job Node config (LLM, job instructions, temperature, maxTokens)
 - The agent `description` field defines the agent's persona and high-level behavior
 - The `jobConfig.jobInstructions` field provides specific behavioral rules for the job
 - The `jobConfig.llmProviderReferenceId` field controls which LLM the agent uses
+- **Knowledge attachment**: Use knowledgeStoreReferenceId on create_ai_agent to auto-create a knowledge tool, or use create_tool { toolType: "knowledge" } after agent creation. Knowledge is always attached as a tool, not on the agent persona.
 - Use same sessionId across talk_to_agent calls for multi-turn testing
 - endpointUrl uses a different base URL (endpoint-*.cognigy.ai), not the API URL

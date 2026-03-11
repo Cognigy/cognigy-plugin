@@ -133,3 +133,7 @@ update_tool {
 ## Prerequisites
 - Agent MUST be created via create_ai_agent (not manually) — tools need the auto-provisioned flow
 - For knowledge tools, the knowledge store must exist (use manage_knowledge first)
+
+## Knowledge: tool vs persona-level
+- **Default**: Use create_tool with toolType "knowledge" to attach knowledge stores. This is the preferred approach — it gives the agent a dedicated search tool.
+- **Exception**: Only use knowledgeReferenceId on the agent persona (via create_ai_agent or update_ai_agent) for brand identity or persona-defining knowledge the user explicitly requests on the agent itself.
