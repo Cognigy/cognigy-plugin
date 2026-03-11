@@ -82,6 +82,7 @@ export function loadConfig(): Config {
           organizationId: normalizeOptionalEnv(process.env.COGNIGY_ORGANISATION_ID),
           accessToken: normalizeOptionalEnv(process.env.COGNIGY_OAUTH_ACCESS_TOKEN),
           refreshToken: normalizeOptionalEnv(process.env.COGNIGY_OAUTH_REFRESH_TOKEN),
+          sessionFilePath: normalizeOptionalEnv(process.env.COGNIGY_OAUTH_SESSION_FILE),
         }
       : undefined;
 

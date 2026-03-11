@@ -1,3 +1,4 @@
+/* eslint-disable no-useless-catch */
 /**
  * CLI init command — auto-configures MCP clients with the Cognigy MCP server.
  *

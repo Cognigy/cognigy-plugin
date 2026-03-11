@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import type { AddressInfo } from 'node:net';
 import { logger } from '../utils/logger.js';
+import { FileTokenStore, type TokenState } from './oauthTokenStore.js';
 import type { AuthProvider, AuthenticatedPrincipal } from './types.js';
 
 export interface OAuthProviderConfig {
@@ -14,6 +15,7 @@ export interface OAuthProviderConfig {
   organizationId?: string;
   accessToken?: string;
   refreshToken?: string;
+  sessionFilePath?: string;
 }
 
 interface TokenResponse {
@@ -21,13 +23,6 @@ interface TokenResponse {
   refresh_token?: string;
   token_type?: string;
   expires_in?: number;
-}
-
-interface TokenState {
-  accessToken: string;
-  refreshToken?: string;
-  tokenType: string;
-  expiresAt?: number;
 }
 
 interface AuthorizationCodeWaiter {
@@ -120,6 +115,9 @@ async function openBrowser(url: string): Promise<void> {
 /** Handles Cognigy OAuth login, token refresh, and userinfo lookup for MCP. */
 export class OAuthAuthProvider implements AuthProvider {
   private readonly httpClient: AxiosInstance;
+  private readonly tokenStore: FileTokenStore;
+  private readonly hasExplicitBootstrapTokens: boolean;
+  private loadedStoredTokenState = false;
   private tokenState?: TokenState;
   private principal?: AuthenticatedPrincipal;
 
@@ -132,10 +130,20 @@ export class OAuthAuthProvider implements AuthProvider {
       },
       timeout: 30000,
     });
+    this.tokenStore = new FileTokenStore(
+      {
+        issuerBaseUrl: config.issuerBaseUrl,
+        clientId: config.clientId,
+        redirectUri: config.redirectUri,
+        organizationId: config.organizationId,
+      },
+      config.sessionFilePath
+    );
+    this.hasExplicitBootstrapTokens = Boolean(config.accessToken || config.refreshToken);
 
-    if (config.accessToken) {
+    if (config.accessToken || config.refreshToken) {
       this.tokenState = {
-        accessToken: config.accessToken,
+        accessToken: config.accessToken || '',
         refreshToken: config.refreshToken,
         tokenType: 'Bearer',
       };
@@ -158,20 +166,30 @@ export class OAuthAuthProvider implements AuthProvider {
 
   /** Resolves the current Cognigy user via the `/auth/oauth2/userinfo` endpoint. */
   async getPrincipal(): Promise<AuthenticatedPrincipal | undefined> {
-    await this.ensureAccessToken();
-    if (this.principal) {
-      return this.principal;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await this.ensureAccessToken();
+      if (this.principal) {
+        return this.principal;
+      }
+
+      try {
+        const userinfo = await this.fetchUserinfo();
+        this.principal = {
+          id: userinfo.sub,
+          organizationId: userinfo.organisationId,
+          email: userinfo.email,
+          name: userinfo.name,
+          scopes: userinfo.scope ? userinfo.scope.split(' ').filter(Boolean) : [],
+          clientId: userinfo.clientId,
+        };
+        return this.principal;
+      } catch (error) {
+        if (!(await this.recoverFromUserinfoFailure(error, attempt))) {
+          throw error;
+        }
+      }
     }
 
-    const userinfo = await this.fetchUserinfo();
-    this.principal = {
-      id: userinfo.sub,
-      organizationId: userinfo.organisationId,
-      email: userinfo.email,
-      name: userinfo.name,
-      scopes: userinfo.scope ? userinfo.scope.split(' ').filter(Boolean) : [],
-      clientId: userinfo.clientId,
-    };
     return this.principal;
   }
 
@@ -186,6 +204,8 @@ export class OAuthAuthProvider implements AuthProvider {
 
   /** Reuses, refreshes, or re-creates the Cognigy OAuth session as needed. */
   private async ensureAccessToken(): Promise<TokenState> {
+    await this.loadStoredTokenState();
+
     if (this.tokenState?.accessToken && !this.isTokenExpired()) {
       return this.tokenState;
     }
@@ -194,17 +214,94 @@ export class OAuthAuthProvider implements AuthProvider {
       try {
         this.tokenState = await this.refreshToken(this.tokenState.refreshToken);
         this.principal = undefined;
+        await this.persistTokenState();
         return this.tokenState;
       } catch (error: any) {
         logger.warn('OAuth refresh failed, restarting interactive login', {
           error: error.message,
         });
+        await this.clearStoredSession();
       }
     }
 
     this.tokenState = await this.authorizeInteractive();
     this.principal = undefined;
+    await this.persistTokenState();
     return this.tokenState;
+  }
+
+  /** Loads the persisted OAuth session for this local MCP configuration once. */
+  private async loadStoredTokenState(): Promise<void> {
+    if (this.loadedStoredTokenState || this.hasExplicitBootstrapTokens) {
+      return;
+    }
+
+    this.loadedStoredTokenState = true;
+    this.tokenState = await this.tokenStore.load();
+
+    if (this.tokenState) {
+      logger.info('Loaded persisted OAuth session', {
+        issuerBaseUrl: this.config.issuerBaseUrl,
+        clientId: this.config.clientId,
+        redirectUri: this.config.redirectUri,
+        hasRefreshToken: Boolean(this.tokenState.refreshToken),
+        expiresAt: this.tokenState.expiresAt,
+      });
+    }
+  }
+
+  /** Persists the current OAuth session for reuse across local MCP restarts. */
+  private async persistTokenState(): Promise<void> {
+    if (!this.tokenState) {
+      return;
+    }
+
+    await this.tokenStore.save(this.tokenState);
+  }
+
+  /** Removes the persisted OAuth session after refresh/session failures. */
+  private async clearStoredSession(): Promise<void> {
+    this.tokenState = undefined;
+    this.principal = undefined;
+    await this.tokenStore.clear();
+  }
+
+  /** Handles userinfo auth failures by retrying with refresh first, then reauth. */
+  private async recoverFromUserinfoFailure(
+    error: unknown,
+    attempt: number
+  ): Promise<boolean> {
+    if (!this.isRecoverableAuthError(error)) {
+      return false;
+    }
+
+    if (attempt === 0 && this.tokenState?.refreshToken) {
+      logger.warn('OAuth userinfo failed, retrying after token refresh', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      this.principal = undefined;
+      this.tokenState = {
+        ...this.tokenState,
+        accessToken: '',
+        expiresAt: 0,
+      };
+      return true;
+    }
+
+    if (attempt < 2) {
+      logger.warn('OAuth userinfo failed, clearing stored session and restarting login', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await this.clearStoredSession();
+      return true;
+    }
+
+    return false;
+  }
+
+  /** Classifies auth failures that should trigger silent recovery or reauth. */
+  private isRecoverableAuthError(error: unknown): boolean {
+    return axios.isAxiosError(error) && [400, 401, 403].includes(error.response?.status || 0);
   }
 
   /** Calls Cognigy `/auth/oauth2/token` with a refresh token grant. */
@@ -308,6 +405,14 @@ export class OAuthAuthProvider implements AuthProvider {
     });
 
     const codePromise = new Promise<string>((resolve, reject) => {
+      let timeoutHandle: NodeJS.Timeout | undefined;
+      const clearCallbackTimeout = () => {
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+          timeoutHandle = undefined;
+        }
+      };
+
       const server = createServer((request, response) => {
         try {
           const requestUrl = new URL(request.url || '/', this.config.redirectUri);
@@ -319,7 +424,7 @@ export class OAuthAuthProvider implements AuthProvider {
 
           const error = requestUrl.searchParams.get('error');
           if (error) {
-            clearTimeout(timeoutHandle);
+            clearCallbackTimeout();
             response.statusCode = 400;
             response.end(`OAuth error: ${error}`);
             reject(new Error(error));
@@ -330,7 +435,7 @@ export class OAuthAuthProvider implements AuthProvider {
           const code = requestUrl.searchParams.get('code');
           const state = requestUrl.searchParams.get('state');
           if (!code || state !== expectedState) {
-            clearTimeout(timeoutHandle);
+            clearCallbackTimeout();
             response.statusCode = 400;
             response.end('Invalid OAuth callback');
             reject(new Error('Invalid OAuth callback'));
@@ -338,7 +443,7 @@ export class OAuthAuthProvider implements AuthProvider {
             return;
           }
 
-          clearTimeout(timeoutHandle);
+          clearCallbackTimeout();
           response.statusCode = 200;
           response.setHeader('Content-Type', 'text/html; charset=utf-8');
           response.end('<html><body><h1>Login complete</h1><p>You can close this tab.</p></body></html>');
@@ -350,16 +455,14 @@ export class OAuthAuthProvider implements AuthProvider {
           resolve(code);
           server.close();
         } catch (error) {
-          clearTimeout(timeoutHandle);
+          clearCallbackTimeout();
           reject(error);
           server.close();
         }
       });
 
-      let timeoutHandle: NodeJS.Timeout;
-
       server.on('error', (error) => {
-        clearTimeout(timeoutHandle);
+        clearCallbackTimeout();
         logger.error('OAuth callback server failed', {
           error,
           hostname,
