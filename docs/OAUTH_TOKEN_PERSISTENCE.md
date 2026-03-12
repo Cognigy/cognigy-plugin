@@ -18,7 +18,7 @@ This change is intentionally scoped to `cognigy-mcp` only. It does not change `s
 
 A new file-backed token store was added in:
 
-- [src/auth/oauthTokenStore.ts](/Users/Arsalan.Harouni/Desktop/work/cognigy-mcp/src/auth/oauthTokenStore.ts)
+- [src/auth/oauthTokenStore.ts](/Users/<$HOME>/Desktop/work/cognigy-mcp/src/auth/oauthTokenStore.ts)
 
 It stores:
 
@@ -43,7 +43,7 @@ This prevents collisions between different Cognigy environments or orgs on the s
 
 The OAuth provider was updated in:
 
-- [src/auth/oauthAuthProvider.ts](/Users/Arsalan.Harouni/Desktop/work/cognigy-mcp/src/auth/oauthAuthProvider.ts)
+- [src/auth/oauthAuthProvider.ts](/Users/<$HOME>/Desktop/work/cognigy-mcp/src/auth/oauthAuthProvider.ts)
 
 Behavior now:
 
@@ -59,8 +59,8 @@ The localhost PKCE callback flow itself was not changed.
 
 An optional session-file override was added in:
 
-- [src/config.ts](/Users/Arsalan.Harouni/Desktop/work/cognigy-mcp/src/config.ts)
-- [env.template](/Users/Arsalan.Harouni/Desktop/work/cognigy-mcp/env.template)
+- [src/config.ts](/Users/<$HOME>/Desktop/work/cognigy-mcp/src/config.ts)
+- [env.template](/Users/<$HOME>/Desktop/work/cognigy-mcp/env.template)
 
 Optional env var:
 
@@ -125,9 +125,9 @@ Reauthentication can still happen earlier if:
 
 Tests were added in:
 
-- [src/__tests__/oauthTokenStore.test.ts](/Users/Arsalan.Harouni/Desktop/work/cognigy-mcp/src/__tests__/oauthTokenStore.test.ts)
-- [src/__tests__/oauthAuthProvider.test.ts](/Users/Arsalan.Harouni/Desktop/work/cognigy-mcp/src/__tests__/oauthAuthProvider.test.ts)
-- [src/__tests__/config.test.ts](/Users/Arsalan.Harouni/Desktop/work/cognigy-mcp/src/__tests__/config.test.ts)
+- [src/__tests__/oauthTokenStore.test.ts](/Users/<$HOME>/Desktop/work/cognigy-mcp/src/__tests__/oauthTokenStore.test.ts)
+- [src/__tests__/oauthAuthProvider.test.ts](/Users/<$HOME>/Desktop/work/cognigy-mcp/src/__tests__/oauthAuthProvider.test.ts)
+- [src/__tests__/config.test.ts](/Users/<$HOME>/Desktop/work/cognigy-mcp/src/__tests__/config.test.ts)
 
 They cover:
 
