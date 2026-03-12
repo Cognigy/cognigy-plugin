@@ -36,7 +36,6 @@ async function main() {
     });
 
     const authProvider = createAuthProvider(config);
-    const principal = await authProvider.getPrincipal();
 
     // Initialize API client
     const apiClient = new CognigyApiClient({
@@ -240,8 +239,8 @@ async function main() {
     await server.connect(transport);
 
     logger.info('Cognigy MCP Server started successfully', {
-      principalId: principal?.id,
-      organizationId: principal?.organizationId,
+      authMode: config.authMode,
+      authentication: 'deferred-until-first-api-use',
     });
 
     // Handle shutdown
