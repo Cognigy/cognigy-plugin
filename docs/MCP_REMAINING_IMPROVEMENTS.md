@@ -2,13 +2,14 @@
 
 ## Current Status
 
-OAuth login is working for Cognigy MCP today.
+OAuth login is working end-to-end for Cognigy MCP today.
 
-The remaining work is mainly about polish, reliability, and making the experience feel more native to Cognigy.
+The current flow already uses the main Cognigy sign-in experience, persists local sessions, and authenticates lazily when MCP is actually used.
+
+The remaining work is mainly about polish, reliability, and account-management usability.
 
 ## Remaining Improvements
 
-- Use the main Cognigy sign-in experience instead of a temporary standalone login page.
 - Remove temporary implementation workarounds and harden the overall authentication setup.
 - Improve reliability across packaged runtimes and client environments so login behaves consistently.
 - Add a simple way to sign out, reset authentication, or switch accounts.
