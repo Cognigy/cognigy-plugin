@@ -349,10 +349,16 @@ export class OAuthAuthProvider implements AuthProvider {
       authorizeUrl: authorizeUrl.toString(),
       redirectUri: this.config.redirectUri,
     });
-    await listeningPromise;
-    await openBrowser(authorizeUrl.toString());
 
+    // blocks event-loop until it resolves to: when server has started to listen
+    await listeningPromise;
+
+    // blocks event-loop until it resolves to: browser is fully open
+    await openBrowser(authorizeUrl.toString()); 
+
+    // blocks event-loop until it resolves to: a code to use in /auth/oauth2/token
     const code = await codePromise;
+
     logger.info('OAuth callback received, exchanging authorization code', {
       tokenUrl: createBaseUrl(this.config.issuerBaseUrl, 'auth/oauth2/token'),
       clientId: this.config.clientId,
@@ -390,7 +396,7 @@ export class OAuthAuthProvider implements AuthProvider {
 
   /** Starts the local callback server that receives Cognigy's auth code redirect. */
   private waitForAuthorizationCode(
-    redirectUrl: URL,
+    redirectUrl: URL, //env: 127.0.0.1:8789/oauth/callback set by default or rewritable
     expectedState: string
   ): AuthorizationCodeWaiter {
     const hostname = redirectUrl.hostname;
@@ -399,11 +405,17 @@ export class OAuthAuthProvider implements AuthProvider {
 
     let resolveListening!: () => void;
     let rejectListening!: (error: Error) => void;
+
+    // it resolves when server listen defined in
+    // codePromise is established and ready
+    // and event-loop continues (in authorizeInteractive())
     const listeningPromise = new Promise<void>((resolve, reject) => {
       resolveListening = resolve;
       rejectListening = reject;
     });
 
+    // it resolves when code is ready, so EL can 
+    // continue (authorizeInteractive()) to do token exchange
     const codePromise = new Promise<string>((resolve, reject) => {
       let timeoutHandle: NodeJS.Timeout | undefined;
       const clearCallbackTimeout = () => {
