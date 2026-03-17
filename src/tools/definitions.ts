@@ -50,7 +50,7 @@ export const tools: ToolDefinition[] = [
   {
     name: 'update_ai_agent',
     description:
-      "Update an AI Agent's configuration. This tool can update both the AI Agent resource (name, description, instructions) and the AI Agent Job Node config (LLM assignment, job name/description/instructions, temperature, maxTokens).\n\nAgent-level fields (name, description, instructions) update the agent resource directly.\nJob-level fields (passed via jobConfig) update the AI Agent Job Node in the flow — this is where the LLM, job instructions, and model parameters are configured.\n\nKNOWLEDGE: To give an agent access to a knowledge store, use create_tool { toolType: 'knowledge' } — this creates a dedicated search tool the agent can invoke.\n\nIMPORTANT: After creating an LLM with setup_llm, assign it to the agent by passing jobConfig.llmProviderReferenceId with the LLM's referenceId (from setup_llm or list_resources { resourceType: 'llm_model' }). Without this, the agent uses the project default LLM.\n\nRequires: aiAgentId (from create_ai_agent or list_resources { resourceType: 'agent' }).\nAfter updating, use talk_to_agent to test the changes.",
+      "Update an AI Agent's configuration. This tool updates both the AI Agent resource and the AI Agent Job Node config.\n\nUSE ALL RELEVANT FIELDS — do not put everything in description alone. Distribute configuration across the appropriate fields:\n\nAGENT-LEVEL FIELDS (the agent's identity):\n- name: Display name\n- description: Agent PERSONA — who the agent is, personality, tone, and high-level behavior. This is the primary identity field.\n- instructions: Agent GUARDRAILS — high-level constraints and policies (up to 1000 chars). Things the agent must always/never do.\n\nJOB-LEVEL FIELDS (jobConfig — how the agent performs its job):\n- jobName: Job title / role name (e.g., 'Customer Support Specialist')\n- jobDescription: Detailed responsibilities, scope, expertise areas, and what tools are available for this job\n- jobInstructions: Step-by-step procedures, output format requirements, decision trees for the job\n- llmProviderReferenceId: LLM to use (from setup_llm or list_resources { resourceType: 'llm_model' })\n- temperature: 0-1, lower = more deterministic (default: 0.7)\n- maxTokens: 100-8000 (default: 4000)\n\nKNOWLEDGE: Always use create_tool { toolType: 'knowledge' } to attach knowledge stores as tools. Only use persona-level knowledge if the user explicitly requests it.\n\nRead cognigy://guide/agent-creation for the full field reference, examples, and how the fields work together.\n\nRequires: aiAgentId (from create_ai_agent or list_resources { resourceType: 'agent' }).\nAfter updating, use talk_to_agent to test the changes.",
     annotations: {
       title: 'Update AI Agent',
       readOnlyHint: false,
@@ -65,34 +65,34 @@ export const tools: ToolDefinition[] = [
           type: 'string',
           description: '24-char hex AI Agent ID (from create_ai_agent response or list_resources)',
         },
-        name: { type: 'string', description: 'New agent name (agent-level)' },
+        name: { type: 'string', description: 'Agent display name' },
         description: {
           type: 'string',
-          description: 'New agent description — defines the agent persona and behavior (agent-level)',
+          description: "Agent PERSONA — who the agent is, its personality, tone, and high-level behavior. This is the primary field for shaping agent identity. Example: 'You are a friendly customer support agent for Acme Corp...'",
         },
         instructions: {
           type: 'string',
-          description: 'Agent instructions — high-level guidance for the agent (agent-level, up to 1000 chars)',
+          description: "Agent GUARDRAILS — high-level constraints and policies that apply regardless of the job (up to 1000 chars). Example: 'Never share internal pricing. Always verify identity before account changes.'",
         },
         jobConfig: {
           type: 'object',
-          description: 'AI Agent Job Node configuration. These fields control the LLM, job-level instructions, and model parameters.',
+          description: 'AI Agent Job Node configuration — controls the job role, procedures, LLM, and model parameters. Use ALL relevant fields to fully configure agent behavior.',
           properties: {
-            llmProviderReferenceId: {
-              type: 'string',
-              description: "LLM referenceId to assign to this agent (from setup_llm response or list_resources { resourceType: 'llm_model' }). This determines which LLM the agent uses for generating responses.",
-            },
             jobName: {
               type: 'string',
-              description: "Job name — the role title (e.g., 'Customer Support Specialist')",
+              description: "Job TITLE — the role the agent is performing. Example: 'Customer Support Specialist', 'Sales Assistant', 'Technical Advisor'",
             },
             jobDescription: {
               type: 'string',
-              description: 'Job description — detailed description of what the agent does in this job',
+              description: "Job SCOPE — detailed description of responsibilities, expertise areas, available tools, and what to escalate. Example: 'Handle customer inquiries about orders, returns, and shipping. Use the search tool for order lookups. Escalate billing disputes to human agents.'",
             },
             jobInstructions: {
               type: 'string',
-              description: 'Job-level instructions — specific behavioral rules and constraints for the job',
+              description: "Job PROCEDURES — step-by-step instructions, output format requirements, and decision trees. Example: '1. Greet the customer. 2. Ask for order number. 3. Look up order. 4. Provide status update.'",
+            },
+            llmProviderReferenceId: {
+              type: 'string',
+              description: "LLM referenceId to assign (from setup_llm or list_resources { resourceType: 'llm_model' }). Determines which LLM generates responses.",
             },
             temperature: {
               type: 'number',
@@ -238,7 +238,7 @@ export const tools: ToolDefinition[] = [
   {
     name: 'get_resource',
     description:
-      "Get detailed information about a single Cognigy resource. Use list_resources first to find IDs.\n\nSupports all list_resources types plus 'session_state' for session context data. Set raw: true for unfiltered API response.",
+      "Get detailed information about a single Cognigy resource. Returns a summary view by default. Set `raw: true` for the complete unfiltered API response with all fields.\n\nUse list_resources first to find IDs. Supports all list_resources types plus 'session_state' for session context data.",
     annotations: {
       title: 'Get Resource',
       readOnlyHint: true,
@@ -328,8 +328,8 @@ export const tools: ToolDefinition[] = [
       properties: {
         operation: {
           type: 'string',
-          enum: ['create_store', 'create_source', 'list_chunks'],
-          description: 'create_store: new knowledge base. create_source: add content from URL, text, or file. list_chunks: list/filter chunks in a source.',
+          enum: ['create_store', 'create_source', 'list_chunks', 'list_sources'],
+          description: 'create_store: new knowledge base. create_source: add content from URL, text, or file. list_chunks: list/filter chunks in a source. list_sources: list all sources in a knowledge store.',
         },
         projectId: {
           type: 'string',
@@ -433,6 +433,10 @@ export const tools: ToolDefinition[] = [
               type: 'string',
               description: "JavaScript code to run AFTER the HTTP response. Runs in Cognigy's Code Node environment with access to input, context, actions (http only).",
             },
+            toolResponseValue: {
+              type: 'string',
+              description: "CognigyScript expression for the Resolve Tool Action node's answer field (http only). Controls what value is returned to the LLM as the tool result. Default: '{{JSON.stringify(input.httprequest)}}' (returns the raw HTTP response). If you add post-processing code that stores results in a custom field (e.g., input.result), set this to '{{JSON.stringify(input.result)}}' to return that instead. Must be a valid CognigyScript expression.",
+            },
           },
         },
       },
@@ -507,6 +511,10 @@ export const tools: ToolDefinition[] = [
               type: 'string',
               description: 'JavaScript code for the post-process Code node (http only)',
             },
+            toolResponseValue: {
+              type: 'string',
+              description: "CognigyScript expression for the Resolve Tool Action node's answer field (http only). Controls what value is returned to the LLM. Default: '{{JSON.stringify(input.httprequest)}}'. Set to match where your post-processing code stores results, e.g., '{{JSON.stringify(input.result)}}'.",
+            },
           },
         },
       },
@@ -518,12 +526,12 @@ export const tools: ToolDefinition[] = [
   {
     name: 'manage_webchat',
     description:
-      "Create or configure a Webchat v3 Endpoint. This is the primary tool for deploying an AI Agent as an embeddable website chat widget.\n\nBEFORE USING THIS TOOL: Read cognigy://guide/webchat-setup for the full settings reference, style presets, and common recipes.\n\nCREATE vs UPDATE:\n- To create: provide projectId + flowId (+ optional name). A new webchat3 endpoint is created.\n- To update: provide endpointId. Settings are merged with existing configuration.\n- Auto-detect: provide projectId without endpointId — the tool finds the first webchat3 endpoint in the project and updates it. If none exists and flowId is provided, it creates one.\n\nSTYLE PRESETS: Use stylePreset ('classic', 'modern', 'slick') to apply a predefined look. You can override individual fields in the same call.\n\nSETTINGS are organized into semantic groups (layout, behavior, startBehavior, homeScreen, teaserMessage, chatOptions, privacyNotice, businessHours, unreadMessages, maintenance, watermark, persistentMenu, attachmentUpload, webchatIcon). Only include groups/fields you want to change — everything else is preserved.\n\nFor advanced customization not covered by the groups, use customJson (raw JSON string for Webchat Custom Settings).\n\nRESPONSE HANDLING — CRITICAL:\nThe response always contains demoWebchatUrl — a direct browser link to test the webchat. You MUST ALWAYS present this URL to the user as a clickable link after every successful create or update. Do NOT tell the user to go to the UI to find it. The _integration section contains configUrl and embeddingSnippet — only mention these if the user explicitly asks about embedding or deploying to their website.",
+      "Create or configure a Webchat v3 Endpoint. This is the primary tool for deploying an AI Agent as an embeddable website chat widget.\n\n⚠️ DESTRUCTIVE: This tool can overwrite existing webchat endpoint settings. If the user's intent is ambiguous (e.g., they say 'set up webchat' or 'configure webchat' but a webchat endpoint may already exist), you MUST ask the user whether to UPDATE the existing endpoint or CREATE a new one BEFORE calling this tool. Only proceed without asking if the user's intent is unambiguous (e.g., they explicitly say 'create a new webchat' or 'update the existing webchat' or provide an endpointId).\n\nBEFORE USING THIS TOOL: Read cognigy://guide/webchat-setup for the full settings reference, style presets, and common recipes.\n\nCREATE vs UPDATE:\n- To create: provide projectId + flowId (+ optional name). A new webchat3 endpoint is created.\n- To update: provide endpointId. Settings are merged with existing configuration.\n- Auto-detect: provide projectId without endpointId — the tool finds the first webchat3 endpoint in the project and updates it. If none exists and flowId is provided, it creates one.\n\nIMPORTANT: The auto-detect behavior means calling this tool with just projectId can silently update an existing endpoint. Always confirm the user's intent first.\n\nSTYLE PRESETS: Use stylePreset ('classic', 'modern', 'slick') to apply a predefined look. You can override individual fields in the same call.\n\nSETTINGS are organized into semantic groups (layout, behavior, startBehavior, homeScreen, teaserMessage, chatOptions, privacyNotice, businessHours, unreadMessages, maintenance, watermark, persistentMenu, attachmentUpload, webchatIcon). Only include groups/fields you want to change — everything else is preserved.\n\nFor advanced customization not covered by the groups, use customJson (raw JSON string for Webchat Custom Settings).\n\nRESPONSE HANDLING — CRITICAL:\nThe response always contains demoWebchatUrl — a direct browser link to test the webchat. You MUST ALWAYS present this URL to the user as a clickable link after every successful create or update. Do NOT tell the user to go to the UI to find it. The _integration section contains configUrl and embeddingSnippet — only mention these if the user explicitly asks about embedding or deploying to their website.",
     annotations: {
       title: 'Manage Webchat',
       readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: true,
+      destructiveHint: true,
+      idempotentHint: false,
       openWorldHint: true,
     },
     inputSchema: {

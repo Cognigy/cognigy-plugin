@@ -1,10 +1,11 @@
 import { readFileSync, existsSync } from 'fs';
 import { basename } from 'path';
+import { randomUUID } from 'crypto';
 import axios from 'axios';
 import { CognigyApiClient } from '../api/client.js';
 import { logger } from '../utils/logger.js';
 import { filterResponse, filterList, withHints } from './filters.js';
-import { buildWebchatSettings } from './webchatSettings.js';
+import { buildWebchatSettings, deepMerge } from './webchatSettings.js';
 import * as schemas from '../schemas/tools.js';
 
 // ---------------------------------------------------------------------------
@@ -49,6 +50,14 @@ const TOOL_TYPE_MAP: Record<string, { type: string; extension: string }> = {
   send_email: { type: 'sendEmailTool', extension: '@cognigy/basic-nodes' },
   mcp: { type: 'aiAgentJobMCPTool', extension: '@cognigy/basic-nodes' },
   http: { type: 'aiAgentJobTool', extension: '@cognigy/basic-nodes' },
+};
+
+const RESOLVE_NODE_MAP: Record<string, { type: string; label: string } | null> = {
+  tool: { type: 'aiAgentToolAnswer', label: 'Resolve Tool Action' },
+  mcp: { type: 'aiAgentJobCallMCPTool', label: 'Call MCP Tool' },
+  knowledge: null,
+  send_email: null,
+  http: null, // HTTP handles its own resolve node creation
 };
 
 /**
@@ -166,11 +175,21 @@ async function resolveFlowForAgent(
 // ---------------------------------------------------------------------------
 
 export class ToolHandlers {
+  private static readonly SENSITIVE_KEYS = new Set(['apiKey', 'headers', 'body', 'preProcessCode', 'postProcessCode']);
+
   constructor(
     private apiClient: CognigyApiClient,
     private endpointBaseUrl: string,
     private webchatBaseUrl: string = '',
   ) {}
+
+  private sanitizeArgs(args: Record<string, any>): Record<string, any> {
+    const result: Record<string, any> = {};
+    for (const [key, value] of Object.entries(args)) {
+      result[key] = ToolHandlers.SENSITIVE_KEYS.has(key) ? '[REDACTED]' : value;
+    }
+    return result;
+  }
 
   // =========================================================================
   // Tool 1: create_ai_agent
@@ -294,6 +313,13 @@ export class ToolHandlers {
         result.knowledgeTool = { toolId: knowledgeToolId, knowledgeStoreReferenceId: data.knowledgeStoreReferenceId };
       }
 
+      if (data.knowledgeStoreReferenceId && !knowledgeToolId) {
+        return withHints(result, {
+          warning: 'Agent created but knowledge tool failed to provision.',
+          action: `Create it manually: create_tool { aiAgentId: "${agentId}", toolType: "knowledge", name: "Search Knowledge", config: { knowledgeStoreId: "${data.knowledgeStoreReferenceId}", toolId: "search_knowledge", description: "Search the knowledge base" } }`,
+        });
+      }
+
       if (llmStatus === 'missing') {
         return withHints(result, {
           warning: 'No LLM resource in project. Agent won\'t generate responses.',
@@ -304,18 +330,40 @@ export class ToolHandlers {
 
       return result;
     } catch (error: any) {
-      // Rollback in reverse order
-      if (endpointId) try { await this.apiClient.delete(`/v2.0/endpoints/${endpointId}`); } catch { /* swallow */ }
-      if (flowId) try { await this.apiClient.delete(`/v2.0/flows/${flowId}`); } catch { /* swallow */ }
-      if (agentId) try { await this.apiClient.delete(`/v2.0/aiagents/${agentId}`); } catch { /* swallow */ }
-      if (createdProject && projectId) try { await this.apiClient.delete(`/v2.0/projects/${projectId}`); } catch { /* swallow */ }
+      const rolledBack: string[] = [];
+      const rollbackFailed: string[] = [];
+
+      if (endpointId) {
+        try { await this.apiClient.delete(`/v2.0/endpoints/${endpointId}`); rolledBack.push('endpoint'); }
+        catch { rollbackFailed.push('endpoint'); }
+      }
+      if (flowId) {
+        try { await this.apiClient.delete(`/v2.0/flows/${flowId}`); rolledBack.push('flow'); }
+        catch { rollbackFailed.push('flow'); }
+      }
+      if (agentId) {
+        try { await this.apiClient.delete(`/v2.0/aiagents/${agentId}`); rolledBack.push('agent'); }
+        catch { rollbackFailed.push('agent'); }
+      }
+      if (createdProject && projectId) {
+        try { await this.apiClient.delete(`/v2.0/projects/${projectId}`); rolledBack.push('project'); }
+        catch { rollbackFailed.push('project'); }
+      }
+
+      const likelyCause = rollbackFailed.length > 0
+        ? `Orchestration failed. Rolled back: [${rolledBack.join(', ')}]. FAILED to roll back: [${rollbackFailed.join(', ')}] — these are orphaned and should be deleted manually.`
+        : 'Orchestration failed. All created resources were rolled back.';
+
+      const action = rollbackFailed.length > 0
+        ? `Delete orphaned resources with delete_resource, then retry create_ai_agent.`
+        : 'Read the troubleshooting guide, then retry create_ai_agent.';
 
       return withHints(
         { failed: { step: identifyFailedStep(agentId, flowId, endpointId), error: error.message } },
         {
-          likely_cause: 'Orchestration failed. All created resources were rolled back.',
+          likely_cause: likelyCause,
           resource: 'cognigy://guide/troubleshooting',
-          action: 'Read the troubleshooting guide, then retry create_ai_agent.',
+          action,
         },
       );
     }
@@ -476,7 +524,7 @@ export class ToolHandlers {
   async handleTalkToAgent(args: any): Promise<any> {
     const data = schemas.talkToAgentSchema.parse(args);
 
-    const sessionId = data.sessionId || `mcp-session-${Date.now()}`;
+    const sessionId = data.sessionId || `mcp-session-${randomUUID()}`;
     const userId = data.userId || 'mcp-user';
 
     const payload: any = { userId, sessionId, text: data.message };
@@ -511,8 +559,9 @@ export class ToolHandlers {
 
       return result;
     } catch (error: any) {
+      const detail = error.response?.data?.error || error.response?.data?.message || error.message;
       return withHints(
-        { error: `Request failed with status ${error.response?.status ?? 'unknown'}`, sessionId },
+        { error: `Request failed with status ${error.response?.status ?? 'unknown'}`, detail, sessionId },
         {
           likely_cause: 'Endpoint URL invalid or expired.',
           resource: 'cognigy://guide/troubleshooting',
@@ -647,6 +696,8 @@ export class ToolHandlers {
             toolId: n._id || n.id,
             name: n.label || n.name,
             toolType: n.type,
+            description: n.config?.description,
+            ...(n.config?.knowledgeStoreId ? { knowledgeStoreId: n.config.knowledgeStoreId } : {}),
           }));
         total = items.length;
         break;
@@ -657,6 +708,13 @@ export class ToolHandlers {
 
     if (!Array.isArray(items)) items = [];
     const filtered = resourceType === 'tool' ? items : filterList(resourceType, items);
+
+    if (resourceType === 'endpoint') {
+      filtered.forEach((ep: any) => {
+        if (ep.URLToken) ep.endpointUrl = `${this.endpointBaseUrl}/${ep.URLToken}`;
+      });
+    }
+
     const result: any = { items: filtered, total: total ?? filtered.length };
 
     if (filtered.length === 0 && resourceType === 'agent') {
@@ -695,10 +753,15 @@ export class ToolHandlers {
     const result = await this.apiClient.get(url);
     if (raw) return result;
 
-    const filterType = resourceType === 'session_state' ? resourceType : resourceType;
-    return RESOURCE_FILTERS_GET[filterType]
-      ? RESOURCE_FILTERS_GET[filterType](result)
+    const filtered = RESOURCE_FILTERS_GET[resourceType]
+      ? RESOURCE_FILTERS_GET[resourceType](result)
       : filterResponse(resourceType, result);
+
+    if (resourceType === 'endpoint' && (result as any).URLToken) {
+      filtered.endpointUrl = `${this.endpointBaseUrl}/${(result as any).URLToken}`;
+    }
+
+    return filtered;
   }
 
   // =========================================================================
@@ -750,15 +813,30 @@ export class ToolHandlers {
 
     switch (data.operation) {
       case 'create_store': {
-        if (!data.projectId) throw new Error('projectId is required for create_store');
-        if (!data.name) throw new Error('name is required for create_store');
+        if (!data.projectId) {
+          return withHints(
+            { error: 'projectId is required for create_store' },
+            { action: "Use list_resources { resourceType: 'project' } to find projectIds." },
+          );
+        }
+        if (!data.name) {
+          return withHints(
+            { error: 'name is required for create_store' },
+            { action: 'Provide a name for the knowledge store.' },
+          );
+        }
         const payload: any = { projectId: data.projectId, name: data.name };
         if (data.description) payload.description = data.description;
         const result = await this.apiClient.post('/v2.0/knowledgestores', payload);
         return filterResponse('knowledge_store', result);
       }
       case 'create_source': {
-        if (!data.knowledgeStoreId) throw new Error('knowledgeStoreId is required for create_source');
+        if (!data.knowledgeStoreId) {
+          return withHints(
+            { error: 'knowledgeStoreId is required for create_source' },
+            { action: "Use list_resources { resourceType: 'knowledge_store', projectId } to find store IDs." },
+          );
+        }
         const storeId = data.knowledgeStoreId;
         const sourceType = data.type ?? (data.url ? 'url' : data.filePath ? 'file' : 'manual');
 
@@ -822,7 +900,12 @@ export class ToolHandlers {
         }
 
         if (sourceType === 'url') {
-          if (!data.url) throw new Error('url is required for type "url"');
+          if (!data.url) {
+            return withHints(
+              { error: 'url is required for type "url"' },
+              { action: 'Provide the url field with a valid web page URL to scrape.' },
+            );
+          }
           const payload: any = {
             name: data.name || data.url,
             type: 'url',
@@ -838,13 +921,18 @@ export class ToolHandlers {
             {
               warning: 'URL ingestion is async — content may not be searchable for 10-60 seconds.',
               resource: 'cognigy://guide/knowledge-setup',
-              action: 'Wait, then use search_chunks to verify.',
+              action: 'Wait, then use list_chunks to verify the content was ingested.',
             },
           );
         }
 
         // Manual/text source: create source, then add a chunk with the text
-        if (!data.text) throw new Error('text is required for manual sources');
+        if (!data.text) {
+          return withHints(
+            { error: 'text is required for manual sources' },
+            { action: 'Provide the text field with the content to store as a knowledge chunk.' },
+          );
+        }
         const sourcePayload: any = {
           name: data.name || 'Manual source',
           type: 'manual',
@@ -870,12 +958,17 @@ export class ToolHandlers {
           {
             warning: 'Chunk created. It may take a few seconds before it becomes searchable.',
             resource: 'cognigy://guide/knowledge-setup',
-            action: 'Wait, then use search_chunks to verify.',
-          },
-        );
-      }
+              action: 'Wait, then use list_chunks to verify the content was ingested.',
+            },
+          );
+        }
       case 'list_chunks': {
-        if (!data.knowledgeStoreId) throw new Error('knowledgeStoreId is required for list_chunks');
+        if (!data.knowledgeStoreId) {
+          return withHints(
+            { error: 'knowledgeStoreId is required for list_chunks' },
+            { action: "Use list_resources { resourceType: 'knowledge_store', projectId } to find store IDs." },
+          );
+        }
         const ksId = data.knowledgeStoreId;
 
         let targetSourceId = data.sourceId;
@@ -914,6 +1007,29 @@ export class ToolHandlers {
           })) : [],
           total: result.total ?? (Array.isArray(chunks) ? chunks.length : 0),
           sourceId: targetSourceId,
+        };
+      }
+      case 'list_sources': {
+        if (!data.knowledgeStoreId) {
+          return withHints(
+            { error: 'knowledgeStoreId is required for list_sources' },
+            { action: "Use list_resources { resourceType: 'knowledge_store' } to find store IDs." },
+          );
+        }
+        const sources: any = await this.apiClient.get(
+          `/v2.0/knowledgestores/${data.knowledgeStoreId}/sources`,
+        );
+        const items = sources.items ?? sources;
+        return {
+          knowledgeStoreId: data.knowledgeStoreId,
+          sources: (Array.isArray(items) ? items : []).map((s: any) => ({
+            id: s._id || s.id,
+            name: s.name,
+            type: s.type,
+            status: s.status,
+            description: s.description,
+          })),
+          total: Array.isArray(items) ? items.length : 0,
         };
       }
       default:
@@ -968,7 +1084,6 @@ export class ToolHandlers {
     const cfg = data.config;
     switch (data.toolType) {
       case 'tool':
-        nodeConfig.name = data.name;
         if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
         if (cfg.description) nodeConfig.description = cfg.description;
         if (cfg.parameters) {
@@ -977,25 +1092,22 @@ export class ToolHandlers {
         }
         break;
       case 'knowledge':
-        nodeConfig.name = data.name;
         if (cfg.knowledgeStoreId) nodeConfig.knowledgeStoreId = cfg.knowledgeStoreId;
         if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
         if (cfg.description) nodeConfig.description = cfg.description;
         if (cfg.topK) nodeConfig.topK = cfg.topK;
         break;
       case 'send_email':
-        nodeConfig.name = data.name;
         if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
         if (cfg.description) nodeConfig.description = cfg.description;
         if (cfg.recipient) nodeConfig.recipient = cfg.recipient;
         break;
       case 'mcp':
-        nodeConfig.name = cfg.mcpName ?? data.name;
+        if (cfg.mcpName) nodeConfig.name = cfg.mcpName;
         if (cfg.mcpServerUrl) nodeConfig.mcpServerUrl = cfg.mcpServerUrl;
         if (cfg.timeout) nodeConfig.timeout = cfg.timeout;
         break;
       case 'http':
-        nodeConfig.name = data.name;
         if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
         if (cfg.description) nodeConfig.description = cfg.description;
         if (cfg.parameters) {
@@ -1005,9 +1117,9 @@ export class ToolHandlers {
         break;
     }
 
-    // For non-http tools, simple single-node creation
+    // For non-http tools: create the tool node + resolve node (if required by the tool type)
     if (data.toolType !== 'http') {
-      let createdNodeId: string | null = null;
+      const createdNodeIds: string[] = [];
       try {
         const createdNode: any = await this.apiClient.post(
           `/v2.0/flows/${flowId}/chart/nodes`,
@@ -1020,15 +1132,46 @@ export class ToolHandlers {
             config: nodeConfig,
           },
         );
-        createdNodeId = createdNode._id || createdNode.id;
-        return { toolId: createdNodeId, name: data.name, toolType: data.toolType };
-      } catch (error: any) {
-        if (createdNodeId) {
-          try { await this.apiClient.delete(`/v2.0/flows/${flowId}/chart/nodes/${createdNodeId}`); } catch { /* swallow */ }
+        const toolNodeId = createdNode._id || createdNode.id;
+        createdNodeIds.push(toolNodeId);
+
+        const resolveSpec = RESOLVE_NODE_MAP[data.toolType];
+        let resolveNodeId: string | undefined;
+        if (resolveSpec) {
+          const resolveNode: any = await this.apiClient.post(
+            `/v2.0/flows/${flowId}/chart/nodes`,
+            {
+              type: resolveSpec.type,
+              extension: '@cognigy/basic-nodes',
+              mode: 'append',
+              target: toolNodeId,
+              label: resolveSpec.label,
+              config: {},
+            },
+          );
+          resolveNodeId = resolveNode._id || resolveNode.id;
+          if (resolveNodeId) createdNodeIds.push(resolveNodeId);
         }
+
+        return {
+          toolId: toolNodeId,
+          name: data.name,
+          toolType: data.toolType,
+          ...(resolveNodeId ? { resolveNodeId } : {}),
+        };
+      } catch (error: any) {
+        const rolledBack: string[] = [];
+        const rollbackFailed: string[] = [];
+        for (const nodeId of createdNodeIds.reverse()) {
+          try { await this.apiClient.delete(`/v2.0/flows/${flowId}/chart/nodes/${nodeId}`); rolledBack.push(nodeId); }
+          catch { rollbackFailed.push(nodeId); }
+        }
+        const action = rollbackFailed.length > 0
+          ? `Rollback partially failed — orphaned node IDs: [${rollbackFailed.join(', ')}]. Delete them with delete_resource { resourceType: 'tool', id, aiAgentId }, then retry.`
+          : 'Check tool type and config, then retry.';
         return withHints(
           { error: error.message },
-          { resource: 'cognigy://guide/tools-setup', action: 'Check tool type and config, then retry.' },
+          { resource: 'cognigy://guide/tools-setup', action },
         );
       }
     }
@@ -1060,6 +1203,7 @@ export class ToolHandlers {
 
       // 2. Create the Resolve Tool node — must be created before the HTTP node
       //    so the flow tree is wired correctly (matches UI creation order).
+      const resolveAnswer = cfg.toolResponseValue || '{{JSON.stringify(input.httprequest)}}';
       const resolveNode: any = await this.apiClient.post(
         `/v2.0/flows/${flowId}/chart/nodes`,
         {
@@ -1069,7 +1213,7 @@ export class ToolHandlers {
           target: toolNodeId,
           label: 'Resolve Tool Action',
           config: {
-            answer: '{{JSON.stringify(input.httprequest)}}',
+            answer: resolveAnswer,
           },
         },
       );
@@ -1145,12 +1289,18 @@ export class ToolHandlers {
         },
       };
     } catch (error: any) {
+      const rolledBack: string[] = [];
+      const rollbackFailed: string[] = [];
       for (const nodeId of createdNodeIds.reverse()) {
-        try { await this.apiClient.delete(`/v2.0/flows/${flowId}/chart/nodes/${nodeId}`); } catch { /* swallow */ }
+        try { await this.apiClient.delete(`/v2.0/flows/${flowId}/chart/nodes/${nodeId}`); rolledBack.push(nodeId); }
+        catch { rollbackFailed.push(nodeId); }
       }
+      const action = rollbackFailed.length > 0
+        ? `Rollback partially failed — orphaned node IDs: [${rollbackFailed.join(', ')}]. Delete them with delete_resource { resourceType: 'tool', id, aiAgentId }, then retry.`
+        : 'Check HTTP config and code snippets, then retry.';
       return withHints(
         { error: error.message },
-        { resource: 'cognigy://guide/tools-setup', action: 'Check HTTP config and code snippets, then retry.' },
+        { resource: 'cognigy://guide/tools-setup', action },
       );
     }
   }
@@ -1188,7 +1338,8 @@ export class ToolHandlers {
     // Detect whether config contains HTTP child-node fields
     const hasHttpUpdates = cfg && (cfg.url || cfg.method || cfg.headers || cfg.body);
     const hasCodeUpdates = cfg && (cfg.preProcessCode !== undefined || cfg.postProcessCode !== undefined);
-    const hasChildUpdates = hasHttpUpdates || hasCodeUpdates;
+    const hasResolveUpdate = cfg && cfg.toolResponseValue !== undefined;
+    const hasChildUpdates = hasHttpUpdates || hasCodeUpdates || hasResolveUpdate;
 
     // Step 1: Update the tool node itself (label and/or tool-node config)
     const patchPayload: any = {};
@@ -1237,6 +1388,7 @@ export class ToolHandlers {
     }
 
     // Step 2: Update child nodes for http tools (httpRequest + Code nodes)
+    const skippedUpdates: string[] = [];
     if (hasChildUpdates && cfg) {
       const nodes: any = await this.apiClient.get(`/v2.0/flows/${flowId}/chart/nodes`, {
         params: { limit: 100 },
@@ -1262,6 +1414,8 @@ export class ToolHandlers {
             );
             updatedFields.push('http');
           }
+        } else {
+          skippedUpdates.push('HTTP node not found — http config was not updated');
         }
       }
 
@@ -1276,6 +1430,8 @@ export class ToolHandlers {
             { config: { code: cfg.preProcessCode } },
           );
           updatedFields.push('preProcessCode');
+        } else {
+          skippedUpdates.push('Pre-process Code node not found — preProcessCode was not updated');
         }
       }
 
@@ -1290,16 +1446,40 @@ export class ToolHandlers {
             { config: { code: cfg.postProcessCode } },
           );
           updatedFields.push('postProcessCode');
+        } else {
+          skippedUpdates.push('Post-process Code node not found — postProcessCode was not updated');
+        }
+      }
+
+      if (cfg.toolResponseValue !== undefined) {
+        const resolveNode = childNodes.find((n: any) => n.type === 'aiAgentToolAnswer');
+        if (resolveNode) {
+          await this.apiClient.patch(
+            `/v2.0/flows/${flowId}/chart/nodes/${resolveNode._id || resolveNode.id}`,
+            { config: { answer: cfg.toolResponseValue } },
+          );
+          updatedFields.push('toolResponseValue');
+        } else {
+          skippedUpdates.push('Resolve Tool Action node not found — toolResponseValue was not updated');
         }
       }
     }
 
-    return {
+    const response: any = {
       toolId: data.toolNodeId,
       name: data.name ?? undefined,
       updated: true,
       updatedFields,
     };
+
+    if (skippedUpdates.length > 0) {
+      return withHints(response, {
+        warning: `Some updates were skipped: ${skippedUpdates.join('; ')}`,
+        action: 'Child nodes may not exist yet. Use create_tool with http type to create the full node tree, or verify the tool structure.',
+      });
+    }
+
+    return response;
   }
 
   // =========================================================================
@@ -1381,18 +1561,26 @@ export class ToolHandlers {
         // Re-fetch to guarantee URLToken and full settings are available
         let endpoint: any = await this.apiClient.get(`/v2.0/endpoints/${endpointId}`);
 
-        // Apply settings via read-merge-write pattern
+        let settingsApplied = false;
         if (hasSettings) {
           try {
             const mergedSettings = this.mergeWebchatSettings(endpoint.settings ?? {}, webchatSettings);
             await this.apiClient.patch(`/v2.0/endpoints/${endpointId}`, { settings: mergedSettings });
             endpoint = await this.apiClient.get(`/v2.0/endpoints/${endpointId}`);
+            settingsApplied = true;
           } catch {
             // Settings patch failed but endpoint was created — continue
           }
         }
 
-        return this.buildWebchatResponse({ created: true, endpointId: endpointId!, endpoint, settingsKeys });
+        const response = this.buildWebchatResponse({ created: true, endpointId: endpointId!, endpoint, settingsKeys: settingsApplied ? settingsKeys : [] });
+        if (hasSettings && !settingsApplied) {
+          return withHints(response, {
+            warning: 'Endpoint created but settings failed to apply.',
+            action: `Retry settings by calling manage_webchat { endpointId: "${endpointId}", ...settings }`,
+          });
+        }
+        return response;
       } catch (error: any) {
         return withHints(
           { error: `Failed to create webchat endpoint: ${error.message}` },
@@ -1489,17 +1677,7 @@ export class ToolHandlers {
    * if any top-level group is missing. We must send the complete settings object.
    */
   private mergeWebchatSettings(existing: Record<string, any>, updates: Record<string, any>): Record<string, any> {
-    const result = { ...existing };
-    for (const key of Object.keys(updates)) {
-      const val = updates[key];
-      if (val !== undefined && typeof val === 'object' && val !== null && !Array.isArray(val) &&
-          typeof result[key] === 'object' && result[key] !== null && !Array.isArray(result[key])) {
-        result[key] = { ...result[key], ...val };
-      } else if (val !== undefined) {
-        result[key] = val;
-      }
-    }
-    return result;
+    return deepMerge(existing, updates);
   }
 
   private async safeGetEndpoint(endpointId: string): Promise<any> {
@@ -1524,7 +1702,7 @@ export class ToolHandlers {
   // Main dispatcher
   // =========================================================================
   async handleToolCall(toolName: string, args: any): Promise<any> {
-    logger.info(`Handling tool call: ${toolName}`, { args });
+    logger.info(`Handling tool call: ${toolName}`, { args: this.sanitizeArgs(args) });
 
     try {
       let result: any;
@@ -1574,5 +1752,5 @@ export class ToolHandlers {
   }
 }
 
-// get_resource uses slightly different filters for detail views
+// Reserved: per-type detail-view filters for get_resource (falls back to RESOURCE_FILTERS when empty)
 const RESOURCE_FILTERS_GET: Record<string, (raw: any) => any> = {};

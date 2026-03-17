@@ -82,14 +82,14 @@ export const deleteResourceSchema = z.object({
   resourceType: z.enum([
     'agent', 'flow', 'endpoint', 'llm_model', 'knowledge_store', 'function', 'tool',
   ]),
-  id: z.string().min(1),
+  id: idSchema,
   projectId: idSchema.optional(),
   aiAgentId: idSchema.optional(),
 });
 
 // Tool 8: manage_knowledge
 export const manageKnowledgeSchema = z.object({
-  operation: z.enum(['create_store', 'create_source', 'list_chunks']),
+  operation: z.enum(['create_store', 'create_source', 'list_chunks', 'list_sources']),
   projectId: idSchema.optional(),
   knowledgeStoreId: idSchema.optional(),
   sourceId: idSchema.optional(),
@@ -124,6 +124,7 @@ export const createToolSchema = z.object({
     body: z.string().optional(),
     preProcessCode: z.string().optional(),
     postProcessCode: z.string().optional(),
+    toolResponseValue: z.string().optional(),
   }),
 });
 
@@ -149,6 +150,7 @@ export const updateToolSchema = z.object({
     body: z.string().optional(),
     preProcessCode: z.string().optional(),
     postProcessCode: z.string().optional(),
+    toolResponseValue: z.string().optional(),
   }).optional(),
 });
 

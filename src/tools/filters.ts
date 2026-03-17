@@ -60,6 +60,7 @@ export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
   }),
   knowledge_store: (r) => ({
     id: rid(r),
+    referenceId: r.referenceId,
     name: r.name,
     description: r.description,
     sourceCount: r.sourceCount,

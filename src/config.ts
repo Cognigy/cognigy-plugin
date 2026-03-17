@@ -67,6 +67,18 @@ function deriveWebchatBaseUrl(apiBaseUrl: string): string {
   return apiBaseUrl.replace(/\/api-/, '/webchat-');
 }
 
+const VALID_LOG_LEVELS = new Set<string>(['debug', 'info', 'warn', 'error']);
+
+function parseIntWithDefault(envVar: string | undefined, defaultValue: number): number {
+  if (!envVar) return defaultValue;
+  const parsed = parseInt(envVar, 10);
+  if (Number.isNaN(parsed)) {
+    console.error(`[config] Invalid integer "${envVar}", using default ${defaultValue}`);
+    return defaultValue;
+  }
+  return parsed;
+}
+
 /**
  * Load configuration from environment variables
  */
@@ -97,10 +109,17 @@ export function loadConfig(): Config {
     apiKey,
     serverName: process.env.MCP_SERVER_NAME || 'cognigy-api-mcp',
     serverVersion: process.env.MCP_SERVER_VERSION || '2.0.0',
-    logLevel: (process.env.LOG_LEVEL as Config['logLevel']) || 'info',
+    logLevel: (() => {
+      const raw = process.env.LOG_LEVEL || 'info';
+      if (!VALID_LOG_LEVELS.has(raw)) {
+        console.error(`[config] Invalid LOG_LEVEL "${raw}", falling back to "info"`);
+        return 'info' as Config['logLevel'];
+      }
+      return raw as Config['logLevel'];
+    })(),
     rateLimit: {
-      maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
-      windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10),
+      maxRequests: parseIntWithDefault(process.env.RATE_LIMIT_MAX_REQUESTS, 100),
+      windowMs: parseIntWithDefault(process.env.RATE_LIMIT_WINDOW_MS, 60000),
     },
   };
 }

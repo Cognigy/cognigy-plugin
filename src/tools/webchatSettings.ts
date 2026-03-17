@@ -55,7 +55,7 @@ const STYLE_PRESETS: Record<string, Partial<ManageWebchatInput>> = {
   },
 };
 
-function deepMerge(target: any, source: any): any {
+export function deepMerge(target: any, source: any): any {
   const result = { ...target };
   for (const key of Object.keys(source)) {
     if (source[key] !== undefined) {

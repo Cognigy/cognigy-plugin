@@ -6,8 +6,17 @@ BUILD WORKFLOW (follow this order for new agents):
    If none: setup_llm { projectId, provider: "openAI", modelType: "gpt-4o", apiKey }
 3. create_ai_agent { projectId, name, description } → returns agent + flow + endpoint + endpointUrl
 4. talk_to_agent { endpointUrl, message } → test the agent
-5. update_ai_agent { aiAgentId, description } → refine behavior
+5. update_ai_agent → refine the agent using ALL available fields:
+   - Agent-level: name, description (persona), instructions (guardrails)
+   - Job-level (jobConfig): jobName (role title), jobDescription (responsibilities), jobInstructions (procedures), temperature, maxTokens
+   Read cognigy://guide/agent-creation for the full field reference and examples.
+   IMPORTANT: Always distribute configuration across the appropriate fields — do NOT put everything in description alone.
 6. Repeat steps 4-5 until satisfied
+
+KNOWLEDGE STORES:
+- Knowledge stores should ALWAYS be attached as tools (via create_tool { toolType: "knowledge" } or knowledgeStoreReferenceId on create_ai_agent).
+- This creates a dedicated search tool the agent can invoke during conversations.
+- Only attach knowledge to the agent persona (via update_ai_agent) if the user EXPLICITLY asks to put it on the persona.
 
 DEPLOY TO WEBCHAT (after agent is working):
 1. manage_webchat { projectId, flowId, name } → creates a Webchat v3 endpoint
@@ -22,6 +31,6 @@ RULES:
 - talk_to_agent hits a DIFFERENT base URL (endpoint-*.cognigy.ai) — not the API base URL.
 - delete_resource is the ONLY way to delete anything.
 - create_tool handles tool creation — it auto-provisions flow nodes internally. Do NOT create flow nodes for tools manually.
-- manage_webchat handles Webchat v3 endpoint creation and configuration. It auto-detects existing webchat endpoints.
+- manage_webchat is DESTRUCTIVE — it can overwrite existing webchat endpoint settings. If the user's intent is ambiguous (e.g., they say "set up webchat" but a webchat endpoint already exists), ALWAYS ask the user whether to update the existing endpoint or create a new one before proceeding. manage_webchat auto-detects existing webchat endpoints.
 - manage_webchat ALWAYS returns demoWebchatUrl — present it to the user every time as a clickable link. Do NOT tell the user to find the URL in the Cognigy UI.
 - When errors occur, check _hints.resource for a guide URI to read.`;

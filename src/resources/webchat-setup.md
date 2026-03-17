@@ -19,7 +19,11 @@ manage_webchat {
   behavior: { renderMarkdown: true }
 }
 
-If you omit endpointId but provide projectId, the tool auto-finds the first webchat3 endpoint in the project and updates it. If none exists and flowId is provided, it creates one.
+⚠️ IMPORTANT — UPDATE vs CREATE:
+If the user's intent is ambiguous (e.g., "set up webchat", "configure webchat"), ALWAYS ask whether to update an existing endpoint or create a new one BEFORE calling manage_webchat.
+- If you omit endpointId but provide projectId, the tool auto-finds the first webchat3 endpoint in the project and OVERWRITES its settings. This can be destructive if unintended.
+- If none exists and flowId is provided, it creates one.
+- Only skip the clarification if the user explicitly says "create a new webchat" or "update the existing webchat" or provides an endpointId.
 
 ## Style Presets
 

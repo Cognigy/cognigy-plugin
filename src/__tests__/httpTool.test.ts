@@ -1,0 +1,261 @@
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { CognigyApiClient } from '../api/client.js';
+import { ToolHandlers } from '../tools/handlers.js';
+
+const ID = {
+  project: '507f1f77bcf86cd799439011',
+  agent: '60d5ec49f1a2c8b1a4e0f001',
+  flow: '60d5ec49f1a2c8b1a4e0f002',
+  endpoint: '60d5ec49f1a2c8b1a4e0f003',
+  entry: '60d5ec49f1a2c8b1a4e0f004',
+  node: '60d5ec49f1a2c8b1a4e0f005',
+  llm: '60d5ec49f1a2c8b1a4e0f006',
+  ks: '60d5ec49f1a2c8b1a4e0f007',
+  tool: '60d5ec49f1a2c8b1a4e0f008',
+  func: '60d5ec49f1a2c8b1a4e0f009',
+  ext: '60d5ec49f1a2c8b1a4e0f00a',
+};
+
+const MOCK_IDS = {
+  toolNode: 'aaaaaaaaaaaaaaaaaaaaa001',
+  resolveNode: 'aaaaaaaaaaaaaaaaaaaaa002',
+  preNode: 'aaaaaaaaaaaaaaaaaaaaa003',
+  httpNode: 'aaaaaaaaaaaaaaaaaaaaa004',
+  postNode: 'aaaaaaaaaaaaaaaaaaaaa005',
+};
+
+describe('create_tool – HTTP tool path', () => {
+  let api: jest.Mocked<CognigyApiClient>;
+  let h: ToolHandlers;
+
+  beforeEach(() => {
+    api = {
+      get: jest.fn(),
+      post: jest.fn(),
+      patch: jest.fn(),
+      delete: jest.fn(),
+      put: jest.fn(),
+    } as any;
+    h = new ToolHandlers(api, 'https://endpoint-trial.cognigy.ai');
+  });
+
+  function mockFlowWithJobNode() {
+    api.get
+      .mockResolvedValueOnce({ flowId: ID.flow })
+      .mockResolvedValueOnce({
+        items: [
+          { _id: ID.entry, isEntryPoint: true },
+          { _id: ID.node, type: 'aiAgentJob' },
+        ],
+      });
+  }
+
+  function baseArgs(configOverrides: Record<string, any> = {}) {
+    return {
+      aiAgentId: ID.agent,
+      toolType: 'http',
+      name: 'My HTTP Tool',
+      config: { url: 'https://api.example.com/data', ...configOverrides },
+    };
+  }
+
+  // Mocks post calls for: toolNode, resolveNode, then any extras
+  function mockPostSequence(...ids: string[]) {
+    let chain = api.post.mockResolvedValueOnce({ _id: ids[0] });
+    for (let i = 1; i < ids.length; i++) {
+      chain = chain.mockResolvedValueOnce({ _id: ids[i] });
+    }
+  }
+
+  it('creates HTTP tool with basic GET request (url only)', async () => {
+    mockFlowWithJobNode();
+    mockPostSequence(MOCK_IDS.toolNode, MOCK_IDS.resolveNode, MOCK_IDS.httpNode);
+
+    const result = await h.handleToolCall('create_tool', baseArgs());
+
+    expect(result.toolId).toBe(MOCK_IDS.toolNode);
+    expect(result.toolType).toBe('http');
+    expect(result.childNodes.httpNodeId).toBe(MOCK_IDS.httpNode);
+    expect(result.childNodes.resolveNodeId).toBe(MOCK_IDS.resolveNode);
+    expect(result.childNodes.preProcessNodeId).toBeUndefined();
+    expect(result.childNodes.postProcessNodeId).toBeUndefined();
+
+    const httpCallBody = api.post.mock.calls[2][1];
+    expect(httpCallBody.config.url).toBe('https://api.example.com/data');
+    expect(httpCallBody.config.type).toBe('GET');
+  });
+
+  it('creates HTTP tool with POST method, headers, and JSON body', async () => {
+    mockFlowWithJobNode();
+    mockPostSequence(MOCK_IDS.toolNode, MOCK_IDS.resolveNode, MOCK_IDS.httpNode);
+
+    const result = await h.handleToolCall('create_tool', baseArgs({
+      method: 'POST',
+      headers: { Authorization: 'Bearer tok', 'Content-Type': 'application/json' },
+      body: '{"key":"value"}',
+    }));
+
+    expect(result.toolType).toBe('http');
+    const httpCallBody = api.post.mock.calls[2][1];
+    expect(httpCallBody.config.type).toBe('POST');
+    expect(httpCallBody.config.url).toBe('https://api.example.com/data');
+    expect(JSON.parse(httpCallBody.config.headers)).toEqual({
+      Authorization: 'Bearer tok',
+      'Content-Type': 'application/json',
+    });
+    expect(httpCallBody.config.payloadType).toBe('json');
+    expect(httpCallBody.config.payloadJSON).toEqual({ key: 'value' });
+  });
+
+  it('creates HTTP tool with non-JSON body (text fallback)', async () => {
+    mockFlowWithJobNode();
+    mockPostSequence(MOCK_IDS.toolNode, MOCK_IDS.resolveNode, MOCK_IDS.httpNode);
+
+    const result = await h.handleToolCall('create_tool', baseArgs({
+      method: 'POST',
+      body: 'plain text body that is not JSON',
+    }));
+
+    expect(result.toolType).toBe('http');
+    const httpCallBody = api.post.mock.calls[2][1];
+    expect(httpCallBody.config.payloadType).toBe('text');
+    expect(httpCallBody.config.payloadText).toBe('plain text body that is not JSON');
+    expect(httpCallBody.config.payloadJSON).toBeUndefined();
+  });
+
+  it('creates HTTP tool with pre-process code node', async () => {
+    mockFlowWithJobNode();
+    mockPostSequence(
+      MOCK_IDS.toolNode, MOCK_IDS.resolveNode, MOCK_IDS.preNode, MOCK_IDS.httpNode,
+    );
+
+    const result = await h.handleToolCall('create_tool', baseArgs({
+      preProcessCode: 'input.data = { transformed: true };',
+    }));
+
+    expect(result.childNodes.preProcessNodeId).toBe(MOCK_IDS.preNode);
+    expect(result.childNodes.httpNodeId).toBe(MOCK_IDS.httpNode);
+    expect(result.childNodes.postProcessNodeId).toBeUndefined();
+
+    const preCallBody = api.post.mock.calls[2][1];
+    expect(preCallBody.type).toBe('code');
+    expect(preCallBody.config.code).toBe('input.data = { transformed: true };');
+    expect(preCallBody.label).toBe('My HTTP Tool - Pre-Process');
+  });
+
+  it('creates HTTP tool with post-process code node', async () => {
+    mockFlowWithJobNode();
+    mockPostSequence(
+      MOCK_IDS.toolNode, MOCK_IDS.resolveNode, MOCK_IDS.httpNode, MOCK_IDS.postNode,
+    );
+
+    const result = await h.handleToolCall('create_tool', baseArgs({
+      postProcessCode: 'input.result = input.httprequest.data;',
+    }));
+
+    expect(result.childNodes.preProcessNodeId).toBeUndefined();
+    expect(result.childNodes.httpNodeId).toBe(MOCK_IDS.httpNode);
+    expect(result.childNodes.postProcessNodeId).toBe(MOCK_IDS.postNode);
+
+    const postCallBody = api.post.mock.calls[3][1];
+    expect(postCallBody.type).toBe('code');
+    expect(postCallBody.config.code).toBe('input.result = input.httprequest.data;');
+    expect(postCallBody.label).toBe('My HTTP Tool - Post-Process');
+  });
+
+  it('creates HTTP tool with both pre and post-process code nodes', async () => {
+    mockFlowWithJobNode();
+    mockPostSequence(
+      MOCK_IDS.toolNode, MOCK_IDS.resolveNode,
+      MOCK_IDS.preNode, MOCK_IDS.httpNode, MOCK_IDS.postNode,
+    );
+
+    const result = await h.handleToolCall('create_tool', baseArgs({
+      preProcessCode: 'input.pre = true;',
+      postProcessCode: 'input.post = true;',
+    }));
+
+    expect(result.childNodes.preProcessNodeId).toBe(MOCK_IDS.preNode);
+    expect(result.childNodes.httpNodeId).toBe(MOCK_IDS.httpNode);
+    expect(result.childNodes.postProcessNodeId).toBe(MOCK_IDS.postNode);
+    expect(result.childNodes.resolveNodeId).toBe(MOCK_IDS.resolveNode);
+  });
+
+  it('returns error when URL is missing for http tool type', async () => {
+    mockFlowWithJobNode();
+
+    const result = await h.handleToolCall('create_tool', {
+      aiAgentId: ID.agent,
+      toolType: 'http',
+      name: 'Bad HTTP Tool',
+      config: {},
+    });
+
+    expect(result.error).toBe('url is required in config for http tool type.');
+    expect(result._hints.resource).toBe('cognigy://guide/tools-setup');
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('rolls back all created nodes on failure', async () => {
+    mockFlowWithJobNode();
+    api.post
+      .mockResolvedValueOnce({ _id: MOCK_IDS.toolNode })
+      .mockResolvedValueOnce({ _id: MOCK_IDS.resolveNode })
+      .mockRejectedValueOnce(new Error('HTTP node creation failed'));
+    api.delete.mockResolvedValue({});
+
+    const result = await h.handleToolCall('create_tool', baseArgs());
+
+    expect(result.error).toBe('HTTP node creation failed');
+    expect(api.delete).toHaveBeenCalledTimes(2);
+    expect(api.delete).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes/${MOCK_IDS.resolveNode}`,
+    );
+    expect(api.delete).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes/${MOCK_IDS.toolNode}`,
+    );
+  });
+
+  it('reports partial rollback failure when some deletes fail', async () => {
+    mockFlowWithJobNode();
+    api.post
+      .mockResolvedValueOnce({ _id: MOCK_IDS.toolNode })
+      .mockResolvedValueOnce({ _id: MOCK_IDS.resolveNode })
+      .mockRejectedValueOnce(new Error('HTTP node creation failed'));
+    api.delete
+      .mockRejectedValueOnce(new Error('delete failed'))
+      .mockResolvedValueOnce({});
+
+    const result = await h.handleToolCall('create_tool', baseArgs());
+
+    expect(result.error).toBe('HTTP node creation failed');
+    expect(result._hints.action).toContain('Rollback partially failed');
+    expect(result._hints.action).toContain(MOCK_IDS.resolveNode);
+  });
+
+  it('HTTP node target is pre-process node when pre-process code exists', async () => {
+    mockFlowWithJobNode();
+    mockPostSequence(
+      MOCK_IDS.toolNode, MOCK_IDS.resolveNode, MOCK_IDS.preNode, MOCK_IDS.httpNode,
+    );
+
+    await h.handleToolCall('create_tool', baseArgs({
+      preProcessCode: 'input.x = 1;',
+    }));
+
+    const httpCallBody = api.post.mock.calls[3][1];
+    expect(httpCallBody.type).toBe('httpRequest');
+    expect(httpCallBody.target).toBe(MOCK_IDS.preNode);
+  });
+
+  it('resolve node has the correct answer config', async () => {
+    mockFlowWithJobNode();
+    mockPostSequence(MOCK_IDS.toolNode, MOCK_IDS.resolveNode, MOCK_IDS.httpNode);
+
+    await h.handleToolCall('create_tool', baseArgs());
+
+    const resolveCallBody = api.post.mock.calls[1][1];
+    expect(resolveCallBody.type).toBe('aiAgentToolAnswer');
+    expect(resolveCallBody.config.answer).toBe('{{JSON.stringify(input.httprequest)}}');
+  });
+});

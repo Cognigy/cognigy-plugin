@@ -10,8 +10,17 @@ export interface CognigyApiClientConfig {
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 500;
 
-function isRetryable(status: number): boolean {
-  return status === 429 || status >= 500;
+const RETRYABLE_NETWORK_CODES = new Set([
+  'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND',
+  'EAI_AGAIN', 'EPIPE', 'ERR_NETWORK',
+]);
+
+function isRetryable(error: AxiosError): boolean {
+  if (error.response) {
+    const status = error.response.status;
+    return status === 429 || status >= 500;
+  }
+  return RETRYABLE_NETWORK_CODES.has(error.code ?? '');
 }
 
 export class CognigyApiClient {
@@ -50,7 +59,7 @@ export class CognigyApiClient {
         const config = error.config as AxiosRequestConfig & { _retryCount?: number };
         const status = error.response?.status ?? 0;
 
-        if (config && isRetryable(status)) {
+        if (config && isRetryable(error)) {
           config._retryCount = (config._retryCount ?? 0) + 1;
           if (config._retryCount <= MAX_RETRIES) {
             const delay = RETRY_BASE_MS * Math.pow(2, config._retryCount - 1);

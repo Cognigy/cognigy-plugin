@@ -85,7 +85,7 @@ create_tool {
   }
 }
 
-#### Example — POST with pre- and post-processing
+#### Example — POST with pre/post-processing and custom tool response
 create_tool {
   aiAgentId: "...",
   toolType: "http",
@@ -99,9 +99,24 @@ create_tool {
     headers: { "Authorization": "Bearer {{context.apiToken}}" },
     body: "{{JSON.stringify(input.orderPayload)}}",
     preProcessCode: "input.orderPayload = { items: input.data.items, customer: input.data.customerId, timestamp: new Date().toISOString() };",
-    postProcessCode: "input.orderResult = { orderId: input.httpResponse.body.id, status: input.httpResponse.body.status }; delete input.httpResponse;"
+    postProcessCode: "input.orderResult = { orderId: input.httpResponse.body.id, status: input.httpResponse.body.status }; delete input.httpResponse;",
+    toolResponseValue: "{{JSON.stringify(input.orderResult)}}"
   }
 }
+
+#### Tool response value (toolResponseValue)
+The `toolResponseValue` field controls what the Resolve Tool Action node returns to the LLM as the tool's result. This is a CognigyScript expression.
+
+- **Default** (if omitted): `{{JSON.stringify(input.httprequest)}}` — returns the raw HTTP response object
+- **Custom**: Set to any CognigyScript expression pointing to where your code nodes store the processed result
+
+IMPORTANT: If you use postProcessCode to transform the HTTP response and store it in a custom field (e.g., `input.result` or `input.orderResult`), you MUST set toolResponseValue to match (e.g., `{{JSON.stringify(input.result)}}`). Otherwise the Resolve node will return the raw HTTP response instead of your processed data.
+
+Common patterns:
+- `{{JSON.stringify(input.result)}}` — return a processed result object
+- `{{JSON.stringify(input.orderResult)}}` — return a named result from post-processing
+- `{{input.summary}}` — return a plain string value
+- `{{JSON.stringify(input.httprequest)}}` — return the raw HTTP response (default)
 
 ## Updating tools (update_tool)
 
@@ -135,5 +150,5 @@ update_tool {
 - For knowledge tools, the knowledge store must exist (use manage_knowledge first)
 
 ## Knowledge: tool vs persona-level
-- **Default**: Use create_tool with toolType "knowledge" to attach knowledge stores. This is the preferred approach — it gives the agent a dedicated search tool.
-- **Exception**: Only use knowledgeReferenceId on the agent persona (via create_ai_agent or update_ai_agent) for brand identity or persona-defining knowledge the user explicitly requests on the agent itself.
+- **Default (ALWAYS use unless told otherwise)**: Use create_tool with toolType "knowledge" to attach knowledge stores. This gives the agent a dedicated search tool it can invoke during conversations.
+- **Exception**: Only attach knowledge to the agent persona (via create_ai_agent or update_ai_agent) if the user EXPLICITLY asks to put it on the persona. Do not default to persona-level attachment.
