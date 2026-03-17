@@ -4,6 +4,7 @@
 export interface Config {
   apiBaseUrl: string;
   endpointBaseUrl: string;
+  webchatBaseUrl: string;
   apiKey: string;
   serverName: string;
   serverVersion: string;
@@ -12,6 +13,24 @@ export interface Config {
     maxRequests: number;
     windowMs: number;
   };
+}
+
+/**
+ * Normalise the API base URL so it always points to the API host.
+ * Users may supply the bare UI URL (e.g. https://dev.cognigy.ai) instead of the
+ * API URL (https://api-dev.cognigy.ai).  We detect this and prepend "api-".
+ */
+function normalizeApiBaseUrl(raw: string): string {
+  try {
+    const url = new URL(raw);
+    if (!url.hostname.startsWith('api-') && url.hostname.endsWith('.cognigy.ai')) {
+      url.hostname = `api-${url.hostname}`;
+      return url.toString().replace(/\/+$/, '');
+    }
+  } catch {
+    // fall through
+  }
+  return raw.replace(/\/+$/, '');
 }
 
 /**
@@ -32,6 +51,35 @@ function deriveEndpointBaseUrl(apiBaseUrl: string): string {
 }
 
 /**
+ * Derive the webchat demo base URL from the API base URL.
+ * Pattern: https://api-{env}.cognigy.ai -> https://webchat-{env}.cognigy.ai
+ */
+function deriveWebchatBaseUrl(apiBaseUrl: string): string {
+  try {
+    const url = new URL(apiBaseUrl);
+    const match = url.hostname.match(/^api-(.+)$/);
+    if (match) {
+      return `${url.protocol}//webchat-${match[1]}`;
+    }
+  } catch {
+    // fall through
+  }
+  return apiBaseUrl.replace(/\/api-/, '/webchat-');
+}
+
+const VALID_LOG_LEVELS = new Set<string>(['debug', 'info', 'warn', 'error']);
+
+function parseIntWithDefault(envVar: string | undefined, defaultValue: number): number {
+  if (!envVar) return defaultValue;
+  const parsed = parseInt(envVar, 10);
+  if (Number.isNaN(parsed)) {
+    console.error(`[config] Invalid integer "${envVar}", using default ${defaultValue}`);
+    return defaultValue;
+  }
+  return parsed;
+}
+
+/**
  * Load configuration from environment variables
  */
 export function loadConfig(): Config {
@@ -46,19 +94,32 @@ export function loadConfig(): Config {
     throw new Error('COGNIGY_API_KEY environment variable is required');
   }
 
+  const normalizedApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
+
   const endpointBaseUrl =
-    process.env.COGNIGY_ENDPOINT_BASE_URL || deriveEndpointBaseUrl(apiBaseUrl);
+    process.env.COGNIGY_ENDPOINT_BASE_URL || deriveEndpointBaseUrl(normalizedApiBaseUrl);
+
+  const webchatBaseUrl =
+    process.env.COGNIGY_WEBCHAT_BASE_URL || deriveWebchatBaseUrl(normalizedApiBaseUrl);
 
   return {
-    apiBaseUrl,
+    apiBaseUrl: normalizedApiBaseUrl,
     endpointBaseUrl,
+    webchatBaseUrl,
     apiKey,
     serverName: process.env.MCP_SERVER_NAME || 'cognigy-api-mcp',
-    serverVersion: process.env.MCP_SERVER_VERSION || '1.0.0',
-    logLevel: (process.env.LOG_LEVEL as Config['logLevel']) || 'info',
+    serverVersion: process.env.MCP_SERVER_VERSION || '2.0.0',
+    logLevel: (() => {
+      const raw = process.env.LOG_LEVEL || 'info';
+      if (!VALID_LOG_LEVELS.has(raw)) {
+        console.error(`[config] Invalid LOG_LEVEL "${raw}", falling back to "info"`);
+        return 'info' as Config['logLevel'];
+      }
+      return raw as Config['logLevel'];
+    })(),
     rateLimit: {
-      maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
-      windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10),
+      maxRequests: parseIntWithDefault(process.env.RATE_LIMIT_MAX_REQUESTS, 100),
+      windowMs: parseIntWithDefault(process.env.RATE_LIMIT_WINDOW_MS, 60000),
     },
   };
 }

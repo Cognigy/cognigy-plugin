@@ -1,235 +1,351 @@
-/**
- * Zod schemas for MCP tool inputs
- */
-
 import { z } from 'zod';
 
-// Common schemas
-const idSchema = z.string().regex(/^[a-z0-9]{24}$/, 'Invalid ID format');
-const paginationSchema = z.object({
+const idSchema = z.string().regex(/^[a-f0-9]{24}$/, 'Must be a 24-char hex ID');
+
+const paginationSchema = {
   limit: z.number().int().min(1).max(100).optional(),
   skip: z.number().int().min(0).optional(),
-});
+};
 
-// 1. AI Agent Management
-export const aiAgentCreateSchema = z.object({
-  projectId: idSchema,
+// Tool 1: create_ai_agent
+export const createAiAgentSchema = z.object({
+  projectId: idSchema.optional(),
   name: z.string().min(1).max(200),
   description: z.string().optional(),
-  // Note: "job description" is configured via AI Agent Job Node in Flow, not here
-  knowledgeReferenceId: z.string().uuid().optional(),
-  image: z.string().optional(),
-  speakingStyle: z.object({
-    completeness: z.string().optional(),
-    formality: z.string().optional(),
+  knowledgeStoreReferenceId: z.string().optional(),
+});
+
+// Tool 2: update_ai_agent
+export const updateAiAgentSchema = z.object({
+  aiAgentId: idSchema,
+  name: z.string().min(1).max(200).optional(),
+  description: z.string().optional(),
+  instructions: z.string().optional(),
+  jobConfig: z.object({
+    llmProviderReferenceId: z.string().optional(),
+    jobName: z.string().optional(),
+    jobDescription: z.string().optional(),
+    jobInstructions: z.string().optional(),
+    temperature: z.number().min(0).max(1).optional(),
+    maxTokens: z.number().int().min(100).max(8000).optional(),
   }).optional(),
 });
 
-export const aiAgentUpdateSchema = z.object({
-  aiAgentId: idSchema,
+// Tool 3: setup_llm
+export const setupLlmSchema = z.object({
+  projectId: idSchema,
+  provider: z.enum(['openAI', 'azureOpenAI', 'anthropic', 'google', 'mistral']),
+  modelType: z.string().min(1),
+  name: z.string().optional(),
+  apiKey: z.string().optional(),
+  connectionId: z.string().optional(),
+  isDefault: z.boolean().optional(),
+});
+
+// Tool 4: talk_to_agent
+export const talkToAgentSchema = z.object({
+  endpointUrl: z.string().url(),
+  message: z.string().min(1),
+  sessionId: z.string().optional(),
+  userId: z.string().optional(),
+  data: z.record(z.any()).optional(),
+  verbose: z.boolean().optional(),
+});
+
+// Tool 5: list_resources
+export const listResourcesSchema = z.object({
+  resourceType: z.enum([
+    'project', 'agent', 'flow', 'endpoint', 'llm_model',
+    'knowledge_store', 'conversation', 'extension', 'function', 'tool',
+  ]),
+  projectId: idSchema.optional(),
+  aiAgentId: idSchema.optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  channel: z.string().optional(),
+  ...paginationSchema,
+});
+
+// Tool 6: get_resource
+export const getResourceSchema = z.object({
+  resourceType: z.enum([
+    'agent', 'flow', 'endpoint', 'project', 'conversation',
+    'session_state', 'llm_model', 'knowledge_store', 'extension', 'function',
+  ]),
+  id: z.string().min(1),
+  projectId: idSchema.optional(),
+  raw: z.boolean().optional(),
+});
+
+// Tool 7: delete_resource
+export const deleteResourceSchema = z.object({
+  resourceType: z.enum([
+    'agent', 'flow', 'endpoint', 'llm_model', 'knowledge_store', 'function', 'tool',
+  ]),
+  id: idSchema,
+  projectId: idSchema.optional(),
+  aiAgentId: idSchema.optional(),
+});
+
+// Tool 8: manage_knowledge
+export const manageKnowledgeSchema = z.object({
+  operation: z.enum(['create_store', 'create_source', 'list_chunks', 'list_sources']),
+  projectId: idSchema.optional(),
+  knowledgeStoreId: idSchema.optional(),
+  sourceId: idSchema.optional(),
   name: z.string().min(1).max(200).optional(),
   description: z.string().optional(),
-  job: z.string().optional(),
-  tools: z.array(z.string()).optional(),
-});
-
-export const aiAgentListSchema = z.object({
-  projectId: idSchema,
-  ...paginationSchema.shape,
-});
-
-export const aiAgentGetSchema = z.object({
-  aiAgentId: idSchema,
-});
-
-export const aiAgentDeleteSchema = z.object({
-  aiAgentId: idSchema,
-});
-
-export const aiAgentHireSchema = z.object({
-  aiAgentId: idSchema,
-  templateId: z.string().optional(),
-});
-
-// 2. Knowledge Management
-export const knowledgeStoreCreateSchema = z.object({
-  projectId: idSchema,
-  name: z.string().min(1).max(200),
-  description: z.string().optional(),
-  embeddingModel: z.string().optional(),
-});
-
-export const knowledgeSourceCreateSchema = z.object({
-  knowledgeStoreId: idSchema,
-  type: z.enum(['url', 'file', 'text']),
-  content: z.string(),
-  metadata: z.record(z.any()).optional(),
-});
-
-export const knowledgeChunkSearchSchema = z.object({
-  knowledgeStoreId: idSchema,
-  query: z.string().min(1),
+  type: z.enum(['url', 'manual', 'file']).optional(),
+  url: z.string().url().optional(),
+  text: z.string().optional(),
+  filePath: z.string().optional(),
+  filter: z.string().optional(),
   limit: z.number().int().min(1).max(50).optional(),
 });
 
-// 3. Conversation Management
-export const conversationListSchema = z.object({
-  projectId: idSchema,
-  ...paginationSchema.shape,
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-  channel: z.string().optional(),
-});
-
-export const conversationGetSchema = z.object({
-  sessionId: z.string(),
-});
-
-export const sessionStateGetSchema = z.object({
-  sessionId: z.string(),
-});
-
-// 4. Flow Management
-export const flowCreateSchema = z.object({
-  projectId: idSchema,
+// Tool 9: create_tool (includes http tool type, formerly create_custom_http_tool)
+export const createToolSchema = z.object({
+  aiAgentId: idSchema,
+  toolType: z.enum(['tool', 'knowledge', 'send_email', 'mcp', 'http']),
   name: z.string().min(1).max(200),
-  description: z.string().optional(),
+  config: z.object({
+    toolId: z.string().optional(),
+    description: z.string().optional(),
+    parameters: z.string().optional(),
+    knowledgeStoreId: z.string().optional(),
+    topK: z.number().int().min(1).max(50).optional(),
+    recipient: z.string().optional(),
+    mcpServerUrl: z.string().optional(),
+    mcpName: z.string().optional(),
+    timeout: z.number().optional(),
+    url: z.string().optional(),
+    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+    headers: z.record(z.string()).optional(),
+    body: z.string().optional(),
+    preProcessCode: z.string().optional(),
+    postProcessCode: z.string().optional(),
+    toolResponseValue: z.string().optional(),
+  }),
 });
 
-export const flowUpdateSchema = z.object({
-  flowId: idSchema,
+// Tool 10: update_tool
+export const updateToolSchema = z.object({
+  aiAgentId: idSchema,
+  toolNodeId: idSchema,
   name: z.string().min(1).max(200).optional(),
-  description: z.string().optional(),
+  toolType: z.enum(['tool', 'knowledge', 'send_email', 'mcp', 'http']).optional(),
+  config: z.object({
+    toolId: z.string().optional(),
+    description: z.string().optional(),
+    parameters: z.string().optional(),
+    knowledgeStoreId: z.string().optional(),
+    topK: z.number().int().min(1).max(50).optional(),
+    recipient: z.string().optional(),
+    mcpServerUrl: z.string().optional(),
+    mcpName: z.string().optional(),
+    timeout: z.number().optional(),
+    url: z.string().optional(),
+    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+    headers: z.record(z.string()).optional(),
+    body: z.string().optional(),
+    preProcessCode: z.string().optional(),
+    postProcessCode: z.string().optional(),
+    toolResponseValue: z.string().optional(),
+  }).optional(),
 });
 
-export const flowListSchema = z.object({
-  projectId: idSchema,
-  ...paginationSchema.shape,
+// Tool 11: manage_webchat
+
+const conversationStarterSchema = z.object({
+  title: z.string(),
+  type: z.enum(['postback', 'url']),
+  value: z.string(),
 });
 
-export const flowNodeCreateSchema = z.object({
-  flowId: z.string(), // Can be either MongoDB _id OR UUID - accept both
-  type: z.string(),
-  label: z.string().optional(),
-  config: z.record(z.any()).optional(),
-  mode: z.string().optional(),
-});
+const webchatColorsSchema = z.object({
+  primaryColor: z.string().optional(),
+  secondaryColor: z.string().optional(),
+  chatBackground: z.string().optional(),
+  agentMessageBg: z.string().optional(),
+  userMessageBg: z.string().optional(),
+  textLink: z.string().optional(),
+}).optional();
 
-export const flowNodeUpdateSchema = z.object({
-  flowId: z.string(), // MongoDB _id
-  nodeId: z.string(), // MongoDB _id of the node
-  localeId: z.string().optional(),
-  config: z.record(z.any()).optional(),
-  label: z.string().optional(),
-  comment: z.string().optional(),
-});
+const webchatLayoutSchema = z.object({
+  title: z.string().optional(),
+  logoUrl: z.string().optional(),
+  colors: webchatColorsSchema,
+  chatWindowWidth: z.number().int().min(200).max(2000).optional(),
+  botOutputMaxWidth: z.number().int().min(1).max(100).optional(),
+  disableBotOutputBorder: z.boolean().optional(),
+  maxInputRows: z.number().int().min(1).max(50).optional(),
+  enableInputCollation: z.boolean().optional(),
+  inputCollationTimeout: z.number().int().min(100).max(10000).optional(),
+  dynamicImageAspectRatio: z.boolean().optional(),
+  disableInputAutocomplete: z.boolean().optional(),
+  enableGenericHtml: z.boolean().optional(),
+  allowJsInHtml: z.boolean().optional(),
+  allowJsInUrls: z.boolean().optional(),
+  useAgentAvatars: z.boolean().optional(),
+  botAvatarName: z.string().optional(),
+  botAvatarLogoUrl: z.string().optional(),
+  humanAvatarName: z.string().optional(),
+  humanAvatarLogoUrl: z.string().optional(),
+}).optional();
 
-export const flowNodeGetSchema = z.object({
-  flowId: z.string(), // MongoDB _id
-  nodeId: z.string(), // MongoDB _id of the node
-  localeId: z.string().optional(),
-});
+const webchatBehaviorSchema = z.object({
+  scrollingBehavior: z.enum(['alwaysScroll', 'scrollToLastInput']).optional(),
+  collateStreamedOutputs: z.boolean().optional(),
+  progressiveMessageRendering: z.boolean().optional(),
+  renderMarkdown: z.boolean().optional(),
+  enableTypingIndicator: z.boolean().optional(),
+  inputPlaceholder: z.string().optional(),
+  messageDelay: z.number().int().min(0).max(10000).optional(),
+  focusInputAfterPostback: z.boolean().optional(),
+  enableConnectionStatusIndicator: z.boolean().optional(),
+  enableStt: z.boolean().optional(),
+  enableTts: z.boolean().optional(),
+  collectMetadata: z.boolean().optional(),
+  displayAIAgentNotice: z.boolean().optional(),
+  aiAgentNoticeText: z.string().optional(),
+  enableScrollButton: z.boolean().optional(),
+}).optional();
 
-// 5. Intent & NLU Management
-export const intentCreateSchema = z.object({
-  flowId: idSchema,
-  name: z.string().min(1).max(200),
-  sentences: z.array(z.string()).optional(),
-});
+const webchatStartBehaviorSchema = z.object({
+  mode: z.enum(['textField', 'button', 'autoSend']).optional(),
+  textPayload: z.string().optional(),
+  dataPayload: z.string().optional(),
+  displayText: z.string().optional(),
+  buttonTitle: z.string().optional(),
+}).optional();
 
-export const intentUpdateSchema = z.object({
-  intentId: idSchema,
+const webchatHomeScreenSchema = z.object({
+  enabled: z.boolean().optional(),
+  welcomeText: z.string().optional(),
+  backgroundImage: z.string().optional(),
+  backgroundColor: z.string().optional(),
+  startConversationButtonText: z.string().optional(),
+  conversationStarters: z.array(conversationStarterSchema).max(5).optional(),
+  previousConversations: z.object({
+    enabled: z.boolean().optional(),
+    enableDeleteAll: z.boolean().optional(),
+    buttonText: z.string().optional(),
+    title: z.string().optional(),
+    startNewButtonText: z.string().optional(),
+  }).optional(),
+}).optional();
+
+const webchatTeaserMessageSchema = z.object({
+  text: z.string().optional(),
+  showInChat: z.boolean().optional(),
+  conversationStarters: z.array(conversationStarterSchema).max(5).optional(),
+}).optional();
+
+const webchatChatOptionsSchema = z.object({
+  enabled: z.boolean().optional(),
+  title: z.string().optional(),
+  enableDeleteConversation: z.boolean().optional(),
+  quickReplies: z.object({
+    enabled: z.boolean().optional(),
+    sectionTitle: z.string().optional(),
+    items: z.array(conversationStarterSchema).max(5).optional(),
+  }).optional(),
+  textToSpeech: z.object({
+    showToggle: z.boolean().optional(),
+    toggleLabel: z.string().optional(),
+    activateByDefault: z.boolean().optional(),
+  }).optional(),
+  rating: z.object({
+    enabled: z.boolean().optional(),
+    titleText: z.string().optional(),
+    commentPlaceholder: z.string().optional(),
+    submitButtonText: z.string().optional(),
+    submittedBannerText: z.string().optional(),
+  }).optional(),
+  footer: z.object({
+    enabled: z.boolean().optional(),
+    items: z.array(z.object({ title: z.string(), url: z.string() })).max(2).optional(),
+  }).optional(),
+}).optional();
+
+const webchatPrivacyNoticeSchema = z.object({
+  enabled: z.boolean().optional(),
+  title: z.string().optional(),
+  text: z.string().optional(),
+  submitButton: z.string().optional(),
+  policyLinkTitle: z.string().optional(),
+  policyLinkUrl: z.string().optional(),
+}).optional();
+
+const webchatBusinessHoursSchema = z.object({
+  enabled: z.boolean().optional(),
+  mode: z.enum(['inform', 'disable', 'hide']).optional(),
+  informationText: z.string().optional(),
+  informationTitle: z.string().optional(),
+  timezone: z.string().optional(),
+  schedule: z.array(z.object({
+    dayOfWeek: z.string(),
+    startTime: z.string(),
+    endTime: z.string(),
+  })).optional(),
+}).optional();
+
+const webchatUnreadMessagesSchema = z.object({
+  enableTitleIndicator: z.boolean().optional(),
+  enableBadge: z.boolean().optional(),
+  enablePreview: z.boolean().optional(),
+  enableSound: z.boolean().optional(),
+}).optional();
+
+const webchatMaintenanceSchema = z.object({
+  enabled: z.boolean().optional(),
+  mode: z.enum(['inform', 'disable', 'hide']).optional(),
+  informationText: z.string().optional(),
+  informationTitle: z.string().optional(),
+}).optional();
+
+const webchatWatermarkSchema = z.object({
+  type: z.enum(['default', 'custom', 'none']).optional(),
+  text: z.string().optional(),
+  url: z.string().optional(),
+}).optional();
+
+const webchatPersistentMenuSchema = z.object({
+  enabled: z.boolean().optional(),
+  title: z.string().optional(),
+  items: z.array(z.object({ title: z.string(), payload: z.string() })).optional(),
+}).optional();
+
+const webchatAttachmentUploadSchema = z.object({
+  enabled: z.boolean().optional(),
+  dropzoneText: z.string().optional(),
+}).optional();
+
+const webchatIconSchema = z.object({
+  animation: z.enum(['none', 'bounce', 'swing', 'pulse']).optional(),
+  animationInterval: z.number().min(1).max(60).optional(),
+  animationSpeed: z.enum(['slow', 'normal', 'fast', 'superfast']).optional(),
+}).optional();
+
+export const manageWebchatSchema = z.object({
+  endpointId: idSchema.optional(),
+  projectId: idSchema.optional(),
+  flowId: z.string().optional(),
   name: z.string().min(1).max(200).optional(),
-  sentences: z.array(z.string()).optional(),
+  stylePreset: z.enum(['classic', 'modern', 'slick']).optional(),
+  layout: webchatLayoutSchema,
+  behavior: webchatBehaviorSchema,
+  startBehavior: webchatStartBehaviorSchema,
+  homeScreen: webchatHomeScreenSchema,
+  teaserMessage: webchatTeaserMessageSchema,
+  chatOptions: webchatChatOptionsSchema,
+  privacyNotice: webchatPrivacyNoticeSchema,
+  businessHours: webchatBusinessHoursSchema,
+  unreadMessages: webchatUnreadMessagesSchema,
+  maintenance: webchatMaintenanceSchema,
+  watermark: webchatWatermarkSchema,
+  persistentMenu: webchatPersistentMenuSchema,
+  attachmentUpload: webchatAttachmentUploadSchema,
+  webchatIcon: webchatIconSchema,
+  customJson: z.string().optional(),
 });
-
-export const intentListSchema = z.object({
-  flowId: idSchema,
-  ...paginationSchema.shape,
-});
-
-export const intentTrainSchema = z.object({
-  flowId: idSchema,
-  localeId: idSchema.optional(),
-});
-
-// 6. Analytics & Monitoring
-export const analyticsConversationCountSchema = z.object({
-  projectId: idSchema,
-  year: z.number().int().min(2020),
-  month: z.number().int().min(1).max(12).optional(),
-  channel: z.string().optional(),
-});
-
-export const analyticsCallCountSchema = z.object({
-  projectId: idSchema,
-  year: z.number().int().min(2020),
-  month: z.number().int().min(1).max(12).optional(),
-});
-
-export const logsListSchema = z.object({
-  projectId: idSchema,
-  ...paginationSchema.shape,
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-  level: z.enum(['debug', 'info', 'warn', 'error']).optional(),
-});
-
-export const auditEventsListSchema = z.object({
-  projectId: idSchema,
-  ...paginationSchema.shape,
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-  userId: idSchema.optional(),
-});
-
-// 7. Project & Endpoint Management
-export const projectCreateSchema = z.object({
-  name: z.string().min(1).max(200),
-  description: z.string().optional(),
-  defaultLocale: z.string().optional(),
-});
-
-export const projectListSchema = z.object({
-  ...paginationSchema.shape,
-});
-
-export const endpointCreateSchema = z.object({
-  projectId: idSchema,
-  channel: z.string(), // e.g., "rest", "webchat3", "voiceGateway2"
-  flowId: z.string().uuid(), // Flow uses UUID (referenceId), not MongoDB _id
-  name: z.string().min(1).max(200).optional(),
-  localeId: idSchema.optional(),
-  settings: z.record(z.any()).optional(),
-});
-
-export const endpointListSchema = z.object({
-  projectId: idSchema,
-  ...paginationSchema.shape,
-});
-
-// 8. Extension Management
-export const extensionListSchema = z.object({
-  projectId: idSchema,
-  ...paginationSchema.shape,
-});
-
-export const functionCreateSchema = z.object({
-  projectId: idSchema,
-  name: z.string().min(1).max(200),
-  code: z.string(),
-  description: z.string().optional(),
-});
-
-export const functionUpdateSchema = z.object({
-  functionId: idSchema,
-  name: z.string().min(1).max(200).optional(),
-  code: z.string().optional(),
-  description: z.string().optional(),
-});
-
-export const functionListSchema = z.object({
-  projectId: idSchema,
-  ...paginationSchema.shape,
-});
-
