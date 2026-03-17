@@ -15,7 +15,7 @@ Requires [Node.js 20+](https://nodejs.org) installed on your machine. Run the co
 | Claude Code | `npx @cognigy/mcp-server init --client claude-code` |
 | VS Code (Copilot) | `npx @cognigy/mcp-server init --client vscode` |
 
-The command will prompt you for your Cognigy API URL and API key, then automatically configure your client. Restart your client after setup.
+The command will prompt you for your Cognigy API URL and then ask for an API key. API key is the recommended local setup. If you leave it empty, the installer will configure local OAuth instead. Restart your client after setup.
 
 ### Claude Desktop (one-click)
 
@@ -67,7 +67,7 @@ This MCP server exposes the Cognigy.AI API through 9 high-level workflow tools f
 - **100% Automatic AI Agent Setup**: One tool call creates Agent + Flow + Job Node + Endpoint
 - **Self-Improvement Loop**: Talk to agents, test responses, iterate until perfect
 - **System Prompt Included**: AI assistants automatically become Cognigy experts
-- **Authentication**: API Key authentication (configured via MCP)
+- **Authentication**: API key preferred, local OAuth also supported
 - **Rate Limiting**: Built-in protection against API abuse  
 - **Error Handling**: RFC 7807 compliant error responses
 - **Type Safety**: Full TypeScript with Zod validation
@@ -130,7 +130,7 @@ The **`talk_to_agent`** tool enables a powerful iterative improvement workflow:
 ### Prerequisites
 
 - **Node.js 20+** (check with `node -v`)
-- **A Cognigy API key** — Cognigy.AI → User Menu → My Profile → API Keys → Create New
+- **Either a Cognigy API key or OAuth access to your Cognigy environment**
 
 ### Add to your MCP client
 
@@ -185,18 +185,31 @@ All configuration is passed via the `env` block in the MCP config. No `.env` fil
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `COGNIGY_API_BASE_URL` | Yes | — | Your Cognigy API URL |
-| `COGNIGY_API_KEY` | Yes | — | Your Cognigy API key |
+| `COGNIGY_API_KEY` | Recommended | — | Your Cognigy API key |
+| `COGNIGY_AUTH_MODE` | No | `api-key` if API key exists, otherwise `oauth` | `api-key`, `oauth`, or `both` |
+| `COGNIGY_OAUTH_ISSUER_BASE_URL` | OAuth only | `COGNIGY_API_BASE_URL` | OAuth issuer base URL |
+| `COGNIGY_OAUTH_CLIENT_ID` | OAuth only | — | OAuth client ID |
+| `COGNIGY_OAUTH_REDIRECT_URI` | OAuth only | — | Localhost redirect URI for OAuth |
+| `COGNIGY_OAUTH_SCOPES` | No | `mcp:access` | OAuth scopes |
 | `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn`, `error` |
 | `RATE_LIMIT_MAX_REQUESTS` | No | `100` | Max requests per window |
 | `RATE_LIMIT_WINDOW_MS` | No | `60000` | Rate limit window (ms) |
 
-### Getting Your API Key
+### Local Authentication Options
+
+#### Option 1: API key
+
+This is the recommended local setup.
 
 1. Log in to Cognigy.AI
 2. **User Menu → My Profile**
 3. **API Keys** section
 4. Click **Create API Key**
 5. Copy the key
+
+#### Option 2: OAuth
+
+If you do not have an API key, local MCP can still authenticate through OAuth against your Cognigy environment. The setup CLI will configure this path when you leave the API key blank.
 
 <details>
 <summary>Local development setup (for contributors)</summary>
@@ -209,6 +222,17 @@ cd cognigy-mcp
 npm install
 npm run build
 ```
+
+To test the install CLI against your local build, run one of these commands after building:
+
+```bash
+node dist/index.js init --client cursor
+node dist/index.js init --client claude
+node dist/index.js init --client claude-code
+node dist/index.js init --client vscode
+```
+
+For `claude-code` and `vscode`, run the command from the project directory where you want the local MCP config file written.
 
 Then point your MCP client to the local build:
 
@@ -230,6 +254,8 @@ Then point your MCP client to the local build:
 Or use the interactive setup: `npm run setup`
 
 </details>
+
+See [docs/LOCAL_VS_REMOTE_MCP.md](docs/LOCAL_VS_REMOTE_MCP.md) for a short comparison of why local MCP is the better supported model for Cognigy right now.
 
 ### System Prompt (Included!)
 
@@ -337,4 +363,3 @@ Contributions are welcome! Read [.cursorrules](.cursorrules) for development gui
 ## License
 
 MIT
-

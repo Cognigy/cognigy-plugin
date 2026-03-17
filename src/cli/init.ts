@@ -21,8 +21,6 @@ interface ClientConfig {
   gitignoreEntry?: string;
 }
 
-type AuthMode = 'api-key' | 'oauth';
-
 const CLIENTS: Record<string, ClientConfig> = {
   cursor: {
     name: 'Cursor',
@@ -61,16 +59,6 @@ function prompt(rl: readline.Interface, question: string, defaultValue?: string)
       resolve(answer.trim() || defaultValue || '');
     });
   });
-}
-
-async function promptAuthMode(rl: readline.Interface): Promise<AuthMode> {
-  while (true) {
-    const answer = (await prompt(rl, 'Authentication mode (oauth/api-key)', 'oauth')).toLowerCase();
-    if (answer === 'oauth' || answer === 'api-key') {
-      return answer;
-    }
-    console.log('  Please enter either "oauth" or "api-key".');
-  }
 }
 
 function promptSecret(question: string): Promise<string> {
@@ -118,7 +106,7 @@ function generateServerBlock(env: Record<string, string>) {
 }
 
 function mergeConfig(configPath: string, env: Record<string, string>, wrapKey?: string) {
-  let config: any = {};
+  let config: Record<string, Record<string, any>> = {};
 
   if (fs.existsSync(configPath)) {
     const raw = fs.readFileSync(configPath, 'utf-8');
@@ -195,33 +183,36 @@ export async function runInit(args: string[]) {
     }
 
     const apiBaseUrl = await prompt(rl, 'Cognigy API URL', 'https://api-trial.cognigy.ai');
-    const authMode = await promptAuthMode(rl);
+    console.log('');
+    console.log('  API key is the recommended setup for local MCP.');
+    console.log('  If you do not have one, leave it empty and we will configure OAuth instead.');
+    rl.close();
 
     const env: Record<string, string> = {
       COGNIGY_API_BASE_URL: apiBaseUrl,
-      COGNIGY_AUTH_MODE: authMode,
     };
 
-    if (authMode === 'api-key') {
-      rl.close();
-      let apiKey = '';
-      while (!apiKey) {
-        apiKey = await promptSecret('Cognigy API Key');
-        if (!apiKey) console.log('  API key is required.');
-      }
+    const apiKey = await promptSecret('Cognigy API Key (leave empty to use OAuth)');
+
+    if (apiKey) {
+      env.COGNIGY_AUTH_MODE = 'api-key';
       env.COGNIGY_API_KEY = apiKey;
     } else {
-      const issuerBaseUrl = await prompt(rl, 'Cognigy OAuth issuer URL', apiBaseUrl);
-      const clientId = await prompt(rl, 'Cognigy OAuth client ID', 'cognigy-mcp');
+      const rlOauth = readline.createInterface({ input: process.stdin, output: process.stdout });
+      console.log('');
+      console.log('  No API key provided. Configuring local OAuth login.');
+      const issuerBaseUrl = await prompt(rlOauth, 'Cognigy OAuth issuer URL', apiBaseUrl);
+      const clientId = await prompt(rlOauth, 'Cognigy OAuth client ID', 'cognigy-mcp');
       const redirectUri = await prompt(
-        rl,
+        rlOauth,
         'Cognigy OAuth redirect URI',
         'http://127.0.0.1:8789/oauth/callback'
       );
-      const scopes = await prompt(rl, 'Cognigy OAuth scopes', 'mcp:access');
-      const organizationId = await prompt(rl, 'Cognigy organisation ID (optional)');
-      rl.close();
+      const scopes = await prompt(rlOauth, 'Cognigy OAuth scopes', 'mcp:access');
+      const organizationId = await prompt(rlOauth, 'Cognigy organisation ID (optional)');
+      rlOauth.close();
 
+      env.COGNIGY_AUTH_MODE = 'oauth';
       env.COGNIGY_OAUTH_ISSUER_BASE_URL = issuerBaseUrl;
       env.COGNIGY_OAUTH_CLIENT_ID = clientId;
       env.COGNIGY_OAUTH_REDIRECT_URI = redirectUri;
@@ -236,6 +227,11 @@ export async function runInit(args: string[]) {
     console.log('');
     console.log(`  ✓ ${client.name} configured`);
     console.log(`    ${configPath}`);
+    console.log(
+      env.COGNIGY_AUTH_MODE === 'api-key'
+        ? '  ✓ Local MCP will use your API key'
+        : '  ✓ Local MCP will prompt you to sign in with OAuth when needed'
+    );
 
     if (client.gitignoreEntry) {
       const gitignorePath = path.join(process.cwd(), '.gitignore');

@@ -14,6 +14,8 @@ A **Model Context Protocol (MCP) server** that lets AI assistants (Claude, Curso
 
 ## Installation (5 minutes)
 
+Local MCP is the supported distribution model. API key is the recommended local authentication method, and local OAuth is available if you do not have an API key.
+
 ### 1. Install Dependencies
 
 ```bash
@@ -48,10 +50,14 @@ Add to `~/Library/Application Support/Cursor/User/globalStorage/mcp/mcp.json`:
 }
 ```
 
-**Get your API key:**
+**Recommended: get your API key**
 1. Login to Cognigy.AI
 2. User Menu → My Profile → API Keys
 3. Create new key, copy it
+
+**Alternative: use local OAuth**
+
+If you do not have an API key, run the interactive installer and leave the API key empty. It will configure a local OAuth login flow instead.
 
 ### 4. Restart Cursor
 
@@ -192,4 +198,3 @@ Focus on **LLM-based AI Agents** (tool #1), not traditional NLU/intents (tool #5
 ---
 
 **That's it!** You're ready to build and improve AI agents with the self-improvement loop! 🚀
-

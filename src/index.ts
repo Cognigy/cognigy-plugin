@@ -724,7 +724,7 @@ function getAuthenticationGuide(): string {
 
 ## API Key Authentication
 
-The Cognigy API uses API Key authentication. Configure your API key in the environment:
+API key is the recommended authentication method for local MCP. Configure it in the environment:
 
 \`\`\`bash
 export COGNIGY_API_KEY=your-api-key-here
@@ -739,6 +739,26 @@ export COGNIGY_API_BASE_URL=https://api-trial.cognigy.ai
 4. Create a new API key
 5. Copy the key and store it securely
 
+## Local OAuth Authentication
+
+If you do not have an API key, local MCP can still authenticate through OAuth against your Cognigy environment.
+
+\`\`\`bash
+export COGNIGY_AUTH_MODE=oauth
+export COGNIGY_API_BASE_URL=https://api-trial.cognigy.ai
+export COGNIGY_OAUTH_CLIENT_ID=cognigy-mcp
+export COGNIGY_OAUTH_REDIRECT_URI=http://127.0.0.1:8789/oauth/callback
+export COGNIGY_OAUTH_SCOPES=mcp:access
+\`\`\`
+
+When OAuth is configured, the local MCP server opens a browser window and completes the login flow against your Cognigy environment.
+
+## Local Recommendation
+
+- Use API key when you have one
+- Use OAuth when an API key is not available
+- Point the MCP server at the Cognigy environment you actually want to use
+
 ## Security Best Practices
 
 - Never commit API keys to version control
@@ -746,10 +766,6 @@ export COGNIGY_API_BASE_URL=https://api-trial.cognigy.ai
 - Use environment variables for configuration
 - Revoke compromised keys immediately
 - Use separate keys for different environments (dev, staging, prod)
-
-## OAuth2 (Advanced)
-
-For enterprise deployments, OAuth2 authentication is also supported. Contact Cognigy support for configuration details.
 `;
 }
 
