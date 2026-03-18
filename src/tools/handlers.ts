@@ -208,7 +208,11 @@ function transformConfigForApi(nodeType: string, config: Record<string, any>): R
       if (config.flowNode) return config;
       const { flowId: targetFlowId, nodeId: targetNodeId, mode: goToMode, ...rest } = config;
       if (targetFlowId || targetNodeId) {
-        return { flowNode: { flow: targetFlowId ?? '', node: targetNodeId ?? '' }, ...rest };
+        const baseConfig = { flowNode: { flow: targetFlowId ?? '', node: targetNodeId ?? '' }, ...rest };
+        if (goToMode !== undefined) {
+          return { ...baseConfig, executionMode: goToMode };
+        }
+        return baseConfig;
       }
       return config;
     }
