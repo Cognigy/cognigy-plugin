@@ -1082,11 +1082,19 @@ export class ToolHandlers {
         const flowRef = agent?.flowReferenceId
           ?? (await this.apiClient.get(`/v2.0/flows/${flowId}`) as any).referenceId;
         if (flowRef) {
-          const eps: any = await this.apiClient.get('/v2.0/endpoints', {
-            params: { projectId, limit: 100 },
-          });
-          const epItems = eps.items ?? eps;
-          if (Array.isArray(epItems)) {
+          const limit = 100;
+          let offset = 0;
+          let hasMore = true;
+
+          while (hasMore) {
+            const eps: any = await this.apiClient.get('/v2.0/endpoints', {
+              params: { projectId, limit, offset },
+            });
+            const epItems = eps.items ?? eps;
+            if (!Array.isArray(epItems) || epItems.length === 0) {
+              break;
+            }
+
             for (const ep of epItems) {
               if (ep.flowId === flowRef || ep.flowId === flowId) {
                 const epId = ep._id || ep.id;
@@ -1098,10 +1106,20 @@ export class ToolHandlers {
                 }
               }
             }
+
+            if (epItems.length < limit) {
+              hasMore = false;
+            } else {
+              offset += limit;
+            }
           }
         }
-      } catch {
-        // best-effort — continue with flow/agent deletion
+      } catch (e: any) {
+        // best-effort — continue with flow/agent deletion, but record partial failure
+        failed.push({
+          resource: `endpoints:list:${projectId}`,
+          error: e?.message ?? String(e),
+        });
       }
     }
 
