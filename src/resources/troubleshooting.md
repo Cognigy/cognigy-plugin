@@ -22,5 +22,6 @@
 - Verify API key has access to the specified model
 
 ## delete_resource fails
-- Some types need projectId — add it if delete fails without it
+- Verify the resource ID is a 24-char hex string (not a referenceId UUID)
+- Use list_resources to confirm the resource exists before deleting
 - Deleting a flow may cascade-delete child nodes

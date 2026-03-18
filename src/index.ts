@@ -58,6 +58,11 @@ const RESOURCE_MAP: Record<string, { name: string; description: string; file: st
     description: 'Full settings reference, style presets, common recipes, and embedding for Webchat v3 endpoints',
     file: 'webchat-setup.md',
   },
+  'cognigy://guide/flow-nodes': {
+    name: 'Flow Node Reference',
+    description: 'Supported flow node types, config schemas, placement rules, and examples for manage_flow_nodes',
+    file: 'flow-nodes.md',
+  },
 };
 
 async function main() {
