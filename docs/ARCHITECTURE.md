@@ -9,7 +9,7 @@
 - `src/utils/` — Utilities (logging, rate limiting, etc.)
 - `src/resources/` — MCP resources (documentation, examples)
 
-## Why Only 9 Tools?
+## Why 11 Tools Instead of 359?
 
 The Cognigy API has ~359 endpoints across 50+ categories. Creating one tool per endpoint would overwhelm AI agents and make the system unusable. Our solution:
 
@@ -20,9 +20,25 @@ The Cognigy API has ~359 endpoints across 50+ categories. Creating one tool per 
 - Easy to discover and use
 - Maintainable and extensible
 
-**Example**: Instead of separate tools for `createAgent`, `getAgent`, `updateAgent`, `deleteAgent`, `listAgents`, `hireAgent`, there is one `manage_ai_agents` tool with an `operation` parameter.
+**Example**: Rather than separate tools for every CRUD operation on every resource type, `list_resources` and `get_resource` cover all read operations via a `resourceType` parameter, while `delete_resource` handles all deletions.
 
-**Result**: 9 tools covering 34 operations and ~115 API endpoints (97.5% reduction from 359 endpoints).
+**Result**: 11 tools covering ~115 API endpoints (97% reduction from 359 endpoints).
+
+### Tool inventory
+
+| Tool | Operation type |
+|---|---|
+| `create_ai_agent` | Write |
+| `update_ai_agent` | Write |
+| `setup_llm` | Write |
+| `talk_to_agent` | Write |
+| `manage_knowledge` | Write |
+| `create_tool` | Write |
+| `update_tool` | Write |
+| `manage_webchat` | Write |
+| `list_resources` | Read |
+| `get_resource` | Read |
+| `delete_resource` | Write |
 
 ## Modern AI Agent-Centric Approach
 
