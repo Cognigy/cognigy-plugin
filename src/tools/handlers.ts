@@ -1876,9 +1876,13 @@ export class ToolHandlers {
           return !aliases.some(a => cfg[a] !== undefined);
         });
         if (missingKeys.length > 0) {
+          const missingKeyLabels = missingKeys.map(k => {
+            const aliases = aliasMap[k] ?? [k];
+            return aliases.length > 1 ? aliases.join(' / ') : aliases[0];
+          });
           return withHints(
-            { error: `Missing required config keys for ${data.nodeType}: ${missingKeys.join(', ')}` },
-            { resource: 'cognigy://guide/flow-nodes', action: `Provide the required config fields: ${missingKeys.join(', ')}` },
+            { error: `Missing required config keys for ${data.nodeType}: ${missingKeyLabels.join(', ')}` },
+            { resource: 'cognigy://guide/flow-nodes', action: `Provide the required config fields: ${missingKeyLabels.join(', ')}` },
           );
         }
 
