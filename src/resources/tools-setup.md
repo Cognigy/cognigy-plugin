@@ -83,7 +83,7 @@ create_tool {
     toolId: "get_weather",
     description: "Fetches current weather for a location",
     parameters: '{"type":"object","properties":{"city":{"type":"string"}}}',
-    url: "https://api.weather.com/v1/current?q={{input.data.city}}",
+    url: "https://api.weather.com/v1/current?q={{input.aiAgent.toolArgs.city}}",
     method: "GET",
     headers: { "X-Api-Key": "your-api-key" },
     postProcessCode: "input.weather = input.httpResponse.body.current; delete input.httpResponse;"
@@ -103,7 +103,7 @@ create_tool {
     method: "POST",
     headers: { "Authorization": "Bearer {{context.apiToken}}" },
     body: "{{JSON.stringify(input.orderPayload)}}",
-    preProcessCode: "input.orderPayload = { items: input.data.items, customer: input.data.customerId, timestamp: new Date().toISOString() };",
+    preProcessCode: "input.orderPayload = { items: input.aiAgent.toolArgs.items, customer: input.aiAgent.toolArgs.customerId, timestamp: new Date().toISOString() };",
     postProcessCode: "input.orderResult = { orderId: input.httpResponse.body.id, status: input.httpResponse.body.status }; delete input.httpResponse;",
     toolResponseValue: "{{JSON.stringify(input.orderResult)}}"
   }
@@ -123,6 +123,12 @@ Common patterns:
 - `{{JSON.stringify(input.orderResult)}}` — return a named result from post-processing
 - `{{input.summary}}` — return a plain string value
 - `{{JSON.stringify(input.httprequest)}}` — return the raw HTTP response (default for http tools)
+
+## Accessing tool parameters in code
+
+Inside AI Agent tool branches, the LLM's tool call arguments are at `input.aiAgent.toolArgs`, **NOT** `input.data`. For example, if the tool defines a `city` parameter, access it as:
+- Code nodes: `input.aiAgent.toolArgs.city`
+- CognigyScript fields (URLs, body templates): `{{input.aiAgent.toolArgs.city}}`
 
 ## Adding logic inside tools (manage_flow_nodes)
 
@@ -158,7 +164,7 @@ manage_flow_nodes {
   mode: "appendChild",
   nodeType: "code",
   label: "Validate Order ID",
-  config: { code: "if (!input.data.orderId) { input.error = 'Missing order ID'; }" }
+  config: { code: "if (!input.aiAgent.toolArgs.orderId) { input.error = 'Missing order ID'; }" }
 }
 → returns nodeId: "def456..."
 

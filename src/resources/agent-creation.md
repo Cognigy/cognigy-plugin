@@ -13,7 +13,8 @@
    (See cognigy://guide/llm-providers for valid provider/modelType values)
 4. create_ai_agent { projectId, name, description }
    — Returns: agent, flow, endpoint, endpointUrl
-5. (Only if LLM is not set as default) Assign LLM to agent:
+   — The default LLM is automatically assigned to the agent's job node. If llmStatus is "configured", no extra step is needed.
+5. (Only if llmStatus is "missing" after create) Assign LLM to agent:
    update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: "<referenceId from step 3>" } }
 6. talk_to_agent { endpointUrl, message }
 7. Refine the agent using update_ai_agent — see "All configuration fields" below

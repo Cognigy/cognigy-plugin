@@ -96,7 +96,7 @@ Ask the user a question. The answer is captured and stored.
 ### ifThenElse — Conditional Branch
 Category: logic
 
-Branch the flow based on a CognigyScript condition. Creates Then/Else child branches.
+Branch the flow based on a CognigyScript condition. Auto-creates `then` and `else` child nodes.
 
 **Config:**
 | Field | Type | Required | Description |
@@ -116,12 +116,14 @@ Branch the flow based on a CognigyScript condition. Creates Then/Else child bran
 }
 ```
 
+**Adding nodes inside branches:** See [Branching nodes](#branching-nodes) below.
+
 ---
 
 ### lookup — Switch / Multi-Branch
 Category: logic
 
-Switch on intent, state, type, or a CognigyScript expression. Creates case branches.
+Switch on intent, state, type, or a CognigyScript expression. Auto-creates `case` and `default` child nodes.
 
 **Config:**
 | Field | Type | Required | Description |
@@ -129,19 +131,39 @@ Switch on intent, state, type, or a CognigyScript expression. Creates case branc
 | type | string | Yes | Lookup type: `intent`, `state`, `type`, `cognigyScript` |
 | condition | string | No | CognigyScript expression (when type is `cognigyScript`) |
 
+**Updating case values:** Use the `cases` convenience array on the parent switch node update — see [Updating case values](#updating-case-values) below.
+
+**Adding nodes inside branches:** See [Branching nodes](#branching-nodes) below.
+
 ---
 
 ### setSessionContext — Set Context
 Category: data
 
-Store key-value pairs in the persistent session context.
+Store a key-value pair in the persistent session context. Each node stores **one** entry. To store multiple values, create multiple `setSessionContext` nodes.
 
 **Config:**
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| contextEntries | array | Yes | Array of `{ key: string, value: string }` pairs. Values support CognigyScript. |
+| key | string | Yes | Context key name |
+| value | string | Yes | Value to store. Supports CognigyScript: `{{input.result}}` |
+| contextEntries | array | No | Convenience alias — `[{ key, value }]`. Only the **first** entry is used; create separate nodes for additional entries. |
 
-**Example:**
+**Example — using key/value directly (preferred):**
+```json
+{
+  "operation": "create",
+  "flowId": "<flowId>",
+  "nodeType": "setSessionContext",
+  "label": "Save User Name",
+  "config": {
+    "key": "userName",
+    "value": "{{input.result}}"
+  }
+}
+```
+
+**Example — using contextEntries alias:**
 ```json
 {
   "operation": "create",
@@ -155,6 +177,8 @@ Store key-value pairs in the persistent session context.
   }
 }
 ```
+
+**Note:** Only one key-value pair is stored per node. If you pass multiple entries in `contextEntries`, only the first is used. Create separate `setSessionContext` nodes for each value you need to store.
 
 ---
 
@@ -244,8 +268,119 @@ Call an external API.
 
 ---
 
+## Branching nodes
+
+`ifThenElse` and `lookup` nodes auto-create child branch nodes when created:
+- **ifThenElse** creates `then` and `else` child nodes
+- **lookup** creates `case` and `default` child nodes
+
+### Placing nodes inside a branch
+
+To add logic inside a branch (e.g. inside the "then" branch of an if/else):
+
+1. Create the branching node (ifThenElse or lookup)
+2. List nodes to find the auto-created child IDs: `manage_flow_nodes { operation: "list", flowId }`
+3. Use `mode: "append"` with `parentNodeId` set to the branch child node ID
+
+**CRITICAL:** Do NOT use `mode: "appendChild"` on branch children (then, else, case, default). It creates orphaned nodes with `parentId: null`. Always use `mode: "append"` instead. The handler auto-corrects this when possible, but using `append` directly is the reliable approach.
+
+### Example — add a Say node inside the "then" branch of an ifThenElse
+
+```
+Step 1: Create the ifThenElse node
+manage_flow_nodes {
+  operation: "create", flowId: "<flowId>",
+  parentNodeId: "<toolNodeId>", mode: "appendChild",
+  nodeType: "ifThenElse", label: "Check VIP",
+  config: { condition: "context.isVIP === true" }
+}
+→ returns nodeId: "if123..."
+
+Step 2: List nodes to find the auto-created then/else child IDs
+manage_flow_nodes { operation: "list", flowId: "<flowId>" }
+→ find the "then" child node with parentId matching "if123..."
+→ thenNodeId: "then456..."
+
+Step 3: Add a node inside the "then" branch using mode: "append"
+manage_flow_nodes {
+  operation: "create", flowId: "<flowId>",
+  parentNodeId: "then456...", mode: "append",
+  nodeType: "say", label: "VIP Greeting",
+  config: { text: "Welcome back, VIP!" }
+}
+```
+
+### Example — add nodes inside a lookup case branch
+
+```
+Step 1: Create the lookup node
+manage_flow_nodes {
+  operation: "create", flowId: "<flowId>",
+  parentNodeId: "<toolNodeId>", mode: "appendChild",
+  nodeType: "lookup", label: "Route by Type",
+  config: { type: "cognigyScript", condition: "input.category" }
+}
+→ returns nodeId: "switch123..."
+
+Step 2: List nodes to find the auto-created case/default child IDs
+manage_flow_nodes { operation: "list", flowId: "<flowId>" }
+→ find case children with parentId matching "switch123..."
+→ caseNodeId: "case456...", defaultNodeId: "default789..."
+
+Step 3: Update case values
+manage_flow_nodes {
+  operation: "update", flowId: "<flowId>",
+  nodeId: "switch123...",
+  config: { cases: [{ id: "case456...", value: "billing" }] }
+}
+
+Step 4: Add a node inside the case branch using mode: "append"
+manage_flow_nodes {
+  operation: "create", flowId: "<flowId>",
+  parentNodeId: "case456...", mode: "append",
+  nodeType: "say", label: "Billing Help",
+  config: { text: "Let me help with your billing question." }
+}
+```
+
+---
+
+## Updating case values
+
+When you create a `lookup` (switch) node, the case child nodes start with empty values. To set what each case matches:
+
+**Option 1 — Update via parent switch with `cases` array (recommended):**
+```json
+{
+  "operation": "update",
+  "flowId": "<flowId>",
+  "nodeId": "<switchNodeId>",
+  "config": {
+    "cases": [
+      { "id": "<caseNodeId1>", "value": "billing" },
+      { "id": "<caseNodeId2>", "value": "shipping" }
+    ]
+  }
+}
+```
+
+**Option 2 — Update individual case nodes directly:**
+```json
+{
+  "operation": "update",
+  "flowId": "<flowId>",
+  "nodeId": "<caseNodeId>",
+  "config": { "value": "billing" }
+}
+```
+
+The handler sends the correct API format (`{ config: { case: { value: "..." } } }`) automatically.
+
+---
+
 ## Notes
 
+- **Tool parameters**: Inside AI Agent tool branches, the LLM's tool call parameters are available at `input.aiAgent.toolArgs`, **NOT** `input.data`. For example, if the tool defines a `city` parameter, access it as `input.aiAgent.toolArgs.city` in Code nodes or `{{input.aiAgent.toolArgs.city}}` in CognigyScript fields.
 - **CognigyScript**: Use `{{expression}}` syntax in text/message fields to reference runtime data (`input`, `context`, `profile`). For condition fields (ifThenElse, lookup), use plain expressions without `{{ }}` — e.g. `context.isVIP === true`.
 - **Node IDs**: All node IDs are 24-char hex strings. Get them from `manage_flow_nodes { operation: 'list' }`.
 - **Ordering**: Nodes execute top-to-bottom within a branch. Use `parentNodeId` to control placement.

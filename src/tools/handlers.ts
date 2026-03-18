@@ -235,6 +235,15 @@ function transformConfigForApi(nodeType: string, config: Record<string, any>): R
       return out;
     }
 
+    case 'case': {
+      if (config.case && typeof config.case === 'object') return config;
+      const val = config.value;
+      if (val !== undefined) {
+        return { case: { value: val } };
+      }
+      return config;
+    }
+
     default:
       return config;
   }
@@ -454,7 +463,30 @@ export class ToolHandlers {
       });
       const jobNodeId = jobNode._id || jobNode.id;
 
-      // Step 4a: Patch the node preview so the flow editor displays the agent image
+      // Step 4a: Auto-assign default LLM to the job node so talk_to_agent works
+      // immediately without a separate update_ai_agent call.
+      let llmAutoAssigned = false;
+      try {
+        const llmList: any = await this.apiClient.get('/v2.0/largelanguagemodels', {
+          params: { projectId },
+        });
+        const llmItems = llmList.items ?? llmList;
+        if (Array.isArray(llmItems) && llmItems.length > 0) {
+          const defaultLlm = llmItems.find((l: any) => l.isDefault) ?? llmItems[0];
+          const llmRefId = defaultLlm.referenceId ?? defaultLlm._id;
+          if (llmRefId) {
+            await this.apiClient.patch(
+              `/v2.0/flows/${flowId}/chart/nodes/${jobNodeId}`,
+              { config: { llmProviderReferenceId: llmRefId } },
+            );
+            llmAutoAssigned = true;
+          }
+        }
+      } catch (llmErr: any) {
+        logger.warn('Failed to auto-assign LLM to job node — agent may need manual LLM assignment', { error: llmErr.message });
+      }
+
+      // Step 4c: Patch the node preview so the flow editor displays the agent image
       try {
         await this.apiClient.patch(
           `/v2.0/flows/${flowId}/chart/nodes/${jobNodeId}`,
@@ -471,7 +503,7 @@ export class ToolHandlers {
         logger.warn('Failed to set job node preview — agent image may not appear in the flow editor', { error: previewError.message });
       }
 
-      // Step 4b: If knowledge store provided, create a knowledge tool on the job node
+      // Step 4d: If knowledge store provided, create a knowledge tool on the job node
       let knowledgeToolId: string | null = null;
       if (data.knowledgeStoreReferenceId) {
         try {
@@ -505,17 +537,8 @@ export class ToolHandlers {
       });
       endpointId = endpoint._id || endpoint.id;
 
-      // Step 6: Check LLM status (non-critical)
-      let llmStatus = 'unknown';
-      try {
-        const llms: any = await this.apiClient.get('/v2.0/largelanguagemodels', {
-          params: { projectId },
-        });
-        const items = llms.items ?? llms;
-        llmStatus = Array.isArray(items) && items.length > 0 ? 'configured' : 'missing';
-      } catch {
-        llmStatus = 'unknown';
-      }
+      // Step 6: LLM status — derived from the auto-assign attempt in Step 4a
+      const llmStatus = llmAutoAssigned ? 'configured' : 'missing';
 
       const result: any = {
         projectId,
@@ -1917,18 +1940,17 @@ export class ToolHandlers {
           );
         }
 
-        // When appendChild-ing to an aiAgentJobTool node, silently rewrite to
-        // `mode: 'append'` so the new node is placed in the tool's execution
-        // chain (before the Resolve Tool Action node) rather than as an orphaned
-        // child that never feeds into the Resolve node.
-        // This makes `manage_flow_nodes` "just work" for tool branches regardless
-        // of whether the caller uses appendChild or append.
+        // Auto-rewrite appendChild → append for node types where appendChild
+        // creates orphaned nodes (parentId: null).  This covers:
+        //   • aiAgentJobTool — so nodes land in the tool's execution chain
+        //   • then / else / case / default — branching children of if and switch
+        const REWRITE_TYPES = new Set(['aiAgentJobTool', 'then', 'else', 'case', 'default']);
         if (mode === 'appendChild' && targetNodeId) {
           try {
             const targetCheck: any = await this.apiClient.get(
               `/v2.0/flows/${flowId}/chart/nodes/${targetNodeId}`,
             );
-            if (targetCheck && targetCheck.type === 'aiAgentJobTool') {
+            if (targetCheck && REWRITE_TYPES.has(targetCheck.type)) {
               mode = 'append';
             }
           } catch {
@@ -1990,9 +2012,56 @@ export class ToolHandlers {
             `/v2.0/flows/${flowId}/chart/nodes/${data.nodeId}`,
           );
           const nodeType = existingNode?.type ?? '';
-          const transformed = transformConfigForApi(nodeType, data.config);
-          const existingConfig = existingNode?.config ?? {};
-          patchPayload.config = deepMerge(existingConfig, transformed);
+
+          // Handle case node updates — the Cognigy API expects exactly
+          // { config: { case: { value: "..." } } } with no extra fields merged in.
+          if (nodeType === 'case' || nodeType === 'default') {
+            if (data.config.value !== undefined) {
+              patchPayload.config = { case: { value: data.config.value } };
+            }
+          }
+          // Handle switch node updates — if cases array is provided, patch each
+          // child case node with its value, then update the switch node itself.
+          else if (nodeType === 'switch' && Array.isArray(data.config.cases)) {
+            const casesToUpdate = data.config.cases;
+            const caseResults: any[] = [];
+            for (const c of casesToUpdate) {
+              if (!c.id || c.value === undefined) continue;
+              try {
+                await this.apiClient.patch(
+                  `/v2.0/flows/${flowId}/chart/nodes/${c.id}`,
+                  { config: { case: { value: c.value } } },
+                );
+                caseResults.push({ id: c.id, value: c.value, updated: true });
+              } catch (err: any) {
+                caseResults.push({ id: c.id, value: c.value, updated: false, error: err.message });
+              }
+            }
+            // Update the switch node itself (without the cases array)
+            const { cases: _cases, ...switchConfig } = data.config;
+            if (Object.keys(switchConfig).length > 0) {
+              const transformed = transformConfigForApi(nodeType, switchConfig);
+              const existingConfig = existingNode?.config ?? {};
+              patchPayload.config = deepMerge(existingConfig, transformed);
+            }
+            if (Object.keys(patchPayload).length > 0) {
+              await this.apiClient.patch(
+                `/v2.0/flows/${flowId}/chart/nodes/${data.nodeId}`,
+                patchPayload,
+              );
+            }
+            return {
+              updated: true,
+              nodeId: data.nodeId,
+              ...(data.label ? { label: data.label } : {}),
+              ...(data.config ? { configUpdated: Object.keys(data.config) } : {}),
+              casesUpdated: caseResults,
+            };
+          } else {
+            const transformed = transformConfigForApi(nodeType, data.config);
+            const existingConfig = existingNode?.config ?? {};
+            patchPayload.config = deepMerge(existingConfig, transformed);
+          }
         }
 
         await this.apiClient.patch(
