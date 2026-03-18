@@ -6,6 +6,7 @@ import { CognigyApiClient } from '../api/client.js';
 import { logger } from '../utils/logger.js';
 import { filterResponse, filterList, withHints } from './filters.js';
 import { buildWebchatSettings, deepMerge } from './webchatSettings.js';
+import { getNodeEntry, supportedNodeTypes } from './nodeRegistry.js';
 import * as schemas from '../schemas/tools.js';
 
 // ---------------------------------------------------------------------------
@@ -35,6 +36,208 @@ async function retryGetEntryNode(
     if (i < maxRetries - 1) await new Promise(r => setTimeout(r, delayMs * (i + 1)));
   }
   throw new Error('Could not find entry node in flow');
+}
+
+/**
+ * Transform user-friendly config into the exact format the Cognigy API descriptor
+ * validator expects. Config keys must match descriptor field keys exactly — extra
+ * or unknown keys cause "Node config validation failed".
+ *
+ * Descriptor field schemas (from shared/charts/descriptors/):
+ *   say:          { say: { text: string[], type: "text", data: "", linear: false, loop: false, _cognigy: {} } }
+ *   question:     { say: { text: string[], ... }, type: "text"|"yesNo"|"email"|... }
+ *   if:           { condition: { type: "rule", rule: { left, operand, right } } }
+ *   switch:       { switch: { type: "intent"|"state"|"cognigyScript", operator: string } }
+ *   addToContext:  { key: string, value: string, mode?: "simple"|"array" }
+ *   sleep:        { milliseconds: number }
+ *   code:         { code: string }
+ *   httpRequest:  { url, type, headers, ... }   — keys match descriptor directly
+ *   goTo:         { flowNode: { flow, node }, ... }
+ */
+const SAY_DEFAULTS = { data: '', linear: false, loop: false, type: 'text', _cognigy: {} };
+
+function buildSayObject(text: any): Record<string, any> {
+  const textArr = Array.isArray(text) ? text : (text != null ? [String(text)] : []);
+  return { ...SAY_DEFAULTS, text: textArr };
+}
+
+function buildRichSayObject(
+  text: any,
+  outputType: string,
+  richData: any,
+): Record<string, any> {
+  const typeKeyMap: Record<string, string> = {
+    quickReplies: '_quickReplies',
+    buttons: '_buttons',
+    gallery: '_gallery',
+    list: '_list',
+    image: '_image',
+    video: '_video',
+    audio: '_audio',
+    adaptiveCard: '_adaptiveCard',
+  };
+  const dataKey = typeKeyMap[outputType];
+  if (!dataKey) return buildSayObject(text);
+
+  const textArr = Array.isArray(text) ? text : (text != null ? [String(text)] : []);
+  const textStr = textArr.length > 0 ? textArr[0] : '';
+
+  let richPayload: any;
+  if (outputType === 'quickReplies') {
+    const qrs = (Array.isArray(richData) ? richData : []).map((qr: any, i: number) => ({
+      id: qr.id ?? i + 1,
+      title: qr.title ?? '',
+      payload: qr.payload ?? '',
+      contentType: qr.contentType ?? 'postback',
+      imageUrl: qr.imageUrl ?? '',
+      imageAltText: qr.imageAltText ?? '',
+      condition: qr.condition ?? '',
+    }));
+    richPayload = { type: 'quick_replies', text: textStr, quickReplies: qrs };
+  } else if (outputType === 'buttons') {
+    const btns = (Array.isArray(richData) ? richData : []).map((btn: any, i: number) => ({
+      id: btn.id ?? i + 1,
+      type: btn.type ?? 'postback',
+      title: btn.title ?? '',
+      payload: btn.payload ?? '',
+      url: btn.url ?? '',
+      ...(btn.condition ? { condition: btn.condition } : {}),
+    }));
+    richPayload = { type: 'buttons', text: textStr, buttons: btns };
+  } else {
+    richPayload = typeof richData === 'object' ? { ...richData, text: textStr } : { text: textStr };
+  }
+
+  const channelData = { [dataKey]: richPayload };
+  return {
+    ...SAY_DEFAULTS,
+    type: outputType,
+    text: textArr,
+    _cognigy: { _default: channelData },
+    _data: { _cognigy: { _default: channelData } },
+  };
+}
+
+function transformConfigForApi(nodeType: string, config: Record<string, any>): Record<string, any> {
+  if (!config || Object.keys(config).length === 0) return config;
+
+  switch (nodeType) {
+    case 'say': {
+      if (config.say && typeof config.say === 'object') return config;
+      const { text, quickReplies, buttons, gallery, list, image, video, audio, adaptiveCard, ...rest } = config;
+      const richTypeMap: [string, any][] = [
+        ['quickReplies', quickReplies],
+        ['buttons', buttons],
+        ['gallery', gallery],
+        ['list', list],
+        ['image', image],
+        ['video', video],
+        ['audio', audio],
+        ['adaptiveCard', adaptiveCard],
+      ];
+      const activeRich = richTypeMap.find(([, val]) => val !== undefined);
+      if (activeRich) {
+        return { say: buildRichSayObject(text, activeRich[0], activeRich[1]), ...rest };
+      }
+      return { say: buildSayObject(text), ...rest };
+    }
+
+    case 'question': {
+      if (config.say && typeof config.say === 'object') return config;
+      const { text, quickReplies, buttons, ...rest } = config;
+      const out: Record<string, any> = { ...rest };
+      if (text !== undefined) {
+        if (quickReplies) {
+          out.say = buildRichSayObject(text, 'quickReplies', quickReplies);
+        } else if (buttons) {
+          out.say = buildRichSayObject(text, 'buttons', buttons);
+        } else {
+          out.say = buildSayObject(text);
+        }
+      }
+      return out;
+    }
+
+    case 'if': {
+      const cond = config.condition;
+      if (typeof cond === 'string') {
+        return { condition: { condition: cond, type: 'condition', rule: { left: '1', operand: 'eq', right: '1' } } };
+      }
+      if (typeof cond === 'object' && cond !== null) {
+        if (!cond.type) cond.type = 'condition';
+        if (!cond.rule) {
+          cond.rule = { left: '1', operand: 'eq', right: '1' };
+        }
+        return { condition: cond };
+      }
+      return config;
+    }
+
+    case 'switch': {
+      if (config.switch && typeof config.switch === 'object') return config;
+      const lookupType = config.type ?? 'intent';
+      const operatorMap: Record<string, string> = {
+        intent: 'ci.intent',
+        state: 'ci.state',
+        type: 'ci.type',
+        cognigyScript: config.condition ?? '',
+      };
+      return {
+        switch: {
+          type: lookupType,
+          operator: operatorMap[lookupType] ?? lookupType,
+        },
+      };
+    }
+
+    case 'sleep': {
+      if (config.milliseconds !== undefined) return config;
+      if (config.delay !== undefined) return { milliseconds: config.delay };
+      return config;
+    }
+
+    case 'addToContext': {
+      if (config.key !== undefined) return config;
+      if (Array.isArray(config.contextEntries) && config.contextEntries.length > 0) {
+        return { key: config.contextEntries[0].key, value: config.contextEntries[0].value, mode: 'simple' };
+      }
+      return config;
+    }
+
+    case 'goTo': {
+      if (config.flowNode) return config;
+      const { flowId: targetFlowId, nodeId: targetNodeId, mode: goToMode, ...rest } = config;
+      if (targetFlowId || targetNodeId) {
+        const baseConfig = { flowNode: { flow: targetFlowId ?? '', node: targetNodeId ?? '' }, ...rest };
+        if (goToMode !== undefined) {
+          return { ...baseConfig, executionMode: goToMode };
+        }
+        return baseConfig;
+      }
+      return config;
+    }
+
+    case 'httpRequest': {
+      const out: Record<string, any> = { ...config };
+      if (out.headers && typeof out.headers === 'object' && !Array.isArray(out.headers)) {
+        out.headers = JSON.stringify(out.headers);
+      }
+      if (out.contextStore !== undefined) {
+        out.storeLocation = 'context';
+        out.contextKey = out.contextStore;
+        delete out.contextStore;
+      }
+      if (out.inputStore !== undefined) {
+        if (!out.storeLocation) out.storeLocation = 'input';
+        out.inputKey = out.inputStore;
+        delete out.inputStore;
+      }
+      return out;
+    }
+
+    default:
+      return config;
+  }
 }
 
 function identifyFailedStep(agentId: string | null, flowId: string | null, endpointId: string | null): string {
@@ -251,6 +454,23 @@ export class ToolHandlers {
       });
       const jobNodeId = jobNode._id || jobNode.id;
 
+      // Step 4a: Patch the node preview so the flow editor displays the agent image
+      try {
+        await this.apiClient.patch(
+          `/v2.0/flows/${flowId}/chart/nodes/${jobNodeId}`,
+          {
+            preview: {
+              keyValue: data.name,
+              aiAgentName: agent.name ?? data.name,
+              aiAgentImage: agent.image ?? DEFAULT_AGENT_IMAGE,
+              aiAgentImageOptimizedFormat: agent.imageOptimizedFormat ?? true,
+            },
+          },
+        );
+      } catch (previewError: any) {
+        logger.warn('Failed to set job node preview — agent image may not appear in the flow editor', { error: previewError.message });
+      }
+
       // Step 4b: If knowledge store provided, create a knowledge tool on the job node
       let knowledgeToolId: string | null = null;
       if (data.knowledgeStoreReferenceId) {
@@ -390,50 +610,73 @@ export class ToolHandlers {
     }
 
     // Step 2: Patch AI Agent Job Node config if any job-level fields provided
+    const needsJobPatch = jobConfig && Object.keys(jobConfig).length > 0;
+    const needsPreviewPatch = rest.name !== undefined || (jobConfig?.jobName !== undefined);
+
     let jobNodeResult: any;
-    if (jobConfig && Object.keys(jobConfig).length > 0) {
+    if (needsJobPatch || needsPreviewPatch) {
       const resolved = await resolveFlowForAgent(this.apiClient, aiAgentId);
       if (!resolved) {
-        return withHints(
-          { error: 'Could not find a flow associated with this agent. Job config was not updated.' },
-          {
-            resource: 'cognigy://guide/agent-creation',
-            action: 'Ensure the agent was created via create_ai_agent, which provisions the flow and Job Node.',
-          },
+        if (needsJobPatch) {
+          return withHints(
+            { error: 'Could not find a flow associated with this agent. Job config was not updated.' },
+            {
+              resource: 'cognigy://guide/agent-creation',
+              action: 'Ensure the agent was created via create_ai_agent, which provisions the flow and Job Node.',
+            },
+          );
+        }
+      } else {
+        const nodes: any = await this.apiClient.get(`/v2.0/flows/${resolved.flowId}/chart/nodes`, {
+          params: { limit: 100 },
+        });
+        const allNodes = nodes.items ?? nodes;
+        const jobNode = (Array.isArray(allNodes) ? allNodes : []).find(
+          (n: any) => n.type === 'aiAgentJob',
         );
+        if (!jobNode) {
+          if (needsJobPatch) {
+            return withHints(
+              { error: 'No AI Agent Job Node found in the flow. Job config was not updated.' },
+              {
+                resource: 'cognigy://guide/agent-creation',
+                action: 'Ensure the agent was created via create_ai_agent.',
+              },
+            );
+          }
+        } else {
+          const jobNodeId = jobNode._id || jobNode.id;
+          const nodePatch: Record<string, any> = {};
+
+          if (needsJobPatch) {
+            const nodeConfigPatch: Record<string, any> = {};
+            if (jobConfig!.llmProviderReferenceId !== undefined) nodeConfigPatch.llmProviderReferenceId = jobConfig!.llmProviderReferenceId;
+            if (jobConfig!.jobName !== undefined) nodeConfigPatch.name = jobConfig!.jobName;
+            if (jobConfig!.jobDescription !== undefined) nodeConfigPatch.description = jobConfig!.jobDescription;
+            if (jobConfig!.jobInstructions !== undefined) nodeConfigPatch.instructions = jobConfig!.jobInstructions;
+            if (jobConfig!.temperature !== undefined) nodeConfigPatch.temperature = jobConfig!.temperature;
+            if (jobConfig!.maxTokens !== undefined) nodeConfigPatch.maxTokens = jobConfig!.maxTokens;
+            nodePatch.config = nodeConfigPatch;
+          }
+
+          if (needsPreviewPatch) {
+            const currentAgent = agentResult ?? resolved.agent;
+            const previewName = jobConfig?.jobName ?? jobNode.config?.name ?? currentAgent?.name ?? rest.name;
+            nodePatch.preview = {
+              keyValue: previewName,
+              aiAgentName: currentAgent?.name ?? rest.name,
+              aiAgentImage: currentAgent?.image ?? DEFAULT_AGENT_IMAGE,
+              aiAgentImageOptimizedFormat: currentAgent?.imageOptimizedFormat ?? true,
+            };
+          }
+
+          jobNodeResult = await this.apiClient.patch(
+            `/v2.0/flows/${resolved.flowId}/chart/nodes/${jobNodeId}`,
+            nodePatch,
+          );
+          updatedParts.push('jobNode');
+        }
       }
-
-      const nodes: any = await this.apiClient.get(`/v2.0/flows/${resolved.flowId}/chart/nodes`, {
-        params: { limit: 100 },
-      });
-      const allNodes = nodes.items ?? nodes;
-      const jobNode = (Array.isArray(allNodes) ? allNodes : []).find(
-        (n: any) => n.type === 'aiAgentJob',
-      );
-      if (!jobNode) {
-        return withHints(
-          { error: 'No AI Agent Job Node found in the flow. Job config was not updated.' },
-          {
-            resource: 'cognigy://guide/agent-creation',
-            action: 'Ensure the agent was created via create_ai_agent.',
-          },
-        );
-      }
-
-      const nodeConfigPatch: Record<string, any> = {};
-      if (jobConfig.llmProviderReferenceId !== undefined) nodeConfigPatch.llmProviderReferenceId = jobConfig.llmProviderReferenceId;
-      if (jobConfig.jobName !== undefined) nodeConfigPatch.name = jobConfig.jobName;
-      if (jobConfig.jobDescription !== undefined) nodeConfigPatch.description = jobConfig.jobDescription;
-      if (jobConfig.jobInstructions !== undefined) nodeConfigPatch.instructions = jobConfig.jobInstructions;
-      if (jobConfig.temperature !== undefined) nodeConfigPatch.temperature = jobConfig.temperature;
-      if (jobConfig.maxTokens !== undefined) nodeConfigPatch.maxTokens = jobConfig.maxTokens;
-
-      const jobNodeId = jobNode._id || jobNode.id;
-      jobNodeResult = await this.apiClient.patch(
-        `/v2.0/flows/${resolved.flowId}/chart/nodes/${jobNodeId}`,
-        { config: nodeConfigPatch },
-      );
-      updatedParts.push('jobNode');
     }
 
     if (updatedParts.length === 0) {
@@ -449,7 +692,10 @@ export class ToolHandlers {
       Object.assign(response, filterResponse('agent', agentResult));
     }
     if (jobNodeResult) {
-      response.jobNode = { id: jobNodeResult._id || jobNodeResult.id, configUpdated: Object.keys(jobConfig!) };
+      const jobNodeResponse: Record<string, any> = { id: jobNodeResult._id || jobNodeResult.id };
+      if (jobConfig && Object.keys(jobConfig).length > 0) jobNodeResponse.configUpdated = Object.keys(jobConfig);
+      if (needsPreviewPatch) jobNodeResponse.previewUpdated = true;
+      response.jobNode = jobNodeResponse;
     }
 
     return response;
@@ -769,7 +1015,7 @@ export class ToolHandlers {
   // =========================================================================
   async handleDeleteResource(args: any): Promise<any> {
     const data = schemas.deleteResourceSchema.parse(args);
-    const { resourceType, id, aiAgentId } = data;
+    const { resourceType, id, aiAgentId, cascade } = data;
 
     if (resourceType === 'tool') {
       if (!aiAgentId) {
@@ -789,8 +1035,17 @@ export class ToolHandlers {
       return { deleted: true, resourceType: 'tool', id };
     }
 
+    // Agent deletion requires cascade: endpoints → flow → agent.
+    // The Cognigy API rejects agent deletion while referencing resources exist.
+    if (resourceType === 'agent') {
+      if (cascade === false) {
+        await this.apiClient.delete(`/v2.0/aiagents/${id}`);
+        return { deleted: true, resourceType, id };
+      }
+      return this.cascadeDeleteAgent(id);
+    }
+
     const deleteMap: Record<string, string> = {
-      agent: `/v2.0/aiagents/${id}`,
       flow: `/v2.0/flows/${id}`,
       endpoint: `/v2.0/endpoints/${id}`,
       llm_model: `/v2.0/largelanguagemodels/${id}`,
@@ -803,6 +1058,96 @@ export class ToolHandlers {
 
     await this.apiClient.delete(url);
     return { deleted: true, resourceType, id };
+  }
+
+  /**
+   * Cascade-delete an AI Agent and all resources provisioned alongside it:
+   * 1. Resolve the agent's flow
+   * 2. Delete every endpoint pointing at that flow
+   * 3. Delete the flow itself
+   * 4. Delete the agent resource
+   */
+  private async cascadeDeleteAgent(agentId: string): Promise<any> {
+    const deleted: string[] = [];
+    const failed: { resource: string; error: string }[] = [];
+
+    const resolved = await resolveFlowForAgent(this.apiClient, agentId);
+    const agent = resolved?.agent;
+    const flowId = resolved?.flowId;
+    const projectId = agent?.projectId ?? agent?.project?._id ?? agent?.project?.id;
+
+    // Step 1: delete endpoints that reference the agent's flow
+    if (flowId && projectId) {
+      try {
+        const flowRef = agent?.flowReferenceId
+          ?? (await this.apiClient.get(`/v2.0/flows/${flowId}`) as any).referenceId;
+        if (flowRef) {
+          const limit = 100;
+          let offset = 0;
+          let hasMore = true;
+
+          while (hasMore) {
+            const eps: any = await this.apiClient.get('/v2.0/endpoints', {
+              params: { projectId, limit, offset },
+            });
+            const epItems = eps.items ?? eps;
+            if (!Array.isArray(epItems) || epItems.length === 0) {
+              break;
+            }
+
+            for (const ep of epItems) {
+              if (ep.flowId === flowRef || ep.flowId === flowId) {
+                const epId = ep._id || ep.id;
+                try {
+                  await this.apiClient.delete(`/v2.0/endpoints/${epId}`);
+                  deleted.push(`endpoint:${epId}`);
+                } catch (e: any) {
+                  failed.push({ resource: `endpoint:${epId}`, error: e.message ?? String(e) });
+                }
+              }
+            }
+
+            if (epItems.length < limit) {
+              hasMore = false;
+            } else {
+              offset += limit;
+            }
+          }
+        }
+      } catch (e: any) {
+        // best-effort — continue with flow/agent deletion, but record partial failure
+        failed.push({
+          resource: `endpoints:list:${projectId}`,
+          error: e?.message ?? String(e),
+        });
+      }
+    }
+
+    // Step 2: delete the flow
+    if (flowId) {
+      try {
+        await this.apiClient.delete(`/v2.0/flows/${flowId}`);
+        deleted.push(`flow:${flowId}`);
+      } catch (e: any) {
+        failed.push({ resource: `flow:${flowId}`, error: e.message ?? String(e) });
+      }
+    }
+
+    // Step 3: delete the agent
+    try {
+      await this.apiClient.delete(`/v2.0/aiagents/${agentId}`);
+      deleted.push(`agent:${agentId}`);
+    } catch (e: any) {
+      failed.push({ resource: `agent:${agentId}`, error: e.message ?? String(e) });
+    }
+
+    const allSucceeded = failed.length === 0 && deleted.includes(`agent:${agentId}`);
+    return {
+      deleted: allSucceeded,
+      resourceType: 'agent',
+      id: agentId,
+      cascade: { deleted, failed: failed.length > 0 ? failed : undefined },
+    };
   }
 
   // =========================================================================
@@ -1118,6 +1463,7 @@ export class ToolHandlers {
     }
 
     // For non-http tools: create the tool node + resolve node (if required by the tool type)
+    const toolLabel = cfg.toolId || data.name;
     if (data.toolType !== 'http') {
       const createdNodeIds: string[] = [];
       try {
@@ -1128,7 +1474,7 @@ export class ToolHandlers {
             extension: mapping.extension,
             mode: 'appendChild',
             target: jobNode._id,
-            label: data.name,
+            label: toolLabel,
             config: nodeConfig,
           },
         );
@@ -1138,6 +1484,10 @@ export class ToolHandlers {
         const resolveSpec = RESOLVE_NODE_MAP[data.toolType];
         let resolveNodeId: string | undefined;
         if (resolveSpec) {
+          const resolveConfig: Record<string, any> = {};
+          if (resolveSpec.type === 'aiAgentToolAnswer') {
+            resolveConfig.answer = cfg.toolResponseValue ?? '{{JSON.stringify(input.result)}}';
+          }
           const resolveNode: any = await this.apiClient.post(
             `/v2.0/flows/${flowId}/chart/nodes`,
             {
@@ -1146,7 +1496,7 @@ export class ToolHandlers {
               mode: 'append',
               target: toolNodeId,
               label: resolveSpec.label,
-              config: {},
+              config: resolveConfig,
             },
           );
           resolveNodeId = resolveNode._id || resolveNode.id;
@@ -1194,7 +1544,7 @@ export class ToolHandlers {
           extension: mapping.extension,
           mode: 'appendChild',
           target: jobNode._id,
-          label: data.name,
+          label: toolLabel,
           config: nodeConfig,
         },
       );
@@ -1230,7 +1580,7 @@ export class ToolHandlers {
             extension: '@cognigy/basic-nodes',
             mode: 'append',
             target: toolNodeId,
-            label: `${data.name} - Pre-Process`,
+            label: `${toolLabel} - Pre-Process`,
             config: { code: cfg.preProcessCode },
           },
         );
@@ -1252,7 +1602,7 @@ export class ToolHandlers {
           extension: '@cognigy/basic-nodes',
           mode: 'append',
           target: preProcessNodeId ?? toolNodeId,
-          label: `${data.name} - HTTP Request`,
+          label: `${toolLabel} - HTTP Request`,
           config: httpConfig,
         },
       );
@@ -1269,7 +1619,7 @@ export class ToolHandlers {
             extension: '@cognigy/basic-nodes',
             mode: 'append',
             target: httpNodeId,
-            label: `${data.name} - Post-Process`,
+            label: `${toolLabel} - Post-Process`,
             config: { code: cfg.postProcessCode },
           },
         );
@@ -1483,6 +1833,201 @@ export class ToolHandlers {
   }
 
   // =========================================================================
+  // Tool 12: manage_flow_nodes
+  // =========================================================================
+  async handleManageFlowNodes(args: any): Promise<any> {
+    const data = schemas.manageFlowNodesSchema.parse(args);
+    const { flowId, operation } = data;
+
+    switch (operation) {
+      // ----- LIST -----
+      case 'list': {
+        const nodes: any = await this.apiClient.get(`/v2.0/flows/${flowId}/chart/nodes`, {
+          params: { limit: 200 },
+        });
+        const items = nodes.items ?? nodes;
+        if (!Array.isArray(items)) return { nodes: [] };
+
+        return {
+          nodes: items.map((n: any) => ({
+            id: n._id || n.id,
+            type: n.type,
+            label: n.label,
+            parentId: n.parentId ?? null,
+            isEntryPoint: n.isEntryPoint ?? false,
+          })),
+        };
+      }
+
+      // ----- CREATE -----
+      case 'create': {
+        if (!data.nodeType) {
+          return withHints(
+            { error: 'nodeType is required for create operation.' },
+            { resource: 'cognigy://guide/flow-nodes', action: 'Read the flow-nodes guide for supported node types.' },
+          );
+        }
+
+        const entry = getNodeEntry(data.nodeType);
+        if (!entry) {
+          return withHints(
+            { error: `Unsupported nodeType: "${data.nodeType}". Supported types: ${supportedNodeTypes().join(', ')}` },
+            { resource: 'cognigy://guide/flow-nodes', action: 'Read the flow-nodes guide for the full list and config schemas.' },
+          );
+        }
+
+        if (!data.label) {
+          return withHints(
+            { error: 'label is required for create operation.' },
+            { action: 'Provide a display label for the node.' },
+          );
+        }
+
+        const cfg = data.config ?? {};
+        const aliasMap: Record<string, string[]> = {
+          milliseconds: ['milliseconds', 'delay'],
+          key: ['key', 'contextEntries'],
+          value: ['value', 'contextEntries'],
+        };
+        const missingKeys = entry.requiredConfigKeys.filter(k => {
+          const aliases = aliasMap[k] ?? [k];
+          return !aliases.some(a => cfg[a] !== undefined);
+        });
+        if (missingKeys.length > 0) {
+          const missingKeyLabels = missingKeys.map(k => {
+            const aliases = aliasMap[k] ?? [k];
+            return aliases.length > 1 ? aliases.join(' / ') : aliases[0];
+          });
+          return withHints(
+            { error: `Missing required config keys for ${data.nodeType}: ${missingKeyLabels.join(', ')}` },
+            { resource: 'cognigy://guide/flow-nodes', action: `Provide the required config fields: ${missingKeyLabels.join(', ')}` },
+          );
+        }
+
+        const targetNodeId = data.parentNodeId;
+        let mode = data.mode ?? 'append';
+
+        if (!targetNodeId) {
+          return withHints(
+            { error: 'parentNodeId is required for create operation.' },
+            {
+              action:
+                'Specify the parentNodeId of a node inside the appropriate tool branch where the new node should be created.',
+            },
+          );
+        }
+
+        // When appendChild-ing to an aiAgentJobTool node, silently rewrite to
+        // `mode: 'append'` so the new node is placed in the tool's execution
+        // chain (before the Resolve Tool Action node) rather than as an orphaned
+        // child that never feeds into the Resolve node.
+        // This makes `manage_flow_nodes` "just work" for tool branches regardless
+        // of whether the caller uses appendChild or append.
+        if (mode === 'appendChild' && targetNodeId) {
+          try {
+            const targetCheck: any = await this.apiClient.get(
+              `/v2.0/flows/${flowId}/chart/nodes/${targetNodeId}`,
+            );
+            if (targetCheck && targetCheck.type === 'aiAgentJobTool') {
+              mode = 'append';
+            }
+          } catch {
+            // If the check fails, proceed with the original mode.
+          }
+        }
+
+        const apiConfig = data.config ? transformConfigForApi(entry.type, data.config) : undefined;
+
+        const createdNode: any = await this.apiClient.post(
+          `/v2.0/flows/${flowId}/chart/nodes`,
+          {
+            type: entry.type,
+            extension: entry.extension,
+            mode,
+            target: targetNodeId,
+            label: data.label,
+            ...(apiConfig && Object.keys(apiConfig).length > 0 ? { config: apiConfig } : {}),
+          },
+        );
+
+        const nodeId = createdNode._id || createdNode.id;
+        const actualParentId =
+          createdNode.parentId ??
+          createdNode.parent_id ??
+          (createdNode.parent && (createdNode.parent._id || createdNode.parent.id));
+
+        return {
+          nodeId,
+          type: entry.type,
+          label: data.label,
+          ...(actualParentId ? { parentId: actualParentId } : {}),
+          targetNodeId,
+          mode,
+          configApplied: data.config ? Object.keys(data.config) : [],
+        };
+      }
+
+      // ----- UPDATE -----
+      case 'update': {
+        if (!data.nodeId) {
+          return withHints(
+            { error: 'nodeId is required for update operation.' },
+            { action: 'Use manage_flow_nodes { operation: "list", flowId } to find node IDs.' },
+          );
+        }
+
+        if (!data.config && !data.label) {
+          return withHints(
+            { error: 'Nothing to update. Provide at least label or config.' },
+            { action: 'Include fields to update in the request.' },
+          );
+        }
+
+        const patchPayload: any = {};
+        if (data.label) patchPayload.label = data.label;
+        if (data.config) {
+          const existingNode: any = await this.apiClient.get(
+            `/v2.0/flows/${flowId}/chart/nodes/${data.nodeId}`,
+          );
+          const nodeType = existingNode?.type ?? '';
+          const transformed = transformConfigForApi(nodeType, data.config);
+          const existingConfig = existingNode?.config ?? {};
+          patchPayload.config = deepMerge(existingConfig, transformed);
+        }
+
+        await this.apiClient.patch(
+          `/v2.0/flows/${flowId}/chart/nodes/${data.nodeId}`,
+          patchPayload,
+        );
+
+        return {
+          updated: true,
+          nodeId: data.nodeId,
+          ...(data.label ? { label: data.label } : {}),
+          ...(data.config ? { configUpdated: Object.keys(data.config) } : {}),
+        };
+      }
+
+      // ----- DELETE -----
+      case 'delete': {
+        if (!data.nodeId) {
+          return withHints(
+            { error: 'nodeId is required for delete operation.' },
+            { action: 'Use manage_flow_nodes { operation: "list", flowId } to find node IDs.' },
+          );
+        }
+
+        await this.apiClient.delete(`/v2.0/flows/${flowId}/chart/nodes/${data.nodeId}`);
+
+        return { deleted: true, nodeId: data.nodeId };
+      }
+
+      default:
+        throw new Error(`Unknown operation: ${operation}`);
+    }
+  }
+
+  // =========================================================================
   // Tool 11: manage_webchat
   // =========================================================================
   async handleManageWebchat(args: any): Promise<any> {
@@ -1493,28 +2038,8 @@ export class ToolHandlers {
     const hasSettings = settingsKeys.length > 0;
 
     let endpointId = data.endpointId ?? null;
-    let existingEndpoint: any = null;
 
-    // Auto-detect: find existing webchat3 endpoint in project
-    if (!endpointId && data.projectId) {
-      try {
-        const endpoints: any = await this.apiClient.get('/v2.0/endpoints', {
-          params: { projectId: data.projectId, limit: 100 },
-        });
-        const items = endpoints.items ?? endpoints;
-        const webchat = (Array.isArray(items) ? items : []).find(
-          (ep: any) => ep.channel === 'webchat3',
-        );
-        if (webchat) {
-          endpointId = webchat._id || webchat.id;
-          existingEndpoint = webchat;
-        }
-      } catch {
-        // Fall through to create
-      }
-    }
-
-    // CREATE: no existing endpoint found
+    // CREATE when no endpointId provided, UPDATE when endpointId is explicit
     if (!endpointId) {
       if (!data.projectId) {
         return withHints(
@@ -1527,7 +2052,7 @@ export class ToolHandlers {
       }
       if (!data.flowId) {
         return withHints(
-          { error: 'flowId is required to create a webchat endpoint (no existing webchat3 endpoint found in this project).' },
+          { error: 'flowId is required to create a webchat endpoint. To update an existing one, provide endpointId instead.' },
           {
             resource: 'cognigy://guide/webchat-setup',
             action: "Provide flowId. Use list_resources { resourceType: 'flow', projectId } to find one, or create an agent first with create_ai_agent.",
@@ -1594,7 +2119,7 @@ export class ToolHandlers {
 
     // UPDATE: patch existing endpoint
     if (!data.name && !hasSettings) {
-      const ep = existingEndpoint ?? await this.safeGetEndpoint(endpointId);
+      const ep = await this.safeGetEndpoint(endpointId);
       if (ep) {
         return this.buildWebchatResponse({ endpointId: endpointId!, endpoint: ep, settingsKeys: [], note: 'No changes requested. Returning current endpoint info.' });
       }
@@ -1736,6 +2261,9 @@ export class ToolHandlers {
           break;
         case 'update_tool':
           result = await this.handleUpdateTool(args);
+          break;
+        case 'manage_flow_nodes':
+          result = await this.handleManageFlowNodes(args);
           break;
         case 'manage_webchat':
           result = await this.handleManageWebchat(args);

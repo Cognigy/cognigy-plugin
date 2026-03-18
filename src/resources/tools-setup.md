@@ -20,9 +20,14 @@ create_tool {
   config: {
     toolId: "fetch_weather",
     description: "Fetches current weather for a city",
-    parameters: '{"type":"object","properties":{"city":{"type":"string"}}}'
+    parameters: '{"type":"object","properties":{"city":{"type":"string"}}}',
+    toolResponseValue: "{{JSON.stringify(input.result)}}"
   }
 }
+
+IMPORTANT: The node label in the flow uses `toolId` (snake_case), not the display `name`. Always provide `toolId`.
+
+The Resolve Tool Action node is auto-created with an `answer` field that controls what is returned to the LLM. Default for general-purpose tools: `{{JSON.stringify(input.result)}}`. Set `toolResponseValue` to customize it.
 
 ### knowledge — Search a Knowledge Store
 create_tool {
@@ -105,18 +110,74 @@ create_tool {
 }
 
 #### Tool response value (toolResponseValue)
-The `toolResponseValue` field controls what the Resolve Tool Action node returns to the LLM as the tool's result. This is a CognigyScript expression.
+The `toolResponseValue` field controls what the Resolve Tool Action node returns to the LLM as the tool's result. This is a CognigyScript expression. It applies to BOTH `http` and general-purpose `tool` types.
 
-- **Default** (if omitted): `{{JSON.stringify(input.httprequest)}}` — returns the raw HTTP response object
-- **Custom**: Set to any CognigyScript expression pointing to where your code nodes store the processed result
+Defaults (if omitted):
+- **http tools**: `{{JSON.stringify(input.httprequest)}}` — returns the raw HTTP response object
+- **general-purpose tools**: `{{JSON.stringify(input.result)}}` — returns the `input.result` field
 
-IMPORTANT: If you use postProcessCode to transform the HTTP response and store it in a custom field (e.g., `input.result` or `input.orderResult`), you MUST set toolResponseValue to match (e.g., `{{JSON.stringify(input.result)}}`). Otherwise the Resolve node will return the raw HTTP response instead of your processed data.
+IMPORTANT: The Resolve Tool Action node MUST have an `answer` value, otherwise nothing is returned to the LLM and the tool appears to produce no output. If your code stores results in a custom field, set toolResponseValue to match.
 
 Common patterns:
-- `{{JSON.stringify(input.result)}}` — return a processed result object
+- `{{JSON.stringify(input.result)}}` — return a processed result object (default for general-purpose tools)
 - `{{JSON.stringify(input.orderResult)}}` — return a named result from post-processing
 - `{{input.summary}}` — return a plain string value
-- `{{JSON.stringify(input.httprequest)}}` — return the raw HTTP response (default)
+- `{{JSON.stringify(input.httprequest)}}` — return the raw HTTP response (default for http tools)
+
+## Adding logic inside tools (manage_flow_nodes)
+
+After creating a `toolType: "tool"`, you can add flow nodes inside the tool's branch to build custom logic. This is the recommended way to add conversation logic — nodes should live inside tools, not as standalone nodes in the flow.
+
+### Workflow
+1. Create the tool — `create_tool` returns a `toolNodeId`
+2. Add the first node using `parentNodeId` = toolNodeId and `mode` = `appendChild`
+3. Add subsequent nodes using `parentNodeId` = previous node ID and `mode` = `append`
+
+Note: Both `appendChild` and `append` work correctly when targeting a tool node. The handler automatically places new nodes in the correct execution chain (before the Resolve Tool Action node) regardless of which mode you use.
+
+### Example — tool with validation logic and response
+```
+Step 1: Create the tool
+create_tool {
+  aiAgentId: "...",
+  toolType: "tool",
+  name: "Check Order Status",
+  config: {
+    toolId: "check_order_status",
+    description: "Looks up the status of a customer order",
+    parameters: '{"type":"object","properties":{"orderId":{"type":"string"}}}'
+  }
+}
+→ returns toolNodeId: "abc123..."
+
+Step 2: Add a Code node inside the tool branch
+manage_flow_nodes {
+  operation: "create",
+  flowId: "<flowId>",
+  parentNodeId: "abc123...",
+  mode: "appendChild",
+  nodeType: "code",
+  label: "Validate Order ID",
+  config: { code: "if (!input.data.orderId) { input.error = 'Missing order ID'; }" }
+}
+→ returns nodeId: "def456..."
+
+Step 3: Add an If/Else node after the Code node
+manage_flow_nodes {
+  operation: "create",
+  flowId: "<flowId>",
+  parentNodeId: "def456...",
+  mode: "append",
+  nodeType: "ifThenElse",
+  label: "Has Error?",
+  config: { condition: "{{input.error}}" }
+}
+```
+
+### Supported node types for tool branches
+All node types supported by `manage_flow_nodes` can be used inside tool branches: `say`, `question`, `ifThenElse`, `lookup`, `setSessionContext`, `code`, `goTo`, `sleep`, `httpRequest`.
+
+Read cognigy://guide/flow-nodes for config schemas of each node type.
 
 ## Updating tools (update_tool)
 

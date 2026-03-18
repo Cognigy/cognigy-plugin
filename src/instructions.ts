@@ -18,6 +18,17 @@ KNOWLEDGE STORES:
 - This creates a dedicated search tool the agent can invoke during conversations.
 - Only attach knowledge to the agent persona (via update_ai_agent) if the user EXPLICITLY asks to put it on the persona.
 
+ADDING CUSTOM LOGIC (flow nodes inside tools):
+Flow nodes are helpers for tools — they add logic INSIDE a tool's branch (e.g., conditionals, code, say nodes).
+The default workflow is: create a tool first, then add nodes under it.
+1. create_tool { aiAgentId, toolType: "tool", name, config } → creates the tool; returns toolNodeId
+2. manage_flow_nodes { operation: "create", flowId, parentNodeId: "<toolNodeId>", mode: "appendChild", nodeType: "code", label: "...", config: { ... } } → adds a node inside the tool branch
+3. manage_flow_nodes { operation: "list", flowId } → see all nodes
+4. manage_flow_nodes { operation: "update", flowId, nodeId, config: { ... } }
+5. manage_flow_nodes { operation: "delete", flowId, nodeId }
+Read cognigy://guide/flow-nodes for supported node types and config schemas.
+CRITICAL: NEVER add standalone nodes before the AI Agent Job node. ALL logic MUST live inside tool branches. The AI Agent (LLM) orchestrates everything — it decides when to call tools. Pre-agent nodes break the conversational flow and cause loops. Even authentication, data collection, and conditional greetings should be implemented as tools that the agent calls.
+
 DEPLOY TO WEBCHAT (after agent is working):
 1. manage_webchat { projectId, flowId, name } → creates a Webchat v3 endpoint
    Or: manage_webchat { endpointId, layout: {...}, behavior: {...} } → updates existing webchat
@@ -31,6 +42,9 @@ RULES:
 - talk_to_agent hits a DIFFERENT base URL (endpoint-*.cognigy.ai) — not the API base URL.
 - delete_resource is the ONLY way to delete anything.
 - create_tool handles tool creation — it auto-provisions flow nodes internally. Do NOT create flow nodes for tools manually.
-- manage_webchat is DESTRUCTIVE — it can overwrite existing webchat endpoint settings. If the user's intent is ambiguous (e.g., they say "set up webchat" but a webchat endpoint already exists), ALWAYS ask the user whether to update the existing endpoint or create a new one before proceeding. manage_webchat auto-detects existing webchat endpoints.
+- manage_flow_nodes is ONLY for building logic INSIDE tool branches. ALWAYS create a tool first (create_tool { toolType: "tool" }) then add nodes inside it using manage_flow_nodes with parentNodeId = toolNodeId and mode = "appendChild".
+- NEVER create standalone nodes before the AI Agent Job node. This is an anti-pattern that causes conversation loops and broken flows. ALL behavior — including authentication, data collection, greetings, and conditional logic — must be implemented as agent tools that the LLM decides when to invoke.
+- manage_flow_nodes only supports a curated set of node types. Read cognigy://guide/flow-nodes for the full list.
+- manage_webchat creates a new endpoint when endpointId is omitted, and updates an existing endpoint only when endpointId is explicitly provided. To update an existing webchat, first use list_resources { resourceType: "endpoint", projectId } to find the endpointId.
 - manage_webchat ALWAYS returns demoWebchatUrl — present it to the user every time as a clickable link. Do NOT tell the user to find the URL in the Cognigy UI.
 - When errors occur, check _hints.resource for a guide URI to read.`;

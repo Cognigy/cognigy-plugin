@@ -258,4 +258,54 @@ describe('create_tool – HTTP tool path', () => {
     expect(resolveCallBody.type).toBe('aiAgentToolAnswer');
     expect(resolveCallBody.config.answer).toBe('{{JSON.stringify(input.httprequest)}}');
   });
+
+  it('uses toolId as node label for HTTP tool and child nodes', async () => {
+    mockFlowWithJobNode();
+    mockPostSequence(
+      MOCK_IDS.toolNode, MOCK_IDS.resolveNode,
+      MOCK_IDS.preNode, MOCK_IDS.httpNode, MOCK_IDS.postNode,
+    );
+
+    await h.handleToolCall('create_tool', {
+      aiAgentId: ID.agent,
+      toolType: 'http',
+      name: 'Fetch User Posts',
+      config: {
+        toolId: 'fetch_user_posts',
+        url: 'https://api.example.com/posts',
+        preProcessCode: 'input.x = 1;',
+        postProcessCode: 'input.y = 2;',
+      },
+    });
+
+    const toolCallBody = api.post.mock.calls[0][1];
+    expect(toolCallBody.label).toBe('fetch_user_posts');
+
+    const preCallBody = api.post.mock.calls[2][1];
+    expect(preCallBody.label).toBe('fetch_user_posts - Pre-Process');
+
+    const httpCallBody = api.post.mock.calls[3][1];
+    expect(httpCallBody.label).toBe('fetch_user_posts - HTTP Request');
+
+    const postCallBody = api.post.mock.calls[4][1];
+    expect(postCallBody.label).toBe('fetch_user_posts - Post-Process');
+  });
+
+  it('uses custom toolResponseValue for HTTP resolve node', async () => {
+    mockFlowWithJobNode();
+    mockPostSequence(MOCK_IDS.toolNode, MOCK_IDS.resolveNode, MOCK_IDS.httpNode);
+
+    await h.handleToolCall('create_tool', {
+      aiAgentId: ID.agent,
+      toolType: 'http',
+      name: 'Custom HTTP',
+      config: {
+        url: 'https://api.example.com/data',
+        toolResponseValue: '{{JSON.stringify(input.customResult)}}',
+      },
+    });
+
+    const resolveCallBody = api.post.mock.calls[1][1];
+    expect(resolveCallBody.config.answer).toBe('{{JSON.stringify(input.customResult)}}');
+  });
 });

@@ -278,7 +278,7 @@ export const tools: ToolDefinition[] = [
   {
     name: 'delete_resource',
     description:
-      "Permanently delete a Cognigy resource. This cannot be undone.\n\nUse list_resources to verify the resource exists before deleting.\nSome types (endpoint) may require projectId. For 'tool' type, provide aiAgentId — the handler resolves and deletes the underlying flow node internally.",
+      "Permanently delete a Cognigy resource. This cannot be undone.\n\nUse list_resources to verify the resource exists before deleting.\nSome types (endpoint) may require projectId. For 'tool' type, provide aiAgentId — the handler resolves and deletes the underlying flow node internally.\n\nAGENT DELETION: Deleting an agent is a last resort. By default (cascade: true), it cascade-deletes all associated resources in the correct order: endpoints → flow → agent. The Cognigy API rejects agent deletion while a referencing flow exists, so cascade is required. Set cascade: false to attempt a bare agent delete (will fail if flow still exists). The response reports every resource deleted and any failures.",
     annotations: {
       title: 'Delete Resource',
       readOnlyHint: false,
@@ -305,6 +305,10 @@ export const tools: ToolDefinition[] = [
         aiAgentId: {
           type: 'string',
           description: '24-char hex AI Agent ID (required for tool type — needed to resolve the flow)',
+        },
+        cascade: {
+          type: 'boolean',
+          description: "Agent deletion only. If true (default), cascade-deletes endpoints → flow → agent. If false, attempts bare agent delete (fails if flow still exists).",
         },
       },
       required: ['resourceType', 'id'],
@@ -373,7 +377,7 @@ export const tools: ToolDefinition[] = [
   {
     name: 'create_tool',
     description:
-      "Create a tool as a child of an AI Agent's Job node. Tools extend what the agent can do.\n\nTool types:\n- tool: General-purpose tool with custom logic branch. Provide toolId, description, and optional parameters (JSON Schema).\n- knowledge: Search a Knowledge Store. Provide knowledgeStoreId, toolId, description.\n- send_email: Send emails. Provide toolId, description, recipient.\n- mcp: Connect to a remote MCP server. Provide mcpName, mcpServerUrl, timeout.\n- http: Call an external HTTP API. Provide toolId, description, url, method, and optionally headers, body, preProcessCode, postProcessCode. Creates an aiAgentJobTool with child HTTP Request node (and optional pre/post-process Code nodes).\n\nPrerequisites: Agent must exist (created via create_ai_agent).\nTo list tools: list_resources { resourceType: 'tool', aiAgentId }.\nTo delete: delete_resource { resourceType: 'tool', id: toolId, aiAgentId }.\nAfter creating, use talk_to_agent to test.",
+      "Create a tool as a child of an AI Agent's Job node. Tools extend what the agent can do.\n\nTool types:\n- tool: General-purpose tool with custom logic branch. Provide toolId, description, and optional parameters (JSON Schema). After creation, use manage_flow_nodes with parentNodeId = returned toolNodeId and mode = \"appendChild\" to add logic nodes (say, code, ifThenElse, httpRequest, etc.) inside the tool branch.\n- knowledge: Search a Knowledge Store. Provide knowledgeStoreId, toolId, description.\n- send_email: Send emails. Provide toolId, description, recipient.\n- mcp: Connect to a remote MCP server. Provide mcpName, mcpServerUrl, timeout.\n- http: Call an external HTTP API. Provide toolId, description, url, method, and optionally headers, body, preProcessCode, postProcessCode. Creates an aiAgentJobTool with child HTTP Request node (and optional pre/post-process Code nodes).\n\nPrerequisites: Agent must exist (created via create_ai_agent).\nTo list tools: list_resources { resourceType: 'tool', aiAgentId }.\nTo delete: delete_resource { resourceType: 'tool', id: toolId, aiAgentId }.\nAfter creating, use talk_to_agent to test.",
     annotations: {
       title: 'Create Tool',
       readOnlyHint: false,
@@ -396,13 +400,13 @@ export const tools: ToolDefinition[] = [
         },
         name: {
           type: 'string',
-          description: "Tool display name (e.g., 'Fetch Weather', 'Search FAQ')",
+          description: "Tool display name (e.g., 'Fetch Weather', 'Search FAQ'). The node label in the flow uses the snake_case toolId from config (e.g., 'fetch_weather') if provided, otherwise falls back to this name.",
         },
         config: {
           type: 'object',
           description: 'Tool-specific configuration — fields depend on toolType.',
           properties: {
-            toolId: { type: 'string', description: 'Tool identifier for the LLM (tool, knowledge, send_email, http)' },
+            toolId: { type: 'string', description: 'Tool identifier for the LLM in snake_case (e.g., fetch_weather, search_faq). Also used as the node label in the flow. (tool, knowledge, send_email, http)' },
             description: { type: 'string', description: 'Tool description for the LLM (tool, knowledge, send_email, http)' },
             parameters: { type: 'string', description: 'JSON Schema string defining tool parameters (tool, http)' },
             knowledgeStoreId: { type: 'string', description: 'Knowledge store reference ID (knowledge only)' },
@@ -435,7 +439,7 @@ export const tools: ToolDefinition[] = [
             },
             toolResponseValue: {
               type: 'string',
-              description: "CognigyScript expression for the Resolve Tool Action node's answer field (http only). Controls what value is returned to the LLM as the tool result. Default: '{{JSON.stringify(input.httprequest)}}' (returns the raw HTTP response). If you add post-processing code that stores results in a custom field (e.g., input.result), set this to '{{JSON.stringify(input.result)}}' to return that instead. Must be a valid CognigyScript expression.",
+              description: "CognigyScript expression for the Resolve Tool Action node's answer field. Controls what value is returned to the LLM as the tool result. For http tools, default: '{{JSON.stringify(input.httprequest)}}'. For general-purpose tools, default: '{{JSON.stringify(input.result)}}'. Set this to match where your code stores the result. Must be a valid CognigyScript expression.",
             },
           },
         },
@@ -513,7 +517,7 @@ export const tools: ToolDefinition[] = [
             },
             toolResponseValue: {
               type: 'string',
-              description: "CognigyScript expression for the Resolve Tool Action node's answer field (http only). Controls what value is returned to the LLM. Default: '{{JSON.stringify(input.httprequest)}}'. Set to match where your post-processing code stores results, e.g., '{{JSON.stringify(input.result)}}'.",
+              description: "CognigyScript expression for the Resolve Tool Action node's answer field. Controls what value is returned to the LLM. For http tools, default: '{{JSON.stringify(input.httprequest)}}'. For general-purpose tools, default: '{{JSON.stringify(input.result)}}'. Set to match where your code stores results.",
             },
           },
         },
@@ -522,11 +526,65 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // 12. manage_flow_nodes
+  {
+    name: 'manage_flow_nodes',
+    description:
+      "Add flow nodes inside tool branches to build custom logic for AI Agent tools.\n\nIMPORTANT: Nodes should be created INSIDE tool branches. First create a tool with create_tool { toolType: \"tool\" }, then use this tool to add logic nodes under it (parentNodeId = toolNodeId, mode = \"appendChild\"). Do NOT add standalone nodes before the AI Agent Job node unless the user explicitly asks for it.\n\nTool branch placement is handled automatically: when you appendChild to an aiAgentJobTool node, the node is placed in the correct execution chain (before the Resolve Tool Action node). Both appendChild and append work correctly for tool branches.\n\nBEFORE USING THIS TOOL: Read cognigy://guide/flow-nodes for the full node type reference, config schemas, and placement rules.\n\nOPERATIONS:\n- list: List all nodes in a flow (returns id, type, label, parentId).\n- create: Add a node inside a tool branch. Requires nodeType and config. Set parentNodeId to the tool node ID and mode to \"appendChild\" to place nodes inside the tool. Use mode \"append\" to place after a sibling node within the same branch.\n- update: Modify a node's config or label. Only provided config fields are changed — existing fields are preserved.\n- delete: Remove a node from the flow.\n\nSUPPORTED NODE TYPES: say, question, ifThenElse, lookup, setSessionContext, code, goTo, sleep, httpRequest. Read cognigy://guide/flow-nodes for config details.\n\nIf a nodeType is not in the supported list, the tool will return an error with the list of supported types.\n\nFor AI Agent tool nodes (knowledge, send_email, mcp, http), use create_tool / update_tool instead — they handle the required parent-child node wiring automatically.",
+    annotations: {
+      title: 'Manage Flow Nodes',
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: ['list', 'create', 'update', 'delete'],
+          description: 'Operation to perform',
+        },
+        flowId: {
+          type: 'string',
+          description: "24-char hex flow ID (from create_ai_agent response or list_resources { resourceType: 'flow' })",
+        },
+        nodeId: {
+          type: 'string',
+          description: '24-char hex node ID (required for update and delete)',
+        },
+        nodeType: {
+          type: 'string',
+          description: 'Node type key from the supported list: say, question, ifThenElse, lookup, setSessionContext, code, goTo, sleep, httpRequest. Read cognigy://guide/flow-nodes for details. Required for create.',
+        },
+        label: {
+          type: 'string',
+          description: 'Display label for the node (required for create, optional for update)',
+        },
+        parentNodeId: {
+          type: 'string',
+          description: 'Target node ID. Set to the tool node ID (from create_tool) and use mode=appendChild to add nodes inside a tool branch. Use mode=append to place after a sibling node.',
+        },
+        mode: {
+          type: 'string',
+          enum: ['append', 'appendChild'],
+          description: 'Placement mode: appendChild (inside target — use this to add nodes under a tool) or append (after target as a sibling). Default: append.',
+        },
+        config: {
+          type: 'object',
+          description: 'Node-type-specific configuration. See cognigy://guide/flow-nodes for the schema of each node type.',
+        },
+      },
+      required: ['operation', 'flowId'],
+    },
+  },
+
   // 11. manage_webchat
   {
     name: 'manage_webchat',
     description:
-      "Create or configure a Webchat v3 Endpoint. This is the primary tool for deploying an AI Agent as an embeddable website chat widget.\n\n⚠️ DESTRUCTIVE: This tool can overwrite existing webchat endpoint settings. If the user's intent is ambiguous (e.g., they say 'set up webchat' or 'configure webchat' but a webchat endpoint may already exist), you MUST ask the user whether to UPDATE the existing endpoint or CREATE a new one BEFORE calling this tool. Only proceed without asking if the user's intent is unambiguous (e.g., they explicitly say 'create a new webchat' or 'update the existing webchat' or provide an endpointId).\n\nBEFORE USING THIS TOOL: Read cognigy://guide/webchat-setup for the full settings reference, style presets, and common recipes.\n\nCREATE vs UPDATE:\n- To create: provide projectId + flowId (+ optional name). A new webchat3 endpoint is created.\n- To update: provide endpointId. Settings are merged with existing configuration.\n- Auto-detect: provide projectId without endpointId — the tool finds the first webchat3 endpoint in the project and updates it. If none exists and flowId is provided, it creates one.\n\nIMPORTANT: The auto-detect behavior means calling this tool with just projectId can silently update an existing endpoint. Always confirm the user's intent first.\n\nSTYLE PRESETS: Use stylePreset ('classic', 'modern', 'slick') to apply a predefined look. You can override individual fields in the same call.\n\nSETTINGS are organized into semantic groups (layout, behavior, startBehavior, homeScreen, teaserMessage, chatOptions, privacyNotice, businessHours, unreadMessages, maintenance, watermark, persistentMenu, attachmentUpload, webchatIcon). Only include groups/fields you want to change — everything else is preserved.\n\nFor advanced customization not covered by the groups, use customJson (raw JSON string for Webchat Custom Settings).\n\nRESPONSE HANDLING — CRITICAL:\nThe response always contains demoWebchatUrl — a direct browser link to test the webchat. You MUST ALWAYS present this URL to the user as a clickable link after every successful create or update. Do NOT tell the user to go to the UI to find it. The _integration section contains configUrl and embeddingSnippet — only mention these if the user explicitly asks about embedding or deploying to their website.",
+      "Create or configure a Webchat v3 Endpoint. This is the primary tool for deploying an AI Agent as an embeddable website chat widget.\n\nBEFORE USING THIS TOOL: Read cognigy://guide/webchat-setup for the full settings reference, style presets, and common recipes.\n\nCREATE vs UPDATE:\n- To create: provide projectId + flowId (+ optional name). A new webchat3 endpoint is always created.\n- To update: provide endpointId. Settings are merged with existing configuration.\n- Without endpointId, the tool never modifies existing endpoints — it always creates a new one.\n\nTo update an existing webchat, you MUST provide the endpointId. Use list_resources { resourceType: 'endpoint', projectId } to find existing webchat endpoints first.\n\nSTYLE PRESETS: Use stylePreset ('classic', 'modern', 'slick') to apply a predefined look. You can override individual fields in the same call.\n\nSETTINGS are organized into semantic groups (layout, behavior, startBehavior, homeScreen, teaserMessage, chatOptions, privacyNotice, businessHours, unreadMessages, maintenance, watermark, persistentMenu, attachmentUpload, webchatIcon). Only include groups/fields you want to change — everything else is preserved.\n\nFor advanced customization not covered by the groups, use customJson (raw JSON string for Webchat Custom Settings).\n\nRESPONSE HANDLING — CRITICAL:\nThe response always contains demoWebchatUrl — a direct browser link to test the webchat. You MUST ALWAYS present this URL to the user as a clickable link after every successful create or update. Do NOT tell the user to go to the UI to find it. The _integration section contains configUrl and embeddingSnippet — only mention these if the user explicitly asks about embedding or deploying to their website.",
     annotations: {
       title: 'Manage Webchat',
       readOnlyHint: false,
@@ -539,7 +597,7 @@ export const tools: ToolDefinition[] = [
       properties: {
         endpointId: {
           type: 'string',
-          description: '24-char hex endpoint ID. If provided, updates the existing endpoint. If omitted, creates or auto-finds.',
+          description: '24-char hex endpoint ID. If provided, updates the existing endpoint. If omitted, creates a new endpoint.',
         },
         projectId: {
           type: 'string',

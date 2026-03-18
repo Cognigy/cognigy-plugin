@@ -2,9 +2,9 @@
   "manifest_version": "0.3",
   "name": "cognigy-mcp-server",
   "display_name": "Cognigy AI Agent MCP Server",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "Connect your AI assistant to Cognigy.AI — create, test, and improve LLM-based AI Agents through a self-improvement loop.",
-  "long_description": "A Model Context Protocol server that exposes the Cognigy.AI API through 9 high-level workflow tools focused on LLM-based AI Agents.\n\nCreate a complete AI Agent setup in one tool call (Agent + Flow + Job Node + Endpoint), then talk to it, evaluate responses, and iterate until it's perfect.\n\nSupports: AI Agent management, knowledge stores, conversation history, flow management, analytics, and direct agent testing via REST endpoints.",
+  "long_description": "A Model Context Protocol server that exposes the Cognigy.AI API through focused, purpose-built tools for LLM-based AI Agents.\n\nCreate a complete AI Agent setup in one tool call (Agent + Flow + Job Node + Endpoint), configure LLMs, attach knowledge stores and tools, deploy to Webchat, then talk to it, evaluate responses, and iterate until it's perfect.\n\nSupports: AI Agent creation and configuration, LLM setup, knowledge management (RAG), tool creation (HTTP, MCP, email, knowledge), flow node editing, Webchat v3 deployment, and direct agent testing via REST endpoints.",
   "author": {
     "name": "Cognigy",
     "url": "https://www.cognigy.com"
@@ -59,11 +59,11 @@
   "tools": [
     {
       "name": "create_ai_agent",
-      "description": "Create a complete AI Agent with auto-provisioned flow, AI Agent Job Node, and REST endpoint"
+      "description": "Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint"
     },
     {
       "name": "update_ai_agent",
-      "description": "Update an AI Agent's configuration, persona, job description, and LLM settings"
+      "description": "Update an AI Agent's persona, guardrails, job configuration, and LLM settings"
     },
     {
       "name": "setup_llm",
@@ -71,35 +71,39 @@
     },
     {
       "name": "talk_to_agent",
-      "description": "Send a message to a Cognigy AI Agent and get its response"
+      "description": "Send a message to an AI Agent and get its response for testing"
+    },
+    {
+      "name": "list_resources",
+      "description": "List projects, agents, flows, endpoints, LLMs, knowledge stores, and more"
+    },
+    {
+      "name": "get_resource",
+      "description": "Get detailed information about a single Cognigy resource"
+    },
+    {
+      "name": "delete_resource",
+      "description": "Permanently delete a Cognigy resource"
     },
     {
       "name": "manage_knowledge",
-      "description": "Create knowledge stores, add sources (URL, text, file), and list chunks"
+      "description": "Create knowledge stores, add sources (URL, text, file), and list chunks for RAG"
     },
     {
       "name": "create_tool",
-      "description": "Add a tool (knowledge, HTTP, MCP, email, custom) to an agent's job node"
+      "description": "Create a tool (HTTP, knowledge, email, MCP) on an AI Agent's job node"
     },
     {
       "name": "update_tool",
       "description": "Update an existing tool node's configuration"
     },
     {
-      "name": "list_resources",
-      "description": "List agents, flows, endpoints, LLMs, knowledge stores, tools, projects, and conversations"
-    },
-    {
-      "name": "get_resource",
-      "description": "Get details for a single resource by type and ID"
-    },
-    {
-      "name": "delete_resource",
-      "description": "Delete any resource by type and ID"
-    },
-    {
       "name": "manage_webchat",
-      "description": "Manage Webchat v3 widget settings"
+      "description": "Create or configure a Webchat v3 endpoint for website deployment"
+    },
+    {
+      "name": "manage_flow_nodes",
+      "description": "Create, update, delete, or list flow nodes for conversation logic"
     }
   ],
   "tools_generated": false,

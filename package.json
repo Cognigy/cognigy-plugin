@@ -1,6 +1,6 @@
 {
   "name": "@cognigy/mcp-server",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "Model Context Protocol server for Cognigy.AI REST API",
   "main": "dist/index.js",
   "bin": {
@@ -9,8 +9,7 @@
   "type": "module",
   "files": [
     "dist",
-    "README.md",
-    "QUICK_START.md"
+    "README.md"
   ],
   "scripts": {
     "build": "npx tsc && cp -r src/resources dist/resources",

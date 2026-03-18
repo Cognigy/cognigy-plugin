@@ -4,7 +4,7 @@ A Model Context Protocol (MCP) server that connects your AI assistant to the [Co
 
 ## Features
 
-- **9 workflow tools** covering 34 operations across ~115 Cognigy API endpoints
+- **12 workflow tools** covering ~115 Cognigy API endpoints
 - **One-call agent setup**: creates Agent + Flow + AI Agent Job Node + REST Endpoint automatically
 - **Self-improvement loop**: talk to your agent, evaluate responses, update the job description, repeat
 - **Knowledge store support**: attach RAG knowledge stores to agents as tools
@@ -15,17 +15,20 @@ A Model Context Protocol (MCP) server that connects your AI assistant to the [Co
 
 | Tool | Type | Description |
 |---|---|---|
-| `create_ai_agent` | Write | Create an AI Agent with auto-provisioned flow, job node, and endpoint |
-| `update_ai_agent` | Write | Update agent configuration, persona, job description, and LLM settings |
-| `setup_llm` | Write | Create an LLM resource (GPT-4, Claude, etc.) in a project |
-| `talk_to_agent` | Write | Send a message to an agent and get its response |
-| `manage_knowledge` | Write | Create knowledge stores, add sources (URL/text/file), list chunks |
-| `create_tool` | Write | Add a tool (knowledge, HTTP, MCP, email, custom) to an agent's job node |
+| `create_ai_agent` | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint |
+| `update_ai_agent` | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature) |
+| `setup_llm` | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) in a project |
+| `talk_to_agent` | Write | Send a message to an AI Agent and get its response |
+| `list_resources` | Read | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more |
+| `get_resource` | Read | Get detailed information about a single resource |
+| `delete_resource` | Write | Permanently delete a resource |
+| `manage_knowledge` | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG |
+| `create_tool` | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node |
 | `update_tool` | Write | Update an existing tool node's configuration |
-| `list_resources` | Read | List agents, flows, endpoints, LLMs, knowledge stores, and tools |
-| `get_resource` | Read | Get details for a single resource |
-| `delete_resource` | Write | Delete any resource by type and ID |
-| `manage_webchat` | Write | Manage Webchat v3 widget settings |
+| `manage_webchat` | Write | Create or configure a Webchat v3 endpoint for website deployment |
+| `manage_flow_nodes` | Write | Create, update, delete, or list flow nodes for conversation logic |
+
+The server also includes built-in guides (MCP resources) that AI assistants automatically read for detailed workflows, field references, and troubleshooting.
 
 ## Installation
 
@@ -66,6 +69,18 @@ Add to your MCP client's config file:
 ```
 
 Get your API key: Cognigy.AI → User Menu → My Profile → API Keys → Create New.
+
+---
+
+## What It Does
+
+Create a complete AI Agent in one tool call, then iterate and improve through conversation:
+
+1. **Create** → AI Agent + Flow + Job Node + Endpoint (automatic)
+2. **Test** → Talk to your agent via REST endpoint
+3. **Improve** → Update persona, guardrails, job description, tools
+4. **Test Again** → Compare responses and iterate
+5. **Deploy** → Publish to Webchat with one call
 
 ## Configuration
 
@@ -148,11 +163,8 @@ Full privacy policy: [https://www.cognigy.com/privacy-policy](https://www.cognig
 
 ## Documentation
 
-- [QUICK_START.md](QUICK_START.md) — step-by-step setup and first agent walkthrough
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — tool design, self-improvement loop, ID formats
 - [docs/USAGE.md](docs/USAGE.md) — detailed usage reference
-- [docs/API_REFERENCE.md](docs/API_REFERENCE.md) — full API reference
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — deployment options
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — development setup and contribution guide
 - [CHANGELOG.md](CHANGELOG.md) — version history
 
