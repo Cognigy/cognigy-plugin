@@ -1990,7 +1990,9 @@ export class ToolHandlers {
             `/v2.0/flows/${flowId}/chart/nodes/${data.nodeId}`,
           );
           const nodeType = existingNode?.type ?? '';
-          patchPayload.config = transformConfigForApi(nodeType, data.config);
+          const transformed = transformConfigForApi(nodeType, data.config);
+          const existingConfig = existingNode?.config ?? {};
+          patchPayload.config = deepMerge(existingConfig, transformed);
         }
 
         await this.apiClient.patch(
