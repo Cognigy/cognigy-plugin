@@ -2,9 +2,9 @@
   "manifest_version": "0.3",
   "name": "cognigy-mcp-server",
   "display_name": "Cognigy AI Agent MCP Server",
-  "version": "0.2.5",
+  "version": "0.2.8",
   "description": "Connect your AI assistant to Cognigy.AI — create, test, and improve LLM-based AI Agents through a self-improvement loop.",
-  "long_description": "A Model Context Protocol server that exposes the Cognigy.AI API through 9 high-level workflow tools focused on LLM-based AI Agents.\n\nCreate a complete AI Agent setup in one tool call (Agent + Flow + Job Node + Endpoint), then talk to it, evaluate responses, and iterate until it's perfect.\n\nSupports: AI Agent management, knowledge stores, conversation history, flow management, analytics, and direct agent testing via REST endpoints.",
+  "long_description": "A Model Context Protocol server that exposes the Cognigy.AI API through focused, purpose-built tools for LLM-based AI Agents.\n\nCreate a complete AI Agent setup in one tool call (Agent + Flow + Job Node + Endpoint), configure LLMs, attach knowledge stores and tools, deploy to Webchat, then talk to it, evaluate responses, and iterate until it's perfect.\n\nSupports: AI Agent creation and configuration, LLM setup, knowledge management (RAG), tool creation (HTTP, MCP, email, knowledge), flow node editing, Webchat v3 deployment, and direct agent testing via REST endpoints.",
   "author": {
     "name": "Cognigy",
     "url": "https://github.com/Cognigy"
@@ -102,40 +102,52 @@
   },
   "tools": [
     {
-      "name": "manage_ai_agents",
-      "description": "Create, read, update, delete, list, or hire AI agents"
+      "name": "create_ai_agent",
+      "description": "Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint"
     },
     {
-      "name": "manage_knowledge",
-      "description": "Manage knowledge stores, sources, and search knowledge chunks"
+      "name": "update_ai_agent",
+      "description": "Update an AI Agent's persona, guardrails, job configuration, and LLM settings"
     },
     {
-      "name": "manage_conversations",
-      "description": "List conversations, get details, or retrieve session state"
-    },
-    {
-      "name": "manage_flows",
-      "description": "Create, update, list flows and manage flow nodes"
-    },
-    {
-      "name": "manage_intents",
-      "description": "Create, update, list intents and train NLU models"
-    },
-    {
-      "name": "get_analytics",
-      "description": "Get analytics data, logs, and audit events"
-    },
-    {
-      "name": "manage_projects",
-      "description": "Create and list projects, create and list endpoints"
-    },
-    {
-      "name": "manage_extensions",
-      "description": "List extensions and manage custom functions"
+      "name": "setup_llm",
+      "description": "Create an LLM resource (GPT-4, Claude, etc.) in a project"
     },
     {
       "name": "talk_to_agent",
-      "description": "Send a message to a Cognigy AI Agent and get the response"
+      "description": "Send a message to an AI Agent and get its response for testing"
+    },
+    {
+      "name": "list_resources",
+      "description": "List projects, agents, flows, endpoints, LLMs, knowledge stores, and more"
+    },
+    {
+      "name": "get_resource",
+      "description": "Get detailed information about a single Cognigy resource"
+    },
+    {
+      "name": "delete_resource",
+      "description": "Permanently delete a Cognigy resource"
+    },
+    {
+      "name": "manage_knowledge",
+      "description": "Create knowledge stores, add sources (URL, text, file), and list chunks for RAG"
+    },
+    {
+      "name": "create_tool",
+      "description": "Create a tool (HTTP, knowledge, email, MCP) on an AI Agent's job node"
+    },
+    {
+      "name": "update_tool",
+      "description": "Update an existing tool node's configuration"
+    },
+    {
+      "name": "manage_webchat",
+      "description": "Create or configure a Webchat v3 endpoint for website deployment"
+    },
+    {
+      "name": "manage_flow_nodes",
+      "description": "Create, update, delete, or list flow nodes for conversation logic"
     }
   ],
   "tools_generated": false,
