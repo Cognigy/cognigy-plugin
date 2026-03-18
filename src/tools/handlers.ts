@@ -1929,12 +1929,18 @@ export class ToolHandlers {
         );
 
         const nodeId = createdNode._id || createdNode.id;
+        const actualParentId =
+          createdNode.parentId ??
+          createdNode.parent_id ??
+          (createdNode.parent && (createdNode.parent._id || createdNode.parent.id));
 
         return {
           nodeId,
           type: entry.type,
           label: data.label,
-          parentId: targetNodeId,
+          ...(actualParentId ? { parentId: actualParentId } : {}),
+          targetNodeId,
+          mode,
           configApplied: data.config ? Object.keys(data.config) : [],
         };
       }
