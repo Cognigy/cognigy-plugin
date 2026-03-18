@@ -538,7 +538,11 @@ export class ToolHandlers {
       endpointId = endpoint._id || endpoint.id;
 
       // Step 6: LLM status — derived from the auto-assign attempt in Step 4a
-      const llmStatus = llmAutoAssigned ? 'configured' : 'missing';
+      // If auto-assignment succeeded, we know the LLM is configured.
+      // If it did not, we cannot reliably distinguish "no LLM" from "error",
+      // so we report "unknown" instead of incorrectly claiming "missing".
+      const llmStatus: 'configured' | 'unknown' =
+        llmAutoAssigned ? 'configured' : 'unknown';
 
       const result: any = {
         projectId,
