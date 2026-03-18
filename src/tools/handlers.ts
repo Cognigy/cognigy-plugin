@@ -1882,12 +1882,17 @@ export class ToolHandlers {
           );
         }
 
-        let targetNodeId = data.parentNodeId;
+        const targetNodeId = data.parentNodeId;
         let mode = data.mode ?? 'append';
 
         if (!targetNodeId) {
-          const entryNode = await retryGetEntryNode(this.apiClient, flowId);
-          targetNodeId = entryNode._id || entryNode.id;
+          return withHints(
+            { error: 'parentNodeId is required for create operation.' },
+            {
+              action:
+                'Specify the parentNodeId of a node inside the appropriate tool branch where the new node should be created.',
+            },
+          );
         }
 
         // When appendChild-ing to an aiAgentJobTool node, silently rewrite to
