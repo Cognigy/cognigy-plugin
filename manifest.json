@@ -16,6 +16,9 @@
   "homepage": "https://www.cognigy.com",
   "support": "https://github.com/Cognigy/cognigy-mcp/issues",
   "license": "MIT",
+  "privacy_policies": [
+    "https://www.cognigy.com/privacy-policy"
+  ],
   "keywords": [
     "cognigy",
     "ai-agents",

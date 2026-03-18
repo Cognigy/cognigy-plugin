@@ -1,28 +1,55 @@
 # Cognigy MCP Server
 
-A Model Context Protocol (MCP) server that provides AI assistants with access to the Cognigy.AI REST API.
+A Model Context Protocol (MCP) server that connects your AI assistant to the [Cognigy.AI](https://www.cognigy.com) REST API. Create, test, and improve LLM-based AI Agents through a self-improvement loop — without leaving your AI assistant.
 
-## Install
+## Features
 
-### One-command setup
+- **12 workflow tools** covering ~115 Cognigy API endpoints
+- **One-call agent setup**: creates Agent + Flow + AI Agent Job Node + REST Endpoint automatically
+- **Self-improvement loop**: talk to your agent, evaluate responses, update the job description, repeat
+- **Knowledge store support**: attach RAG knowledge stores to agents as tools
+- **System prompt included**: AI assistants automatically become Cognigy experts via MCP resource
+- Built-in rate limiting, Zod input validation, and RFC 7807 error responses
 
-Requires [Node.js 20+](https://nodejs.org) installed on your machine. Run the command for your MCP client:
+## Tools
 
-| MCP Client | Command |
-|---|---|
-| Cursor | `npx @cognigy/mcp-server init --client cursor` |
-| Claude Desktop | `npx @cognigy/mcp-server init --client claude` |
-| Claude Code | `npx @cognigy/mcp-server init --client claude-code` |
-| VS Code (Copilot) | `npx @cognigy/mcp-server init --client vscode` |
+| Tool | Type | Description |
+|---|---|---|
+| `create_ai_agent` | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint |
+| `update_ai_agent` | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature) |
+| `setup_llm` | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) in a project |
+| `talk_to_agent` | Write | Send a message to an AI Agent and get its response |
+| `list_resources` | Read | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more |
+| `get_resource` | Read | Get detailed information about a single resource |
+| `delete_resource` | Write | Permanently delete a resource |
+| `manage_knowledge` | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG |
+| `create_tool` | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node |
+| `update_tool` | Write | Update an existing tool node's configuration |
+| `manage_webchat` | Write | Create or configure a Webchat v3 endpoint for website deployment |
+| `manage_flow_nodes` | Write | Create, update, delete, or list flow nodes for conversation logic |
 
-The command will prompt you for your Cognigy API URL and API key, then automatically configure your client. Restart your client after setup.
+The server also includes built-in guides (MCP resources) that AI assistants automatically read for detailed workflows, field references, and troubleshooting.
+
+## Installation
 
 ### Claude Desktop (one-click)
 
-Download the `.mcpb` file from the [latest release](https://github.com/Cognigy/cognigy-mcp/releases/latest) and double-click it. No Node.js required.
+Download the `.mcpb` file from the [latest release](https://github.com/Cognigy/cognigy-mcp/releases/latest) and double-click it. Claude Desktop opens an install dialog — enter your API URL and API key. No Node.js required.
 
-<details>
-<summary>Manual config (if you prefer)</summary>
+### One-command setup (all MCP clients)
+
+Requires [Node.js 20+](https://nodejs.org).
+
+| MCP Client | Command |
+|---|---|
+| Claude Desktop | `npx @cognigy/mcp-server init --client claude` |
+| Claude Code | `npx @cognigy/mcp-server init --client claude-code` |
+| Cursor | `npx @cognigy/mcp-server init --client cursor` |
+| VS Code (Copilot) | `npx @cognigy/mcp-server init --client vscode` |
+
+The command prompts for your Cognigy API URL and API key, then configures your client automatically. Restart the client after setup.
+
+### Manual config
 
 Add to your MCP client's config file:
 
@@ -41,9 +68,7 @@ Add to your MCP client's config file:
 }
 ```
 
-</details>
-
-Requires [Node.js 20+](https://nodejs.org). Get your API key from Cognigy.AI → User Menu → My Profile → API Keys.
+Get your API key: Cognigy.AI → User Menu → My Profile → API Keys → Create New.
 
 ---
 
@@ -57,122 +82,92 @@ Create a complete AI Agent in one tool call, then iterate and improve through co
 4. **Test Again** → Compare responses and iterate
 5. **Deploy** → Publish to Webchat with one call
 
-## Tools
-
-| Tool | Description |
-|---|---|
-| `create_ai_agent` | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint |
-| `update_ai_agent` | Update persona, guardrails, job config (role, procedures, LLM, temperature) |
-| `setup_llm` | Create an LLM resource (GPT-4, Claude, Mistral, etc.) in a project |
-| `talk_to_agent` | Send a message to an AI Agent and get its response |
-| `list_resources` | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more |
-| `get_resource` | Get detailed information about a single resource |
-| `delete_resource` | Permanently delete a resource |
-| `manage_knowledge` | Create knowledge stores, add sources (URL, text, file), list chunks for RAG |
-| `create_tool` | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node |
-| `update_tool` | Update an existing tool node's configuration |
-| `manage_webchat` | Create or configure a Webchat v3 endpoint for website deployment |
-| `manage_flow_nodes` | Create, update, delete, or list flow nodes for conversation logic |
-
-The server also includes built-in guides (MCP resources) that AI assistants automatically read for detailed workflows, field references, and troubleshooting.
-
 ## Configuration
 
-All configuration is passed via the `env` block in the MCP config. No `.env` file needed.
+All configuration is passed via `env` in the MCP config. No `.env` file needed.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `COGNIGY_API_BASE_URL` | Yes | — | Your Cognigy API URL |
+| `COGNIGY_API_BASE_URL` | Yes | — | Your Cognigy API base URL |
 | `COGNIGY_API_KEY` | Yes | — | Your Cognigy API key |
 | `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn`, `error` |
 | `RATE_LIMIT_MAX_REQUESTS` | No | `100` | Max requests per window |
-| `RATE_LIMIT_WINDOW_MS` | No | `60000` | Rate limit window (ms) |
+| `RATE_LIMIT_WINDOW_MS` | No | `60000` | Rate limit window in ms |
 
-### Getting Your API Key
+## Usage Examples
 
-1. Log in to Cognigy.AI
-2. User Menu → My Profile
-3. API Keys section → Create API Key
-4. Copy the key
+### 1. Create a customer support agent
 
-## Setup by MCP Client
-
-### Claude Desktop (one-click install)
-
-Download the `.mcpb` file from [Releases](https://github.com/Cognigy/cognigy-mcp/releases) and double-click it. Claude Desktop will open an install dialog where you enter your API URL and API key — no config files to edit, no Node.js required.
-
-Alternatively, use the npx config approach: edit `~/Library/Application Support/Claude/claude_desktop_config.json` and add the config block above.
-
-### Cursor IDE
-
-Edit the MCP config file directly, or go to **Cursor > Settings > Cursor Settings > MCP > Add MCP Server**.
-
-Config file location: `~/.cursor/mcp.json` (all platforms)
-
-Add the config block above. Restart Cursor. Open the AI chat and type `@cognigy` to use the tools.
-
-### ChatGPT / Windsurf / Other MCP Clients
-
-Any MCP client that supports the **stdio** transport works. Add the same config block to your client's MCP settings.
-
-<details>
-<summary>Local development setup (for contributors)</summary>
-
-```bash
-git clone <repo-url>
-cd cognigy-mcp
-npm install
-npm run build
+```
+Create a Cognigy AI Agent called "Support Bot" in project <projectId>.
+Give it a helpful customer support persona, set up GPT-4 as the LLM,
+and return the endpoint URL so I can test it.
 ```
 
-Then point your MCP client to the local build:
+The MCP server will call `setup_llm` to create the LLM resource, then `create_ai_agent` to provision the agent, flow, job node, and REST endpoint in a single workflow.
 
-```json
-{
-  "mcpServers": {
-    "cognigy": {
-      "command": "node",
-      "args": ["/absolute/path/to/cognigy-mcp/dist/index.js"],
-      "env": {
-        "COGNIGY_API_BASE_URL": "https://api-trial.cognigy.ai",
-        "COGNIGY_API_KEY": "your-api-key-here"
-      }
-    }
-  }
-}
+### 2. Test and improve the agent
+
+```
+Talk to my Support Bot at <endpointUrl> and ask "How do I reset my password?".
+Then update the job description to make the response more concise and actionable.
+Talk to it again and compare the responses.
 ```
 
-Or use the interactive setup: `npm run setup`
+This triggers the self-improvement loop: `talk_to_agent` → evaluate → `update_ai_agent` → `talk_to_agent` again.
 
-</details>
+### 3. Add a knowledge store for RAG
 
-## Architecture
+```
+Create a knowledge store in project <projectId>, add the URL
+https://docs.example.com/faq as a source, then attach it to my Support Bot
+so the agent can search it when answering questions.
+```
 
-- `src/index.ts` — MCP server initialization and protocol handling
-- `src/instructions.ts` — Server instructions (build workflow, rules)
-- `src/tools/definitions.ts` — Tool definitions and schemas
-- `src/tools/handlers.ts` — Tool handler implementations
-- `src/tools/filters.ts` — API response filters
-- `src/schemas/tools.ts` — Zod input validation schemas
-- `src/api/client.ts` — Cognigy REST API client
-- `src/resources/` — MCP resource guides (agent creation, LLM providers, knowledge, tools, webchat, troubleshooting)
-- `src/utils/` — Logging and rate limiting
+The server will call `manage_knowledge` to create the store and ingest the URL, then `create_tool` to attach it as a knowledge search tool on the agent's job node.
+
+### 4. Get analytics on recent conversations
+
+```
+Show me the last 20 conversations for project <projectId> and summarize
+what topics users asked about most.
+```
+
+Uses `list_resources` to fetch conversations, then your AI assistant summarizes the content.
+
+### 5. List all projects and agents
+
+```
+List all my Cognigy projects and show which AI Agents exist in each one.
+```
+
+Uses `list_resources` with `resourceType: 'project'` and `resourceType: 'agent'`.
 
 ## Security
 
-- API keys are never logged or exposed
-- All inputs are validated using Zod schemas
-- Rate limiting prevents API abuse
+- API keys are passed via environment variables and never logged
+- All inputs are validated using Zod schemas before reaching the API
+- Rate limiting is built in to prevent API abuse
 
-## Contributing
+## Privacy Policy
 
-Contributions are welcome! Read [.cursorrules](.cursorrules) for development guidelines.
+This MCP server transmits requests to the Cognigy.AI API endpoint configured via `COGNIGY_API_BASE_URL`. No data is collected, stored, or shared by this MCP server itself — all data remains between your AI client and your Cognigy.AI instance.
+
+Full privacy policy: [https://www.cognigy.com/privacy-policy](https://www.cognigy.com/privacy-policy)
 
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/Cognigy/cognigy-mcp/issues)
-- **Cognigy API Support**: support@cognigy.com
+- **Cognigy support**: support@cognigy.com
+- **Documentation**: see [`docs/`](docs/) folder
+
+## Documentation
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — tool design, self-improvement loop, ID formats
+- [docs/USAGE.md](docs/USAGE.md) — detailed usage reference
+- [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — development setup and contribution guide
+- [CHANGELOG.md](CHANGELOG.md) — version history
 
 ## License
 
-MIT
+[MIT](LICENSE)
