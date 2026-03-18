@@ -2019,7 +2019,7 @@ export class ToolHandlers {
 
           // Handle case node updates — the Cognigy API expects exactly
           // { config: { case: { value: "..." } } } with no extra fields merged in.
-          if (nodeType === 'case' || nodeType === 'default') {
+          if (nodeType === 'case') {
             if (data.config.value !== undefined) {
               patchPayload.config = { case: { value: data.config.value } };
             }
