@@ -9,8 +9,7 @@
   "type": "module",
   "files": [
     "dist",
-    "README.md",
-    "QUICK_START.md"
+    "README.md"
   ],
   "scripts": {
     "build": "npx tsc && cp -r src/resources dist/resources",

@@ -432,12 +432,20 @@ describe('ToolHandlers v2', () => {
   // =========================================================================
   describe('delete_resource', () => {
     it('deletes agent', async () => {
+      api.get
+        .mockResolvedValueOnce({ _id: ID.agent, flowId: ID.flow, projectId: ID.project })
+        .mockResolvedValueOnce({ referenceId: 'flow-ref' })
+        .mockResolvedValueOnce({ items: [{ _id: ID.endpoint, flowId: 'flow-ref' }] });
       api.delete.mockResolvedValue({});
+
       const result = await h.handleToolCall('delete_resource', {
         resourceType: 'agent',
         id: ID.agent,
       });
+
       expect(result.deleted).toBe(true);
+      expect(api.delete).toHaveBeenCalledWith(`/v2.0/endpoints/${ID.endpoint}`);
+      expect(api.delete).toHaveBeenCalledWith(`/v2.0/flows/${ID.flow}`);
       expect(api.delete).toHaveBeenCalledWith(`/v2.0/aiagents/${ID.agent}`);
     });
 
@@ -729,6 +737,93 @@ describe('ToolHandlers v2', () => {
           type: 'aiAgentJobMCPTool',
           mode: 'appendChild',
           config: expect.objectContaining({ name: 'my-mcp', mcpServerUrl: 'https://mcp.example.com', timeout: 30 }),
+        }),
+      );
+    });
+
+    it('uses toolId as node label instead of display name', async () => {
+      mockFlowWithJobNode();
+      api.post.mockResolvedValue({ _id: ID.tool });
+
+      await h.handleToolCall('create_tool', {
+        aiAgentId: ID.agent,
+        toolType: 'tool',
+        name: 'Fetch Weather',
+        config: { toolId: 'fetch_weather', description: 'Fetches weather' },
+      });
+
+      expect(api.post).toHaveBeenCalledWith(
+        expect.stringContaining('/chart/nodes'),
+        expect.objectContaining({
+          label: 'fetch_weather',
+        }),
+      );
+    });
+
+    it('falls back to display name when toolId is not provided', async () => {
+      mockFlowWithJobNode();
+      api.post.mockResolvedValue({ _id: ID.tool });
+
+      await h.handleToolCall('create_tool', {
+        aiAgentId: ID.agent,
+        toolType: 'tool',
+        name: 'My Custom Tool',
+        config: { description: 'A custom tool' },
+      });
+
+      expect(api.post).toHaveBeenCalledWith(
+        expect.stringContaining('/chart/nodes'),
+        expect.objectContaining({
+          label: 'My Custom Tool',
+        }),
+      );
+    });
+
+    it('creates resolve node with default answer for general-purpose tool', async () => {
+      mockFlowWithJobNode();
+      const toolNodeId = 'aaaaaaaaaaaaaaaaaaaaa001';
+      const resolveNodeId = 'aaaaaaaaaaaaaaaaaaaaa002';
+      api.post
+        .mockResolvedValueOnce({ _id: toolNodeId })
+        .mockResolvedValueOnce({ _id: resolveNodeId });
+
+      const result = await h.handleToolCall('create_tool', baseArgs);
+
+      expect(result.resolveNodeId).toBe(resolveNodeId);
+      expect(api.post).toHaveBeenCalledWith(
+        expect.stringContaining('/chart/nodes'),
+        expect.objectContaining({
+          type: 'aiAgentToolAnswer',
+          label: 'Resolve Tool Action',
+          config: { answer: '{{JSON.stringify(input.result)}}' },
+        }),
+      );
+    });
+
+    it('uses custom toolResponseValue for resolve node when provided', async () => {
+      mockFlowWithJobNode();
+      const toolNodeId = 'aaaaaaaaaaaaaaaaaaaaa001';
+      const resolveNodeId = 'aaaaaaaaaaaaaaaaaaaaa002';
+      api.post
+        .mockResolvedValueOnce({ _id: toolNodeId })
+        .mockResolvedValueOnce({ _id: resolveNodeId });
+
+      await h.handleToolCall('create_tool', {
+        aiAgentId: ID.agent,
+        toolType: 'tool',
+        name: 'Custom Response Tool',
+        config: {
+          toolId: 'custom_response',
+          description: 'Tool with custom response',
+          toolResponseValue: '{{input.customField}}',
+        },
+      });
+
+      expect(api.post).toHaveBeenCalledWith(
+        expect.stringContaining('/chart/nodes'),
+        expect.objectContaining({
+          type: 'aiAgentToolAnswer',
+          config: { answer: '{{input.customField}}' },
         }),
       );
     });

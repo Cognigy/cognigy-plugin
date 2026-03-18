@@ -39,9 +39,8 @@ describe('manage_webchat', () => {
     settings: {},
   };
 
-  it('creates new webchat endpoint when no existing one found', async () => {
+  it('creates new webchat endpoint when projectId and flowId provided', async () => {
     api.get
-      .mockResolvedValueOnce({ items: [] }) // no existing webchat3 endpoints
       .mockResolvedValueOnce({ localeReference: 'en-US' }) // flow locale
       .mockResolvedValueOnce(mockEndpoint); // re-fetch after create
     api.post.mockResolvedValueOnce({ _id: ID.endpoint });
@@ -71,9 +70,7 @@ describe('manage_webchat', () => {
     expect(result._hints.resource).toBe('cognigy://guide/webchat-setup');
   });
 
-  it('returns error when no flowId provided and no existing webchat endpoint', async () => {
-    api.get.mockResolvedValueOnce({ items: [] });
-
+  it('returns error when no flowId and no endpointId provided', async () => {
     const result = await h.handleToolCall('manage_webchat', {
       projectId: ID.project,
     });
@@ -82,37 +79,35 @@ describe('manage_webchat', () => {
     expect(result._hints.resource).toBe('cognigy://guide/webchat-setup');
   });
 
-  it('auto-detects existing webchat3 endpoint and updates it', async () => {
-    const existingEndpoint = { ...mockEndpoint, settings: { colors: { primaryColor: '#000' } } };
+  it('creates new endpoint even when existing webchat3 endpoints exist in project', async () => {
     api.get
-      .mockResolvedValueOnce({ items: [existingEndpoint] }) // auto-detect
-      .mockResolvedValueOnce(existingEndpoint) // full fetch before merge
-      .mockResolvedValueOnce({ ...existingEndpoint, name: 'Updated Chat' }); // re-fetch after patch
-    api.patch.mockResolvedValue({});
+      .mockResolvedValueOnce({ localeReference: 'en-US' }) // flow locale
+      .mockResolvedValueOnce(mockEndpoint); // re-fetch after create
+    api.post.mockResolvedValueOnce({ _id: ID.endpoint });
 
     const result = await h.handleToolCall('manage_webchat', {
       projectId: ID.project,
-      name: 'Updated Chat',
+      flowId: ID.flow,
+      name: 'New Webchat',
     });
 
-    expect(result.updated).toBe(true);
-    expect(result.endpointId).toBe(ID.endpoint);
-    expect(api.patch).toHaveBeenCalledWith(
-      `/v2.0/endpoints/${ID.endpoint}`,
-      expect.objectContaining({ name: 'Updated Chat' }),
-    );
+    expect(result.created).toBe(true);
+    expect(api.post).toHaveBeenCalledWith('/v2.0/endpoints', expect.objectContaining({
+      projectId: ID.project,
+      flowId: ID.flow,
+      channel: 'webchat3',
+      name: 'New Webchat',
+    }));
   });
 
-  it('updates existing endpoint with settings', async () => {
-    const existingEndpoint = { ...mockEndpoint, settings: {} };
+  it('updates existing endpoint with settings when endpointId provided', async () => {
     api.get
-      .mockResolvedValueOnce({ items: [existingEndpoint] }) // auto-detect
-      .mockResolvedValueOnce(existingEndpoint) // full fetch
-      .mockResolvedValueOnce(existingEndpoint); // re-fetch after patch
+      .mockResolvedValueOnce({ ...mockEndpoint, settings: {} }) // full fetch
+      .mockResolvedValueOnce(mockEndpoint); // re-fetch after patch
     api.patch.mockResolvedValue({});
 
     const result = await h.handleToolCall('manage_webchat', {
-      projectId: ID.project,
+      endpointId: ID.endpoint,
       name: 'My Chat',
       layout: { title: 'Support Bot', chatWindowWidth: 500 },
       behavior: { renderMarkdown: true },
@@ -132,25 +127,19 @@ describe('manage_webchat', () => {
     );
   });
 
-  it('returns current info when no changes requested but endpoint exists', async () => {
-    api.get.mockResolvedValueOnce({ items: [mockEndpoint] });
-
+  it('returns error when no endpointId and no flowId provided', async () => {
     const result = await h.handleToolCall('manage_webchat', {
       projectId: ID.project,
     });
 
-    expect(result.note).toContain('No changes requested');
-    expect(result.endpointId).toBe(ID.endpoint);
-    expect(result.demoWebchatUrl).toBe('https://webchat-trial.cognigy.ai/v3/tok-abc123');
+    expect(result.error).toContain('flowId is required');
   });
 
   it('returns error when update fails', async () => {
-    api.get
-      .mockResolvedValueOnce({ items: [mockEndpoint] }) // auto-detect
-      .mockRejectedValueOnce(new Error('Server error')); // full fetch fails
+    api.get.mockRejectedValueOnce(new Error('Server error')); // full fetch fails
 
     const result = await h.handleToolCall('manage_webchat', {
-      projectId: ID.project,
+      endpointId: ID.endpoint,
       name: 'Fail Update',
     });
 
@@ -159,9 +148,7 @@ describe('manage_webchat', () => {
   });
 
   it('returns error when creation fails', async () => {
-    api.get
-      .mockResolvedValueOnce({ items: [] })
-      .mockResolvedValueOnce({ localeReference: 'en-US' });
+    api.get.mockResolvedValueOnce({ localeReference: 'en-US' });
     api.post.mockRejectedValueOnce(new Error('Quota exceeded'));
 
     const result = await h.handleToolCall('manage_webchat', {
@@ -175,7 +162,6 @@ describe('manage_webchat', () => {
 
   it('handles settings patch failure on create (partial success)', async () => {
     api.get
-      .mockResolvedValueOnce({ items: [] }) // no existing endpoints
       .mockResolvedValueOnce({ localeReference: 'en-US' }) // flow locale
       .mockResolvedValueOnce(mockEndpoint); // re-fetch after create
     api.post.mockResolvedValueOnce({ _id: ID.endpoint });
@@ -193,10 +179,14 @@ describe('manage_webchat', () => {
   });
 
   it('builds correct demoWebchatUrl and configUrl', async () => {
-    api.get.mockResolvedValueOnce({ items: [mockEndpoint] });
+    api.get
+      .mockResolvedValueOnce(mockEndpoint) // full fetch
+      .mockResolvedValueOnce(mockEndpoint); // re-fetch after patch
+    api.patch.mockResolvedValue({});
 
     const result = await h.handleToolCall('manage_webchat', {
-      projectId: ID.project,
+      endpointId: ID.endpoint,
+      name: 'URL Test',
     });
 
     expect(result.demoWebchatUrl).toBe('https://webchat-trial.cognigy.ai/v3/tok-abc123');

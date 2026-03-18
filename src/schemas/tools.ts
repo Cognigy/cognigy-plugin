@@ -85,6 +85,7 @@ export const deleteResourceSchema = z.object({
   id: idSchema,
   projectId: idSchema.optional(),
   aiAgentId: idSchema.optional(),
+  cascade: z.boolean().optional(),
 });
 
 // Tool 8: manage_knowledge
@@ -152,6 +153,18 @@ export const updateToolSchema = z.object({
     postProcessCode: z.string().optional(),
     toolResponseValue: z.string().optional(),
   }).optional(),
+});
+
+// Tool 12: manage_flow_nodes
+export const manageFlowNodesSchema = z.object({
+  operation: z.enum(['list', 'create', 'update', 'delete']),
+  flowId: idSchema,
+  nodeId: idSchema.optional(),
+  nodeType: z.string().optional(),
+  label: z.string().min(1).max(200).optional(),
+  parentNodeId: idSchema.optional(),
+  mode: z.enum(['append', 'appendChild']).optional(),
+  config: z.record(z.any()).optional(),
 });
 
 // Tool 11: manage_webchat

@@ -19,11 +19,10 @@ manage_webchat {
   behavior: { renderMarkdown: true }
 }
 
-⚠️ IMPORTANT — UPDATE vs CREATE:
-If the user's intent is ambiguous (e.g., "set up webchat", "configure webchat"), ALWAYS ask whether to update an existing endpoint or create a new one BEFORE calling manage_webchat.
-- If you omit endpointId but provide projectId, the tool auto-finds the first webchat3 endpoint in the project and OVERWRITES its settings. This can be destructive if unintended.
-- If none exists and flowId is provided, it creates one.
-- Only skip the clarification if the user explicitly says "create a new webchat" or "update the existing webchat" or provides an endpointId.
+CREATE vs UPDATE:
+- To create: omit endpointId and provide projectId + flowId. A new webchat3 endpoint is always created.
+- To update: provide endpointId. Only the specified fields are changed; everything else is preserved.
+- The tool never auto-detects or modifies existing endpoints. To update, first find the endpointId using list_resources { resourceType: "endpoint", projectId }.
 
 ## Style Presets
 
@@ -307,7 +306,7 @@ You can also append query parameters for testing:
 When the user asks about deploying to their website, use the configUrl and embeddingSnippet from the response:
 
 ```html
-<script src="https://github.com/nickcognigy/Webchat/releases/latest/download/webchat.js"></script>
+<script src="https://github.com/Cognigy/Webchat/releases/latest/download/webchat.js"></script>
 <script>
   window.cognigyWebchat.open({
     configUrl: "CONFIG_URL_HERE"
