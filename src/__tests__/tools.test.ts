@@ -877,6 +877,246 @@ describe('ToolHandlers v2', () => {
   });
 
   // =========================================================================
+  // manage_flow_nodes — case/switch updates
+  // =========================================================================
+  describe('manage_flow_nodes — case node updates', () => {
+    it('updates a case node with { value } and sends correct API payload', async () => {
+      const caseNodeId = '60d5ec49f1a2c8b1a4e0f00b';
+      api.get.mockResolvedValueOnce({ _id: caseNodeId, type: 'case', config: {} });
+      api.patch.mockResolvedValueOnce({ _id: caseNodeId });
+
+      const result = await h.handleToolCall('manage_flow_nodes', {
+        operation: 'update',
+        flowId: ID.flow,
+        nodeId: caseNodeId,
+        config: { value: 'billing' },
+      });
+
+      expect(result.updated).toBe(true);
+      expect(api.patch).toHaveBeenCalledWith(
+        `/v2.0/flows/${ID.flow}/chart/nodes/${caseNodeId}`,
+        { config: { case: { value: 'billing' } } },
+      );
+    });
+
+    it('updates a switch node with cases array and patches each child', async () => {
+      const switchNodeId = '60d5ec49f1a2c8b1a4e0f00c';
+      const case1Id = '60d5ec49f1a2c8b1a4e0f00d';
+      const case2Id = '60d5ec49f1a2c8b1a4e0f00e';
+
+      api.get.mockResolvedValueOnce({
+        _id: switchNodeId,
+        type: 'switch',
+        config: { switch: { type: 'cognigyScript', operator: 'input.category' } },
+      });
+      api.patch.mockResolvedValue({});
+
+      const result = await h.handleToolCall('manage_flow_nodes', {
+        operation: 'update',
+        flowId: ID.flow,
+        nodeId: switchNodeId,
+        config: {
+          cases: [
+            { id: case1Id, value: 'billing' },
+            { id: case2Id, value: 'shipping' },
+          ],
+        },
+      });
+
+      expect(result.updated).toBe(true);
+      expect(result.casesUpdated).toHaveLength(2);
+      expect(result.casesUpdated[0]).toEqual({ id: case1Id, value: 'billing', updated: true });
+      expect(result.casesUpdated[1]).toEqual({ id: case2Id, value: 'shipping', updated: true });
+
+      expect(api.patch).toHaveBeenCalledWith(
+        `/v2.0/flows/${ID.flow}/chart/nodes/${case1Id}`,
+        { config: { case: { value: 'billing' } } },
+      );
+      expect(api.patch).toHaveBeenCalledWith(
+        `/v2.0/flows/${ID.flow}/chart/nodes/${case2Id}`,
+        { config: { case: { value: 'shipping' } } },
+      );
+    });
+
+    it('switch update with cases skips entries missing id or value', async () => {
+      const switchNodeId = '60d5ec49f1a2c8b1a4e0f00c';
+      const case1Id = '60d5ec49f1a2c8b1a4e0f00d';
+
+      api.get.mockResolvedValueOnce({
+        _id: switchNodeId,
+        type: 'switch',
+        config: { switch: { type: 'cognigyScript', operator: 'input.category' } },
+      });
+      api.patch.mockResolvedValue({});
+
+      const result = await h.handleToolCall('manage_flow_nodes', {
+        operation: 'update',
+        flowId: ID.flow,
+        nodeId: switchNodeId,
+        config: {
+          cases: [
+            { id: case1Id, value: 'billing' },
+            { id: '', value: 'no-id' },
+            { id: 'abc', value: undefined },
+          ],
+        },
+      });
+
+      expect(result.casesUpdated).toHaveLength(1);
+      expect(result.casesUpdated[0].id).toBe(case1Id);
+    });
+
+    it('reports errors when case child patch fails', async () => {
+      const switchNodeId = '60d5ec49f1a2c8b1a4e0f00c';
+      const case1Id = '60d5ec49f1a2c8b1a4e0f00d';
+
+      api.get.mockResolvedValueOnce({
+        _id: switchNodeId,
+        type: 'switch',
+        config: {},
+      });
+      api.patch.mockRejectedValueOnce(new Error('Validation failed'));
+
+      const result = await h.handleToolCall('manage_flow_nodes', {
+        operation: 'update',
+        flowId: ID.flow,
+        nodeId: switchNodeId,
+        config: {
+          cases: [{ id: case1Id, value: 'bad-value' }],
+        },
+      });
+
+      expect(result.casesUpdated).toHaveLength(1);
+      expect(result.casesUpdated[0].updated).toBe(false);
+      expect(result.casesUpdated[0].error).toContain('Validation failed');
+    });
+  });
+
+  // =========================================================================
+  // manage_flow_nodes — branch child auto-rewrite
+  // =========================================================================
+  describe('manage_flow_nodes — branch child auto-rewrite', () => {
+    it('rewrites appendChild to append when targeting a then node', async () => {
+      const thenNodeId = '60d5ec49f1a2c8b1a4e0f00b';
+
+      api.get.mockResolvedValueOnce({ _id: thenNodeId, type: 'then' });
+      api.post.mockResolvedValueOnce({ _id: '60d5ec49f1a2c8b1a4e0f00c', parentId: thenNodeId });
+
+      const result = await h.handleToolCall('manage_flow_nodes', {
+        operation: 'create',
+        flowId: ID.flow,
+        parentNodeId: thenNodeId,
+        mode: 'appendChild',
+        nodeType: 'say',
+        label: 'Greeting',
+        config: { text: 'Hello' },
+      });
+
+      expect(result.mode).toBe('append');
+      expect(api.post).toHaveBeenCalledWith(
+        expect.stringContaining('/chart/nodes'),
+        expect.objectContaining({ mode: 'append' }),
+      );
+    });
+
+    it('rewrites appendChild to append when targeting a case node', async () => {
+      const caseNodeId = '60d5ec49f1a2c8b1a4e0f00b';
+
+      api.get.mockResolvedValueOnce({ _id: caseNodeId, type: 'case' });
+      api.post.mockResolvedValueOnce({ _id: '60d5ec49f1a2c8b1a4e0f00c', parentId: caseNodeId });
+
+      const result = await h.handleToolCall('manage_flow_nodes', {
+        operation: 'create',
+        flowId: ID.flow,
+        parentNodeId: caseNodeId,
+        mode: 'appendChild',
+        nodeType: 'code',
+        label: 'Process',
+        config: { code: 'input.result = "done";' },
+      });
+
+      expect(result.mode).toBe('append');
+    });
+
+    it('does not rewrite append mode', async () => {
+      const thenNodeId = '60d5ec49f1a2c8b1a4e0f00b';
+
+      api.post.mockResolvedValueOnce({ _id: '60d5ec49f1a2c8b1a4e0f00c', parentId: thenNodeId });
+
+      const result = await h.handleToolCall('manage_flow_nodes', {
+        operation: 'create',
+        flowId: ID.flow,
+        parentNodeId: thenNodeId,
+        mode: 'append',
+        nodeType: 'say',
+        label: 'Greeting',
+        config: { text: 'Hello' },
+      });
+
+      expect(result.mode).toBe('append');
+    });
+  });
+
+  // =========================================================================
+  // create_ai_agent — LLM auto-assignment
+  // =========================================================================
+  describe('create_ai_agent — LLM auto-assignment', () => {
+    it('auto-assigns default LLM to job node', async () => {
+      const mockAgent = { _id: ID.agent, referenceId: 'ref-uuid', name: 'Test Agent' };
+      const mockFlow = { _id: ID.flow, referenceId: 'flow-uuid', name: 'Test Agent Flow' };
+      const mockEndpoint = { _id: ID.endpoint, URLToken: 'abc123', channel: 'rest' };
+      const mockLlm = { _id: ID.llm, referenceId: 'llm-ref-uuid', isDefault: true };
+
+      api.post
+        .mockResolvedValueOnce(mockAgent)   // create agent
+        .mockResolvedValueOnce(mockFlow)    // create flow
+        .mockResolvedValueOnce({ _id: ID.node }) // create job node
+        .mockResolvedValueOnce(mockEndpoint); // create endpoint
+      api.get
+        .mockResolvedValueOnce({ items: [{ _id: ID.entry, isEntryPoint: true }] }) // entry node
+        .mockResolvedValueOnce({ items: [mockLlm] }); // LLM list
+      api.patch.mockResolvedValue({});
+
+      const result = await h.handleToolCall('create_ai_agent', {
+        projectId: ID.project,
+        name: 'Test Agent',
+        description: 'A test agent',
+      });
+
+      expect(result.llmStatus).toBe('configured');
+      expect(api.patch).toHaveBeenCalledWith(
+        `/v2.0/flows/${ID.flow}/chart/nodes/${ID.node}`,
+        { config: { llmProviderReferenceId: 'llm-ref-uuid' } },
+      );
+    });
+
+    it('returns llmStatus missing when no LLMs exist', async () => {
+      const mockAgent = { _id: ID.agent, referenceId: 'ref-uuid', name: 'Test Agent' };
+      const mockFlow = { _id: ID.flow, referenceId: 'flow-uuid', name: 'Flow' };
+      const mockEndpoint = { _id: ID.endpoint, URLToken: 'xyz', channel: 'rest' };
+
+      api.post
+        .mockResolvedValueOnce(mockAgent)
+        .mockResolvedValueOnce(mockFlow)
+        .mockResolvedValueOnce({ _id: ID.node })
+        .mockResolvedValueOnce(mockEndpoint);
+      api.get
+        .mockResolvedValueOnce({ items: [{ _id: ID.entry, isEntryPoint: true }] })
+        .mockResolvedValueOnce({ items: [] }); // no LLMs
+      api.patch.mockResolvedValue({});
+
+      const result = await h.handleToolCall('create_ai_agent', {
+        projectId: ID.project,
+        name: 'Test Agent',
+        description: 'A test agent',
+      });
+
+      expect(result.llmStatus).toBe('missing');
+      expect(result._hints).toBeDefined();
+    });
+  });
+
+  // =========================================================================
   // Dispatcher
   // =========================================================================
   describe('handleToolCall dispatcher', () => {

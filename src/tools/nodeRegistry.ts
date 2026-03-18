@@ -74,7 +74,7 @@ export const NODE_REGISTRY: Record<string, NodeRegistryEntry> = {
     category: 'logic',
     summary: 'Multi-branch switch on intent, state, type, or CognigyScript expression',
     placement: 'flow',
-    configKeys: ['type', 'condition'],
+    configKeys: ['type', 'condition', 'cases'],
     requiredConfigKeys: ['type'],
   },
 
@@ -84,7 +84,7 @@ export const NODE_REGISTRY: Record<string, NodeRegistryEntry> = {
     category: 'data',
     summary: 'Store a key-value pair in the session context object',
     placement: 'flow',
-    configKeys: ['key', 'value'],
+    configKeys: ['key', 'value', 'contextEntries'],
     requiredConfigKeys: ['key', 'value'],
   },
 
