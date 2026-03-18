@@ -193,7 +193,7 @@ Jump execution to another flow or a specific node.
 |-------|------|----------|-------------|
 | flowId | string | No | Target flow reference ID (for cross-flow jumps) |
 | nodeId | string | No | Target node ID within the flow |
-| mode | string | No | `execute` (default) or `goAndDontReturn` |
+| executionMode | string | No | `execute` (default) or `goAndDontReturn` |
 
 ---
 
@@ -205,8 +205,8 @@ Pause execution for a duration.
 **Config:**
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| delay | number | Yes | Milliseconds to wait |
-
+| milliseconds | number | Yes | Milliseconds to wait |
+| delay | number | No | Alias for `milliseconds` (supported for backward compatibility) |
 ---
 
 ### httpRequest — HTTP Request
