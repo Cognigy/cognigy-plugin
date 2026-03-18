@@ -18,7 +18,7 @@ export const tools: ToolDefinition[] = [
     annotations: {
       title: 'Create AI Agent',
       readOnlyHint: false,
-      destructiveHint: false,
+      destructiveHint: true,
       idempotentHint: false,
       openWorldHint: true,
     },
@@ -54,7 +54,7 @@ export const tools: ToolDefinition[] = [
     annotations: {
       title: 'Update AI Agent',
       readOnlyHint: false,
-      destructiveHint: false,
+      destructiveHint: true,
       idempotentHint: true,
       openWorldHint: true,
     },
@@ -117,7 +117,7 @@ export const tools: ToolDefinition[] = [
     annotations: {
       title: 'Setup LLM',
       readOnlyHint: false,
-      destructiveHint: false,
+      destructiveHint: true,
       idempotentHint: false,
       openWorldHint: true,
     },
@@ -163,7 +163,7 @@ export const tools: ToolDefinition[] = [
     annotations: {
       title: 'Talk to Agent',
       readOnlyHint: false,
-      destructiveHint: false,
+      destructiveHint: true,
       idempotentHint: false,
       openWorldHint: true,
     },
@@ -319,7 +319,7 @@ export const tools: ToolDefinition[] = [
     annotations: {
       title: 'Manage Knowledge',
       readOnlyHint: false,
-      destructiveHint: false,
+      destructiveHint: true,
       idempotentHint: false,
       openWorldHint: true,
     },
@@ -377,7 +377,7 @@ export const tools: ToolDefinition[] = [
     annotations: {
       title: 'Create Tool',
       readOnlyHint: false,
-      destructiveHint: false,
+      destructiveHint: true,
       idempotentHint: false,
       openWorldHint: true,
     },
@@ -452,7 +452,7 @@ export const tools: ToolDefinition[] = [
     annotations: {
       title: 'Update Tool',
       readOnlyHint: false,
-      destructiveHint: false,
+      destructiveHint: true,
       idempotentHint: true,
       openWorldHint: true,
     },
