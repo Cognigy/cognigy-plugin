@@ -14,7 +14,7 @@ Generate a pull request description for the current branch by analyzing all comm
 
 3. Output the PR description inside a single fenced code block (` ```md ... ``` `) so the user can copy-paste it directly. The content inside the code block must follow this template exactly:
 
-```
+```md
 ## Summary
 
 - <bullet summarizing the main change — lead with the verb: Add, Fix, Update, Remove, Refactor>
