@@ -62,7 +62,7 @@ describe('ToolHandlers v2', () => {
       expect(result._hints).toBeUndefined();
     });
 
-    it('returns llmStatus unknown with hints when no LLM can be confirmed', async () => {
+    it('returns llmStatus unknown with hints when no LLM', async () => {
       const mockAgent = { _id: ID.agent, referenceId: 'ref-uuid', name: 'Test Agent' };
       const mockFlow = { _id: ID.flow, referenceId: 'flow-uuid', name: 'Flow' };
       const mockEndpoint = { _id: ID.endpoint, URLToken: 'xyz', channel: 'rest' };

@@ -569,9 +569,9 @@ export class ToolHandlers {
 
       if (llmStatus === 'unknown') {
         return withHints(result, {
-          warning: 'Could not confirm that an LLM was assigned to the agent job node.',
+          warning: 'Could not verify LLM resource in project. Agent may not generate responses.',
           resource: 'cognigy://guide/agent-creation',
-          action: `If talk_to_agent returns no response, run setup_llm with projectId "${projectId}" or assign an existing LLM via update_ai_agent.`,
+          action: `Run setup_llm with projectId "${projectId}" before talk_to_agent if no LLM is configured.`,
         });
       }
 
