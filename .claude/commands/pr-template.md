@@ -23,8 +23,8 @@ Generate a pull request description for the current branch by analyzing all comm
 
 ## Changes
 
-| File / Component | Description |
-|---|---|
+| File / Component      | Description            |
+| --------------------- | ---------------------- |
 | `<file or component>` | <what changed and why> |
 | `<file or component>` | <what changed and why> |
 
