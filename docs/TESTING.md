@@ -143,6 +143,7 @@ Then inspect the generated file:
 ```bash
 cat "$HOME/.codex/config.toml"
 ```
+
 ### Running the installer directly
 
 ```bash
