@@ -15,7 +15,7 @@
     "build": "npx tsc && cp -r src/resources dist/resources",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "test": "jest",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "prettier:check": "prettier --check",
     "lint": "eslint src --ext .ts",
     "setup": "bash scripts/setup.sh",
