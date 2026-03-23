@@ -191,15 +191,14 @@ Full privacy policy: [https://www.cognigy.com/privacy-policy](https://www.cognig
 
 - **Issues**: [GitHub Issues](https://github.com/Cognigy/cognigy-mcp/issues)
 - **Cognigy support**: support@cognigy.com
-- **Documentation**: see [`docs/`](docs/) folder
+- **Documentation**: see [`docs/`](https://github.com/Cognigy/cognigy-mcp/tree/main/docs) folder
 
 ## Documentation
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — tool design, self-improvement loop, ID formats
-- [docs/USAGE.md](docs/USAGE.md) — detailed usage reference
-- [docs/TESTING.md](docs/TESTING.md) — ways to test local builds, CLI installation, and `.mcpb` distribution
-- [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — development setup and contribution guide
-- [CHANGELOG.md](CHANGELOG.md) — version history
+- [docs/ARCHITECTURE.md](https://github.com/Cognigy/cognigy-mcp/blob/main/docs/ARCHITECTURE.md) — tool design, self-improvement loop, ID formats
+- [docs/USAGE.md](https://github.com/Cognigy/cognigy-mcp/blob/main/docs/USAGE.md) — detailed usage reference
+- [docs/TESTING.md](https://github.com/Cognigy/cognigy-mcp/blob/main/docs/TESTING.md) — ways to test local builds, CLI installation, and `.mcpb` distribution
+- [docs/CONTRIBUTING.md](https://github.com/Cognigy/cognigy-mcp/blob/main/docs/CONTRIBUTING.md) — development setup and contribution guide
 
 ## License
 
