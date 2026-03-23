@@ -62,7 +62,7 @@ describe('ToolHandlers v2', () => {
       expect(result._hints).toBeUndefined();
     });
 
-    it('returns llmStatus missing with hints when no LLM', async () => {
+    it('returns llmStatus unknown with hints when no LLM can be confirmed', async () => {
       const mockAgent = { _id: ID.agent, referenceId: 'ref-uuid', name: 'Test Agent' };
       const mockFlow = { _id: ID.flow, referenceId: 'flow-uuid', name: 'Flow' };
       const mockEndpoint = { _id: ID.endpoint, URLToken: 'xyz', channel: 'rest' };
@@ -77,7 +77,7 @@ describe('ToolHandlers v2', () => {
         .mockResolvedValueOnce({ items: [] });
 
       const result = await h.handleToolCall('create_ai_agent', baseArgs);
-      expect(result.llmStatus).toBe('missing');
+      expect(result.llmStatus).toBe('unknown');
       expect(result._hints).toBeDefined();
       expect(result._hints.resource).toBe('cognigy://guide/agent-creation');
     });
@@ -1090,7 +1090,7 @@ describe('ToolHandlers v2', () => {
       );
     });
 
-    it('returns llmStatus missing when no LLMs exist', async () => {
+    it('returns llmStatus unknown when no LLMs exist', async () => {
       const mockAgent = { _id: ID.agent, referenceId: 'ref-uuid', name: 'Test Agent' };
       const mockFlow = { _id: ID.flow, referenceId: 'flow-uuid', name: 'Flow' };
       const mockEndpoint = { _id: ID.endpoint, URLToken: 'xyz', channel: 'rest' };
@@ -1111,7 +1111,7 @@ describe('ToolHandlers v2', () => {
         description: 'A test agent',
       });
 
-      expect(result.llmStatus).toBe('missing');
+      expect(result.llmStatus).toBe('unknown');
       expect(result._hints).toBeDefined();
     });
   });

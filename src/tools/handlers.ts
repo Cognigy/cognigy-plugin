@@ -567,11 +567,11 @@ export class ToolHandlers {
         });
       }
 
-      if (llmStatus === 'missing') {
+      if (llmStatus === 'unknown') {
         return withHints(result, {
-          warning: 'No LLM resource in project. Agent won\'t generate responses.',
+          warning: 'Could not confirm that an LLM was assigned to the agent job node.',
           resource: 'cognigy://guide/agent-creation',
-          action: `Run setup_llm with projectId "${projectId}" before talk_to_agent.`,
+          action: `If talk_to_agent returns no response, run setup_llm with projectId "${projectId}" or assign an existing LLM via update_ai_agent.`,
         });
       }
 

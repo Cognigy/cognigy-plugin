@@ -1,6 +1,10 @@
 /**
  * Configuration for the Cognigy MCP Server
  */
+import { readFileSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+
 export interface Config {
   apiBaseUrl: string;
   endpointBaseUrl: string;
@@ -14,6 +18,20 @@ export interface Config {
     windowMs: number;
   };
 }
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+function getPackageVersion(): string {
+  try {
+    const packageJsonPath = join(__dirname, '..', 'package.json');
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as { version?: string };
+    return packageJson.version || '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+
+const PACKAGE_VERSION = getPackageVersion();
 
 /**
  * Normalise the API base URL so it always points to the API host.
@@ -108,7 +126,7 @@ export function loadConfig(): Config {
     webchatBaseUrl,
     apiKey,
     serverName: process.env.MCP_SERVER_NAME || 'cognigy-api-mcp',
-    serverVersion: process.env.MCP_SERVER_VERSION || '2.0.0',
+    serverVersion: process.env.MCP_SERVER_VERSION || PACKAGE_VERSION,
     logLevel: (() => {
       const raw = process.env.LOG_LEVEL || 'info';
       if (!VALID_LOG_LEVELS.has(raw)) {
@@ -123,4 +141,3 @@ export function loadConfig(): Config {
     },
   };
 }
-

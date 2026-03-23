@@ -44,6 +44,7 @@ Requires [Node.js 20+](https://nodejs.org).
 |---|---|
 | Claude Desktop | `npx @cognigy/mcp-server init --client claude` |
 | Claude Code | `npx @cognigy/mcp-server init --client claude-code` |
+| Codex | `npx @cognigy/mcp-server init --client codex` |
 | Cursor | `npx @cognigy/mcp-server init --client cursor` |
 | VS Code (Copilot) | `npx @cognigy/mcp-server init --client vscode` |
 
@@ -51,11 +52,42 @@ The command prompts for your Cognigy API URL and API key, then configures your c
 
 ### Manual config
 
-Add to your MCP client's config file:
+Add to your MCP client's config file.
+
+For Claude Desktop, Claude Code, and Cursor:
 
 ```json
 {
   "mcpServers": {
+    "cognigy": {
+      "command": "npx",
+      "args": ["-y", "@cognigy/mcp-server"],
+      "env": {
+        "COGNIGY_API_BASE_URL": "https://api-trial.cognigy.ai",
+        "COGNIGY_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+For Codex, add this to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.cognigy]
+command = "npx"
+args = ["-y", "@cognigy/mcp-server"]
+
+[mcp_servers.cognigy.env]
+COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai"
+COGNIGY_API_KEY = "your-api-key-here"
+```
+
+For VS Code (Copilot), add this to `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
     "cognigy": {
       "command": "npx",
       "args": ["-y", "@cognigy/mcp-server"],
@@ -165,6 +197,7 @@ Full privacy policy: [https://www.cognigy.com/privacy-policy](https://www.cognig
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — tool design, self-improvement loop, ID formats
 - [docs/USAGE.md](docs/USAGE.md) — detailed usage reference
+- [docs/TESTING.md](docs/TESTING.md) — ways to test local builds, `init` flows, and `.mcpb` distribution
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — development setup and contribution guide
 - [CHANGELOG.md](CHANGELOG.md) — version history
 
