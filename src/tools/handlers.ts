@@ -567,11 +567,11 @@ export class ToolHandlers {
         });
       }
 
-      if (llmStatus === 'missing') {
+      if (llmStatus === 'unknown') {
         return withHints(result, {
-          warning: 'No LLM resource in project. Agent won\'t generate responses.',
+          warning: 'Could not verify LLM resource in project. Agent may not generate responses.',
           resource: 'cognigy://guide/agent-creation',
-          action: `Run setup_llm with projectId "${projectId}" before talk_to_agent.`,
+          action: `Run setup_llm with projectId "${projectId}" before talk_to_agent if no LLM is configured.`,
         });
       }
 
