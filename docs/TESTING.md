@@ -5,8 +5,6 @@ This guide covers the main ways to test how the Cognigy MCP server is distribute
 ## Prerequisites
 
 ```bash
-git clone https://github.com/Cognigy/cognigy-mcp.git
-cd cognigy-mcp
 npm install
 npm run build
 ```
@@ -22,13 +20,27 @@ You will need:
 Use this when you want to verify the built MCP server itself without any client installer flow.
 
 ```bash
-bash scripts/run-local-mcp.sh https://api-trial.cognigy.ai <your-api-key>
+npm run start:local -- <base-api-url> <your-api-key>
+```
+
+Or:
+
+```bash
+bash scripts/run-local-mcp.sh <base-api-url> <your-api-key>
 ```
 
 Or with environment variables:
 
 ```bash
-COGNIGY_API_BASE_URL=https://api-trial.cognigy.ai \
+COGNIGY_API_BASE_URL=<base-api-url> \
+COGNIGY_API_KEY=<your-api-key> \
+npm run start:local
+```
+
+Or:
+
+```bash
+COGNIGY_API_BASE_URL=<base-api-url> \
 COGNIGY_API_KEY=<your-api-key> \
 bash scripts/run-local-mcp.sh
 ```
@@ -41,17 +53,29 @@ What this does:
 
 ## 2. Test the `init` Installer Locally
 
-Use this when you want to verify the interactive installer flow for different clients before the package is published to npm.
+Use this when you want to verify the interactive installer flow for different MCP clients before the package is published to npm.
+
+**IMPORTANT**: Make sure to build manually (`npm run build`) before running the script, in order to test the most recent changes in your local.
 
 ### Using the helper script
+
+```bash
+npm run test:init-local -- codex
+npm run test:init-local -- cursor
+npm run test:init-local -- vscode
+npm run test:init-local -- <other-supported-client-names>
+```
+
+Or:
 
 ```bash
 bash scripts/test-local-init.sh codex
 bash scripts/test-local-init.sh cursor
 bash scripts/test-local-init.sh vscode
+bash scripts/test-local-init.sh <other-supported-client-names>
 ```
 
-The helper works for all supported clients:
+Currently we support following clients:
 
 - `claude`
 - `claude-code`
@@ -67,6 +91,13 @@ node dist/index.js init --client <client>
 
 but overrides the installed server command so the generated config points to the local launcher script instead of `npx @cognigy/mcp-server`.
 
+Important:
+
+- `test-local-init.sh` does not start the MCP server immediately
+- It only installs client config that points to `scripts/run-local-mcp.sh`
+- The MCP client will later run that launcher, and `run-local-mcp.sh` then starts your local `dist/index.js`
+- You only need to run `npm run start:local` manually when testing the server directly outside a client
+
 Without the override, the installed config points to the published package:
 
 ```json
@@ -76,7 +107,7 @@ Without the override, the installed config points to the published package:
       "command": "npx",
       "args": ["-y", "@cognigy/mcp-server"],
       "env": {
-        "COGNIGY_API_BASE_URL": "https://api-trial.cognigy.ai",
+        "COGNIGY_API_BASE_URL": "base-api-url",
         "COGNIGY_API_KEY": "your-api-key-here"
       }
     }
@@ -93,7 +124,7 @@ With `scripts/test-local-init.sh`, the installed config points to the local laun
       "command": "bash",
       "args": ["/absolute/path/to/cognigy-mcp/scripts/run-local-mcp.sh"],
       "env": {
-        "COGNIGY_API_BASE_URL": "https://api-trial.cognigy.ai",
+        "COGNIGY_API_BASE_URL": "base-api-url",
         "COGNIGY_API_KEY": "your-api-key-here"
       }
     }
@@ -169,7 +200,7 @@ Without those overrides, generated JSON client configs look like this:
       "command": "npx",
       "args": ["-y", "@cognigy/mcp-server"],
       "env": {
-        "COGNIGY_API_BASE_URL": "https://api-trial.cognigy.ai",
+        "COGNIGY_API_BASE_URL": "base-api-url",
         "COGNIGY_API_KEY": "your-api-key-here"
       }
     }
@@ -186,7 +217,7 @@ With the local override variables set, they look like this instead:
       "command": "bash",
       "args": ["/absolute/path/to/cognigy-mcp/scripts/run-local-mcp.sh"],
       "env": {
-        "COGNIGY_API_BASE_URL": "https://api-trial.cognigy.ai",
+        "COGNIGY_API_BASE_URL": "base-api-url",
         "COGNIGY_API_KEY": "your-api-key-here"
       }
     }

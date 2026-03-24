@@ -12,10 +12,12 @@
     "README.md"
   ],
   "scripts": {
-    "build": "npx tsc && cp -r src/resources dist/resources",
+    "build": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\" && npx tsc && cp -r src/resources dist/resources",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
+    "start:local": "bash scripts/run-local-mcp.sh",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:init-local": "bash scripts/test-local-init.sh",
     "prettier:check": "prettier --check",
     "prettier:write": "prettier --write",
     "lint": "eslint src --ext .ts",
