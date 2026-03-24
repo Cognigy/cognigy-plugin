@@ -169,6 +169,27 @@ describe('setupLlmSchema', () => {
       modelType: '',
     })).toThrow();
   });
+
+  it('accepts dangerouslySkipConnectionTest as optional boolean', () => {
+    const result = schemas.setupLlmSchema.parse({
+      projectId: VALID_ID,
+      provider: 'openAI',
+      modelType: 'gpt-4o',
+      apiKey: 'sk-abc123',
+      dangerouslySkipConnectionTest: true,
+    });
+    expect(result.dangerouslySkipConnectionTest).toBe(true);
+  });
+
+  it('allows omitting dangerouslySkipConnectionTest', () => {
+    const result = schemas.setupLlmSchema.parse({
+      projectId: VALID_ID,
+      provider: 'openAI',
+      modelType: 'gpt-4o',
+      apiKey: 'sk-abc123',
+    });
+    expect(result.dangerouslySkipConnectionTest).toBeUndefined();
+  });
 });
 
 describe('talkToAgentSchema', () => {
