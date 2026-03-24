@@ -176,20 +176,25 @@ describe('ToolHandlers v2', () => {
   // setup_llm
   // =========================================================================
   describe('setup_llm', () => {
+    const mockLlm = {
+      _id: ID.llm,
+      referenceId: 'llm-ref-uuid',
+      name: 'gpt-4o',
+      provider: 'openAI',
+      modelType: 'gpt-4o',
+      connectionId: 'conn-ref-uuid',
+      isDefault: true,
+    };
+
+    const mockTestSuccess = { isCredentialsValid: true, msg: 'Connected to openAI with the gpt-4o model.' };
+    const mockTestFailure = { isCredentialsValid: false, msg: 'Invalid API key provided.' };
+
     it('auto-creates connection then LLM when apiKey provided', async () => {
       const mockConn = { _id: 'conn1', referenceId: 'conn-ref-uuid' };
-      const mockLlm = {
-        _id: ID.llm,
-        referenceId: 'llm-ref-uuid',
-        name: 'gpt-4o',
-        provider: 'openAI',
-        modelType: 'gpt-4o',
-        connectionId: 'conn-ref-uuid',
-        isDefault: true,
-      };
       api.post
         .mockResolvedValueOnce(mockConn)
-        .mockResolvedValueOnce(mockLlm);
+        .mockResolvedValueOnce(mockLlm)
+        .mockResolvedValueOnce(mockTestSuccess);
 
       const result = await h.handleToolCall('setup_llm', {
         projectId: ID.project,
@@ -200,6 +205,7 @@ describe('ToolHandlers v2', () => {
 
       expect(result.provider).toBe('openAI');
       expect(result.modelType).toBe('gpt-4o');
+      expect(result.connectionTest.isCredentialsValid).toBe(true);
       expect(api.post).toHaveBeenCalledWith('/v2.0/connections', expect.objectContaining({
         type: 'OpenAIProvider',
         extension: '@cognigy/generative-ai-provider',
@@ -210,18 +216,14 @@ describe('ToolHandlers v2', () => {
         provider: 'openAI',
         connectionId: 'conn-ref-uuid',
       }));
+      expect(api.post).toHaveBeenCalledWith(`/v2.0/largelanguagemodels/${ID.llm}/test`);
     });
 
     it('creates LLM directly when connectionId provided', async () => {
-      api.post.mockResolvedValue({
-        _id: ID.llm,
-        referenceId: 'llm-ref-uuid',
-        name: 'gpt-4o',
-        provider: 'openAI',
-        modelType: 'gpt-4o',
-        connectionId: 'existing-conn-uuid',
-        isDefault: true,
-      });
+      const llmWithExistingConn = { ...mockLlm, connectionId: 'existing-conn-uuid' };
+      api.post
+        .mockResolvedValueOnce(llmWithExistingConn)
+        .mockResolvedValueOnce(mockTestSuccess);
 
       const result = await h.handleToolCall('setup_llm', {
         projectId: ID.project,
@@ -231,7 +233,8 @@ describe('ToolHandlers v2', () => {
       });
 
       expect(result.provider).toBe('openAI');
-      expect(api.post).toHaveBeenCalledTimes(1);
+      expect(result.connectionTest.isCredentialsValid).toBe(true);
+      expect(api.post).toHaveBeenCalledTimes(2);
       expect(api.post).toHaveBeenCalledWith('/v2.0/largelanguagemodels', expect.objectContaining({
         connectionId: 'existing-conn-uuid',
       }));
@@ -246,6 +249,78 @@ describe('ToolHandlers v2', () => {
 
       expect(result.error).toContain('apiKey or connectionId');
       expect(result._hints.resource).toBe('cognigy://guide/llm-providers');
+    });
+
+    it('deletes model and returns error when connection test fails', async () => {
+      api.post
+        .mockResolvedValueOnce(mockLlm)
+        .mockResolvedValueOnce(mockTestFailure);
+      api.delete.mockResolvedValue({});
+
+      const result = await h.handleToolCall('setup_llm', {
+        projectId: ID.project,
+        provider: 'openAI',
+        modelType: 'gpt-4o',
+        connectionId: 'bad-conn-uuid',
+      });
+
+      expect(result.error).toContain('connection test failed');
+      expect(result.providerMessage).toBe('Invalid API key provided.');
+      expect(result._hints.resource).toBe('cognigy://guide/llm-providers');
+      expect(api.delete).toHaveBeenCalledWith(`/v2.0/largelanguagemodels/${ID.llm}`);
+    });
+
+    it('keeps model with warning when test endpoint itself errors', async () => {
+      api.post
+        .mockResolvedValueOnce(mockLlm)
+        .mockRejectedValueOnce(new Error('Network timeout'));
+
+      const result = await h.handleToolCall('setup_llm', {
+        projectId: ID.project,
+        provider: 'openAI',
+        modelType: 'gpt-4o',
+        connectionId: 'some-conn-uuid',
+      });
+
+      expect(result.warning).toContain('connection test could not be executed');
+      expect(result.connectionTest.skipped).toBe(true);
+      expect(result.connectionTest.reason).toContain('Network timeout');
+      expect(result.provider).toBe('openAI');
+      expect(api.delete).not.toHaveBeenCalled();
+    });
+
+    it('skips test and returns warning when dangerouslySkipConnectionTest is true', async () => {
+      api.post.mockResolvedValueOnce(mockLlm);
+
+      const result = await h.handleToolCall('setup_llm', {
+        projectId: ID.project,
+        provider: 'openAI',
+        modelType: 'gpt-4o',
+        connectionId: 'some-conn-uuid',
+        dangerouslySkipConnectionTest: true,
+      });
+
+      expect(result.warning).toContain('Connection test was skipped');
+      expect(result.connectionTest.skipped).toBe(true);
+      expect(result.provider).toBe('openAI');
+      expect(api.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('still attempts cleanup even if delete fails after test failure', async () => {
+      api.post
+        .mockResolvedValueOnce(mockLlm)
+        .mockResolvedValueOnce(mockTestFailure);
+      api.delete.mockRejectedValueOnce(new Error('Delete failed'));
+
+      const result = await h.handleToolCall('setup_llm', {
+        projectId: ID.project,
+        provider: 'openAI',
+        modelType: 'gpt-4o',
+        connectionId: 'bad-conn-uuid',
+      });
+
+      expect(result.error).toContain('connection test failed');
+      expect(api.delete).toHaveBeenCalledWith(`/v2.0/largelanguagemodels/${ID.llm}`);
     });
   });
 
