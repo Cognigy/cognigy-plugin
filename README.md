@@ -13,20 +13,20 @@ A Model Context Protocol (MCP) server that connects your AI assistant to the [Co
 
 ## Tools
 
-| Tool | Type | Description |
-|---|---|---|
-| `create_ai_agent` | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint |
-| `update_ai_agent` | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature) |
-| `setup_llm` | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation |
-| `talk_to_agent` | Write | Send a message to an AI Agent and get its response |
-| `list_resources` | Read | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more |
-| `get_resource` | Read | Get detailed information about a single resource |
-| `delete_resource` | Write | Permanently delete a resource |
-| `manage_knowledge` | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG |
-| `create_tool` | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node |
-| `update_tool` | Write | Update an existing tool node's configuration |
-| `manage_webchat` | Write | Create or configure a Webchat v3 endpoint for website deployment |
-| `manage_flow_nodes` | Write | Create, update, delete, or list flow nodes for conversation logic |
+| Tool                | Type  | Description                                                                                |
+| ------------------- | ----- | ------------------------------------------------------------------------------------------ |
+| `create_ai_agent`   | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint         |
+| `update_ai_agent`   | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature)                |
+| `setup_llm`         | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation |
+| `talk_to_agent`     | Write | Send a message to an AI Agent and get its response                                         |
+| `list_resources`    | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more                  |
+| `get_resource`      | Read  | Get detailed information about a single resource                                           |
+| `delete_resource`   | Write | Permanently delete a resource                                                              |
+| `manage_knowledge`  | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG                |
+| `create_tool`       | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node                            |
+| `update_tool`       | Write | Update an existing tool node's configuration                                               |
+| `manage_webchat`    | Write | Create or configure a Webchat v3 endpoint for website deployment                           |
+| `manage_flow_nodes` | Write | Create, update, delete, or list flow nodes for conversation logic                          |
 
 The server also includes built-in guides (MCP resources) that AI assistants automatically read for detailed workflows, field references, and troubleshooting.
 
@@ -40,22 +40,54 @@ Download the `.mcpb` file from the [latest release](https://github.com/Cognigy/c
 
 Requires [Node.js 20+](https://nodejs.org).
 
-| MCP Client | Command |
-|---|---|
-| Claude Desktop | `npx @cognigy/mcp-server init --client claude` |
-| Claude Code | `npx @cognigy/mcp-server init --client claude-code` |
-| Cursor | `npx @cognigy/mcp-server init --client cursor` |
-| VS Code (Copilot) | `npx @cognigy/mcp-server init --client vscode` |
+| MCP Client        | Command                                             |
+| ----------------- | --------------------------------------------------- |
+| Claude Desktop    | `npx @cognigy/mcp-server init --client claude`      |
+| Claude Code       | `npx @cognigy/mcp-server init --client claude-code` |
+| Codex             | `npx @cognigy/mcp-server init --client codex`       |
+| Cursor            | `npx @cognigy/mcp-server init --client cursor`      |
+| VS Code (Copilot) | `npx @cognigy/mcp-server init --client vscode`      |
 
 The command prompts for your Cognigy API URL and API key, then configures your client automatically. Restart the client after setup.
 
 ### Manual config
 
-Add to your MCP client's config file:
+Add to your MCP client's config file.
+
+For Claude Desktop, Claude Code, and Cursor:
 
 ```json
 {
   "mcpServers": {
+    "cognigy": {
+      "command": "npx",
+      "args": ["-y", "@cognigy/mcp-server"],
+      "env": {
+        "COGNIGY_API_BASE_URL": "https://api-trial.cognigy.ai",
+        "COGNIGY_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+For Codex, add this to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.cognigy]
+command = "npx"
+args = ["-y", "@cognigy/mcp-server"]
+
+[mcp_servers.cognigy.env]
+COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai"
+COGNIGY_API_KEY = "your-api-key-here"
+```
+
+For VS Code (Copilot), add this to `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
     "cognigy": {
       "command": "npx",
       "args": ["-y", "@cognigy/mcp-server"],
@@ -86,13 +118,13 @@ Create a complete AI Agent in one tool call, then iterate and improve through co
 
 All configuration is passed via `env` in the MCP config. No `.env` file needed.
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `COGNIGY_API_BASE_URL` | Yes | — | Your Cognigy API base URL |
-| `COGNIGY_API_KEY` | Yes | — | Your Cognigy API key |
-| `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn`, `error` |
-| `RATE_LIMIT_MAX_REQUESTS` | No | `100` | Max requests per window |
-| `RATE_LIMIT_WINDOW_MS` | No | `60000` | Rate limit window in ms |
+| Variable                  | Required | Default | Description                      |
+| ------------------------- | -------- | ------- | -------------------------------- |
+| `COGNIGY_API_BASE_URL`    | Yes      | —       | Your Cognigy API base URL        |
+| `COGNIGY_API_KEY`         | Yes      | —       | Your Cognigy API key             |
+| `LOG_LEVEL`               | No       | `info`  | `debug`, `info`, `warn`, `error` |
+| `RATE_LIMIT_MAX_REQUESTS` | No       | `100`   | Max requests per window          |
+| `RATE_LIMIT_WINDOW_MS`    | No       | `60000` | Rate limit window in ms          |
 
 ## Usage Examples
 
@@ -159,14 +191,14 @@ Full privacy policy: [https://www.cognigy.com/privacy-policy](https://www.cognig
 
 - **Issues**: [GitHub Issues](https://github.com/Cognigy/cognigy-mcp/issues)
 - **Cognigy support**: support@cognigy.com
-- **Documentation**: see [`docs/`](docs/) folder
+- **Documentation**: see [`docs/`](https://github.com/Cognigy/cognigy-mcp/tree/main/docs) folder
 
 ## Documentation
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — tool design, self-improvement loop, ID formats
-- [docs/USAGE.md](docs/USAGE.md) — detailed usage reference
-- [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — development setup and contribution guide
-- [CHANGELOG.md](CHANGELOG.md) — version history
+- [docs/ARCHITECTURE.md](https://github.com/Cognigy/cognigy-mcp/blob/main/docs/ARCHITECTURE.md) — tool design, self-improvement loop, ID formats
+- [docs/USAGE.md](https://github.com/Cognigy/cognigy-mcp/blob/main/docs/USAGE.md) — detailed usage reference
+- [docs/TESTING.md](https://github.com/Cognigy/cognigy-mcp/blob/main/docs/TESTING.md) — ways to test local builds, CLI installation, and `.mcpb` distribution
+- [docs/CONTRIBUTING.md](https://github.com/Cognigy/cognigy-mcp/blob/main/docs/CONTRIBUTING.md) — development setup and contribution guide
 
 ## License
 

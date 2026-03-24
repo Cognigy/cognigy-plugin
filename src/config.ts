@@ -1,6 +1,10 @@
 /**
  * Configuration for the Cognigy MCP Server
  */
+import { readFileSync } from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
+
 export interface Config {
   apiBaseUrl: string;
   endpointBaseUrl: string;
@@ -8,12 +12,28 @@ export interface Config {
   apiKey: string;
   serverName: string;
   serverVersion: string;
-  logLevel: 'debug' | 'info' | 'warn' | 'error';
+  logLevel: "debug" | "info" | "warn" | "error";
   rateLimit: {
     maxRequests: number;
     windowMs: number;
   };
 }
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+function getPackageVersion(): string {
+  try {
+    const packageJsonPath = join(__dirname, "..", "package.json");
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as {
+      version?: string;
+    };
+    return packageJson.version || "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
+const PACKAGE_VERSION = getPackageVersion();
 
 /**
  * Normalise the API base URL so it always points to the API host.
@@ -23,14 +43,17 @@ export interface Config {
 function normalizeApiBaseUrl(raw: string): string {
   try {
     const url = new URL(raw);
-    if (!url.hostname.startsWith('api-') && url.hostname.endsWith('.cognigy.ai')) {
+    if (
+      !url.hostname.startsWith("api-") &&
+      url.hostname.endsWith(".cognigy.ai")
+    ) {
       url.hostname = `api-${url.hostname}`;
-      return url.toString().replace(/\/+$/, '');
+      return url.toString().replace(/\/+$/, "");
     }
   } catch {
     // fall through
   }
-  return raw.replace(/\/+$/, '');
+  return raw.replace(/\/+$/, "");
 }
 
 /**
@@ -47,7 +70,7 @@ function deriveEndpointBaseUrl(apiBaseUrl: string): string {
   } catch {
     // fall through
   }
-  return apiBaseUrl.replace(/\/api-/, '/endpoint-');
+  return apiBaseUrl.replace(/\/api-/, "/endpoint-");
 }
 
 /**
@@ -64,16 +87,21 @@ function deriveWebchatBaseUrl(apiBaseUrl: string): string {
   } catch {
     // fall through
   }
-  return apiBaseUrl.replace(/\/api-/, '/webchat-');
+  return apiBaseUrl.replace(/\/api-/, "/webchat-");
 }
 
-const VALID_LOG_LEVELS = new Set<string>(['debug', 'info', 'warn', 'error']);
+const VALID_LOG_LEVELS = new Set<string>(["debug", "info", "warn", "error"]);
 
-function parseIntWithDefault(envVar: string | undefined, defaultValue: number): number {
+function parseIntWithDefault(
+  envVar: string | undefined,
+  defaultValue: number,
+): number {
   if (!envVar) return defaultValue;
   const parsed = parseInt(envVar, 10);
   if (Number.isNaN(parsed)) {
-    console.error(`[config] Invalid integer "${envVar}", using default ${defaultValue}`);
+    console.error(
+      `[config] Invalid integer "${envVar}", using default ${defaultValue}`,
+    );
     return defaultValue;
   }
   return parsed;
@@ -87,40 +115,46 @@ export function loadConfig(): Config {
   const apiKey = process.env.COGNIGY_API_KEY;
 
   if (!apiBaseUrl) {
-    throw new Error('COGNIGY_API_BASE_URL environment variable is required');
+    throw new Error("COGNIGY_API_BASE_URL environment variable is required");
   }
 
   if (!apiKey) {
-    throw new Error('COGNIGY_API_KEY environment variable is required');
+    throw new Error("COGNIGY_API_KEY environment variable is required");
   }
 
   const normalizedApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
 
   const endpointBaseUrl =
-    process.env.COGNIGY_ENDPOINT_BASE_URL || deriveEndpointBaseUrl(normalizedApiBaseUrl);
+    process.env.COGNIGY_ENDPOINT_BASE_URL ||
+    deriveEndpointBaseUrl(normalizedApiBaseUrl);
 
   const webchatBaseUrl =
-    process.env.COGNIGY_WEBCHAT_BASE_URL || deriveWebchatBaseUrl(normalizedApiBaseUrl);
+    process.env.COGNIGY_WEBCHAT_BASE_URL ||
+    deriveWebchatBaseUrl(normalizedApiBaseUrl);
 
   return {
     apiBaseUrl: normalizedApiBaseUrl,
     endpointBaseUrl,
     webchatBaseUrl,
     apiKey,
-    serverName: process.env.MCP_SERVER_NAME || 'cognigy-api-mcp',
-    serverVersion: process.env.MCP_SERVER_VERSION || '2.0.0',
+    serverName: process.env.MCP_SERVER_NAME || "cognigy-api-mcp",
+    serverVersion: process.env.MCP_SERVER_VERSION || PACKAGE_VERSION,
     logLevel: (() => {
-      const raw = process.env.LOG_LEVEL || 'info';
+      const raw = process.env.LOG_LEVEL || "info";
       if (!VALID_LOG_LEVELS.has(raw)) {
-        console.error(`[config] Invalid LOG_LEVEL "${raw}", falling back to "info"`);
-        return 'info' as Config['logLevel'];
+        console.error(
+          `[config] Invalid LOG_LEVEL "${raw}", falling back to "info"`,
+        );
+        return "info" as Config["logLevel"];
       }
-      return raw as Config['logLevel'];
+      return raw as Config["logLevel"];
     })(),
     rateLimit: {
-      maxRequests: parseIntWithDefault(process.env.RATE_LIMIT_MAX_REQUESTS, 100),
+      maxRequests: parseIntWithDefault(
+        process.env.RATE_LIMIT_MAX_REQUESTS,
+        100,
+      ),
       windowMs: parseIntWithDefault(process.env.RATE_LIMIT_WINDOW_MS, 60000),
     },
   };
 }
-

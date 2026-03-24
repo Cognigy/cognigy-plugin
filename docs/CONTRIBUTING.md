@@ -34,15 +34,20 @@ Or use the interactive setup: `npm run setup`
 
 Read [`.cursorrules`](../.cursorrules) for development guidelines.
 
+Pull requests are validated with tests and a Prettier formatting check on changed
+files. Prettier is installed as a project `devDependency`, so a separate global
+install is not required.
+
 ## Scripts
 
-| Command | Description |
-|---|---|
-| `npm run build` | Compile TypeScript |
-| `npm test` | Run test suite |
-| `npm run lint` | Run ESLint |
-| `npm run dev` | Watch mode (tsx) |
-| `npm run mcpb:pack` | Build `.mcpb` bundle |
+| Command                                | Description                                       |
+| -------------------------------------- | ------------------------------------------------- |
+| `npm run build`                        | Compile TypeScript                                |
+| `npm test`                             | Run test suite                                    |
+| `npm run lint`                         | Run ESLint                                        |
+| `npm run prettier:check -- <files...>` | Check formatting with Prettier for specific files |
+| `npm run dev`                          | Watch mode (tsx)                                  |
+| `npm run mcpb:pack`                    | Build `.mcpb` bundle                              |
 
 ## Submitting Changes
 
