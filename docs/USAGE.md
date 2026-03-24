@@ -10,10 +10,11 @@ For installation and configuration, see the [README](../README.md).
 ```
 
 This triggers the following tool calls automatically:
-1. `setup_llm` — creates an LLM resource (e.g. GPT-4) in the project
+1. `setup_llm` — creates an LLM resource (e.g. GPT-4) in the project and validates the connection
 2. `create_ai_agent` — provisions the agent, flow, AI Agent Job Node, and REST endpoint
 
 The response includes `endpointUrl` — use this for testing with `talk_to_agent`.
+On success, the `setup_llm` response may include `connectionTest` details (for example, whether credentials were validated or the test was skipped with a warning). If the connection test fails due to invalid credentials, `setup_llm` instead returns an error payload and the model is cleaned up, rather than a successful response with `connectionTest.isCredentialsValid: false`.
 
 ## Workflow 2: Self-improvement loop
 
@@ -99,6 +100,10 @@ Cognigy uses two ID formats — see [ARCHITECTURE.md](ARCHITECTURE.md#id-formats
 **"Rate limit exceeded"** — wait for the window to reset, or increase `RATE_LIMIT_MAX_REQUESTS` in your env config.
 
 **Agent returns no response / empty output** — check that an LLM resource exists in the project (`list_resources` with `resourceType: llm_model`). The agent cannot generate responses without one.
+
+**`setup_llm` fails connection test** — the model was created but the provider rejected the credentials. The model is automatically deleted. Check your API key, model type spelling, and provider name, then retry.
+
+**`setup_llm` returns warning about skipped test** — the test endpoint was unreachable (network issue, timeout). The model was kept but may not work. Verify manually or delete and recreate.
 
 **Knowledge search returns no results** — verify ingestion completed by calling `manage_knowledge` with `operation: list_chunks` and the `knowledgeStoreId`.
 

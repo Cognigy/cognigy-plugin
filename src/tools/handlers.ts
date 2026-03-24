@@ -770,22 +770,123 @@ export class ToolHandlers {
 
     const displayName = data.name || data.modelType;
 
+    let result: any;
     try {
-      const result = await this.apiClient.post('/v2.0/largelanguagemodels', {
+      result = await this.apiClient.post('/v2.0/largelanguagemodels', {
         projectId: data.projectId,
         name: displayName,
         modelType: data.modelType,
         provider: data.provider,
         connectionId: connectionRefId,
         isDefault: data.isDefault ?? true,
+        [data.provider]: {},
       });
-      return filterResponse('llm_model', result);
     } catch (error: any) {
       return withHints(
         { error: error.message },
         {
           resource: 'cognigy://guide/llm-providers',
           action: 'Read the provider guide for valid provider names and model strings.',
+        },
+      );
+    }
+
+    const llmId = result._id || result.id;
+
+    if (data.dangerouslySkipConnectionTest) {
+      const filtered = filterResponse('llm_model', result);
+      return {
+        ...filtered,
+        warning: 'Connection test was skipped. The model may not work correctly — verify manually before use.',
+        connectionTest: { skipped: true },
+      };
+    }
+
+    if (!llmId) {
+      logger.error('LLM creation response did not include an id; unable to run connection test or cleanup.', {
+        provider: data.provider,
+        modelType: data.modelType,
+        rawResult: result,
+      });
+
+      return withHints(
+        {
+          error:
+            'Model may have been created but the API response did not include a model id. ' +
+            'Connection test and automatic cleanup could not be performed. Please verify the model state in the UI and delete it manually if necessary.',
+          provider: data.provider,
+          modelType: data.modelType,
+        },
+        {
+          resource: 'cognigy://guide/llm-providers',
+          action: 'Verify your provider setup and model configuration, then retry.',
+        },
+      );
+    }
+    try {
+      const testResponse: any = await this.apiClient.post(`/v2.0/largelanguagemodels/${llmId}/test`);
+
+      if (!testResponse?.isCredentialsValid) {
+        let cleanedUp = false;
+        try {
+          if (result.isDefault) {
+            try {
+              await this.apiClient.patch(`/v2.0/largelanguagemodels/${llmId}`, { isDefault: false });
+            } catch (unsetDefaultError: any) {
+              logger.warn('Failed to unset default flag before deleting broken LLM model', {
+                llmId,
+                error: unsetDefaultError.message,
+              });
+            }
+          }
+          await this.apiClient.delete(`/v2.0/largelanguagemodels/${llmId}`);
+          cleanedUp = true;
+        } catch (cleanupError: any) {
+          logger.warn('Failed to clean up broken LLM model after failed connection test', {
+            llmId,
+            error: cleanupError.message,
+          });
+        }
+
+        return withHints(
+          {
+            error: `Model created but connection test failed${cleanedUp ? ' — the model has been removed to prevent broken references' : ' — automatic cleanup failed, delete the model manually'}.`,
+            providerMessage: testResponse?.msg || 'No details from provider.',
+            provider: data.provider,
+            modelType: data.modelType,
+            ...(cleanedUp ? {} : { modelId: llmId }),
+          },
+          {
+            resource: 'cognigy://guide/llm-providers',
+            action: 'Verify your API key and model type are correct, then retry.',
+          },
+        );
+      }
+
+      const filtered = filterResponse('llm_model', result);
+      return {
+        ...filtered,
+        connectionTest: {
+          isCredentialsValid: true,
+          msg: testResponse.msg,
+        },
+      };
+    } catch (testError: any) {
+      logger.warn('Connection test request failed, but model was created successfully', {
+        llmId,
+        error: testError.message,
+      });
+
+      const filtered = filterResponse('llm_model', result);
+      return withHints(
+        {
+          ...filtered,
+          warning: `Model created but the connection test could not be executed: ${testError.message}. Verify the model works before relying on it.`,
+          connectionTest: { skipped: true, reason: testError.message },
+        },
+        {
+          resource: 'cognigy://guide/llm-providers',
+          action: 'Test the model manually or delete and recreate if credentials are wrong.',
         },
       );
     }

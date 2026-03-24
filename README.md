@@ -13,20 +13,20 @@ A Model Context Protocol (MCP) server that connects your AI assistant to the [Co
 
 ## Tools
 
-| Tool                | Type  | Description                                                                        |
-| ------------------- | ----- | ---------------------------------------------------------------------------------- |
-| `create_ai_agent`   | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint |
-| `update_ai_agent`   | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature)        |
-| `setup_llm`         | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) in a project                 |
-| `talk_to_agent`     | Write | Send a message to an AI Agent and get its response                                 |
-| `list_resources`    | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more          |
-| `get_resource`      | Read  | Get detailed information about a single resource                                   |
-| `delete_resource`   | Write | Permanently delete a resource                                                      |
-| `manage_knowledge`  | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG        |
-| `create_tool`       | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node                    |
-| `update_tool`       | Write | Update an existing tool node's configuration                                       |
-| `manage_webchat`    | Write | Create or configure a Webchat v3 endpoint for website deployment                   |
-| `manage_flow_nodes` | Write | Create, update, delete, or list flow nodes for conversation logic                  |
+| Tool | Type | Description |
+|---|---|---|
+| `create_ai_agent` | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint |
+| `update_ai_agent` | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature) |
+| `setup_llm` | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation |
+| `talk_to_agent` | Write | Send a message to an AI Agent and get its response |
+| `list_resources` | Read | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more |
+| `get_resource` | Read | Get detailed information about a single resource |
+| `delete_resource` | Write | Permanently delete a resource |
+| `manage_knowledge` | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG |
+| `create_tool` | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node |
+| `update_tool` | Write | Update an existing tool node's configuration |
+| `manage_webchat` | Write | Create or configure a Webchat v3 endpoint for website deployment |
+| `manage_flow_nodes` | Write | Create, update, delete, or list flow nodes for conversation logic |
 
 The server also includes built-in guides (MCP resources) that AI assistants automatically read for detailed workflows, field references, and troubleshooting.
 

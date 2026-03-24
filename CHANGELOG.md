@@ -5,6 +5,14 @@ All notable changes to the Cognigy MCP Server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Automatic connection validation for `setup_llm`** — after creating an LLM or embedding model, the connection is tested by sending a minimal probe to the provider. If the test fails, the model is automatically cleaned up to prevent broken references from silently breaking downstream flows (agent conversations, knowledge stores).
+- `dangerouslySkipConnectionTest` parameter for `setup_llm` — last-resort escape hatch for environments where the test endpoint is unavailable.
+- Provider-specific metadata (`openAI: {}`, etc.) is now included when creating models, fixing a bug where the test endpoint would crash with `Cannot destructure property 'baseCustomUrl' of 'params.metaData'`.
+
 ## [0.2.6] - 2025-03-16
 
 ### Changed

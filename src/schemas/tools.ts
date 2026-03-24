@@ -40,6 +40,7 @@ export const setupLlmSchema = z.object({
   apiKey: z.string().optional(),
   connectionId: z.string().optional(),
   isDefault: z.boolean().optional(),
+  dangerouslySkipConnectionTest: z.boolean().optional(),
 });
 
 // Tool 4: talk_to_agent

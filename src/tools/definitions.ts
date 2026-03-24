@@ -126,7 +126,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "setup_llm",
     description:
-      "Create an LLM resource (GPT-4, Claude, etc.) in a project. An LLM resource must exist before an AI Agent can generate responses.\n\nIf isDefault is true (the default), agents in the project will automatically use this LLM. If isDefault is false, you must explicitly assign it to the agent via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: '<referenceId from this response>' } }.\n\nThe response includes the LLM's referenceId — use this value for jobConfig.llmProviderReferenceId if assigning manually.\n\nFor valid provider names and model strings, read cognigy://guide/llm-providers.\nTo list existing LLMs: use list_resources { resourceType: 'llm_model', projectId }.\nTo delete: use delete_resource { resourceType: 'llm_model', id }.",
+      "Create an LLM resource (GPT-4, Claude, etc.) in a project.\n\nAfter creation, the connection is normally tested by sending a minimal probe to the provider. If this connection test runs and fails (for example, invalid credentials or model name), the model is deleted and an error is returned — this prevents broken model references from silently breaking downstream flows.\n\nIf the provider's test endpoint is unreachable or returns a non-testable status, the model is kept but a warning is returned so you know connectivity could not be fully verified.\n\nIf dangerouslySkipConnectionTest is true, the connection test is not run at all; the model is kept and the response includes a warning that no connectivity check was performed. Only use this flag when you explicitly accept the risk that the created LLM might not be callable.\n\nIf isDefault is true (the default), agents in the project will automatically use this LLM. If isDefault is false, you must explicitly assign it to the agent via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: '<referenceId from this response>' } }.\n\nThe response includes the LLM's referenceId — use this value for jobConfig.llmProviderReferenceId if assigning manually.\n\nFor valid provider names and model strings, read cognigy://guide/llm-providers.\nTo list existing LLMs: use list_resources { resourceType: 'llm_model', projectId }.\nTo delete: use delete_resource { resourceType: 'llm_model', id }.",
     annotations: {
       title: "Setup LLM",
       readOnlyHint: false,
@@ -167,6 +167,14 @@ export const tools: ToolDefinition[] = [
         isDefault: {
           type: "boolean",
           description: "Set as project default (default: true)",
+        },
+        dangerouslySkipConnectionTest: {
+          type: 'boolean',
+          description:
+            'LAST RESORT ONLY — Skip the automatic connection validation after creating the model. ' +
+            'This may leave a broken model reference that silently fails downstream. ' +
+            'Only use when the test endpoint is known to be unavailable (e.g., air-gapped environments, ' +
+            'unsupported custom model providers). Default: false.',
         },
       },
       required: ["projectId", "provider", "modelType"],
