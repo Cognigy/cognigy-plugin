@@ -169,12 +169,12 @@ export const tools: ToolDefinition[] = [
           description: "Set as project default (default: true)",
         },
         dangerouslySkipConnectionTest: {
-          type: 'boolean',
+          type: "boolean",
           description:
-            'LAST RESORT ONLY — Skip the automatic connection validation after creating the model. ' +
-            'This may leave a broken model reference that silently fails downstream. ' +
-            'Only use when the test endpoint is known to be unavailable (e.g., air-gapped environments, ' +
-            'unsupported custom model providers). Default: false.',
+            "LAST RESORT ONLY — Skip the automatic connection validation after creating the model. " +
+            "This may leave a broken model reference that silently fails downstream. " +
+            "Only use when the test endpoint is known to be unavailable (e.g., air-gapped environments, " +
+            "unsupported custom model providers). Default: false.",
         },
       },
       required: ["projectId", "provider", "modelType"],
