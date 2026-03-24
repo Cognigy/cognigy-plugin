@@ -830,7 +830,14 @@ export class ToolHandlers {
         let cleanedUp = false;
         try {
           if (result.isDefault) {
-            await this.apiClient.patch(`/v2.0/largelanguagemodels/${llmId}`, { isDefault: false });
+            try {
+              await this.apiClient.patch(`/v2.0/largelanguagemodels/${llmId}`, { isDefault: false });
+            } catch (unsetDefaultError: any) {
+              logger.warn('Failed to unset default flag before deleting broken LLM model', {
+                llmId,
+                error: unsetDefaultError.message,
+              });
+            }
           }
           await this.apiClient.delete(`/v2.0/largelanguagemodels/${llmId}`);
           cleanedUp = true;
