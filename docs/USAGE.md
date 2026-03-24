@@ -14,7 +14,7 @@ This triggers the following tool calls automatically:
 2. `create_ai_agent` — provisions the agent, flow, AI Agent Job Node, and REST endpoint
 
 The response includes `endpointUrl` — use this for testing with `talk_to_agent`.
-The `setup_llm` response includes `connectionTest.isCredentialsValid` — if `false`, the model is automatically cleaned up and an error is returned.
+On success, the `setup_llm` response may include `connectionTest` details (for example, whether credentials were validated or the test was skipped with a warning). If the connection test fails due to invalid credentials, `setup_llm` instead returns an error payload and the model is cleaned up, rather than a successful response with `connectionTest.isCredentialsValid: false`.
 
 ## Workflow 2: Self-improvement loop
 
