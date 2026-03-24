@@ -802,6 +802,27 @@ export class ToolHandlers {
       };
     }
 
+    if (!llmId) {
+      logger.error('LLM creation response did not include an id; unable to run connection test or cleanup.', {
+        provider: data.provider,
+        modelType: data.modelType,
+        rawResult: result,
+      });
+
+      return withHints(
+        {
+          error:
+            'Model may have been created but the API response did not include a model id. ' +
+            'Connection test and automatic cleanup could not be performed. Please verify the model state in the UI and delete it manually if necessary.',
+          provider: data.provider,
+          modelType: data.modelType,
+        },
+        {
+          resource: 'cognigy://guide/llm-providers',
+          action: 'Verify your provider setup and model configuration, then retry.',
+        },
+      );
+    }
     try {
       const testResponse: any = await this.apiClient.post(`/v2.0/largelanguagemodels/${llmId}/test`);
 
