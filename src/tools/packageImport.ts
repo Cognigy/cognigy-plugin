@@ -16,29 +16,29 @@ type GraphSubgraph = {
 };
 
 const EXCLUDED_REFERENCE_CONFLICT_TYPES = new Set([
-  'extension',
-  'endpoint',
-  'file',
-  'playbook',
+  "extension",
+  "endpoint",
+  "file",
+  "playbook",
 ]);
 
 const RETIRED_LLM_MODELS = new Set([
-  'gpt-3.5-turbo',
-  'gpt-3.5-turbo-instruct',
-  'gpt-4',
-  'claude-v1-100k',
-  'claude-3-opus-20240229',
-  'claude-3-sonnet-20240229',
-  'claude-3-5-sonnet-20241022',
-  'claude-3-5-sonnet-latest',
-  'claude-3-7-sonnet-latest',
-  'claude-3-7-sonnet-20250219',
-  'claude-instant-v1',
-  'text-bison@001',
-  'gemini-1.0-pro',
-  'gemini-1.5-pro',
-  'gemini-1.5-flash',
-  'text-davinci-003',
+  "gpt-3.5-turbo",
+  "gpt-3.5-turbo-instruct",
+  "gpt-4",
+  "claude-v1-100k",
+  "claude-3-opus-20240229",
+  "claude-3-sonnet-20240229",
+  "claude-3-5-sonnet-20241022",
+  "claude-3-5-sonnet-latest",
+  "claude-3-7-sonnet-latest",
+  "claude-3-7-sonnet-20250219",
+  "claude-instant-v1",
+  "text-bison@001",
+  "gemini-1.0-pro",
+  "gemini-1.5-pro",
+  "gemini-1.5-flash",
+  "text-davinci-003",
 ]);
 
 export interface NormalizedTask {
@@ -53,7 +53,7 @@ export interface NormalizedTask {
 }
 
 export interface PackageConflictSummary {
-  type: 'referenceId';
+  type: "referenceId";
   targetResourceId: string | null;
   targetResourceName: string | null;
 }
@@ -64,8 +64,8 @@ export interface PackageResourcePreview {
   name: string;
   referenceId?: string;
   selectedByDefault: boolean;
-  defaultStrategy: 'replace' | 're-identify';
-  disabledReason?: 'retired_model';
+  defaultStrategy: "replace" | "re-identify";
+  disabledReason?: "retired_model";
   conflict?: PackageConflictSummary;
 }
 
@@ -89,7 +89,10 @@ export interface PackageImportPreview {
   locales: {
     packageLocales: PackageLocalePreview[];
     projectLocales: PackageLocalePreview[];
-    defaultLocaleMapping: Array<{ packageLocaleId: string; agentLocaleId: string }>;
+    defaultLocaleMapping: Array<{
+      packageLocaleId: string;
+      agentLocaleId: string;
+    }>;
   };
   summary: {
     resourceCount: number;
@@ -101,7 +104,7 @@ export interface PackageImportPreview {
 }
 
 function resourceId(resource: GraphResource): string {
-  return String(resource._id ?? resource.id ?? '');
+  return String(resource._id ?? resource.id ?? "");
 }
 
 function resourceName(resource: GraphResource): string {
@@ -109,19 +112,22 @@ function resourceName(resource: GraphResource): string {
 }
 
 function isLocale(resource: GraphResource): boolean {
-  return resource.type === 'locale';
+  return resource.type === "locale";
 }
 
 function isRetiredLlmModel(modelType?: string): boolean {
   return !!modelType && RETIRED_LLM_MODELS.has(modelType);
 }
 
-function buildReferenceMap(resources: GraphResource[]): Map<string, GraphResource> {
+function buildReferenceMap(
+  resources: GraphResource[],
+): Map<string, GraphResource> {
   const map = new Map<string, GraphResource>();
 
   for (const resource of resources) {
     if (!resource.referenceId) continue;
-    if (!resource.type || EXCLUDED_REFERENCE_CONFLICT_TYPES.has(resource.type)) continue;
+    if (!resource.type || EXCLUDED_REFERENCE_CONFLICT_TYPES.has(resource.type))
+      continue;
     if (!map.has(resource.referenceId)) {
       map.set(resource.referenceId, resource);
     }
@@ -143,20 +149,20 @@ export function getTaskProgress(task: any): number {
   if (!task) return 0;
 
   switch (task.status) {
-    case 'queued':
-    case 'cancelled':
-    case 'cancelling':
-    case 'error':
+    case "queued":
+    case "cancelled":
+    case "cancelling":
+    case "error":
       return 0;
     default:
       break;
   }
 
   if (!task.totalStep || task.totalStep <= 0) {
-    return task.status === 'done' ? 1 : 0;
+    return task.status === "done" ? 1 : 0;
   }
 
-  if (task.currentStep === task.totalStep && task.status === 'active') {
+  if (task.currentStep === task.totalStep && task.status === "active") {
     return task.currentStep / (task.totalStep + 1);
   }
 
@@ -192,50 +198,73 @@ export function buildPackageImportPreview(
     throw new Error(`Package graph not found for ${packageId}`);
   }
 
-  const projectResources = Array.isArray(projectGraph.resources) ? projectGraph.resources : [];
-  const packageResources = Array.isArray(packageGraph.resources) ? packageGraph.resources : [];
+  const projectResources = Array.isArray(projectGraph.resources)
+    ? projectGraph.resources
+    : [];
+  const packageResources = Array.isArray(packageGraph.resources)
+    ? packageGraph.resources
+    : [];
 
-  const projectLocales = projectResources.filter(isLocale).map(buildLocalePreview);
-  const packageLocales = packageResources.filter(isLocale).map(buildLocalePreview);
-  const importableResources = packageResources.filter(resource => !isLocale(resource));
+  const projectLocales = projectResources
+    .filter(isLocale)
+    .map(buildLocalePreview);
+  const packageLocales = packageResources
+    .filter(isLocale)
+    .map(buildLocalePreview);
+  const importableResources = packageResources.filter(
+    (resource) => !isLocale(resource),
+  );
 
   const targetByReferenceId = buildReferenceMap(projectResources);
-  const defaultProjectPrimaryLocale = projectLocales.find(locale => locale.isPrimary);
+  const defaultProjectPrimaryLocale = projectLocales.find(
+    (locale) => locale.isPrimary,
+  );
 
-  const resources: PackageResourcePreview[] = importableResources.map(resource => {
-    const conflictResource = resource.referenceId
-      ? targetByReferenceId.get(resource.referenceId)
-      : undefined;
-    const disabledReason = resource.type === 'largeLanguageModel' &&
-      isRetiredLlmModel(resource.properties?.modelType)
-      ? 'retired_model'
-      : undefined;
+  const resources: PackageResourcePreview[] = importableResources.map(
+    (resource) => {
+      const conflictResource = resource.referenceId
+        ? targetByReferenceId.get(resource.referenceId)
+        : undefined;
+      const disabledReason =
+        resource.type === "largeLanguageModel" &&
+        isRetiredLlmModel(resource.properties?.modelType)
+          ? "retired_model"
+          : undefined;
 
-    return {
-      id: resourceId(resource),
-      type: resource.type || 'unknown',
-      name: resourceName(resource),
-      ...(resource.referenceId ? { referenceId: resource.referenceId } : {}),
-      selectedByDefault: !disabledReason,
-      defaultStrategy: resource.type === 'knowledgeStore' ? 'replace' : 're-identify',
-      ...(disabledReason ? { disabledReason } : {}),
-      ...(conflictResource ? {
-        conflict: {
-          type: 'referenceId',
-          targetResourceId: resourceId(conflictResource),
-          targetResourceName: resourceName(conflictResource),
-        },
-      } : {}),
-    };
-  });
+      return {
+        id: resourceId(resource),
+        type: resource.type || "unknown",
+        name: resourceName(resource),
+        ...(resource.referenceId ? { referenceId: resource.referenceId } : {}),
+        selectedByDefault: !disabledReason,
+        defaultStrategy:
+          resource.type === "knowledgeStore" ? "replace" : "re-identify",
+        ...(disabledReason ? { disabledReason } : {}),
+        ...(conflictResource
+          ? {
+              conflict: {
+                type: "referenceId",
+                targetResourceId: resourceId(conflictResource),
+                targetResourceName: resourceName(conflictResource),
+              },
+            }
+          : {}),
+      };
+    },
+  );
 
   const defaultLocaleMapping = packageLocales
-    .filter(locale => locale.isPrimary)
-    .flatMap(locale => (
+    .filter((locale) => locale.isPrimary)
+    .flatMap((locale) =>
       defaultProjectPrimaryLocale
-        ? [{ packageLocaleId: locale.id, agentLocaleId: defaultProjectPrimaryLocale.id }]
-        : []
-    ));
+        ? [
+            {
+              packageLocaleId: locale.id,
+              agentLocaleId: defaultProjectPrimaryLocale.id,
+            },
+          ]
+        : [],
+    );
 
   return {
     project: {
@@ -254,11 +283,15 @@ export function buildPackageImportPreview(
     },
     summary: {
       resourceCount: resources.length,
-      selectedByDefaultCount: resources.filter(resource => resource.selectedByDefault).length,
-      disabledResourceCount: resources.filter(resource => !!resource.disabledReason).length,
-      hasFlows: resources.some(resource => resource.type === 'flow'),
+      selectedByDefaultCount: resources.filter(
+        (resource) => resource.selectedByDefault,
+      ).length,
+      disabledResourceCount: resources.filter(
+        (resource) => !!resource.disabledReason,
+      ).length,
+      hasFlows: resources.some((resource) => resource.type === "flow"),
       hasDuplicateKnowledgeStore: resources.some(
-        resource => resource.type === 'knowledgeStore' && !!resource.conflict,
+        (resource) => resource.type === "knowledgeStore" && !!resource.conflict,
       ),
     },
   };

@@ -23,10 +23,12 @@ Use `manage_packages` to import Cognigy package `.zip` files into a project.
 - Returns an import preview
 
 Required:
+
 - `projectId`
 - `filePath`
 
 Optional:
+
 - `timeoutMs`
 
 ### `inspect`
@@ -34,6 +36,7 @@ Optional:
 Returns the import preview for an already uploaded package.
 
 Required:
+
 - `projectId`
 - `packageId`
 
@@ -42,10 +45,12 @@ Required:
 Imports resources from the package into the target project.
 
 Required:
+
 - `projectId`
 - `packageId`
 
 Optional:
+
 - `resources`
 - `localeMapping`
 - `waitForCompletion`
@@ -60,6 +65,7 @@ If `localeMapping` is omitted, the preview default mapping is used.
 Reads a task and returns normalized status/progress.
 
 Required:
+
 - `projectId`
 - `taskId`
 

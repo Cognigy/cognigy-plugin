@@ -798,11 +798,13 @@ export const tools: ToolDefinition[] = [
         },
         filePath: {
           type: "string",
-          description: 'Absolute path to a local package `.zip` file. Required for upload_and_inspect.',
+          description:
+            "Absolute path to a local package `.zip` file. Required for upload_and_inspect.",
         },
         packageId: {
           type: "string",
-          description: "24-char hex package ID. Required for inspect and import.",
+          description:
+            "24-char hex package ID. Required for inspect and import.",
         },
         taskId: {
           type: "string",
@@ -810,22 +812,26 @@ export const tools: ToolDefinition[] = [
         },
         resources: {
           type: "array",
-          description: "Optional resource selections for import. If omitted, preview defaults are used.",
+          description:
+            "Optional resource selections for import. If omitted, preview defaults are used.",
           items: {
             type: "object",
             properties: {
               id: {
                 type: "string",
-                description: "24-char hex resource ID from the package preview.",
+                description:
+                  "24-char hex resource ID from the package preview.",
               },
               import: {
                 type: "boolean",
-                description: "Whether to import the resource. Default: true unless disabled in preview.",
+                description:
+                  "Whether to import the resource. Default: true unless disabled in preview.",
               },
               strategy: {
                 type: "string",
                 enum: ["replace", "re-identify"],
-                description: 'Conflict strategy. UI-parity only: "replace" or "re-identify".',
+                description:
+                  'Conflict strategy. UI-parity only: "replace" or "re-identify".',
               },
             },
             required: ["id"],
@@ -845,11 +851,13 @@ export const tools: ToolDefinition[] = [
         },
         waitForCompletion: {
           type: "boolean",
-          description: "When true (default), wait for merge completion during import.",
+          description:
+            "When true (default), wait for merge completion during import.",
         },
         timeoutMs: {
           type: "number",
-          description: "Polling/upload timeout in milliseconds. Default: 600000.",
+          description:
+            "Polling/upload timeout in milliseconds. Default: 600000.",
         },
       },
       required: ["operation", "projectId"],
