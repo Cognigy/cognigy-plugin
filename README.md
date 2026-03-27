@@ -4,7 +4,7 @@ A Model Context Protocol (MCP) server that connects your AI assistant to the [Co
 
 ## Features
 
-- **12 workflow tools** covering ~115 Cognigy API endpoints
+- **13 workflow tools** covering ~115 Cognigy API endpoints
 - **One-call agent setup**: creates Agent + Flow + AI Agent Job Node + REST Endpoint automatically
 - **Self-improvement loop**: talk to your agent, evaluate responses, update the job description, repeat
 - **Knowledge store support**: attach RAG knowledge stores to agents as tools
@@ -27,6 +27,7 @@ A Model Context Protocol (MCP) server that connects your AI assistant to the [Co
 | `update_tool`       | Write | Update an existing tool node's configuration                                               |
 | `manage_webchat`    | Write | Create or configure a Webchat v3 endpoint for website deployment                           |
 | `manage_flow_nodes` | Write | Create, update, delete, or list flow nodes for conversation logic                          |
+| `manage_packages`   | Write | Upload, inspect, and import Cognigy package zip files into a project                       |
 
 The server also includes built-in guides (MCP resources) that AI assistants automatically read for detailed workflows, field references, and troubleshooting.
 
@@ -174,6 +175,15 @@ List all my Cognigy projects and show which AI Agents exist in each one.
 ```
 
 Uses `list_resources` with `resourceType: 'project'` and `resourceType: 'agent'`.
+
+### 6. Import a package into a project
+
+```
+Upload the package at /absolute/path/to/support-bot.zip into project <projectId>,
+show me the import preview, then import it using the default selections.
+```
+
+Uses `manage_packages` with `operation: 'upload_and_inspect'`, then `operation: 'import'`.
 
 ## Security
 

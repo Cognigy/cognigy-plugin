@@ -772,6 +772,90 @@ export const tools: ToolDefinition[] = [
     },
   },
 
+  // 13. manage_packages
+  {
+    name: "manage_packages",
+    description:
+      'Import Cognigy package .zip files into a project through the same staged workflow used by the UI.\n\nThis tool is for PACKAGE IMPORT only. It reads a local `.zip` file from disk, uploads it to Cognigy, waits for extraction, inspects the package contents against the target project, and imports selected resources.\n\nOPERATIONS:\n- upload_and_inspect: upload a local package .zip, wait for extraction, then return the import preview\n- inspect: return the import preview for an already-uploaded packageId\n- import: merge selected package resources into the target project using UI-parity defaults\n- read_task: read task status and normalized progress for extraction/import tasks\n\nUI PARITY DEFAULTS:\n- locales are excluded from the importable resource list and handled via localeMapping\n- knowledge stores default to strategy "replace"\n- all other resources default to strategy "re-identify"\n- retired largeLanguageModel resources are disabled by default\n- import uses autoRename=true internally\n\nIMPORT BEHAVIOR:\n- If resources are omitted on import, the preview defaults are used.\n- If localeMapping is omitted, the default preview locale mapping is used.\n- By default, import waits for merge completion (waitForCompletion: true).',
+    annotations: {
+      title: "Manage Packages",
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    inputSchema: {
+      type: "object",
+      properties: {
+        operation: {
+          type: "string",
+          enum: ["upload_and_inspect", "inspect", "import", "read_task"],
+          description: "Package workflow operation to perform.",
+        },
+        projectId: {
+          type: "string",
+          description: "24-char hex project ID to import the package into.",
+        },
+        filePath: {
+          type: "string",
+          description: 'Absolute path to a local package `.zip` file. Required for upload_and_inspect.',
+        },
+        packageId: {
+          type: "string",
+          description: "24-char hex package ID. Required for inspect and import.",
+        },
+        taskId: {
+          type: "string",
+          description: "24-char hex task ID. Required for read_task.",
+        },
+        resources: {
+          type: "array",
+          description: "Optional resource selections for import. If omitted, preview defaults are used.",
+          items: {
+            type: "object",
+            properties: {
+              id: {
+                type: "string",
+                description: "24-char hex resource ID from the package preview.",
+              },
+              import: {
+                type: "boolean",
+                description: "Whether to import the resource. Default: true unless disabled in preview.",
+              },
+              strategy: {
+                type: "string",
+                enum: ["replace", "re-identify"],
+                description: 'Conflict strategy. UI-parity only: "replace" or "re-identify".',
+              },
+            },
+            required: ["id"],
+          },
+        },
+        localeMapping: {
+          type: "array",
+          description: "Optional locale mapping overrides for import.",
+          items: {
+            type: "object",
+            properties: {
+              packageLocaleId: { type: "string" },
+              agentLocaleId: { type: "string" },
+            },
+            required: ["packageLocaleId", "agentLocaleId"],
+          },
+        },
+        waitForCompletion: {
+          type: "boolean",
+          description: "When true (default), wait for merge completion during import.",
+        },
+        timeoutMs: {
+          type: "number",
+          description: "Polling/upload timeout in milliseconds. Default: 600000.",
+        },
+      },
+      required: ["operation", "projectId"],
+    },
+  },
+
   // 11. manage_webchat
   {
     name: "manage_webchat",

@@ -104,6 +104,10 @@
     {
       "name": "manage_flow_nodes",
       "description": "Create, update, delete, or list flow nodes for conversation logic"
+    },
+    {
+      "name": "manage_packages",
+      "description": "Upload, inspect, and import Cognigy package zip files into a project"
     }
   ],
   "tools_generated": false,

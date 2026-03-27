@@ -217,6 +217,61 @@ describe('talkToAgentSchema', () => {
   });
 });
 
+describe('managePackagesSchema', () => {
+  it('accepts upload_and_inspect input', () => {
+    const result = schemas.managePackagesSchema.parse({
+      operation: 'upload_and_inspect',
+      projectId: VALID_ID,
+      filePath: '/tmp/support-bot.zip',
+    });
+
+    expect(result.operation).toBe('upload_and_inspect');
+  });
+
+  it('accepts inspect input', () => {
+    const result = schemas.managePackagesSchema.parse({
+      operation: 'inspect',
+      projectId: VALID_ID,
+      packageId: VALID_ID,
+    });
+
+    expect(result.operation).toBe('inspect');
+  });
+
+  it('accepts import input', () => {
+    const result = schemas.managePackagesSchema.parse({
+      operation: 'import',
+      projectId: VALID_ID,
+      packageId: VALID_ID,
+      resources: [{ id: VALID_ID, strategy: 'replace' }],
+      localeMapping: [{ packageLocaleId: VALID_ID, agentLocaleId: VALID_ID }],
+      waitForCompletion: true,
+      timeoutMs: 5000,
+    });
+
+    expect(result.operation).toBe('import');
+  });
+
+  it('accepts read_task input', () => {
+    const result = schemas.managePackagesSchema.parse({
+      operation: 'read_task',
+      projectId: VALID_ID,
+      taskId: VALID_ID,
+    });
+
+    expect(result.operation).toBe('read_task');
+  });
+
+  it('rejects invalid import strategy', () => {
+    expect(() => schemas.managePackagesSchema.parse({
+      operation: 'import',
+      projectId: VALID_ID,
+      packageId: VALID_ID,
+      resources: [{ id: VALID_ID, strategy: 'abort' }],
+    })).toThrow();
+  });
+});
+
 describe('listResourcesSchema', () => {
   it('accepts valid resource type', () => {
     const result = schemas.listResourcesSchema.parse({

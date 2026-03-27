@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { mkdtempSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { CognigyApiClient } from '../api/client.js';
 import { ToolHandlers } from '../tools/handlers.js';
 
@@ -15,6 +18,9 @@ const ID = {
   tool: '60d5ec49f1a2c8b1a4e0f008',
   func: '60d5ec49f1a2c8b1a4e0f009',
   ext: '60d5ec49f1a2c8b1a4e0f00a',
+  pkg: '60d5ec49f1a2c8b1a4e0f00b',
+  task: '60d5ec49f1a2c8b1a4e0f00c',
+  task2: '60d5ec49f1a2c8b1a4e0f00d',
 };
 
 describe('ToolHandlers v2', () => {
@@ -28,6 +34,7 @@ describe('ToolHandlers v2', () => {
       patch: jest.fn(),
       delete: jest.fn(),
       put: jest.fn(),
+      uploadFile: jest.fn(),
     } as any;
     h = new ToolHandlers(api, 'https://endpoint-trial.cognigy.ai');
   });
@@ -1188,6 +1195,182 @@ describe('ToolHandlers v2', () => {
 
       expect(result.llmStatus).toBe('unknown');
       expect(result._hints).toBeDefined();
+    });
+  });
+
+  // =========================================================================
+  // manage_packages
+  // =========================================================================
+  describe('manage_packages', () => {
+    const makeGraph = () => ({
+      [ID.project]: {
+        _id: ID.project,
+        name: 'Target Project',
+        resources: [
+          { _id: '60d5ec49f1a2c8b1a4e0f101', type: 'locale', name: 'English', properties: { primary: true, nluLanguage: 'en' } },
+          { _id: '60d5ec49f1a2c8b1a4e0f102', type: 'flow', name: 'Existing Flow', referenceId: 'flow-ref-1' },
+          { _id: '60d5ec49f1a2c8b1a4e0f103', type: 'knowledgeStore', name: 'Existing Store', referenceId: 'ks-ref-1' },
+        ],
+      },
+      [ID.pkg]: {
+        _id: ID.pkg,
+        name: 'Support Package',
+        resources: [
+          { _id: '60d5ec49f1a2c8b1a4e0f201', type: 'locale', name: 'Package English', properties: { primary: true, nluLanguage: 'en' } },
+          { _id: '60d5ec49f1a2c8b1a4e0f202', type: 'flow', name: 'Imported Flow', referenceId: 'flow-ref-1' },
+          { _id: '60d5ec49f1a2c8b1a4e0f203', type: 'knowledgeStore', name: 'Imported Store', referenceId: 'ks-ref-1' },
+          { _id: '60d5ec49f1a2c8b1a4e0f204', type: 'largeLanguageModel', name: 'Legacy GPT', properties: { modelType: 'gpt-4' } },
+        ],
+      },
+    });
+
+    it('uploads a package and returns import preview', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'cognigy-mcp-packages-'));
+      const filePath = join(dir, 'support-bot.zip');
+      writeFileSync(filePath, 'zip-content');
+
+      api.uploadFile.mockResolvedValueOnce({ _id: ID.task });
+      api.get
+        .mockResolvedValueOnce({
+          _id: ID.task,
+          name: 'extractPackage',
+          status: 'done',
+          currentStep: 2,
+          totalStep: 2,
+          data: { packageId: ID.pkg },
+        })
+        .mockResolvedValueOnce(makeGraph());
+
+      const result = await h.handleToolCall('manage_packages', {
+        operation: 'upload_and_inspect',
+        projectId: ID.project,
+        filePath,
+      });
+
+      expect(api.uploadFile).toHaveBeenCalled();
+      expect(result.operation).toBe('upload_and_inspect');
+      expect(result.package.id).toBe(ID.pkg);
+      expect(result.resources).toHaveLength(3);
+      expect(result.resources.find((resource: any) => resource.type === 'knowledgeStore').defaultStrategy).toBe('replace');
+      expect(result.resources.find((resource: any) => resource.type === 'largeLanguageModel').disabledReason).toBe('retired_model');
+      expect(result.locales.defaultLocaleMapping).toEqual([
+        {
+          packageLocaleId: '60d5ec49f1a2c8b1a4e0f201',
+          agentLocaleId: '60d5ec49f1a2c8b1a4e0f101',
+        },
+      ]);
+    });
+
+    it('rejects non-zip files during upload_and_inspect', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'cognigy-mcp-packages-'));
+      const filePath = join(dir, 'support-bot.txt');
+      writeFileSync(filePath, 'not-a-zip');
+
+      await expect(h.handleToolCall('manage_packages', {
+        operation: 'upload_and_inspect',
+        projectId: ID.project,
+        filePath,
+      })).rejects.toThrow('Only .zip files are supported');
+    });
+
+    it('returns preview for inspect operation', async () => {
+      api.get.mockResolvedValueOnce(makeGraph());
+
+      const result = await h.handleToolCall('manage_packages', {
+        operation: 'inspect',
+        projectId: ID.project,
+        packageId: ID.pkg,
+      });
+
+      expect(result.operation).toBe('inspect');
+      expect(result.summary.hasFlows).toBe(true);
+      expect(result.summary.hasDuplicateKnowledgeStore).toBe(true);
+      expect(result.resources.find((resource: any) => resource.type === 'flow').conflict.targetResourceName).toBe('Existing Flow');
+    });
+
+    it('translates import selections into merge payload and waits for completion by default', async () => {
+      api.get
+        .mockResolvedValueOnce(makeGraph())
+        .mockResolvedValueOnce({
+          _id: ID.task2,
+          name: 'mergePackage',
+          status: 'done',
+          currentStep: 1,
+          totalStep: 1,
+          data: {},
+        });
+      api.post.mockResolvedValueOnce({ _id: ID.task2 });
+
+      const result = await h.handleToolCall('manage_packages', {
+        operation: 'import',
+        projectId: ID.project,
+        packageId: ID.pkg,
+        resources: [
+          { id: '60d5ec49f1a2c8b1a4e0f202', strategy: 'replace' },
+          { id: '60d5ec49f1a2c8b1a4e0f203', import: false },
+          { id: '60d5ec49f1a2c8b1a4e0f204', import: false },
+        ],
+        localeMapping: [
+          {
+            packageLocaleId: '60d5ec49f1a2c8b1a4e0f201',
+            agentLocaleId: '60d5ec49f1a2c8b1a4e0f101',
+          },
+        ],
+      });
+
+      expect(api.post).toHaveBeenCalledWith(`/new/v2.0/packages/${ID.pkg}/merge`, {
+        resourceIds: ['60d5ec49f1a2c8b1a4e0f202'],
+        strategies: [
+          {
+            _id: '60d5ec49f1a2c8b1a4e0f202',
+            autoRename: true,
+            identityConflictStrategy: 'replace',
+          },
+        ],
+        localeMapping: [
+          {
+            packageLocaleId: '60d5ec49f1a2c8b1a4e0f201',
+            agentLocaleId: '60d5ec49f1a2c8b1a4e0f101',
+          },
+        ],
+      });
+      expect(result.task.status).toBe('done');
+    });
+
+    it('returns queued task when import does not wait for completion', async () => {
+      api.get.mockResolvedValueOnce(makeGraph());
+      api.post.mockResolvedValueOnce({ _id: ID.task2 });
+
+      const result = await h.handleToolCall('manage_packages', {
+        operation: 'import',
+        projectId: ID.project,
+        packageId: ID.pkg,
+        waitForCompletion: false,
+      });
+
+      expect(result.task.id).toBe(ID.task2);
+      expect(result.task.status).toBe('queued');
+    });
+
+    it('reads and normalizes task status', async () => {
+      api.get.mockResolvedValueOnce({
+        _id: ID.task,
+        name: 'mergePackage',
+        status: 'active',
+        currentStep: 2,
+        totalStep: 4,
+        failReason: null,
+        data: { packageId: ID.pkg },
+      });
+
+      const result = await h.handleToolCall('manage_packages', {
+        operation: 'read_task',
+        projectId: ID.project,
+        taskId: ID.task,
+      });
+
+      expect(result.task.progress).toBe(0.5);
+      expect(result.task.status).toBe('active');
     });
   });
 

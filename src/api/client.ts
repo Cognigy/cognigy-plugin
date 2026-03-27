@@ -1,3 +1,4 @@
+import { ReadStream } from 'fs';
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 import FormData from 'form-data';
 import { logger } from '../utils/logger.js';
@@ -128,12 +129,13 @@ export class CognigyApiClient {
 
   async uploadFile<T = any>(
     url: string,
-    fileBuffer: Buffer,
+    fileData: Buffer | ReadStream,
     fileName: string,
     extraFields?: Record<string, string>,
+    options?: { timeoutMs?: number },
   ): Promise<T> {
     const form = new FormData();
-    form.append('file', fileBuffer, { filename: fileName });
+    form.append('file', fileData, { filename: fileName });
     if (extraFields) {
       for (const [key, value] of Object.entries(extraFields)) {
         form.append(key, value);
@@ -144,7 +146,7 @@ export class CognigyApiClient {
         ...form.getHeaders(),
         'X-API-Key': this.apiKey,
       },
-      timeout: 120000,
+      timeout: options?.timeoutMs ?? 120000,
     });
     return response.data;
   }

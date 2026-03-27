@@ -63,6 +63,11 @@ const RESOURCE_MAP: Record<string, { name: string; description: string; file: st
     description: 'Supported flow node types, config schemas, placement rules, and examples for manage_flow_nodes',
     file: 'flow-nodes.md',
   },
+  'cognigy://guide/package-management': {
+    name: 'Package Management Guide',
+    description: 'How to upload, inspect, and import Cognigy package zip files into a project',
+    file: 'package-management.md',
+  },
 };
 
 async function main() {

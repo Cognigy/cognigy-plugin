@@ -168,6 +168,46 @@ export const manageFlowNodesSchema = z.object({
   config: z.record(z.any()).optional(),
 });
 
+// Tool 13: manage_packages
+const packageResourceSelectionSchema = z.object({
+  id: idSchema,
+  import: z.boolean().optional(),
+  strategy: z.enum(['replace', 're-identify']).optional(),
+});
+
+const packageLocaleMappingSchema = z.object({
+  packageLocaleId: idSchema,
+  agentLocaleId: idSchema,
+});
+
+export const managePackagesSchema = z.discriminatedUnion('operation', [
+  z.object({
+    operation: z.literal('upload_and_inspect'),
+    projectId: idSchema,
+    filePath: z.string().min(1),
+    timeoutMs: z.number().int().min(1000).max(3600000).optional(),
+  }),
+  z.object({
+    operation: z.literal('inspect'),
+    projectId: idSchema,
+    packageId: idSchema,
+  }),
+  z.object({
+    operation: z.literal('import'),
+    projectId: idSchema,
+    packageId: idSchema,
+    resources: z.array(packageResourceSelectionSchema).optional(),
+    localeMapping: z.array(packageLocaleMappingSchema).optional(),
+    waitForCompletion: z.boolean().optional(),
+    timeoutMs: z.number().int().min(1000).max(3600000).optional(),
+  }),
+  z.object({
+    operation: z.literal('read_task'),
+    projectId: idSchema,
+    taskId: idSchema,
+  }),
+]);
+
 // Tool 11: manage_webchat
 
 const conversationStarterSchema = z.object({

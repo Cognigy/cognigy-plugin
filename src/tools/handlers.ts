@@ -1,5 +1,5 @@
-import { readFileSync, existsSync } from 'fs';
-import { basename } from 'path';
+import { createReadStream, readFileSync, existsSync, statSync } from 'fs';
+import { basename, isAbsolute } from 'path';
 import { randomUUID } from 'crypto';
 import axios from 'axios';
 import { CognigyApiClient } from '../api/client.js';
@@ -8,6 +8,7 @@ import { filterResponse, filterList, withHints } from './filters.js';
 import { buildWebchatSettings, deepMerge } from './webchatSettings.js';
 import { getNodeEntry, supportedNodeTypes } from './nodeRegistry.js';
 import * as schemas from '../schemas/tools.js';
+import { buildPackageImportPreview, normalizeTask } from './packageImport.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -388,6 +389,8 @@ async function resolveFlowForAgent(
 
 export class ToolHandlers {
   private static readonly SENSITIVE_KEYS = new Set(['apiKey', 'headers', 'body', 'preProcessCode', 'postProcessCode']);
+  private static readonly DEFAULT_PACKAGE_TIMEOUT_MS = 600000;
+  private static readonly TASK_POLL_INTERVAL_MS = 3000;
 
   constructor(
     private apiClient: CognigyApiClient,
@@ -401,6 +404,307 @@ export class ToolHandlers {
       result[key] = ToolHandlers.SENSITIVE_KEYS.has(key) ? '[REDACTED]' : value;
     }
     return result;
+  }
+
+  private async readTask(taskId: string, projectId?: string): Promise<any> {
+    return this.apiClient.get(`/new/v2.0/tasks/${taskId}`, {
+      ...(projectId ? { params: { projectId } } : {}),
+    });
+  }
+
+  private async waitForTask(
+    taskId: string,
+    projectId: string,
+    timeoutMs = ToolHandlers.DEFAULT_PACKAGE_TIMEOUT_MS,
+  ): Promise<{ task: any; timedOut: boolean }> {
+    const startedAt = Date.now();
+    let task = await this.readTask(taskId, projectId);
+
+    while (task && (task.status === 'queued' || task.status === 'active')) {
+      if (Date.now() - startedAt >= timeoutMs) {
+        return { task, timedOut: true };
+      }
+
+      await new Promise(resolve => setTimeout(resolve, ToolHandlers.TASK_POLL_INTERVAL_MS));
+      task = await this.readTask(taskId, projectId);
+    }
+
+    if (!task) {
+      throw new Error(`Task ${taskId} could not be read`);
+    }
+
+    if (task.status === 'error') {
+      throw new Error(task.failReason || `Task ${taskId} failed`);
+    }
+
+    if (task.status === 'cancelled' || task.status === 'cancelling') {
+      throw new Error(`Task ${taskId} was cancelled`);
+    }
+
+    if (task.status !== 'done') {
+      throw new Error(`Task ${taskId} ended with unexpected status "${task.status}"`);
+    }
+
+    return { task, timedOut: false };
+  }
+
+  private resolvePackageFilePath(filePath: string): string {
+    const resolvedPath = filePath.startsWith('~')
+      ? filePath.replace(/^~/, process.env.HOME || '')
+      : filePath;
+
+    if (!isAbsolute(resolvedPath)) {
+      throw new Error('filePath must be an absolute path to a local .zip file');
+    }
+
+    if (!existsSync(resolvedPath)) {
+      throw new Error(`File not found: ${resolvedPath}`);
+    }
+
+    if (!resolvedPath.toLowerCase().endsWith('.zip')) {
+      throw new Error(`Unsupported package file "${resolvedPath}". Only .zip files are supported.`);
+    }
+
+    const stats = statSync(resolvedPath);
+    if (!stats.isFile()) {
+      throw new Error(`Path is not a file: ${resolvedPath}`);
+    }
+
+    if (stats.size === 0) {
+      throw new Error(`File is empty: ${resolvedPath}`);
+    }
+
+    return resolvedPath;
+  }
+
+  private async getPackagePreview(projectId: string, packageId: string): Promise<any> {
+    const graph: any = await this.apiClient.get(`/new/v2.0/projects/${projectId}/graph`, {
+      params: { packages: true },
+    });
+
+    return buildPackageImportPreview(projectId, packageId, {
+      [projectId]: graph?.[projectId],
+      [packageId]: graph?.[packageId],
+    });
+  }
+
+  private buildImportPayload(preview: any, data: any): {
+    resourceIds: string[];
+    strategies: Array<{ _id: string; autoRename: true; identityConflictStrategy: 'replace' | 're-identify' }>;
+    localeMapping: Array<{ packageLocaleId: string; agentLocaleId: string }>;
+  } {
+    const previewResourceMap = new Map<string, any>(
+      preview.resources.map((resource: any) => [resource.id, resource]),
+    );
+    const requestedSelections = new Map<string, any>(
+      (data.resources ?? []).map((resource: any) => [resource.id, resource]),
+    );
+
+    const mergedSelections = preview.resources.map((resource: any) => {
+      const requested = requestedSelections.get(resource.id);
+      const shouldImport = requested?.import ?? resource.selectedByDefault;
+      const strategy = requested?.strategy ?? resource.defaultStrategy;
+
+      if (resource.disabledReason && shouldImport) {
+        throw new Error(`Resource ${resource.id} (${resource.name}) cannot be imported: ${resource.disabledReason}`);
+      }
+
+      return {
+        id: resource.id,
+        type: resource.type,
+        import: shouldImport,
+        strategy,
+      };
+    });
+
+    for (const requested of data.resources ?? []) {
+      if (!previewResourceMap.has(requested.id)) {
+        throw new Error(`Resource ${requested.id} is not present in the package preview`);
+      }
+    }
+
+    const selectedResources = mergedSelections.filter((resource: any) => resource.import);
+    if (selectedResources.length === 0) {
+      throw new Error('At least one package resource must be selected for import');
+    }
+
+    const requiresLocaleMapping =
+      selectedResources.some((resource: any) => resource.type === 'flow') &&
+      preview.locales.packageLocales.length > 0;
+
+    const packageLocaleIds = new Set(preview.locales.packageLocales.map((locale: any) => locale.id));
+    const agentLocaleIds = new Set(preview.locales.projectLocales.map((locale: any) => locale.id));
+    const localeMapping = data.localeMapping ?? preview.locales.defaultLocaleMapping;
+
+    for (const mapping of localeMapping) {
+      if (!packageLocaleIds.has(mapping.packageLocaleId)) {
+        throw new Error(`Unknown packageLocaleId in localeMapping: ${mapping.packageLocaleId}`);
+      }
+      if (!agentLocaleIds.has(mapping.agentLocaleId)) {
+        throw new Error(`Unknown agentLocaleId in localeMapping: ${mapping.agentLocaleId}`);
+      }
+    }
+
+    const mappedAgentLocaleIds = new Set<string>();
+    for (const mapping of localeMapping) {
+      if (mappedAgentLocaleIds.has(mapping.agentLocaleId)) {
+        throw new Error(`Duplicate locale mapping target: ${mapping.agentLocaleId}`);
+      }
+      mappedAgentLocaleIds.add(mapping.agentLocaleId);
+    }
+
+    if (requiresLocaleMapping && localeMapping.length === 0) {
+      throw new Error('localeMapping is required when importing flows from a package with locales');
+    }
+
+    const primaryPackageLocale = preview.locales.packageLocales.find((locale: any) => locale.isPrimary);
+    if (requiresLocaleMapping && primaryPackageLocale) {
+      const hasPrimaryMapping = localeMapping.some(
+        (mapping: any) => mapping.packageLocaleId === primaryPackageLocale.id,
+      );
+      if (!hasPrimaryMapping) {
+        throw new Error('The primary package locale must be mapped before importing flows');
+      }
+    }
+
+    return {
+      resourceIds: selectedResources.map((resource: any) => resource.id),
+      strategies: selectedResources.map((resource: any) => ({
+        _id: resource.id,
+        autoRename: true as const,
+        identityConflictStrategy: resource.strategy,
+      })),
+      localeMapping,
+    };
+  }
+
+  // =========================================================================
+  // Tool 13: manage_packages
+  // =========================================================================
+  async handleManagePackages(args: any): Promise<any> {
+    const data = schemas.managePackagesSchema.parse(args);
+
+    switch (data.operation) {
+      case 'upload_and_inspect': {
+        const timeoutMs = data.timeoutMs ?? ToolHandlers.DEFAULT_PACKAGE_TIMEOUT_MS;
+        const resolvedPath = this.resolvePackageFilePath(data.filePath);
+        const fileName = basename(resolvedPath);
+        const uploadResponse: any = await this.apiClient.uploadFile(
+          '/new/v2.0/packages/upload',
+          createReadStream(resolvedPath),
+          fileName,
+          { projectId: data.projectId },
+          { timeoutMs },
+        );
+
+        const taskId = uploadResponse?._id ?? uploadResponse?.id;
+        if (!taskId) {
+          throw new Error('Package upload did not return a task ID');
+        }
+
+        const { task, timedOut } = await this.waitForTask(taskId, data.projectId, timeoutMs);
+        const normalizedTask = normalizeTask(task);
+
+        if (timedOut || normalizedTask.status !== 'done' || !normalizedTask.data?.packageId) {
+          return withHints(
+            {
+              operation: 'upload_and_inspect',
+              projectId: data.projectId,
+              uploadTaskId: taskId,
+              task: normalizedTask,
+              timedOutWaiting: timedOut,
+            },
+            {
+              warning: 'Package upload succeeded, but extraction is still running.',
+              action: `Use manage_packages { operation: "read_task", projectId: "${data.projectId}", taskId: "${taskId}" } until the task is done, then call inspect with the packageId.`,
+            },
+          );
+        }
+
+        const preview = await this.getPackagePreview(data.projectId, normalizedTask.data.packageId);
+        return {
+          operation: 'upload_and_inspect',
+          projectId: data.projectId,
+          uploadTaskId: taskId,
+          task: normalizedTask,
+          ...preview,
+        };
+      }
+
+      case 'inspect': {
+        const preview = await this.getPackagePreview(data.projectId, data.packageId);
+        return {
+          operation: 'inspect',
+          projectId: data.projectId,
+          ...preview,
+        };
+      }
+
+      case 'import': {
+        const timeoutMs = data.timeoutMs ?? ToolHandlers.DEFAULT_PACKAGE_TIMEOUT_MS;
+        const preview = await this.getPackagePreview(data.projectId, data.packageId);
+        const payload = this.buildImportPayload(preview, data);
+        const response: any = await this.apiClient.post(
+          `/new/v2.0/packages/${data.packageId}/merge`,
+          payload,
+        );
+
+        const taskId = response?._id ?? response?.id;
+        if (!taskId) {
+          throw new Error('Package import did not return a task ID');
+        }
+
+        if (data.waitForCompletion === false) {
+          return {
+            operation: 'import',
+            projectId: data.projectId,
+            packageId: data.packageId,
+            task: {
+              id: taskId,
+              name: 'mergePackage',
+              status: 'queued',
+              currentStep: 0,
+              totalStep: 0,
+              progress: 0,
+              failReason: null,
+              data: null,
+            },
+            selectedResourceCount: payload.resourceIds.length,
+            localeMappingCount: payload.localeMapping.length,
+          };
+        }
+
+        const { task, timedOut } = await this.waitForTask(taskId, data.projectId, timeoutMs);
+        const normalizedTask = normalizeTask(task);
+        const result = {
+          operation: 'import',
+          projectId: data.projectId,
+          packageId: data.packageId,
+          task: normalizedTask,
+          selectedResourceCount: payload.resourceIds.length,
+          localeMappingCount: payload.localeMapping.length,
+          ...(timedOut ? { timedOutWaiting: true } : {}),
+        };
+
+        if (timedOut) {
+          return withHints(result, {
+            warning: 'Package import is still running.',
+            action: `Use manage_packages { operation: "read_task", projectId: "${data.projectId}", taskId: "${taskId}" } to continue polling the import task.`,
+          });
+        }
+
+        return result;
+      }
+
+      case 'read_task': {
+        const task = await this.readTask(data.taskId, data.projectId);
+        return {
+          operation: 'read_task',
+          projectId: data.projectId,
+          task: normalizeTask(task),
+        };
+      }
+    }
   }
 
   // =========================================================================
@@ -2438,6 +2742,9 @@ export class ToolHandlers {
           break;
         case 'manage_flow_nodes':
           result = await this.handleManageFlowNodes(args);
+          break;
+        case 'manage_packages':
+          result = await this.handleManagePackages(args);
           break;
         case 'manage_webchat':
           result = await this.handleManageWebchat(args);
