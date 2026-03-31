@@ -22,6 +22,7 @@
     "test:init-local": "bash scripts/test-local-init.sh",
     "prettier:check": "prettier --check",
     "prettier:write": "prettier --write",
+    "cl:preview": "conventional-changelog -p conventionalcommits -u",
     "lint": "eslint src --ext .ts",
     "setup": "bash scripts/setup.sh",
     "test-connection": "bash scripts/test-connection.sh",
@@ -45,10 +46,14 @@
     "zod": "3.25.76"
   },
   "devDependencies": {
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
     "@types/jest": "29.5.14",
     "@types/node": "20.19.35",
     "@typescript-eslint/eslint-plugin": "6.21.0",
     "@typescript-eslint/parser": "6.21.0",
+    "conventional-changelog-cli": "^5.0.0",
+    "conventional-changelog-conventionalcommits": "^9.3.1",
     "eslint": "8.57.1",
     "jest": "29.7.0",
     "prettier": "3.6.2",

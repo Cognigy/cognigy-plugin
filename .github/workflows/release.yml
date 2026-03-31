@@ -98,6 +98,10 @@ jobs:
           echo "old=$OLD_VERSION" >> "$GITHUB_OUTPUT"
           echo "new=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Generate changelog
+        if: steps.bump_type.outputs.value != ''
+        run: npx conventional-changelog -p conventionalcommits -i CHANGELOG.md -s -r 0
+
       - name: Publish to npm
         if: steps.bump_type.outputs.value != ''
         run: npm publish --access public
@@ -111,10 +115,28 @@ jobs:
       - name: Commit version bump and tag
         if: steps.bump_type.outputs.value != ''
         run: |
-          git add package.json manifest.json
+          git add package.json manifest.json CHANGELOG.md
           git commit -m "release: v${{ steps.version.outputs.new }}"
           git tag "v${{ steps.version.outputs.new }}"
           git push origin main --tags
+
+      - name: Extract changelog for this version
+        if: steps.bump_type.outputs.value != ''
+        id: changelog
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
+            const version = '${{ steps.version.outputs.new }}';
+
+            // Extract the section for this version (between two ## headings)
+            const versionEscaped = version.replace(/\./g, '\\.');
+            const regex = new RegExp(`## \\[?${versionEscaped}\\]?[^\\n]*\\n([\\s\\S]*?)(?=\\n## |$)`);
+            const match = changelog.match(regex);
+            const section = match ? match[1].trim() : '';
+
+            core.setOutput('body', section);
 
       - name: Create GitHub release with MCPB bundle
         if: steps.bump_type.outputs.value != ''
@@ -125,6 +147,7 @@ jobs:
 
             const tag = `v${{ steps.version.outputs.new }}`;
             const version = `${{ steps.version.outputs.new }}`;
+            const changelogBody = `${{ steps.changelog.outputs.body }}`;
 
             const release = await github.rest.repos.createRelease({
               owner: context.repo.owner,
@@ -133,6 +156,10 @@ jobs:
               name: tag,
               body: [
                 `## @cognigy/mcp-server@${version}`,
+                '',
+                changelogBody,
+                '',
+                '---',
                 '',
                 '### Install',
                 '',
