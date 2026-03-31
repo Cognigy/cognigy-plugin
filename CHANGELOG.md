@@ -51,4 +51,10 @@
 
 ## [0.1.3](https://github.com/Cognigy/cognigy-mcp/compare/v0.1.2...v0.1.3) (2026-03-04)
 
+<<<<<<< HEAD
 ## 0.1.2 (2026-03-04)
+=======
+## [0.1.2](https://github.com/Cognigy/cognigy-mcp/compare/v0.1.1...v0.1.2) (2026-03-04)
+
+## 0.1.1 (2026-03-04)
+>>>>>>> 05bb38b (release: backfill CHANGELOG.md with generated entries)
