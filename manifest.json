@@ -1,10 +1,17 @@
 {
   "manifest_version": "0.3",
-  "name": "cognigy-mcp-server",
-  "display_name": "Cognigy AI Agent MCP Server",
+  "name": "nice-cognigy-mcp-server",
+  "display_name": "NiCE Cognigy MCP Server",
   "version": "0.2.12",
-  "description": "Connect your AI assistant to Cognigy.AI — create, test, and improve LLM-based AI Agents through a self-improvement loop.",
-  "long_description": "A Model Context Protocol server that exposes the Cognigy.AI API through focused, purpose-built tools for LLM-based AI Agents.\n\nCreate a complete AI Agent setup in one tool call (Agent + Flow + Job Node + Endpoint), configure LLMs, attach knowledge stores and tools, deploy to Webchat, then talk to it, evaluate responses, and iterate until it's perfect.\n\nSupports: AI Agent creation and configuration, LLM setup, knowledge management (RAG), tool creation (HTTP, MCP, email, knowledge), flow node editing, Webchat v3 deployment, and direct agent testing via REST endpoints.",
+  "description": "Create, test, and manage AI Agents in the NiCE Cognigy platform",
+  "long_description": "An MCP server that lets you create and manage AI Agents in NiCE Cognigy directly from Claude.\n\nBuild agents from scratch, configure LLMs, connect knowledge and tools, then deploy to webchat, evaluate performance, and iterate quickly. Go from idea to AI Agents faster and experiment with building, testing, and refining.\n\nSupports: Al Agent creation and configuration, LLM setup, knowledge management (RAG), tool creation (HTTP, MCP, email, knowledge), flow node editing, webchat deployment, and direct Agent testing via REST endpoints.",
+  "icon": "assets/claude-icon.png",
+  "icons": [
+    {
+      "src": "assets/claude-icon.png",
+      "size": "1177x1177"
+    }
+  ],
   "author": {
     "name": "Cognigy",
     "url": "https://www.cognigy.com"
@@ -14,26 +21,16 @@
     "url": "https://github.com/Cognigy/cognigy-mcp.git"
   },
   "homepage": "https://www.cognigy.com",
-  "support": "https://github.com/Cognigy/cognigy-mcp/issues",
+  "support": "https://docs.cognigy.com",
   "license": "MIT",
-  "privacy_policies": [
-    "https://www.cognigy.com/privacy-policy"
-  ],
-  "keywords": [
-    "cognigy",
-    "ai-agents",
-    "conversational-ai",
-    "mcp",
-    "llm"
-  ],
+  "privacy_policies": ["https://trust.cognigy.com"],
+  "keywords": ["cognigy", "ai-agents", "conversational-ai", "mcp", "llm"],
   "server": {
     "type": "node",
     "entry_point": "dist/index.js",
     "mcp_config": {
       "command": "node",
-      "args": [
-        "${__dirname}/dist/index.js"
-      ],
+      "args": ["${__dirname}/dist/index.js"],
       "env": {
         "COGNIGY_API_BASE_URL": "${user_config.cognigy_api_base_url}",
         "COGNIGY_API_KEY": "${user_config.cognigy_api_key}"
@@ -104,14 +101,15 @@
     {
       "name": "manage_flow_nodes",
       "description": "Create, update, delete, or list flow nodes for conversation logic"
+    },
+    {
+      "name": "manage_packages",
+      "description": "Upload, inspect, and import Cognigy package zip files into a project"
     }
   ],
   "tools_generated": false,
   "compatibility": {
-    "platforms": [
-      "darwin",
-      "win32"
-    ],
+    "platforms": ["darwin", "win32"],
     "runtimes": {
       "node": ">=20.0.0"
     }
