@@ -1,4 +1,4 @@
 dist
 node_modules
 *.mcpb
-.claude/skills/**/templates/
+.claude/skills/
