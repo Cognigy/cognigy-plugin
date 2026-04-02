@@ -213,7 +213,13 @@ const packageLocaleMappingSchema = z.object({
   agentLocaleId: idSchema,
 });
 
+const packageResourceIdsSchema = z.array(idSchema).min(1);
+
 export const managePackagesSchema = z.discriminatedUnion("operation", [
+  z.object({
+    operation: z.literal("list_exportable"),
+    projectId: idSchema,
+  }),
   z.object({
     operation: z.literal("upload_and_inspect"),
     projectId: idSchema,
@@ -233,6 +239,24 @@ export const managePackagesSchema = z.discriminatedUnion("operation", [
     localeMapping: z.array(packageLocaleMappingSchema).optional(),
     waitForCompletion: z.boolean().optional(),
     timeoutMs: z.number().int().min(1000).max(3600000).optional(),
+  }),
+  z.object({
+    operation: z.literal("export"),
+    projectId: idSchema,
+    resourceIds: packageResourceIdsSchema,
+    dependencyResourceIds: z.array(idSchema).optional(),
+    includeDependencies: z.boolean().optional(),
+    name: z.string().min(1).max(200),
+    description: z.string().optional(),
+    outputPath: z.string().min(1).optional(),
+    waitForCompletion: z.boolean().optional(),
+    timeoutMs: z.number().int().min(1000).max(3600000).optional(),
+  }),
+  z.object({
+    operation: z.literal("download"),
+    projectId: idSchema,
+    packageId: idSchema,
+    outputPath: z.string().min(1).optional(),
   }),
   z.object({
     operation: z.literal("read_task"),

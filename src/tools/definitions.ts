@@ -232,7 +232,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "list_resources",
     description:
-      "List resources in a Cognigy project. Use this to discover projects, agents, flows, endpoints, LLM models, knowledge stores, conversations, extensions, functions, or tools.\n\nSet resourceType to 'project' to find projectIds (no projectId needed). 'tool' requires aiAgentId instead of projectId. All other types require projectId.\n\nReturns a paginated list with id, name, and type-specific fields.",
+      "List resources in a Cognigy project. Use this to discover projects, agents, flows, endpoints, LLM models, knowledge stores, conversations, extensions, functions, or tools.\n\nSet resourceType to 'project' to find projectIds (no projectId needed). 'tool' requires aiAgentId instead of projectId. All other types require projectId. Packages are handled through manage_packages.\n\nReturns a paginated list with id, name, and type-specific fields.",
     annotations: {
       title: "List Resources",
       readOnlyHint: true,
@@ -776,7 +776,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "manage_packages",
     description:
-      'Import Cognigy package .zip files into a project through the same staged workflow used by the UI.\n\nThis tool is for PACKAGE IMPORT only. It reads a local `.zip` file from disk, uploads it to Cognigy, waits for extraction, inspects the package contents against the target project, and imports selected resources.\n\nOPERATIONS:\n- upload_and_inspect: upload a local package .zip, wait for extraction, then return the import preview\n- inspect: return the import preview for an already-uploaded packageId\n- import: merge selected package resources into the target project using UI-parity defaults\n- read_task: read task status and normalized progress for extraction/import tasks\n\nUI PARITY DEFAULTS:\n- locales are excluded from the importable resource list and handled via localeMapping\n- knowledge stores default to strategy "replace"\n- all other resources default to strategy "re-identify"\n- retired largeLanguageModel resources are disabled by default\n- import uses autoRename=true internally\n\nIMPORT BEHAVIOR:\n- If resources are omitted on import, the preview defaults are used.\n- If localeMapping is omitted, the default preview locale mapping is used.\n- By default, import waits for merge completion (waitForCompletion: true).',
+      'Import and export Cognigy package `.zip` files through the same staged workflow used by the UI.\n\nDISCOVERY OPERATION:\n- list_exportable: list the project resources that can be packaged for export, including UI-parity export candidates such as flows, endpoints, knowledge stores, AI agents, and LLM models\n\nIMPORT OPERATIONS:\n- upload_and_inspect: upload a local package `.zip`, wait for extraction, then return the import preview\n- inspect: return the import preview for an already-uploaded packageId\n- import: merge selected package resources into the target project using UI-parity defaults\n\nEXPORT OPERATIONS:\n- export: create a package from project resources, optionally include dependencies, wait for packaging, and save the `.zip` locally\n- download: download an existing package `.zip` with MCP authentication and save it locally\n\nTASK OPERATION:\n- read_task: read task status and normalized progress for extraction, import, or export tasks\n\nUI PARITY DEFAULTS:\n- locales are excluded from the importable resource list and handled via localeMapping\n- knowledge stores default to strategy "replace" during import\n- all other import resources default to strategy "re-identify"\n- export includes detected dependencies by default unless dependencyResourceIds are provided\n- retired largeLanguageModel resources are disabled by default for import and skipped for export\n- exports append a timestamp suffix to the package name for UI parity\n- imports always use autoRename=true internally\n\nBEHAVIOR:\n- If import resources are omitted, the preview defaults are used.\n- If localeMapping is omitted, the preview default mapping is used.\n- If export dependencyResourceIds are omitted, all detected dependencies are included by default.\n- If outputPath is omitted for export or download, the package is saved to a local temp path because the raw download URL requires authentication.\n- Export and download responses include the absolute saved file path plus file:// URIs for both the archive and its containing directory.\n- When presenting saved locations to users, show local paths and file:// URIs verbatim; do not abbreviate them with ellipses.\n- By default, import and export wait for task completion (waitForCompletion: true).',
     annotations: {
       title: "Manage Packages",
       readOnlyHint: false,
@@ -789,12 +789,21 @@ export const tools: ToolDefinition[] = [
       properties: {
         operation: {
           type: "string",
-          enum: ["upload_and_inspect", "inspect", "import", "read_task"],
+          enum: [
+            "list_exportable",
+            "upload_and_inspect",
+            "inspect",
+            "import",
+            "export",
+            "download",
+            "read_task",
+          ],
           description: "Package workflow operation to perform.",
         },
         projectId: {
           type: "string",
-          description: "24-char hex project ID to import the package into.",
+          description:
+            "24-char hex project ID for the package import/export workflow.",
         },
         filePath: {
           type: "string",
@@ -804,11 +813,42 @@ export const tools: ToolDefinition[] = [
         packageId: {
           type: "string",
           description:
-            "24-char hex package ID. Required for inspect and import.",
+            "24-char hex package ID. Required for inspect, import, and download.",
         },
         taskId: {
           type: "string",
           description: "24-char hex task ID. Required for read_task.",
+        },
+        resourceIds: {
+          type: "array",
+          description:
+            "Resource IDs to export into a package. Required for export.",
+          items: { type: "string" },
+        },
+        dependencyResourceIds: {
+          type: "array",
+          description:
+            "Optional dependency resource IDs to include during export. If omitted, all detected dependencies are included by default.",
+          items: { type: "string" },
+        },
+        includeDependencies: {
+          type: "boolean",
+          description:
+            "When true (default), export includes detected dependencies for the selected resources.",
+        },
+        name: {
+          type: "string",
+          description:
+            "Base package name for export. A timestamp suffix is appended automatically for UI parity.",
+        },
+        description: {
+          type: "string",
+          description: "Optional package description for export.",
+        },
+        outputPath: {
+          type: "string",
+          description:
+            "Absolute local file path or directory where the exported `.zip` should be saved. Used by export and download. If omitted, a temp path is created automatically.",
         },
         resources: {
           type: "array",
@@ -852,7 +892,7 @@ export const tools: ToolDefinition[] = [
         waitForCompletion: {
           type: "boolean",
           description:
-            "When true (default), wait for merge completion during import.",
+            "When true (default), wait for import/export task completion.",
         },
         timeoutMs: {
           type: "number",

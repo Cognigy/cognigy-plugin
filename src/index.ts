@@ -71,7 +71,7 @@ const RESOURCE_MAP: Record<
   "cognigy://guide/package-management": {
     name: "Package Management Guide",
     description:
-      "How to upload, inspect, and import Cognigy package zip files into a project",
+      "How to upload, inspect, import, export, and download Cognigy package zip files",
     file: "package-management.md",
   },
 };

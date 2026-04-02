@@ -6,7 +6,10 @@ export interface ResponseHints {
   action?: string;
 }
 
-export function withHints<T extends Record<string, unknown>>(data: T, hints: ResponseHints): T & { _hints: ResponseHints } {
+export function withHints<T extends Record<string, unknown>>(
+  data: T,
+  hints: ResponseHints,
+): T & { _hints: ResponseHints } {
   return { ...data, _hints: hints };
 }
 
@@ -35,15 +38,23 @@ export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
       URLToken: r.URLToken,
       createdAt: r.createdAt,
     };
-    if (r.channel === 'webchat3' && r.settings) {
+    if (r.channel === "webchat3" && r.settings) {
       base.webchatConfigured = true;
       const s = r.settings;
       // GET returns nested, POST/PATCH may return either format
       base.webchatSummary = {
-        ...(s.colors?.primaryColor ? { primaryColor: s.colors.primaryColor } : s.colorScheme ? { primaryColor: s.colorScheme } : {}),
-        ...(s.layout?.chatWindowWidth ? { chatWindowWidth: s.layout.chatWindowWidth } : {}),
+        ...(s.colors?.primaryColor
+          ? { primaryColor: s.colors.primaryColor }
+          : s.colorScheme
+            ? { primaryColor: s.colorScheme }
+            : {}),
+        ...(s.layout?.chatWindowWidth
+          ? { chatWindowWidth: s.layout.chatWindowWidth }
+          : {}),
         ...(s.homeScreen?.enabled ? { homeScreen: true } : {}),
-        ...(s.layout?.enablePersistentMenu || s.enablePersistentMenu ? { persistentMenu: true } : {}),
+        ...(s.layout?.enablePersistentMenu || s.enablePersistentMenu
+          ? { persistentMenu: true }
+          : {}),
         ...(s.businessHours?.enabled ? { businessHours: true } : {}),
       };
     }

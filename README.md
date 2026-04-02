@@ -13,21 +13,21 @@ A Model Context Protocol (MCP) server that connects your AI assistant to the [Co
 
 ## Tools
 
-| Tool                | Type  | Description                                                                                |
-| ------------------- | ----- | ------------------------------------------------------------------------------------------ |
-| `create_ai_agent`   | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint         |
-| `update_ai_agent`   | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature)                |
-| `setup_llm`         | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation |
-| `talk_to_agent`     | Write | Send a message to an AI Agent and get its response                                         |
-| `list_resources`    | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more                  |
-| `get_resource`      | Read  | Get detailed information about a single resource                                           |
-| `delete_resource`   | Write | Permanently delete a resource                                                              |
-| `manage_knowledge`  | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG                |
-| `create_tool`       | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node                            |
-| `update_tool`       | Write | Update an existing tool node's configuration                                               |
-| `manage_webchat`    | Write | Create or configure a Webchat v3 endpoint for website deployment                           |
-| `manage_flow_nodes` | Write | Create, update, delete, or list flow nodes for conversation logic                          |
-| `manage_packages`   | Write | Upload, inspect, and import Cognigy package zip files into a project                       |
+| Tool                | Type  | Description                                                                                        |
+| ------------------- | ----- | -------------------------------------------------------------------------------------------------- |
+| `create_ai_agent`   | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint                 |
+| `update_ai_agent`   | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature)                        |
+| `setup_llm`         | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation         |
+| `talk_to_agent`     | Write | Send a message to an AI Agent and get its response                                                 |
+| `list_resources`    | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more                          |
+| `get_resource`      | Read  | Get detailed information about a single resource                                                   |
+| `delete_resource`   | Write | Permanently delete a resource                                                                      |
+| `manage_knowledge`  | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG                        |
+| `create_tool`       | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node                                    |
+| `update_tool`       | Write | Update an existing tool node's configuration                                                       |
+| `manage_webchat`    | Write | Create or configure a Webchat v3 endpoint for website deployment                                   |
+| `manage_flow_nodes` | Write | Create, update, delete, or list flow nodes for conversation logic                                  |
+| `manage_packages`   | Write | List exportable resources, upload, inspect, import, export, and download Cognigy package zip files |
 
 The server also includes built-in guides (MCP resources) that AI assistants automatically read for detailed workflows, field references, and troubleshooting.
 
@@ -184,6 +184,15 @@ show me the import preview, then import it using the default selections.
 ```
 
 Uses `manage_packages` with `operation: 'upload_and_inspect'`, then `operation: 'import'`.
+
+### 7. Export a package from project resources
+
+```
+Create a package named "support-bot" from these resource IDs in project <projectId>,
+include dependencies, and save the zip to /absolute/path/to/exports/.
+```
+
+Uses `manage_packages` with `operation: 'list_exportable'` to discover candidates, then `operation: 'export'`, then `operation: 'download'` when needed.
 
 ## Security
 
