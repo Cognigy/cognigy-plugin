@@ -23,24 +23,14 @@
   "homepage": "https://www.cognigy.com",
   "support": "https://docs.cognigy.com",
   "license": "MIT",
-  "privacy_policies": [
-    "https://trust.cognigy.com"
-  ],
-  "keywords": [
-    "cognigy",
-    "ai-agents",
-    "conversational-ai",
-    "mcp",
-    "llm"
-  ],
+  "privacy_policies": ["https://trust.cognigy.com"],
+  "keywords": ["cognigy", "ai-agents", "conversational-ai", "mcp", "llm"],
   "server": {
     "type": "node",
     "entry_point": "dist/index.js",
     "mcp_config": {
       "command": "node",
-      "args": [
-        "${__dirname}/dist/index.js"
-      ],
+      "args": ["${__dirname}/dist/index.js"],
       "env": {
         "COGNIGY_API_BASE_URL": "${user_config.cognigy_api_base_url}",
         "COGNIGY_API_KEY": "${user_config.cognigy_api_key}"
@@ -114,15 +104,12 @@
     },
     {
       "name": "manage_packages",
-      "description": "Upload, inspect, and import Cognigy package zip files into a project"
+      "description": "Upload, inspect, import, export, and download Cognigy package zip files"
     }
   ],
   "tools_generated": false,
   "compatibility": {
-    "platforms": [
-      "darwin",
-      "win32"
-    ],
+    "platforms": ["darwin", "win32"],
     "runtimes": {
       "node": ">=20.0.0"
     }

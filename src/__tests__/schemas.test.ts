@@ -250,6 +250,14 @@ describe("talkToAgentSchema", () => {
 });
 
 describe("managePackagesSchema", () => {
+  it("accepts list_exportable input", () => {
+    const result = schemas.managePackagesSchema.parse({
+      operation: "list_exportable",
+      projectId: VALID_ID,
+    });
+    expect(result.operation).toBe("list_exportable");
+  });
+
   it("accepts upload_and_inspect input", () => {
     const result = schemas.managePackagesSchema.parse({
       operation: "upload_and_inspect",
@@ -284,6 +292,33 @@ describe("managePackagesSchema", () => {
     expect(result.operation).toBe("import");
   });
 
+  it("accepts export input", () => {
+    const result = schemas.managePackagesSchema.parse({
+      operation: "export",
+      projectId: VALID_ID,
+      resourceIds: [VALID_ID],
+      dependencyResourceIds: [VALID_ID],
+      includeDependencies: true,
+      name: "support-bot",
+      outputPath: "/tmp/exports",
+      waitForCompletion: false,
+      timeoutMs: 5000,
+    });
+
+    expect(result.operation).toBe("export");
+  });
+
+  it("accepts download input", () => {
+    const result = schemas.managePackagesSchema.parse({
+      operation: "download",
+      projectId: VALID_ID,
+      packageId: VALID_ID,
+      outputPath: "/tmp/support-bot.zip",
+    });
+
+    expect(result.operation).toBe("download");
+  });
+
   it("accepts read_task input", () => {
     const result = schemas.managePackagesSchema.parse({
       operation: "read_task",
@@ -301,6 +336,17 @@ describe("managePackagesSchema", () => {
         projectId: VALID_ID,
         packageId: VALID_ID,
         resources: [{ id: VALID_ID, strategy: "abort" }],
+      }),
+    ).toThrow();
+  });
+
+  it("rejects export without resourceIds", () => {
+    expect(() =>
+      schemas.managePackagesSchema.parse({
+        operation: "export",
+        projectId: VALID_ID,
+        resourceIds: [],
+        name: "support-bot",
       }),
     ).toThrow();
   });
@@ -348,6 +394,26 @@ describe("listResourcesSchema", () => {
         skip: -1,
       }),
     ).toThrow();
+  });
+});
+
+describe("getResourceSchema", () => {
+  it("accepts agent resource type", () => {
+    const result = schemas.getResourceSchema.parse({
+      resourceType: "agent",
+      id: VALID_ID,
+    });
+    expect(result.resourceType).toBe("agent");
+  });
+});
+
+describe("deleteResourceSchema", () => {
+  it("accepts llm_model resource type", () => {
+    const result = schemas.deleteResourceSchema.parse({
+      resourceType: "llm_model",
+      id: VALID_ID,
+    });
+    expect(result.resourceType).toBe("llm_model");
   });
 });
 

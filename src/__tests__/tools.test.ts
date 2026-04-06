@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, jest } from "@jest/globals";
-import { mkdtempSync, writeFileSync } from "fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { Readable } from "stream";
 import { CognigyApiClient } from "../api/client.js";
 import { ToolHandlers } from "../tools/handlers.js";
 
@@ -1425,12 +1426,39 @@ describe("ToolHandlers v2", () => {
             type: "flow",
             name: "Existing Flow",
             referenceId: "flow-ref-1",
+            dependencies: [
+              { _id: "60d5ec49f1a2c8b1a4e0f103" },
+              { _id: "60d5ec49f1a2c8b1a4e0f104" },
+            ],
           },
           {
             _id: "60d5ec49f1a2c8b1a4e0f103",
             type: "knowledgeStore",
             name: "Existing Store",
             referenceId: "ks-ref-1",
+          },
+          {
+            _id: "60d5ec49f1a2c8b1a4e0f104",
+            type: "function",
+            name: "Legacy Function",
+          },
+          {
+            _id: "60d5ec49f1a2c8b1a4e0f105",
+            type: "largeLanguageModel",
+            name: "Existing Retired GPT",
+            properties: { modelType: "gpt-4" },
+          },
+          {
+            _id: "60d5ec49f1a2c8b1a4e0f106",
+            type: "largeLanguageModel",
+            name: "OAI-4o",
+            properties: { modelType: "gpt-4o" },
+            dependencies: [{ _id: "60d5ec49f1a2c8b1a4e0f107" }],
+          },
+          {
+            _id: "60d5ec49f1a2c8b1a4e0f107",
+            type: "connection",
+            name: "OAI-dvd",
           },
         ],
       },
@@ -1464,6 +1492,46 @@ describe("ToolHandlers v2", () => {
           },
         ],
       },
+    });
+
+    it("lists exportable resources and includes LLM models", async () => {
+      api.get.mockResolvedValueOnce(makeGraph());
+
+      const result = await h.handleToolCall("manage_packages", {
+        operation: "list_exportable",
+        projectId: ID.project,
+      });
+
+      expect(result.operation).toBe("list_exportable");
+      expect(result.resources).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "60d5ec49f1a2c8b1a4e0f106",
+            type: "largeLanguageModel",
+            name: "OAI-4o",
+            modelType: "gpt-4o",
+            canExport: true,
+            dependencyCount: 1,
+          }),
+          expect.objectContaining({
+            id: "60d5ec49f1a2c8b1a4e0f105",
+            type: "largeLanguageModel",
+            name: "Existing Retired GPT",
+            canExport: false,
+            disabledReason: "retired_model",
+          }),
+        ]),
+      );
+      expect(result.summary.exportableNowCount).toBeGreaterThan(0);
+      expect(result.summary.typeCounts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "largeLanguageModel",
+            count: 2,
+            exportableNowCount: 1,
+          }),
+        ]),
+      );
     });
 
     it("uploads a package and returns import preview", async () => {
@@ -1606,6 +1674,121 @@ describe("ToolHandlers v2", () => {
 
       expect(result.task.id).toBe(ID.task2);
       expect(result.task.status).toBe("queued");
+    });
+
+    it("exports resources, includes dependencies by default, and saves the package locally", async () => {
+      const zipContent = Buffer.from("zip-content");
+      api.get
+        .mockResolvedValueOnce(makeGraph())
+        .mockResolvedValueOnce({
+          _id: ID.task2,
+          name: "createPackageNFS",
+          status: "done",
+          currentStep: 1,
+          totalStep: 1,
+          data: { packageId: ID.pkg },
+        })
+        .mockResolvedValueOnce({
+          _id: ID.pkg,
+          name: "support-bot_2026-04-02_12-00-00",
+        })
+        .mockResolvedValueOnce(Readable.from([zipContent]));
+      api.post.mockResolvedValueOnce({ _id: ID.task2 }).mockResolvedValueOnce({
+        downloadLink: "https://api.example.test/new/v2.0/packages/download",
+      });
+
+      const result = await h.handleToolCall("manage_packages", {
+        operation: "export",
+        projectId: ID.project,
+        resourceIds: ["60d5ec49f1a2c8b1a4e0f102", "60d5ec49f1a2c8b1a4e0f105"],
+        name: "support-bot",
+      });
+
+      expect(api.post).toHaveBeenCalledWith("/new/v2.0/packages", {
+        projectId: ID.project,
+        name: expect.stringMatching(/^support-bot_/),
+        description: undefined,
+        resourceIds: ["60d5ec49f1a2c8b1a4e0f102", "60d5ec49f1a2c8b1a4e0f103"],
+      });
+      expect(result.operation).toBe("export");
+      expect(result.task.status).toBe("done");
+      expect(result.dependencyResources).toHaveLength(1);
+      expect(result.skippedResources).toEqual([
+        {
+          id: "60d5ec49f1a2c8b1a4e0f105",
+          type: "largeLanguageModel",
+          name: "Existing Retired GPT",
+          reason: "retired_model",
+        },
+        {
+          id: "60d5ec49f1a2c8b1a4e0f104",
+          type: "function",
+          name: "Legacy Function",
+          reason: "function_export_not_supported",
+        },
+      ]);
+      expect(result.package.id).toBe(ID.pkg);
+      expect(result.savedTo).toContain("cognigy-mcp-packages");
+      expect(result.savedToUri).toMatch(/^file:\/\//);
+      expect(result.savedFileName).toMatch(/\.zip$/);
+      expect(result.savedDirectory).toContain("cognigy-mcp-packages");
+      expect(result.savedDirectoryUri).toMatch(/^file:\/\//);
+      expect(result.openArchiveUri).toBe(result.savedToUri);
+      expect(result.openContainingFolderPath).toBe(result.savedDirectory);
+      expect(result.openContainingFolderUri).toBe(result.savedDirectoryUri);
+      expect(result.savedToTemp).toBe(true);
+      expect(readFileSync(result.savedTo, "utf-8")).toBe("zip-content");
+    });
+
+    it("returns queued task when export does not wait for completion", async () => {
+      api.get.mockResolvedValueOnce(makeGraph());
+      api.post.mockResolvedValueOnce({ _id: ID.task2 });
+
+      const result = await h.handleToolCall("manage_packages", {
+        operation: "export",
+        projectId: ID.project,
+        resourceIds: ["60d5ec49f1a2c8b1a4e0f102"],
+        includeDependencies: false,
+        name: "support-bot",
+        waitForCompletion: false,
+      });
+
+      expect(result.task.id).toBe(ID.task2);
+      expect(result.task.status).toBe("queued");
+      expect(result.resourceIds).toEqual(["60d5ec49f1a2c8b1a4e0f102"]);
+    });
+
+    it("downloads an existing package to disk", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "cognigy-mcp-package-download-"));
+      const outputPath = join(dir, "exports");
+      const zipContent = Buffer.from("zip-content");
+
+      api.get
+        .mockResolvedValueOnce({
+          _id: ID.pkg,
+          name: "support-bot_2026-04-02_12-00-00",
+        })
+        .mockResolvedValueOnce(Readable.from([zipContent]));
+      api.post.mockResolvedValueOnce({
+        downloadLink: "https://api.example.test/new/v2.0/packages/download",
+      });
+
+      const result = await h.handleToolCall("manage_packages", {
+        operation: "download",
+        projectId: ID.project,
+        packageId: ID.pkg,
+        outputPath,
+      });
+
+      expect(result.savedTo).toBe(join(dir, "exports.zip"));
+      expect(result.savedToUri).toBe(`file://${result.savedTo}`);
+      expect(result.savedFileName).toBe("exports.zip");
+      expect(result.savedDirectory).toBe(dir);
+      expect(result.savedDirectoryUri).toBe(`file://${dir}`);
+      expect(result.openArchiveUri).toBe(result.savedToUri);
+      expect(result.openContainingFolderPath).toBe(dir);
+      expect(result.openContainingFolderUri).toBe(result.savedDirectoryUri);
+      expect(readFileSync(result.savedTo, "utf-8")).toBe("zip-content");
     });
 
     it("reads and normalizes task status", async () => {

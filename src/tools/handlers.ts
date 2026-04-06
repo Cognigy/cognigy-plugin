@@ -1,6 +1,16 @@
-import { createReadStream, readFileSync, existsSync, statSync } from "fs";
-import { basename, isAbsolute } from "path";
+import {
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+} from "fs";
+import { tmpdir } from "os";
+import { pipeline } from "stream/promises";
+import { basename, dirname, isAbsolute, join } from "path";
 import { randomUUID } from "crypto";
+import { pathToFileURL } from "url";
 import axios from "axios";
 import { CognigyApiClient } from "../api/client.js";
 import { logger } from "../utils/logger.js";
@@ -8,7 +18,12 @@ import { filterResponse, filterList, withHints } from "./filters.js";
 import { buildWebchatSettings, deepMerge } from "./webchatSettings.js";
 import { getNodeEntry, supportedNodeTypes } from "./nodeRegistry.js";
 import * as schemas from "../schemas/tools.js";
-import { buildPackageImportPreview, normalizeTask } from "./packageImport.js";
+import {
+  buildPackageExportablePreview,
+  buildPackageExportPlan,
+  buildPackageImportPreview,
+  normalizeTask,
+} from "./packageManagement.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -572,6 +587,131 @@ export class ToolHandlers {
     return resolvedPath;
   }
 
+  private buildExportPackageName(name: string): string {
+    const randomIdentifier = new Date()
+      .toISOString()
+      .replace(/:/g, "-")
+      .slice(0, 19)
+      .replace("T", "_");
+
+    return `${name}_${randomIdentifier}`;
+  }
+
+  private sanitizePackageFileName(name: string): string {
+    const cleaned = name
+      .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
+      .trim()
+      .replace(/\s+/g, " ");
+
+    return cleaned || "export";
+  }
+
+  private resolvePackageOutputPath(
+    outputPath: string,
+    suggestedFileName: string,
+  ): string {
+    const resolvedPath = outputPath.startsWith("~")
+      ? outputPath.replace(/^~/, process.env.HOME || "")
+      : outputPath;
+
+    if (!isAbsolute(resolvedPath)) {
+      throw new Error(
+        "outputPath must be an absolute path to a local file or directory",
+      );
+    }
+
+    const finalPath =
+      existsSync(resolvedPath) && statSync(resolvedPath).isDirectory()
+        ? join(resolvedPath, suggestedFileName)
+        : resolvedPath.toLowerCase().endsWith(".zip")
+          ? resolvedPath
+          : `${resolvedPath}.zip`;
+
+    mkdirSync(dirname(finalPath), { recursive: true });
+    return finalPath;
+  }
+
+  private buildDefaultPackageOutputPath(suggestedFileName: string): string {
+    const exportDir = join(tmpdir(), "cognigy-mcp-packages");
+    mkdirSync(exportDir, { recursive: true });
+    return join(exportDir, `${randomUUID()}-${suggestedFileName}`);
+  }
+
+  private describeSavedPackageLocation(
+    finalPath: string,
+    usedDefaultOutputPath: boolean,
+  ): Record<string, any> {
+    const savedDirectory = dirname(finalPath);
+
+    return {
+      savedTo: finalPath,
+      savedToUri: pathToFileURL(finalPath).href,
+      savedFileName: basename(finalPath),
+      savedDirectory,
+      savedDirectoryUri: pathToFileURL(savedDirectory).href,
+      openArchiveUri: pathToFileURL(finalPath).href,
+      openContainingFolderPath: savedDirectory,
+      openContainingFolderUri: pathToFileURL(savedDirectory).href,
+      ...(usedDefaultOutputPath
+        ? {
+            savedToTemp: true,
+            note: "The package download URL requires authentication, so the archive was saved locally instead of returning a raw link.",
+          }
+        : {}),
+    };
+  }
+
+  private async getPackageExportGraph(projectId: string): Promise<any> {
+    return this.apiClient.get(`/new/v2.0/projects/${projectId}/graph`, {
+      params: {
+        packages: false,
+        dependencies: true,
+      },
+    });
+  }
+
+  private async downloadPackageArchive(args: {
+    projectId: string;
+    packageId: string;
+    outputPath?: string;
+  }): Promise<any> {
+    const packageData: any = await this.apiClient.get(
+      `/new/v2.0/packages/${args.packageId}`,
+    );
+    const packageName = packageData?.name || "export";
+    const suggestedFileName = `${this.sanitizePackageFileName(packageName)}.zip`;
+
+    const downloadResponse: any = await this.apiClient.post(
+      `/new/v2.0/packages/${args.packageId}/downloadlink`,
+    );
+    const downloadLink = downloadResponse?.downloadLink;
+
+    if (!downloadLink) {
+      throw new Error("Package download link could not be created");
+    }
+
+    const usedDefaultOutputPath = !args.outputPath;
+    const finalPath = args.outputPath
+      ? this.resolvePackageOutputPath(args.outputPath, suggestedFileName)
+      : this.buildDefaultPackageOutputPath(suggestedFileName);
+    const downloadStream: any = await this.apiClient.get(downloadLink, {
+      baseURL: undefined,
+      headers: { Accept: "*/*" },
+      responseType: "stream",
+    });
+
+    await pipeline(downloadStream, createWriteStream(finalPath));
+
+    return {
+      package: {
+        id: args.packageId,
+        name: packageName,
+      },
+      suggestedFileName,
+      ...this.describeSavedPackageLocation(finalPath, usedDefaultOutputPath),
+    };
+  }
+
   private async getPackagePreview(
     projectId: string,
     packageId: string,
@@ -718,6 +858,17 @@ export class ToolHandlers {
     const data = schemas.managePackagesSchema.parse(args);
 
     switch (data.operation) {
+      case "list_exportable": {
+        const graph = await this.getPackageExportGraph(data.projectId);
+        return {
+          operation: "list_exportable",
+          projectId: data.projectId,
+          ...buildPackageExportablePreview(data.projectId, {
+            [data.projectId]: graph?.[data.projectId],
+          }),
+        };
+      }
+
       case "upload_and_inspect": {
         const timeoutMs =
           data.timeoutMs ?? ToolHandlers.DEFAULT_PACKAGE_TIMEOUT_MS;
@@ -851,6 +1002,102 @@ export class ToolHandlers {
         }
 
         return result;
+      }
+
+      case "export": {
+        const timeoutMs =
+          data.timeoutMs ?? ToolHandlers.DEFAULT_PACKAGE_TIMEOUT_MS;
+        const graph = await this.getPackageExportGraph(data.projectId);
+        const exportPlan = buildPackageExportPlan(
+          data.projectId,
+          {
+            [data.projectId]: graph?.[data.projectId],
+          },
+          data.resourceIds,
+          {
+            includeDependencies: data.includeDependencies,
+            dependencyResourceIds: data.dependencyResourceIds,
+          },
+        );
+        const packageName = this.buildExportPackageName(data.name);
+        const response: any = await this.apiClient.post("/new/v2.0/packages", {
+          projectId: data.projectId,
+          name: packageName,
+          description: data.description,
+          resourceIds: exportPlan.resourceIds,
+        });
+
+        const taskId = response?._id ?? response?.id;
+        if (!taskId) {
+          throw new Error("Package export did not return a task ID");
+        }
+
+        if (data.waitForCompletion === false) {
+          return {
+            operation: "export",
+            projectId: data.projectId,
+            packageName,
+            task: {
+              id: taskId,
+              name: "createPackageNFS",
+              status: "queued",
+              currentStep: 0,
+              totalStep: 0,
+              progress: 0,
+              failReason: null,
+              data: null,
+            },
+            ...exportPlan,
+          };
+        }
+
+        const { task, timedOut } = await this.waitForTask(
+          taskId,
+          data.projectId,
+          timeoutMs,
+        );
+        const normalizedTask = normalizeTask(task);
+        const result: any = {
+          operation: "export",
+          projectId: data.projectId,
+          packageName,
+          task: normalizedTask,
+          ...exportPlan,
+          ...(timedOut ? { timedOutWaiting: true } : {}),
+        };
+
+        if (timedOut) {
+          return withHints(result, {
+            warning: "Package export is still running.",
+            action: `Use manage_packages { operation: "read_task", projectId: "${data.projectId}", taskId: "${taskId}" } to continue polling the export task.`,
+          });
+        }
+
+        const packageId = normalizedTask.data?.packageId;
+        if (packageId) {
+          Object.assign(
+            result,
+            await this.downloadPackageArchive({
+              projectId: data.projectId,
+              packageId,
+              outputPath: data.outputPath,
+            }),
+          );
+        }
+
+        return result;
+      }
+
+      case "download": {
+        return {
+          operation: "download",
+          projectId: data.projectId,
+          ...(await this.downloadPackageArchive({
+            projectId: data.projectId,
+            packageId: data.packageId,
+            outputPath: data.outputPath,
+          })),
+        };
       }
 
       case "read_task": {
