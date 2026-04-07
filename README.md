@@ -64,7 +64,7 @@ For Claude Desktop, Claude Code, and Cursor:
       "command": "npx",
       "args": ["-y", "@cognigy/mcp-server"],
       "env": {
-        "COGNIGY_API_BASE_URL": "https://api-trial.cognigy.ai",
+        "COGNIGY_API_BASE_URL": "your-api-endpoint",
         "COGNIGY_API_KEY": "your-api-key-here"
       }
     }
@@ -80,7 +80,7 @@ command = "npx"
 args = ["-y", "@cognigy/mcp-server"]
 
 [mcp_servers.cognigy.env]
-COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai"
+COGNIGY_API_BASE_URL = "your-api-endpoint"
 COGNIGY_API_KEY = "your-api-key-here"
 ```
 
@@ -93,7 +93,7 @@ For VS Code (Copilot), add this to `.vscode/mcp.json`:
       "command": "npx",
       "args": ["-y", "@cognigy/mcp-server"],
       "env": {
-        "COGNIGY_API_BASE_URL": "https://api-trial.cognigy.ai",
+        "COGNIGY_API_BASE_URL": "your-api-endpoint",
         "COGNIGY_API_KEY": "your-api-key-here"
       }
     }
