@@ -1,3 +1,9 @@
+## [0.2.15](https://github.com/Cognigy/cognigy-mcp/compare/v0.2.14...v0.2.15) (2026-04-07)
+
+### Features
+
+* **packages:** expand manage_packages import and export workflow ([8092cd0](https://github.com/Cognigy/cognigy-mcp/commit/8092cd0913e0821e818ce85f4613ed252943e3f8))
+
 ## [0.2.14](https://github.com/Cognigy/cognigy-mcp/compare/v0.2.13...v0.2.14) (2026-03-31)
 
 ### Bug Fixes
@@ -51,10 +57,4 @@
 
 ## [0.1.3](https://github.com/Cognigy/cognigy-mcp/compare/v0.1.2...v0.1.3) (2026-03-04)
 
-<<<<<<< HEAD
 ## 0.1.2 (2026-03-04)
-=======
-## [0.1.2](https://github.com/Cognigy/cognigy-mcp/compare/v0.1.1...v0.1.2) (2026-03-04)
-
-## 0.1.1 (2026-03-04)
->>>>>>> 05bb38b (release: backfill CHANGELOG.md with generated entries)
