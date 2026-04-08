@@ -1,4 +1,4 @@
-# Cognigy MCP Server
+# NiCE Cognigy MCP Server
 
 A Model Context Protocol (MCP) server that connects your AI assistant to the [Cognigy.AI](https://www.cognigy.com) REST API. Create, test, and improve LLM-based AI Agents through a self-improvement loop — without leaving your AI assistant.
 
