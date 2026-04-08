@@ -46,14 +46,21 @@ export const setupLlmSchema = z.object({
 });
 
 // Tool 4: talk_to_agent
-export const talkToAgentSchema = z.object({
-  endpointUrl: z.string().url(),
-  message: z.string().min(1),
-  sessionId: z.string().optional(),
-  userId: z.string().optional(),
-  data: z.record(z.any()).optional(),
-  verbose: z.boolean().optional(),
-});
+export const talkToAgentSchema = z
+  .object({
+    endpointUrl: z.string().url().optional(),
+    aiAgentId: idSchema.optional(),
+    projectId: idSchema.optional(),
+    message: z.string().min(1),
+    sessionId: z.string().optional(),
+    userId: z.string().optional(),
+    data: z.record(z.any()).optional(),
+    verbose: z.boolean().optional(),
+  })
+  .refine((d) => d.endpointUrl || d.aiAgentId, {
+    message: "Either endpointUrl or aiAgentId must be provided",
+    path: ["endpointUrl"],
+  });
 
 // Tool 5: list_resources
 export const listResourcesSchema = z.object({

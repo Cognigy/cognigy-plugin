@@ -221,7 +221,7 @@ describe("setupLlmSchema", () => {
 });
 
 describe("talkToAgentSchema", () => {
-  it("accepts valid input", () => {
+  it("accepts valid input with endpointUrl", () => {
     const result = schemas.talkToAgentSchema.parse({
       endpointUrl: "https://endpoint-trial.cognigy.ai/abc123",
       message: "Hello agent",
@@ -230,10 +230,56 @@ describe("talkToAgentSchema", () => {
     expect(result.message).toBe("Hello agent");
   });
 
+  it("accepts aiAgentId without endpointUrl", () => {
+    const result = schemas.talkToAgentSchema.parse({
+      aiAgentId: VALID_ID,
+      message: "Hello agent",
+    });
+    expect(result.aiAgentId).toBe(VALID_ID);
+    expect(result.endpointUrl).toBeUndefined();
+  });
+
+  it("accepts aiAgentId with projectId", () => {
+    const result = schemas.talkToAgentSchema.parse({
+      aiAgentId: VALID_ID,
+      projectId: VALID_ID,
+      message: "Hello agent",
+    });
+    expect(result.aiAgentId).toBe(VALID_ID);
+    expect(result.projectId).toBe(VALID_ID);
+  });
+
+  it("accepts both endpointUrl and aiAgentId", () => {
+    const result = schemas.talkToAgentSchema.parse({
+      endpointUrl: "https://endpoint-trial.cognigy.ai/abc123",
+      aiAgentId: VALID_ID,
+      message: "Hello",
+    });
+    expect(result.endpointUrl).toBe("https://endpoint-trial.cognigy.ai/abc123");
+    expect(result.aiAgentId).toBe(VALID_ID);
+  });
+
+  it("rejects when neither endpointUrl nor aiAgentId is provided", () => {
+    expect(() =>
+      schemas.talkToAgentSchema.parse({
+        message: "Hello",
+      }),
+    ).toThrow("Either endpointUrl or aiAgentId must be provided");
+  });
+
   it("rejects invalid URL", () => {
     expect(() =>
       schemas.talkToAgentSchema.parse({
         endpointUrl: "not-a-url",
+        message: "Hello",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects invalid aiAgentId format", () => {
+    expect(() =>
+      schemas.talkToAgentSchema.parse({
+        aiAgentId: "not-a-valid-id",
         message: "Hello",
       }),
     ).toThrow();
