@@ -1,6 +1,6 @@
 # Anthropic MCP Marketplace Submission
 
-This document outlines everything needed to submit the Cognigy MCP Server to the [Anthropic MCP connector marketplace](https://support.claude.com/en/articles/12922832-local-mcp-server-submission-guide).
+This document outlines everything needed to submit the MCP Server to the [Anthropic MCP connector marketplace](https://support.claude.com/en/articles/12922832-local-mcp-server-submission-guide).
 
 ## Status: Ready to submit once PR #17 is merged
 

@@ -1,5 +1,5 @@
 /**
- * CLI init command — auto-configures MCP clients with the Cognigy MCP server.
+ * CLI init command — auto-configures MCP clients with the NiCE Cognigy MCP Server.
  *
  * Usage:
  *   npx @cognigy/mcp-server init --client cursor
@@ -387,6 +387,6 @@ export async function runInit(args: string[]) {
   }
 
   console.log("");
-  console.log(`  Restart ${client.name} to load the Cognigy MCP server.`);
+  console.log(`  Restart ${client.name} to load the NiCE Cognigy MCP Server.`);
   console.log("");
 }
