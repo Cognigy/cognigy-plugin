@@ -43,17 +43,17 @@ Submit at: **https://forms.gle/tyiAZvch1kDADKoP9**
 
 Use the following details when filling in the form:
 
-| Field | Value |
-|---|---|
-| Server name | Cognigy AI Agent MCP Server |
-| Repository URL | https://github.com/Cognigy/cognigy-mcp |
-| npm package | `@cognigy/mcp-server` |
-| Version | `0.2.7` (or latest after merge) |
-| License | MIT |
+| Field              | Value                                  |
+| ------------------ | -------------------------------------- |
+| Server name        | Cognigy AI Agent MCP Server            |
+| Repository URL     | https://github.com/Cognigy/cognigy-mcp |
+| npm package        | `@cognigy/mcp-server`                  |
+| Version            | (latest version. e.g: 0.2.15)          |
+| License            | MIT                                    |
 | Privacy policy URL | https://www.cognigy.com/privacy-policy |
-| Support contact | support@cognigy.com |
-| Test API base URL | `https://api-trial.cognigy.ai` |
-| Test API key | *(the key generated in step 2 above)* |
+| Support contact    | support@cognigy.com                    |
+| Test API base URL  | `https://api-trial.cognigy.ai`         |
+| Test API key       | _(the key generated in step 2 above)_  |
 
 ---
 
