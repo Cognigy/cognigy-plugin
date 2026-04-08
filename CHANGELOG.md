@@ -1,3 +1,9 @@
+## [0.2.16](https://github.com/Cognigy/cognigy-mcp/compare/v0.2.15...v0.2.16) (2026-04-08)
+
+### Bug Fixes
+
+* rebranded the official name of the product ([928c941](https://github.com/Cognigy/cognigy-mcp/commit/928c9412da6318f430fc877f7e09049e8c0ff91f))
+
 ## [0.2.15](https://github.com/Cognigy/cognigy-mcp/compare/v0.2.14...v0.2.15) (2026-04-07)
 
 ### Features
