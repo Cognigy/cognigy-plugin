@@ -1,3 +1,9 @@
+## [0.2.17](https://github.com/Cognigy/cognigy-mcp/compare/v0.2.16...v0.2.17) (2026-04-09)
+
+### Features
+
+* **tool:** auto-resolve or create REST endpoint by agent ID ([0e4cacc](https://github.com/Cognigy/cognigy-mcp/commit/0e4caccc0d2988eceeaf067ae6f4ddad43a8ddf2))
+
 ## [0.2.16](https://github.com/Cognigy/cognigy-mcp/compare/v0.2.15...v0.2.16) (2026-04-08)
 
 ### Bug Fixes
