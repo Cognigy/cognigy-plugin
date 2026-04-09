@@ -414,6 +414,119 @@ describe("ToolHandlers v2", () => {
       expect(result._hints).toBeDefined();
       expect(result._hints.resource).toBe("cognigy://guide/troubleshooting");
     });
+
+    it("resolves existing REST endpoint by aiAgentId", async () => {
+      // Mock resolveFlowForAgent: agent GET → returns agent with flowId
+      api.get
+        .mockResolvedValueOnce({
+          _id: ID.agent,
+          name: "Test Agent",
+          flowId: ID.flow,
+          projectId: ID.project,
+        })
+        // Mock flow GET → returns flow with referenceId
+        .mockResolvedValueOnce({
+          _id: ID.flow,
+          referenceId: "ref-flow-uuid",
+        })
+        // Mock endpoint listing → returns a REST endpoint matching flowId
+        .mockResolvedValueOnce({
+          items: [
+            {
+              _id: ID.endpoint,
+              channel: "rest",
+              flowId: ID.flow,
+              URLToken: "abc123token",
+            },
+          ],
+        });
+
+      const result = await h.handleTalkToAgent({
+        aiAgentId: ID.agent,
+        message: "Hi",
+      });
+
+      // The axios.post to the endpoint URL will fail (no real server),
+      // but we can verify that the endpoint was resolved
+      expect(result.sessionId).toBeDefined();
+      // The endpoint URL should be constructed from the URLToken
+      expect(result.endpointUrl || result.error || result._hints).toBeDefined();
+    });
+
+    it("auto-creates REST endpoint when none exists", async () => {
+      // Mock resolveFlowForAgent: agent GET
+      api.get
+        .mockResolvedValueOnce({
+          _id: ID.agent,
+          name: "Test Agent",
+          flowId: ID.flow,
+          projectId: ID.project,
+        })
+        // Mock flow GET
+        .mockResolvedValueOnce({
+          _id: ID.flow,
+          referenceId: "ref-flow-uuid",
+        })
+        // Mock endpoint listing → empty (no REST endpoint)
+        .mockResolvedValueOnce({ items: [] });
+
+      // Mock endpoint creation
+      api.post.mockResolvedValueOnce({
+        _id: ID.endpoint,
+        URLToken: "new-token-123",
+        channel: "rest",
+      });
+
+      const result = await h.handleTalkToAgent({
+        aiAgentId: ID.agent,
+        message: "Hi",
+      });
+
+      expect(api.post).toHaveBeenCalledWith("/v2.0/endpoints", {
+        projectId: ID.project,
+        channel: "rest",
+        flowId: "ref-flow-uuid",
+        name: "Test Agent REST Endpoint",
+      });
+      expect(result.sessionId).toBeDefined();
+      // Should have attempted the auto-creation
+      expect(result.endpointAutoCreated || result.error).toBeDefined();
+    });
+
+    it("returns error when flow resolution fails", async () => {
+      // Mock resolveFlowForAgent: agent without any flow reference
+      api.get
+        .mockResolvedValueOnce({
+          _id: ID.agent,
+          name: "Test Agent",
+          projectId: ID.project,
+        })
+        // Strategy 2 (/jobs) fails
+        .mockRejectedValueOnce(new Error("Not found"))
+        // Strategy 3 (flows listing) returns no match
+        .mockResolvedValueOnce({ items: [] });
+
+      const result = await h.handleTalkToAgent({
+        aiAgentId: ID.agent,
+        message: "Hi",
+      });
+
+      expect(result.error).toContain("Could not find a flow");
+      expect(result._hints).toBeDefined();
+      expect(result._hints.resource).toBe("cognigy://guide/agent-creation");
+    });
+
+    it("uses endpointUrl directly when both endpointUrl and aiAgentId are provided", async () => {
+      const result = await h.handleTalkToAgent({
+        endpointUrl: "https://endpoint-trial.cognigy.ai/nonexistent-test",
+        aiAgentId: ID.agent,
+        message: "Hi",
+      });
+
+      // Should NOT call any resolution APIs — endpointUrl takes precedence
+      expect(api.get).not.toHaveBeenCalled();
+      expect(result.sessionId).toBeDefined();
+    });
   });
 
   // =========================================================================

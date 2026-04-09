@@ -1714,11 +1714,146 @@ export class ToolHandlers {
     const sessionId = data.sessionId || `mcp-session-${randomUUID()}`;
     const userId = data.userId || "mcp-user";
 
+    // --- Endpoint resolution ---
+    let endpointUrl: string | undefined = data.endpointUrl;
+    let endpointMeta: {
+      autoCreated?: boolean;
+      resolved?: boolean;
+      endpointId?: string;
+    } = {};
+
+    if (!endpointUrl && data.aiAgentId) {
+      const resolved = await resolveFlowForAgent(
+        this.apiClient,
+        data.aiAgentId,
+      );
+      if (!resolved) {
+        return withHints(
+          {
+            error: "Could not find a flow associated with this agent.",
+            sessionId,
+          },
+          {
+            likely_cause:
+              "Agent may not have been created via create_ai_agent, or has no associated flow.",
+            resource: "cognigy://guide/agent-creation",
+            action:
+              "Create the agent with create_ai_agent, or provide endpointUrl directly.",
+          },
+        );
+      }
+
+      const { flowId, agent } = resolved;
+      const projectId =
+        data.projectId ||
+        agent.projectId ||
+        agent.project?._id ||
+        agent.project?.id;
+
+      if (!projectId) {
+        return withHints(
+          {
+            error: "Could not determine projectId for this agent.",
+            sessionId,
+          },
+          { action: "Provide projectId explicitly alongside aiAgentId." },
+        );
+      }
+
+      // Fetch the flow's referenceId — endpoints may store either _id or referenceId
+      let flowReferenceId: string | null = null;
+      try {
+        const flowObj: any = await this.apiClient.get(`/v2.0/flows/${flowId}`);
+        flowReferenceId = flowObj.referenceId ?? null;
+      } catch {
+        // fall through — we'll still match on flowId
+      }
+
+      // Search for an existing REST endpoint connected to this flow
+      let existingEndpoint: any = null;
+      const pageSize = 100;
+      let offset = 0;
+      let hasMore = true;
+
+      while (hasMore && !existingEndpoint) {
+        const eps: any = await this.apiClient.get("/v2.0/endpoints", {
+          params: { projectId, limit: pageSize, skip: offset },
+        });
+        const epItems = eps.items ?? eps;
+        if (!Array.isArray(epItems) || epItems.length === 0) break;
+
+        existingEndpoint = epItems.find(
+          (ep: any) =>
+            ep.channel === "rest" &&
+            (ep.flowId === flowId || ep.flowId === flowReferenceId),
+        );
+
+        hasMore = epItems.length >= pageSize;
+        offset += pageSize;
+      }
+
+      if (existingEndpoint) {
+        endpointUrl = existingEndpoint.URLToken
+          ? `${this.endpointBaseUrl}/${existingEndpoint.URLToken}`
+          : undefined;
+        endpointMeta = {
+          resolved: true,
+          endpointId: existingEndpoint._id || existingEndpoint.id,
+        };
+      } else {
+        // Auto-create REST endpoint
+        try {
+          const flowRef = flowReferenceId || flowId;
+          const endpoint: any = await this.apiClient.post("/v2.0/endpoints", {
+            projectId,
+            channel: "rest",
+            flowId: flowRef,
+            name: `${agent.name} REST Endpoint`,
+          });
+          endpointUrl = endpoint.URLToken
+            ? `${this.endpointBaseUrl}/${endpoint.URLToken}`
+            : undefined;
+          endpointMeta = {
+            autoCreated: true,
+            endpointId: endpoint._id || endpoint.id,
+          };
+        } catch (createErr: any) {
+          return withHints(
+            {
+              error: "Failed to auto-create REST endpoint for agent.",
+              detail: createErr.response?.data?.error || createErr.message,
+              sessionId,
+            },
+            {
+              likely_cause:
+                "Insufficient permissions or project configuration issue.",
+              action:
+                "Create endpoint manually via create_ai_agent or the Cognigy UI, then provide endpointUrl.",
+            },
+          );
+        }
+      }
+
+      if (!endpointUrl) {
+        return withHints(
+          {
+            error: "Endpoint found/created but URL token not available.",
+            sessionId,
+          },
+          {
+            action:
+              "Try list_resources { resourceType: 'endpoint', projectId } to check endpoint status.",
+          },
+        );
+      }
+    }
+
+    // --- Message sending ---
     const payload: any = { userId, sessionId, text: data.message };
     if (data.data) payload.data = data.data;
 
     try {
-      const response = await axios.post(data.endpointUrl, payload, {
+      const response = await axios.post(endpointUrl!, payload, {
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
@@ -1733,7 +1868,9 @@ export class ToolHandlers {
         .map((o: any) => o.text);
       if (textOutputs.length > 0) agentResponse = textOutputs.join(" ");
 
-      const result: any = { agentResponse, sessionId };
+      const result: any = { agentResponse, sessionId, endpointUrl };
+      if (endpointMeta.autoCreated) result.endpointAutoCreated = true;
+      if (endpointMeta.resolved) result.endpointResolved = true;
 
       if (data.verbose) {
         result.rawResponse = response.data;

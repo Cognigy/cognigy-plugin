@@ -185,7 +185,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "talk_to_agent",
     description:
-      "Send a message to a Cognigy AI Agent and get its response. Use this to test agent behavior during iterative development.\n\nThe endpointUrl comes from create_ai_agent or list_resources { resourceType: 'endpoint' }. Use the same sessionId across calls for multi-turn conversations.\n\nReturns: agentResponse text and sessionId. Add verbose: true for the full raw API response.",
+      "Send a message to a Cognigy AI Agent and get its response. Use this to test agent behavior during iterative development.\n\nTwo modes:\n1. DIRECT: Provide endpointUrl (from create_ai_agent or list_resources { resourceType: 'endpoint' }).\n2. BY AGENT: Provide aiAgentId — the tool automatically finds or creates a REST endpoint for the agent's flow.\n\nUse the same sessionId across calls for multi-turn conversations.\n\nReturns: agentResponse text and sessionId. Add verbose: true for the full raw API response.",
     annotations: {
       title: "Talk to Agent",
       readOnlyHint: false,
@@ -199,7 +199,17 @@ export const tools: ToolDefinition[] = [
         endpointUrl: {
           type: "string",
           description:
-            "REST endpoint URL (e.g., https://endpoint-trial.cognigy.ai/xxxxx)",
+            "REST endpoint URL (e.g., https://endpoint-trial.cognigy.ai/xxxxx). If omitted, provide aiAgentId instead.",
+        },
+        aiAgentId: {
+          type: "string",
+          description:
+            "24-char hex AI Agent ID. When endpointUrl is omitted, the tool finds or auto-creates a REST endpoint for this agent's flow.",
+        },
+        projectId: {
+          type: "string",
+          description:
+            "24-char hex project ID. Optional — speeds up endpoint lookup when using aiAgentId. If omitted, derived from the agent.",
         },
         message: {
           type: "string",
@@ -224,7 +234,7 @@ export const tools: ToolDefinition[] = [
             "If true, include the full raw API response (default: false)",
         },
       },
-      required: ["endpointUrl", "message"],
+      required: ["message"],
     },
   },
 
