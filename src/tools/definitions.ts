@@ -1421,4 +1421,108 @@ export const tools: ToolDefinition[] = [
       },
     },
   },
+
+  // 14. manage_voice_gateway
+  {
+    name: "manage_voice_gateway",
+    description:
+      "Create or configure a Voice Gateway endpoint with WebRTC support. This deploys an AI Agent as a voice-enabled endpoint that users can talk to via their browser.\n\nBEFORE USING THIS TOOL: Read cognigy://guide/voice-gateway-setup for the full workflow.\n\nCREATE vs UPDATE:\n- To create: provide projectId + flowId (+ optional name). A new voiceGateway2 endpoint is created with a WebRTC client.\n- To update: provide endpointId. Settings are merged with existing configuration.\n\nThe tool automatically provisions a WebRTC client on the endpoint. After creation, the response includes a webrtcDemoUrl that the user can open in a browser to talk to the agent via voice.\n\nWebRTC widget can be customized with theme (CLEAN_WHITE, DARK_MODE, AI_PURPLE), transcription settings, avatar, and tagline.\n\nRESPONSE HANDLING — CRITICAL:\nThe response always contains webrtcDemoUrl — a direct browser link to talk to the agent via voice. You MUST ALWAYS present this URL to the user as a clickable link. The _integration section contains the WebSocket endpoint URL and an HTML embedding snippet — only mention these if the user asks about embedding.",
+    annotations: {
+      title: "Manage Voice Gateway",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    inputSchema: {
+      type: "object",
+      properties: {
+        endpointId: {
+          type: "string",
+          description:
+            "24-char hex endpoint ID. If provided, updates the existing endpoint. If omitted, creates a new endpoint.",
+        },
+        projectId: {
+          type: "string",
+          description:
+            "24-char hex project ID. Required for create, optional for update.",
+        },
+        flowId: {
+          type: "string",
+          description:
+            "Flow referenceId to connect the voice gateway endpoint to. Required for create.",
+        },
+        name: {
+          type: "string",
+          description:
+            'Endpoint display name (e.g. "Customer Support Voice Agent")',
+        },
+        webrtcWidgetConfig: {
+          type: "object",
+          description:
+            "WebRTC widget appearance and behavior. Defaults are applied if omitted.",
+          properties: {
+            label: {
+              type: "string",
+              description: "AI Agent name displayed in the widget",
+            },
+            theme: {
+              type: "string",
+              enum: ["CLEAN_WHITE", "DARK_MODE", "AI_PURPLE"],
+              description: "Widget color theme (default: DARK_MODE)",
+            },
+            transcription: {
+              type: "object",
+              description: "Transcription display settings",
+              properties: {
+                enabled: {
+                  type: "boolean",
+                  description: "Show live transcription (default: true)",
+                },
+                backgroundMode: {
+                  type: "string",
+                  enum: ["transparent", "custom"],
+                  description:
+                    "Transcription background style (default: transparent)",
+                },
+              },
+            },
+            demoPage: {
+              type: "object",
+              description: "Demo page layout settings",
+              properties: {
+                background: {
+                  type: "object",
+                  properties: {
+                    mode: {
+                      type: "string",
+                      enum: ["color", "image"],
+                    },
+                    color: {
+                      type: "string",
+                      description: 'Background color (default: "#FFFFFF")',
+                    },
+                  },
+                },
+                position: {
+                  type: "string",
+                  enum: ["centered", "bottom-right"],
+                  description:
+                    "Widget position on demo page (default: centered)",
+                },
+              },
+            },
+            avatarLogoUrl: {
+              type: "string",
+              description: "URL for the agent avatar image",
+            },
+            tagline: {
+              type: "string",
+              description: "Short tagline displayed under the agent name",
+            },
+          },
+        },
+      },
+    },
+  },
 ];

@@ -516,3 +516,43 @@ export const manageWebchatSchema = z.object({
   webchatIcon: webchatIconSchema,
   customJson: z.string().optional(),
 });
+
+// Tool 14: manage_voice_gateway
+
+const webrtcTranscriptionSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    backgroundMode: z.enum(["transparent", "custom"]).optional(),
+  })
+  .optional();
+
+const webrtcDemoPageSchema = z
+  .object({
+    background: z
+      .object({
+        mode: z.enum(["color", "image"]).optional(),
+        color: z.string().optional(),
+      })
+      .optional(),
+    position: z.enum(["centered", "bottom-right"]).optional(),
+  })
+  .optional();
+
+const webrtcWidgetConfigSchema = z
+  .object({
+    label: z.string().optional(),
+    theme: z.enum(["CLEAN_WHITE", "DARK_MODE", "AI_PURPLE"]).optional(),
+    transcription: webrtcTranscriptionSchema,
+    demoPage: webrtcDemoPageSchema,
+    avatarLogoUrl: z.string().optional(),
+    tagline: z.string().optional(),
+  })
+  .optional();
+
+export const manageVoiceGatewaySchema = z.object({
+  endpointId: idSchema.optional(),
+  projectId: idSchema.optional(),
+  flowId: z.string().optional(),
+  name: z.string().min(1).max(200).optional(),
+  webrtcWidgetConfig: webrtcWidgetConfigSchema,
+});

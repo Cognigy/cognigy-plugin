@@ -520,3 +520,71 @@ describe("createToolSchema", () => {
     ).toThrow();
   });
 });
+
+describe("manageVoiceGatewaySchema", () => {
+  it("accepts create with projectId and flowId", () => {
+    const result = schemas.manageVoiceGatewaySchema.parse({
+      projectId: VALID_ID,
+      flowId: "some-flow-ref",
+      name: "Voice Agent",
+    });
+    expect(result.projectId).toBe(VALID_ID);
+    expect(result.flowId).toBe("some-flow-ref");
+  });
+
+  it("accepts update with endpointId only", () => {
+    const result = schemas.manageVoiceGatewaySchema.parse({
+      endpointId: VALID_ID,
+    });
+    expect(result.endpointId).toBe(VALID_ID);
+  });
+
+  it("accepts full webrtcWidgetConfig", () => {
+    const result = schemas.manageVoiceGatewaySchema.parse({
+      projectId: VALID_ID,
+      flowId: "ref",
+      webrtcWidgetConfig: {
+        label: "Support",
+        theme: "AI_PURPLE",
+        transcription: { enabled: true, backgroundMode: "transparent" },
+        demoPage: {
+          background: { mode: "color", color: "#000000" },
+          position: "centered",
+        },
+        avatarLogoUrl: "https://example.com/avatar.png",
+        tagline: "Hello",
+      },
+    });
+    expect(result.webrtcWidgetConfig?.theme).toBe("AI_PURPLE");
+  });
+
+  it("rejects invalid endpointId", () => {
+    expect(() =>
+      schemas.manageVoiceGatewaySchema.parse({
+        endpointId: "short",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects invalid theme", () => {
+    expect(() =>
+      schemas.manageVoiceGatewaySchema.parse({
+        projectId: VALID_ID,
+        flowId: "ref",
+        webrtcWidgetConfig: { theme: "INVALID" },
+      }),
+    ).toThrow();
+  });
+
+  it("rejects invalid demoPage position", () => {
+    expect(() =>
+      schemas.manageVoiceGatewaySchema.parse({
+        projectId: VALID_ID,
+        flowId: "ref",
+        webrtcWidgetConfig: {
+          demoPage: { position: "top-left" },
+        },
+      }),
+    ).toThrow();
+  });
+});

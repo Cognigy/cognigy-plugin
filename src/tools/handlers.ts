@@ -500,6 +500,7 @@ export class ToolHandlers {
     private apiClient: CognigyApiClient,
     private endpointBaseUrl: string,
     private webchatBaseUrl: string = "",
+    private staticFilesBaseUrl: string = "",
   ) {}
 
   private sanitizeArgs(args: Record<string, any>): Record<string, any> {
@@ -3590,6 +3591,288 @@ export class ToolHandlers {
   }
 
   // =========================================================================
+  // Voice Gateway
+  // =========================================================================
+
+  async handleManageVoiceGateway(args: any): Promise<any> {
+    const data = schemas.manageVoiceGatewaySchema.parse(args);
+
+    let endpointId = data.endpointId ?? null;
+
+    // ---- CREATE ----
+    if (!endpointId) {
+      if (!data.projectId) {
+        return withHints(
+          {
+            error: "projectId is required to create a voice gateway endpoint.",
+          },
+          {
+            resource: "cognigy://guide/voice-gateway-setup",
+            action:
+              "Provide projectId. Use list_resources { resourceType: 'project' } to find one.",
+          },
+        );
+      }
+      if (!data.flowId) {
+        return withHints(
+          {
+            error:
+              "flowId is required to create a voice gateway endpoint. To update an existing one, provide endpointId instead.",
+          },
+          {
+            resource: "cognigy://guide/voice-gateway-setup",
+            action:
+              "Provide flowId. Use list_resources { resourceType: 'flow', projectId } to find one, or create an agent first with create_ai_agent.",
+          },
+        );
+      }
+
+      // Resolve locale — try flow first, fall back to project's primary locale
+      let localeId: string | undefined;
+      try {
+        const flow: any = await this.apiClient.get(
+          `/v2.0/flows/${data.flowId}`,
+        );
+        localeId = flow?.localeReference;
+      } catch {
+        // Fall through to project locale
+      }
+      if (!localeId) {
+        try {
+          const locales: any = await this.apiClient.get("/v2.0/locales", {
+            params: { projectId: data.projectId },
+          });
+          const items = locales?.items ?? locales;
+          if (Array.isArray(items) && items.length > 0) {
+            localeId = items[0].referenceId ?? items[0]._id;
+          }
+        } catch {
+          // Non-critical — endpoint will be created without locale
+        }
+      }
+
+      // Step 1: Create voiceGateway2 endpoint
+      const createPayload: any = {
+        projectId: data.projectId,
+        entrypoint: data.projectId,
+        channel: "voiceGateway2",
+        flowId: data.flowId,
+        name: data.name || "Voice Gateway",
+        targetType: "flow",
+        agentId: "",
+      };
+      if (localeId) createPayload.localeId = localeId;
+
+      let endpoint: any;
+      try {
+        const created: any = await this.apiClient.post(
+          "/new/v2.0/endpoints",
+          createPayload,
+        );
+        endpointId = created._id || created.id;
+        endpoint = await this.apiClient.get(
+          `/new/v2.0/endpoints/${endpointId}`,
+        );
+      } catch (error: any) {
+        return withHints(
+          {
+            error: `Failed to create voice gateway endpoint: ${error.message}`,
+          },
+          {
+            resource: "cognigy://guide/voice-gateway-setup",
+            action: "Check projectId and flowId, then retry.",
+          },
+        );
+      }
+
+      // Step 2: Provision WebRTC client
+      const userWidgetConfig = data.webrtcWidgetConfig ?? {};
+      const webrtcWidgetConfig = {
+        label: userWidgetConfig.label ?? "",
+        active: true,
+        theme: userWidgetConfig.theme ?? "DARK_MODE",
+        transcription: {
+          enabled: userWidgetConfig.transcription?.enabled ?? true,
+          backgroundMode:
+            userWidgetConfig.transcription?.backgroundMode ?? "transparent",
+        },
+        demoPage: {
+          background: {
+            mode: userWidgetConfig.demoPage?.background?.mode ?? "color",
+            color: userWidgetConfig.demoPage?.background?.color ?? "#FFFFFF",
+          },
+          position: userWidgetConfig.demoPage?.position ?? "centered",
+        },
+        ...(userWidgetConfig.avatarLogoUrl
+          ? { avatarLogoUrl: userWidgetConfig.avatarLogoUrl }
+          : {}),
+        ...(userWidgetConfig.tagline
+          ? { tagline: userWidgetConfig.tagline }
+          : {}),
+      };
+
+      try {
+        await this.apiClient.patch(`/new/v2.0/endpoints/${endpointId}`, {
+          createWebrtcClient: true,
+          channel: "voiceGateway2",
+          name: endpoint.name,
+          URLToken: endpoint.URLToken,
+          localeId: endpoint.localeId ?? localeId,
+          webrtcWidgetConfig,
+        });
+        endpoint = await this.apiClient.get(
+          `/new/v2.0/endpoints/${endpointId}`,
+        );
+      } catch (error: any) {
+        // Endpoint created but WebRTC failed — still return what we have
+        return withHints(
+          this.buildVoiceGatewayResponse({
+            created: true,
+            endpointId: endpointId!,
+            endpoint,
+            webrtcProvisioned: false,
+          }),
+          {
+            warning: `Endpoint created but WebRTC client provisioning failed: ${error.message}`,
+            action: `Retry by calling manage_voice_gateway { endpointId: "${endpointId}" }`,
+          },
+        );
+      }
+
+      return this.buildVoiceGatewayResponse({
+        created: true,
+        endpointId: endpointId!,
+        endpoint,
+        webrtcProvisioned: true,
+      });
+    }
+
+    // ---- UPDATE ----
+    try {
+      let endpoint: any = await this.apiClient.get(
+        `/new/v2.0/endpoints/${endpointId}`,
+      );
+
+      const patchPayload: any = {};
+      if (data.name) patchPayload.name = data.name;
+      if (data.flowId) patchPayload.flowId = data.flowId;
+
+      if (data.webrtcWidgetConfig) {
+        const existing = endpoint.webrtcWidgetConfig ?? {};
+        patchPayload.webrtcWidgetConfig = {
+          ...existing,
+          ...data.webrtcWidgetConfig,
+          transcription: {
+            ...(existing.transcription ?? {}),
+            ...(data.webrtcWidgetConfig.transcription ?? {}),
+          },
+          demoPage: {
+            ...(existing.demoPage ?? {}),
+            ...(data.webrtcWidgetConfig.demoPage ?? {}),
+            background: {
+              ...(existing.demoPage?.background ?? {}),
+              ...(data.webrtcWidgetConfig.demoPage?.background ?? {}),
+            },
+          },
+        };
+      }
+
+      // If no WebRTC client yet, provision it
+      if (!endpoint.webrtcClient) {
+        patchPayload.createWebrtcClient = true;
+        patchPayload.channel = "voiceGateway2";
+        patchPayload.URLToken = endpoint.URLToken;
+        if (!patchPayload.webrtcWidgetConfig) {
+          patchPayload.webrtcWidgetConfig = {
+            label: "",
+            active: true,
+            theme: "DARK_MODE",
+            transcription: { enabled: true, backgroundMode: "transparent" },
+            demoPage: {
+              background: { mode: "color", color: "#FFFFFF" },
+              position: "centered",
+            },
+          };
+        }
+      }
+
+      if (Object.keys(patchPayload).length === 0) {
+        return this.buildVoiceGatewayResponse({
+          endpointId: endpointId!,
+          endpoint,
+          webrtcProvisioned: !!endpoint.webrtcClient,
+          note: "No changes requested. Returning current endpoint info.",
+        });
+      }
+
+      await this.apiClient.patch(
+        `/new/v2.0/endpoints/${endpointId}`,
+        patchPayload,
+      );
+      endpoint = await this.apiClient.get(`/new/v2.0/endpoints/${endpointId}`);
+
+      return this.buildVoiceGatewayResponse({
+        updated: true,
+        endpointId: endpointId!,
+        endpoint,
+        webrtcProvisioned: !!endpoint.webrtcClient,
+      });
+    } catch (error: any) {
+      return withHints(
+        { error: `Failed to update voice gateway endpoint: ${error.message}` },
+        {
+          resource: "cognigy://guide/voice-gateway-setup",
+          action: "Verify endpointId and settings, then retry.",
+        },
+      );
+    }
+  }
+
+  private buildVoiceGatewayResponse(opts: {
+    created?: boolean;
+    updated?: boolean;
+    endpointId: string;
+    endpoint: any;
+    webrtcProvisioned: boolean;
+    note?: string;
+  }): any {
+    const { endpoint } = opts;
+    const webrtcDemoUrl = this.buildWebrtcDemoUrl(endpoint);
+    const wsEndpointUrl = this.buildVoiceGatewayWsUrl(endpoint);
+
+    const result: any = {};
+    if (opts.created) result.created = true;
+    if (opts.updated) result.updated = true;
+    result.endpointId = opts.endpointId;
+    result.name = endpoint.name;
+    result.channel = "voiceGateway2";
+    result.webrtcProvisioned = opts.webrtcProvisioned;
+    result.webrtcDemoUrl = webrtcDemoUrl;
+    if (opts.note) result.note = opts.note;
+
+    result._integration = {
+      wsEndpointUrl,
+      embeddingSnippet: `<script src="https://github.com/Cognigy/WebRTCWidget/releases/latest/download/webRTCWidget.js"></script>\n<script>\n  addEventListener("load", (event) => {\n    if (window.initWebRTCWidget) {\n      window.initWebRTCWidget("${wsEndpointUrl}");\n    }\n  });\n</script>`,
+    };
+
+    result._instruction =
+      "ALWAYS show webrtcDemoUrl to the user as a clickable link. This is the live demo page they can open in a browser to talk to the agent via voice. Only mention _integration details if the user asks about embedding.";
+
+    return result;
+  }
+
+  private buildWebrtcDemoUrl(endpoint: any): string | undefined {
+    if (!endpoint.URLToken || !this.staticFilesBaseUrl) return undefined;
+    return `${this.staticFilesBaseUrl}/webrtc/?token=${endpoint.URLToken}`;
+  }
+
+  private buildVoiceGatewayWsUrl(endpoint: any): string | undefined {
+    if (!endpoint.URLToken || !this.endpointBaseUrl) return undefined;
+    const base = `${this.endpointBaseUrl}/${endpoint.URLToken}/voiceGateway`;
+    return base.replace(/^http/, "ws");
+  }
+
+  // =========================================================================
   // Main dispatcher
   // =========================================================================
   async handleToolCall(toolName: string, args: any): Promise<any> {
@@ -3638,6 +3921,9 @@ export class ToolHandlers {
           break;
         case "manage_webchat":
           result = await this.handleManageWebchat(args);
+          break;
+        case "manage_voice_gateway":
+          result = await this.handleManageVoiceGateway(args);
           break;
         default:
           throw new Error(`Unknown tool: ${toolName}`);

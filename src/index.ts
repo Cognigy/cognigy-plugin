@@ -74,6 +74,12 @@ const RESOURCE_MAP: Record<
       "How to upload, inspect, import, export, and download Cognigy package zip files",
     file: "package-management.md",
   },
+  "cognigy://guide/voice-gateway-setup": {
+    name: "Voice Gateway Setup Guide",
+    description:
+      "How to create a Voice Gateway endpoint with WebRTC for browser-based voice interaction",
+    file: "voice-gateway-setup.md",
+  },
 };
 
 async function main() {
@@ -93,6 +99,7 @@ async function main() {
       apiClient,
       config.endpointBaseUrl,
       config.webchatBaseUrl,
+      config.staticFilesBaseUrl,
     );
     const rateLimiter = new RateLimiter(config.rateLimit);
 

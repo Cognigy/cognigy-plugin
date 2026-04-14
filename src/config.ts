@@ -9,6 +9,7 @@ export interface Config {
   apiBaseUrl: string;
   endpointBaseUrl: string;
   webchatBaseUrl: string;
+  staticFilesBaseUrl: string;
   apiKey: string;
   serverName: string;
   serverVersion: string;
@@ -74,6 +75,23 @@ function deriveEndpointBaseUrl(apiBaseUrl: string): string {
 }
 
 /**
+ * Derive the static-files base URL from the API base URL.
+ * Pattern: https://api-{env}.cognigy.ai -> https://static-{env}.cognigy.ai
+ */
+function deriveStaticFilesBaseUrl(apiBaseUrl: string): string {
+  try {
+    const url = new URL(apiBaseUrl);
+    const match = url.hostname.match(/^api-(.+)$/);
+    if (match) {
+      return `${url.protocol}//static-${match[1]}`;
+    }
+  } catch {
+    // fall through
+  }
+  return apiBaseUrl.replace(/\/api-/, "/static-");
+}
+
+/**
  * Derive the webchat demo base URL from the API base URL.
  * Pattern: https://api-{env}.cognigy.ai -> https://webchat-{env}.cognigy.ai
  */
@@ -132,10 +150,15 @@ export function loadConfig(): Config {
     process.env.COGNIGY_WEBCHAT_BASE_URL ||
     deriveWebchatBaseUrl(normalizedApiBaseUrl);
 
+  const staticFilesBaseUrl =
+    process.env.COGNIGY_STATIC_FILES_BASE_URL ||
+    deriveStaticFilesBaseUrl(normalizedApiBaseUrl);
+
   return {
     apiBaseUrl: normalizedApiBaseUrl,
     endpointBaseUrl,
     webchatBaseUrl,
+    staticFilesBaseUrl,
     apiKey,
     serverName: process.env.MCP_SERVER_NAME || "cognigy-api-mcp",
     serverVersion: process.env.MCP_SERVER_VERSION || PACKAGE_VERSION,

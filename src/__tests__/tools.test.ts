@@ -37,7 +37,12 @@ describe("ToolHandlers v2", () => {
       put: jest.fn(),
       uploadFile: jest.fn(),
     } as any;
-    h = new ToolHandlers(api, "https://endpoint-trial.cognigy.ai");
+    h = new ToolHandlers(
+      api,
+      "https://endpoint-trial.cognigy.ai",
+      "",
+      "https://static-trial.cognigy.ai",
+    );
   });
 
   // =========================================================================
@@ -1923,6 +1928,200 @@ describe("ToolHandlers v2", () => {
 
       expect(result.task.progress).toBe(0.5);
       expect(result.task.status).toBe("active");
+    });
+  });
+
+  // =========================================================================
+  // Dispatcher
+  // =========================================================================
+  // =========================================================================
+  // manage_voice_gateway
+  // =========================================================================
+  describe("manage_voice_gateway", () => {
+    it("creates endpoint and provisions WebRTC client", async () => {
+      const mockCreated = {
+        _id: ID.endpoint,
+        URLToken: "vg-token-123",
+        channel: "voiceGateway2",
+        name: "Voice Agent",
+      };
+      const mockEndpoint = {
+        ...mockCreated,
+        localeId: "loc-123",
+        webrtcClient: true,
+      };
+
+      // POST create endpoint
+      api.post.mockResolvedValueOnce(mockCreated);
+      // GET after create
+      api.get
+        .mockResolvedValueOnce({ localeReference: "loc-123" }) // flow lookup
+        .mockResolvedValueOnce(mockEndpoint) // after POST
+        .mockResolvedValueOnce({ ...mockEndpoint, webrtcClient: true }); // after PATCH
+      // PATCH to provision WebRTC
+      api.patch.mockResolvedValueOnce({});
+
+      const result = await h.handleToolCall("manage_voice_gateway", {
+        projectId: ID.project,
+        flowId: ID.flow,
+        name: "Voice Agent",
+      });
+
+      expect(result.created).toBe(true);
+      expect(result.channel).toBe("voiceGateway2");
+      expect(result.webrtcProvisioned).toBe(true);
+      expect(result.webrtcDemoUrl).toContain("vg-token-123");
+
+      // Verify endpoint creation call
+      expect(api.post).toHaveBeenCalledWith(
+        "/new/v2.0/endpoints",
+        expect.objectContaining({
+          channel: "voiceGateway2",
+          flowId: ID.flow,
+          name: "Voice Agent",
+        }),
+      );
+
+      // Verify WebRTC provisioning call
+      expect(api.patch).toHaveBeenCalledWith(
+        `/new/v2.0/endpoints/${ID.endpoint}`,
+        expect.objectContaining({
+          createWebrtcClient: true,
+          channel: "voiceGateway2",
+        }),
+      );
+    });
+
+    it("returns error when projectId missing for create", async () => {
+      const result = await h.handleToolCall("manage_voice_gateway", {
+        flowId: ID.flow,
+      });
+      expect(result.error).toContain("projectId is required");
+    });
+
+    it("returns error when flowId missing for create", async () => {
+      const result = await h.handleToolCall("manage_voice_gateway", {
+        projectId: ID.project,
+      });
+      expect(result.error).toContain("flowId is required");
+    });
+
+    it("updates existing endpoint with new widget config", async () => {
+      const existingEndpoint = {
+        _id: ID.endpoint,
+        URLToken: "vg-token-456",
+        channel: "voiceGateway2",
+        name: "Voice Agent",
+        webrtcClient: true,
+        webrtcWidgetConfig: {
+          label: "Old",
+          theme: "DARK_MODE",
+          transcription: { enabled: true, backgroundMode: "transparent" },
+          demoPage: {
+            background: { mode: "color", color: "#FFFFFF" },
+            position: "centered",
+          },
+        },
+      };
+
+      api.get
+        .mockResolvedValueOnce(existingEndpoint) // initial fetch
+        .mockResolvedValueOnce({
+          ...existingEndpoint,
+          webrtcWidgetConfig: {
+            ...existingEndpoint.webrtcWidgetConfig,
+            theme: "AI_PURPLE",
+          },
+        }); // after patch
+      api.patch.mockResolvedValueOnce({});
+
+      const result = await h.handleToolCall("manage_voice_gateway", {
+        endpointId: ID.endpoint,
+        webrtcWidgetConfig: { theme: "AI_PURPLE" },
+      });
+
+      expect(result.updated).toBe(true);
+      expect(result.webrtcProvisioned).toBe(true);
+      expect(api.patch).toHaveBeenCalledWith(
+        `/new/v2.0/endpoints/${ID.endpoint}`,
+        expect.objectContaining({
+          webrtcWidgetConfig: expect.objectContaining({ theme: "AI_PURPLE" }),
+        }),
+      );
+    });
+
+    it("provisions WebRTC when updating endpoint without webrtcClient", async () => {
+      const existingEndpoint = {
+        _id: ID.endpoint,
+        URLToken: "vg-token-789",
+        channel: "voiceGateway2",
+        name: "Voice Agent",
+        // no webrtcClient
+      };
+
+      api.get
+        .mockResolvedValueOnce(existingEndpoint)
+        .mockResolvedValueOnce({ ...existingEndpoint, webrtcClient: true });
+      api.patch.mockResolvedValueOnce({});
+
+      const result = await h.handleToolCall("manage_voice_gateway", {
+        endpointId: ID.endpoint,
+        name: "Updated Name",
+      });
+
+      expect(result.updated).toBe(true);
+      expect(api.patch).toHaveBeenCalledWith(
+        `/new/v2.0/endpoints/${ID.endpoint}`,
+        expect.objectContaining({
+          createWebrtcClient: true,
+          name: "Updated Name",
+        }),
+      );
+    });
+
+    it("returns current info when no changes requested on existing endpoint", async () => {
+      const existingEndpoint = {
+        _id: ID.endpoint,
+        URLToken: "vg-token-000",
+        channel: "voiceGateway2",
+        name: "Voice Agent",
+        webrtcClient: true,
+      };
+
+      api.get.mockResolvedValueOnce(existingEndpoint);
+
+      const result = await h.handleToolCall("manage_voice_gateway", {
+        endpointId: ID.endpoint,
+      });
+
+      expect(result.note).toContain("No changes requested");
+      expect(api.patch).not.toHaveBeenCalled();
+    });
+
+    it("returns partial success when WebRTC provisioning fails on create", async () => {
+      const mockCreated = {
+        _id: ID.endpoint,
+        URLToken: "vg-fail-token",
+        channel: "voiceGateway2",
+        name: "Voice Agent",
+      };
+
+      api.post.mockResolvedValueOnce(mockCreated);
+      api.get
+        .mockResolvedValueOnce({ localeReference: "loc-123" }) // flow
+        .mockResolvedValueOnce(mockCreated); // after POST
+      api.patch.mockRejectedValueOnce(new Error("WebRTC provision failed"));
+
+      const result = await h.handleToolCall("manage_voice_gateway", {
+        projectId: ID.project,
+        flowId: ID.flow,
+      });
+
+      expect(result.created).toBe(true);
+      expect(result.webrtcProvisioned).toBe(false);
+      expect(result._hints.warning).toContain(
+        "WebRTC client provisioning failed",
+      );
     });
   });
 
