@@ -1525,4 +1525,43 @@ export const tools: ToolDefinition[] = [
       },
     },
   },
+
+  // 15. manage_settings
+  {
+    name: "manage_settings",
+    description:
+      "Manage project-level settings in Cognigy. Currently supports configuring Voice Preview Settings (speech provider and connection).\n\nBEFORE USING THIS TOOL: Read cognigy://guide/settings for the full workflow.\n\nOperations:\n- set_voice_preview: Configure the speech provider for voice preview. Requires projectId and provider. If connectionId is omitted, the tool auto-detects an existing speech connection for the chosen provider. If no connection is found, it returns instructions to upload a package containing one via manage_packages.\n\nSupported providers: microsoft, google, aws, deepgram, elevenlabs.",
+    annotations: {
+      title: "Manage Settings",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    inputSchema: {
+      type: "object",
+      properties: {
+        operation: {
+          type: "string",
+          enum: ["set_voice_preview"],
+          description: "Which operation to perform",
+        },
+        projectId: {
+          type: "string",
+          description: "24-char hex project ID",
+        },
+        provider: {
+          type: "string",
+          enum: ["microsoft", "google", "aws", "deepgram", "elevenlabs"],
+          description: "Speech provider to configure for voice preview",
+        },
+        connectionId: {
+          type: "string",
+          description:
+            "Connection referenceId to use. If omitted, auto-detects an existing speech connection for the provider.",
+        },
+      },
+      required: ["operation", "projectId", "provider"],
+    },
+  },
 ];

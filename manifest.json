@@ -109,6 +109,10 @@
     {
       "name": "manage_voice_gateway",
       "description": "Create or configure a Voice Gateway endpoint with WebRTC for browser-based voice interaction"
+    },
+    {
+      "name": "manage_settings",
+      "description": "Manage project-level settings including voice preview speech providers"
     }
   ],
   "tools_generated": false,

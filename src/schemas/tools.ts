@@ -556,3 +556,21 @@ export const manageVoiceGatewaySchema = z.object({
   name: z.string().min(1).max(200).optional(),
   webrtcWidgetConfig: webrtcWidgetConfigSchema,
 });
+
+// Tool 15: manage_settings
+const speechProviderEnum = z.enum([
+  "microsoft",
+  "google",
+  "aws",
+  "deepgram",
+  "elevenlabs",
+]);
+
+export const manageSettingsSchema = z.discriminatedUnion("operation", [
+  z.object({
+    operation: z.literal("set_voice_preview"),
+    projectId: idSchema,
+    provider: speechProviderEnum,
+    connectionId: z.string().optional(),
+  }),
+]);

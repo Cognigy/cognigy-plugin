@@ -2126,6 +2126,127 @@ describe("ToolHandlers v2", () => {
   });
 
   // =========================================================================
+  // manage_settings
+  // =========================================================================
+  describe("manage_settings", () => {
+    it("auto-detects connection and updates settings", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [
+          {
+            referenceId: "conn-ref-123",
+            extension: "@cognigy/audio-preview-provider",
+            type: "MicrosoftSpeechProvider",
+            name: "Microsoft Speech",
+          },
+        ],
+      });
+      api.patch.mockResolvedValueOnce({});
+
+      const result = await h.handleToolCall("manage_settings", {
+        operation: "set_voice_preview",
+        projectId: ID.project,
+        provider: "microsoft",
+      });
+
+      expect(result.updated).toBe(true);
+      expect(result.provider).toBe("microsoft");
+      expect(result.connectionId).toBe("conn-ref-123");
+      expect(api.patch).toHaveBeenCalledWith(
+        `/new/v2.0/projects/${ID.project}/settings`,
+        {
+          audioPreviewSettings: {
+            provider: "microsoft",
+            connections: {
+              microsoft: { connectionId: "conn-ref-123" },
+            },
+          },
+        },
+      );
+    });
+
+    it("uses explicit connectionId without auto-detect", async () => {
+      api.patch.mockResolvedValueOnce({});
+
+      const result = await h.handleToolCall("manage_settings", {
+        operation: "set_voice_preview",
+        projectId: ID.project,
+        provider: "google",
+        connectionId: "explicit-conn-id",
+      });
+
+      expect(result.updated).toBe(true);
+      expect(result.connectionId).toBe("explicit-conn-id");
+      expect(api.get).not.toHaveBeenCalled();
+    });
+
+    it("returns error when no connection found", async () => {
+      api.get.mockResolvedValueOnce({ items: [] });
+
+      const result = await h.handleToolCall("manage_settings", {
+        operation: "set_voice_preview",
+        projectId: ID.project,
+        provider: "deepgram",
+      });
+
+      expect(result.error).toContain("No speech connection found");
+      expect(result._hints.action).toContain("manage_packages");
+      expect(api.patch).not.toHaveBeenCalled();
+    });
+
+    it("returns error when PATCH fails", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [
+          {
+            referenceId: "conn-ref-456",
+            extension: "@cognigy/audio-preview-provider",
+            type: "AWSSpeechProvider",
+          },
+        ],
+      });
+      api.patch.mockRejectedValueOnce(new Error("Forbidden"));
+
+      const result = await h.handleToolCall("manage_settings", {
+        operation: "set_voice_preview",
+        projectId: ID.project,
+        provider: "aws",
+      });
+
+      expect(result.error).toContain("Failed to update voice preview");
+    });
+
+    it("filters connections by extension and type", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [
+          {
+            referenceId: "wrong-ext",
+            extension: "@cognigy/some-other",
+            type: "GoogleSpeechProvider",
+          },
+          {
+            referenceId: "wrong-type",
+            extension: "@cognigy/audio-preview-provider",
+            type: "MicrosoftSpeechProvider",
+          },
+          {
+            referenceId: "correct-match",
+            extension: "@cognigy/audio-preview-provider",
+            type: "GoogleSpeechProvider",
+          },
+        ],
+      });
+      api.patch.mockResolvedValueOnce({});
+
+      const result = await h.handleToolCall("manage_settings", {
+        operation: "set_voice_preview",
+        projectId: ID.project,
+        provider: "google",
+      });
+
+      expect(result.connectionId).toBe("correct-match");
+    });
+  });
+
+  // =========================================================================
   // Dispatcher
   // =========================================================================
   describe("handleToolCall dispatcher", () => {

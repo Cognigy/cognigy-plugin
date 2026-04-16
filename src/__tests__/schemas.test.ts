@@ -588,3 +588,66 @@ describe("manageVoiceGatewaySchema", () => {
     ).toThrow();
   });
 });
+
+describe("manageSettingsSchema", () => {
+  it("accepts set_voice_preview with projectId and provider", () => {
+    const result = schemas.manageSettingsSchema.parse({
+      operation: "set_voice_preview",
+      projectId: VALID_ID,
+      provider: "microsoft",
+    });
+    expect(result.operation).toBe("set_voice_preview");
+    expect(result.provider).toBe("microsoft");
+  });
+
+  it("accepts set_voice_preview with optional connectionId", () => {
+    const result = schemas.manageSettingsSchema.parse({
+      operation: "set_voice_preview",
+      projectId: VALID_ID,
+      provider: "google",
+      connectionId: "some-ref-id",
+    });
+    expect(result.connectionId).toBe("some-ref-id");
+  });
+
+  it("accepts all provider values", () => {
+    for (const p of ["microsoft", "google", "aws", "deepgram", "elevenlabs"]) {
+      expect(() =>
+        schemas.manageSettingsSchema.parse({
+          operation: "set_voice_preview",
+          projectId: VALID_ID,
+          provider: p,
+        }),
+      ).not.toThrow();
+    }
+  });
+
+  it("rejects invalid provider", () => {
+    expect(() =>
+      schemas.manageSettingsSchema.parse({
+        operation: "set_voice_preview",
+        projectId: VALID_ID,
+        provider: "openai",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects missing projectId", () => {
+    expect(() =>
+      schemas.manageSettingsSchema.parse({
+        operation: "set_voice_preview",
+        provider: "microsoft",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects invalid projectId", () => {
+    expect(() =>
+      schemas.manageSettingsSchema.parse({
+        operation: "set_voice_preview",
+        projectId: "short",
+        provider: "microsoft",
+      }),
+    ).toThrow();
+  });
+});

@@ -3828,6 +3828,102 @@ export class ToolHandlers {
     }
   }
 
+  // =========================================================================
+  // Settings
+  // =========================================================================
+
+  private static readonly SPEECH_PROVIDER_TYPE_MAP: Record<string, string> = {
+    microsoft: "MicrosoftSpeechProvider",
+    google: "GoogleSpeechProvider",
+    aws: "AWSSpeechProvider",
+    deepgram: "DeepgramSpeechProvider",
+    elevenlabs: "ElevenLabsSpeechProvider",
+  };
+
+  async handleManageSettings(args: any): Promise<any> {
+    const data = schemas.manageSettingsSchema.parse(args);
+
+    switch (data.operation) {
+      case "set_voice_preview": {
+        const { projectId, provider } = data;
+        let connectionRefId = data.connectionId;
+
+        // Auto-detect speech connection if not provided
+        if (!connectionRefId) {
+          const providerType =
+            ToolHandlers.SPEECH_PROVIDER_TYPE_MAP[provider] ?? provider;
+          try {
+            const connections: any = await this.apiClient.get(
+              "/new/v2.0/connections",
+              { params: { projectId } },
+            );
+            const items = connections?.items ?? connections;
+            const match = (Array.isArray(items) ? items : []).find(
+              (c: any) =>
+                c.extension === "@cognigy/audio-preview-provider" &&
+                c.type === providerType,
+            );
+            if (match) {
+              connectionRefId = match.referenceId ?? match._id;
+            }
+          } catch {
+            // Fall through — will report missing connection
+          }
+
+          if (!connectionRefId) {
+            return withHints(
+              {
+                error: `No speech connection found for provider "${provider}".`,
+                provider,
+                providerType,
+              },
+              {
+                action: `Upload a package containing a "${providerType}" speech connection using manage_packages { operation: "upload_and_inspect", projectId: "${projectId}", filePath: "<path>" }, import it, then retry this operation.`,
+                resource: "cognigy://guide/settings",
+              },
+            );
+          }
+        }
+
+        // PATCH project settings
+        try {
+          await this.apiClient.patch(
+            `/new/v2.0/projects/${projectId}/settings`,
+            {
+              audioPreviewSettings: {
+                provider,
+                connections: {
+                  [provider]: { connectionId: connectionRefId },
+                },
+              },
+            },
+          );
+        } catch (error: any) {
+          return withHints(
+            {
+              error: `Failed to update voice preview settings: ${error.message}`,
+            },
+            {
+              resource: "cognigy://guide/settings",
+              action: "Verify projectId and connectionId, then retry.",
+            },
+          );
+        }
+
+        return {
+          updated: true,
+          provider,
+          connectionId: connectionRefId,
+          _hint:
+            "Voice preview settings configured. You can now use manage_voice_gateway to create a voice endpoint, or test voice preview in the Cognigy UI.",
+        };
+      }
+
+      default:
+        throw new Error(`Unknown operation: ${(data as any).operation}`);
+    }
+  }
+
   private buildVoiceGatewayResponse(opts: {
     created?: boolean;
     updated?: boolean;
@@ -3857,6 +3953,9 @@ export class ToolHandlers {
 
     result._instruction =
       "ALWAYS show webrtcDemoUrl to the user as a clickable link. This is the live demo page they can open in a browser to talk to the agent via voice. Only mention _integration details if the user asks about embedding.";
+
+    result._speechProviderHint =
+      "Voice preview requires a speech provider. Ensure one is configured in Settings > Voice Preview Settings > Speech Provider, or use manage_settings { operation: 'set_voice_preview', projectId, provider } to set it via API.";
 
     return result;
   }
@@ -3924,6 +4023,9 @@ export class ToolHandlers {
           break;
         case "manage_voice_gateway":
           result = await this.handleManageVoiceGateway(args);
+          break;
+        case "manage_settings":
+          result = await this.handleManageSettings(args);
           break;
         default:
           throw new Error(`Unknown tool: ${toolName}`);

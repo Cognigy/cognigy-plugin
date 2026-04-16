@@ -80,6 +80,12 @@ const RESOURCE_MAP: Record<
       "How to create a Voice Gateway endpoint with WebRTC for browser-based voice interaction",
     file: "voice-gateway-setup.md",
   },
+  "cognigy://guide/settings": {
+    name: "Settings Guide",
+    description:
+      "How to configure project-level settings including voice preview speech providers",
+    file: "settings.md",
+  },
 };
 
 async function main() {
