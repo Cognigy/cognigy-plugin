@@ -140,6 +140,7 @@ export interface PackageExportableResource {
   disabledReason?: "function_export_not_supported" | "retired_model";
   dependencyCount: number;
   modelType?: string;
+  connectionId?: string;
 }
 
 export interface PackageExportSkippedResource {
@@ -543,6 +544,22 @@ export function buildPackageExportPlan(
     for (const resource of selectedExplicitResources.values()) {
       collectDependencies(resourcesById, resource, dependencyCandidates);
     }
+
+    // Auto-include connections referenced by selected largeLanguageModel resources.
+    // The graph dependency tree may not link LLM → connection explicitly,
+    // but an LLM without its connection is non-functional after import.
+    for (const resource of selectedExplicitResources.values()) {
+      if (resource.type !== "largeLanguageModel") continue;
+      const connId =
+        resource.properties?.connectionId ??
+        (resource as any).connectionId ??
+        undefined;
+      if (!connId || selectedExplicitResources.has(connId)) continue;
+      const connResource = resourcesById.get(connId);
+      if (connResource && !dependencyCandidates.has(connId)) {
+        dependencyCandidates.set(connId, connResource);
+      }
+    }
   }
 
   for (const selectedId of selectedExplicitResources.keys()) {
@@ -700,9 +717,20 @@ export function buildPackageExportablePreview(
         dependencyCount: Array.isArray((resource as any)?.dependencies)
           ? (resource as any).dependencies.length
           : 0,
-        ...(resource.type === "largeLanguageModel" &&
-        resource.properties?.modelType
-          ? { modelType: resource.properties.modelType }
+        ...(resource.type === "largeLanguageModel"
+          ? {
+              ...(resource.properties?.modelType
+                ? { modelType: resource.properties.modelType }
+                : {}),
+              ...((resource.properties?.connectionId ??
+                (resource as any).connectionId) != null
+                ? {
+                    connectionId:
+                      resource.properties?.connectionId ??
+                      (resource as any).connectionId,
+                  }
+                : {}),
+            }
           : {}),
       };
     });

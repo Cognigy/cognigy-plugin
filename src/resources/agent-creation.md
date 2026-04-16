@@ -3,31 +3,40 @@
 ## Prerequisites
 
 - A project (use list_resources { resourceType: "project" } to find one)
-- An LLM resource in the project (use setup_llm if none exists)
+- A working LLM resource in the project
 
 ## Steps
 
-1. list_resources { resourceType: "project" } — pick a projectId
-2. list_resources { resourceType: "llm_model", projectId } — check if LLM exists
-3. If no LLM: setup_llm { projectId, provider: "openAI", modelType: "gpt-4o", apiKey }
+1. list_resources { resourceType: "project" } — inspect all projects
+2. Choose or create the target project, then run list_resources { resourceType: "llm_model", projectId } — check if the target already has an LLM
+3. If the target project has no LLM, check the other projects for reusable LLMs
+4. If another project already has a working LLM, transfer it together with its connection:
+   - manage_packages { operation: "list_exportable", projectId: "<sourceProjectId>" }
+   - manage_packages { operation: "export", projectId: "<sourceProjectId>", resourceIds: ["<llmResourceId>", "<connectionResourceId>"], name: "llm-transfer" }
+   - manage_packages { operation: "upload_and_inspect", projectId: "<targetProjectId>", filePath: "<savedTo from export>" }
+   - manage_packages { operation: "import", projectId: "<targetProjectId>", packageId: "<packageId from upload_and_inspect>" }
+   - list_resources { resourceType: "llm_model", projectId: "<targetProjectId>" } — verify the import succeeded
+5. Only if no reusable LLM exists, or the package transfer failed: setup_llm { projectId, provider: "openAI", modelType: "gpt-4o", apiKey }
    - With isDefault: true (the default), agents auto-use this LLM — no extra step needed.
    - Save the `referenceId` from the response if you need to assign it explicitly later.
      (See cognigy://guide/llm-providers for valid provider/modelType values)
-4. create_ai_agent { projectId, name, description }
+6. create_ai_agent { projectId, name, description }
    — Returns: agent, flow, endpoint, endpointUrl
    — The default LLM is automatically assigned to the agent's job node. If llmStatus is "configured", no extra step is needed.
-5. (Only if llmStatus is "unknown" after create) Assign LLM to agent:
-   update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: "<referenceId from step 3>" } }
-6. talk_to_agent { endpointUrl, message }
-7. Refine the agent using update_ai_agent — see "All configuration fields" below
-8. Repeat 6-7 until satisfied
+7. (Only if llmStatus is "unknown" after create) Assign LLM to agent:
+   update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: "<referenceId from step 4 or 5>" } }
+8. Only after the project has a confirmed working LLM: talk_to_agent { endpointUrl, message }
+9. Refine the agent using update_ai_agent — see "All configuration fields" below
+10. Repeat 8-9 until satisfied
 
 ## Adding tools (optional)
 
-9. create_tool { aiAgentId, toolType, name, config }
-   (See cognigy://guide/tools-setup for tool types and config)
-10. talk_to_agent — test with tool-triggering messages
-11. Repeat 6-10 until satisfied
+11. create_tool { aiAgentId, toolType, name, config }
+    (See cognigy://guide/tools-setup for tool types and config)
+12. talk_to_agent — test with tool-triggering messages
+13. Repeat 8-12 until satisfied
+
+Important: before creating a new tool, inspect the existing agent flow/tools first and make sure you are not reusing an existing `toolId`. Tool IDs must be unique within an agent flow.
 
 ## All configuration fields (update_ai_agent)
 
@@ -84,7 +93,9 @@ Always use ALL relevant fields when configuring an agent. Do not put everything 
 ## Key facts
 
 - create_ai_agent auto-provisions: flow, AI Agent Job Node, REST endpoint
+- Cognigy connections are project-scoped. If you want to reuse an LLM from another project, import BOTH the LLM and its connection via manage_packages before testing the agent.
 - create_tool auto-provisions: flow nodes for tools. Do NOT create tool nodes manually.
+- Duplicate `toolId` values can cause empty or failed responses. Check the flow/tools before assuming the problem is the LLM or connection.
 - **Knowledge**: Always attach knowledge stores as tools (via create_tool { toolType: "knowledge" } or knowledgeStoreReferenceId on create_ai_agent). Knowledge tools give the agent a dedicated search capability. Only attach to the persona (via update_ai_agent) if the user explicitly requests persona-level knowledge.
 - Use same sessionId across talk_to_agent calls for multi-turn testing
 - endpointUrl uses a different base URL (endpoint-\*.cognigy.ai), not the API URL

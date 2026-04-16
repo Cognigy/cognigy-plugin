@@ -81,7 +81,9 @@ describe("ToolHandlers v2", () => {
         .mockResolvedValueOnce({
           items: [{ _id: ID.entry, isEntryPoint: true }],
         })
-        .mockResolvedValueOnce({ items: [{ _id: ID.llm }] });
+        .mockResolvedValueOnce({ items: [{ _id: ID.llm }] })
+        .mockResolvedValueOnce({ nodes: [] })
+        .mockResolvedValueOnce({ items: [] });
 
       const result = await h.handleToolCall("create_ai_agent", baseArgs);
 
@@ -117,6 +119,8 @@ describe("ToolHandlers v2", () => {
         .mockResolvedValueOnce({
           items: [{ _id: ID.entry, isEntryPoint: true }],
         })
+        .mockResolvedValueOnce({ items: [] })
+        .mockResolvedValueOnce({ nodes: [] })
         .mockResolvedValueOnce({ items: [] });
 
       const result = await h.handleToolCall("create_ai_agent", baseArgs);
@@ -148,9 +152,13 @@ describe("ToolHandlers v2", () => {
         .mockResolvedValueOnce(mockFlow)
         .mockResolvedValueOnce({})
         .mockRejectedValueOnce(new Error("Endpoint failed"));
-      api.get.mockResolvedValueOnce({
-        items: [{ _id: ID.entry, isEntryPoint: true }],
-      });
+      api.get
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.entry, isEntryPoint: true }],
+        })
+        .mockResolvedValueOnce({ items: [] })
+        .mockResolvedValueOnce({ nodes: [] })
+        .mockResolvedValueOnce({ items: [] });
       api.delete.mockResolvedValue({});
 
       const result = await h.handleToolCall("create_ai_agent", baseArgs);
@@ -158,6 +166,57 @@ describe("ToolHandlers v2", () => {
       expect(result.failed.step).toBe("endpoint");
       expect(api.delete).toHaveBeenCalledWith(`/v2.0/flows/${ID.flow}`);
       expect(api.delete).toHaveBeenCalledWith(`/v2.0/aiagents/${ID.agent}`);
+    });
+
+    it("removes backend-created unlock_account placeholder tool after creating the job node", async () => {
+      const mockAgent = {
+        _id: ID.agent,
+        referenceId: "ref-uuid",
+        name: "Test Agent",
+      };
+      const mockFlow = {
+        _id: ID.flow,
+        referenceId: "flow-uuid",
+        name: "Test Agent Flow",
+      };
+      const mockEndpoint = {
+        _id: ID.endpoint,
+        URLToken: "abc123",
+        channel: "rest",
+      };
+      const placeholderToolId = "aaaaaaaaaaaaaaaaaaaaa999";
+
+      api.post
+        .mockResolvedValueOnce(mockAgent)
+        .mockResolvedValueOnce(mockFlow)
+        .mockResolvedValueOnce({ _id: ID.node })
+        .mockResolvedValueOnce(mockEndpoint);
+      api.get
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.entry, isEntryPoint: true }],
+        })
+        .mockResolvedValueOnce({ items: [{ _id: ID.llm }] })
+        .mockResolvedValueOnce({
+          relations: [
+            {
+              node: ID.node,
+              children: [placeholderToolId],
+            },
+          ],
+          nodes: [
+            {
+              _id: placeholderToolId,
+              preview: "unlock_account",
+            },
+          ],
+        });
+      api.delete.mockResolvedValue({});
+
+      await h.handleToolCall("create_ai_agent", baseArgs);
+
+      expect(api.delete).toHaveBeenCalledWith(
+        `/v2.0/flows/${ID.flow}/chart/nodes/${placeholderToolId}`,
+      );
     });
   });
 
@@ -295,6 +354,9 @@ describe("ToolHandlers v2", () => {
         ...mockLlm,
         connectionId: "existing-conn-uuid",
       };
+      api.get.mockResolvedValueOnce({
+        items: [{ _id: "conn1", referenceId: "existing-conn-uuid" }],
+      });
       api.post
         .mockResolvedValueOnce(llmWithExistingConn)
         .mockResolvedValueOnce(mockTestSuccess);
@@ -308,6 +370,9 @@ describe("ToolHandlers v2", () => {
 
       expect(result.provider).toBe("openAI");
       expect(result.connectionTest.isCredentialsValid).toBe(true);
+      expect(api.get).toHaveBeenCalledWith("/new/v2.0/connections", {
+        params: { projectId: ID.project },
+      });
       expect(api.post).toHaveBeenCalledTimes(2);
       expect(api.post).toHaveBeenCalledWith(
         "/v2.0/largelanguagemodels",
@@ -329,6 +394,9 @@ describe("ToolHandlers v2", () => {
     });
 
     it("deletes model and returns error when connection test fails", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [{ _id: "conn1", referenceId: "bad-conn-uuid" }],
+      });
       api.post
         .mockResolvedValueOnce(mockLlm)
         .mockResolvedValueOnce(mockTestFailure);
@@ -350,6 +418,9 @@ describe("ToolHandlers v2", () => {
     });
 
     it("keeps model with warning when test endpoint itself errors", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [{ _id: "conn1", referenceId: "some-conn-uuid" }],
+      });
       api.post
         .mockResolvedValueOnce(mockLlm)
         .mockRejectedValueOnce(new Error("Network timeout"));
@@ -369,6 +440,9 @@ describe("ToolHandlers v2", () => {
     });
 
     it("skips test and returns warning when dangerouslySkipConnectionTest is true", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [{ _id: "conn1", referenceId: "some-conn-uuid" }],
+      });
       api.post.mockResolvedValueOnce(mockLlm);
 
       const result = await h.handleToolCall("setup_llm", {
@@ -386,6 +460,9 @@ describe("ToolHandlers v2", () => {
     });
 
     it("still attempts cleanup even if delete fails after test failure", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [{ _id: "conn1", referenceId: "bad-conn-uuid" }],
+      });
       api.post
         .mockResolvedValueOnce(mockLlm)
         .mockResolvedValueOnce(mockTestFailure);
@@ -402,6 +479,21 @@ describe("ToolHandlers v2", () => {
       expect(api.delete).toHaveBeenCalledWith(
         `/v2.0/largelanguagemodels/${ID.llm}`,
       );
+    });
+
+    it("rejects connectionId that does not belong to the target project", async () => {
+      api.get.mockResolvedValueOnce({ items: [] });
+
+      const result = await h.handleToolCall("setup_llm", {
+        projectId: ID.project,
+        provider: "openAI",
+        modelType: "gpt-4o",
+        connectionId: "foreign-conn-uuid",
+      });
+
+      expect(result.error).toContain("was not found in the target project");
+      expect(result._hints.resource).toBe("cognigy://guide/package-management");
+      expect(api.post).not.toHaveBeenCalled();
     });
   });
 
@@ -1128,6 +1220,70 @@ describe("ToolHandlers v2", () => {
           label: "My Custom Tool",
         }),
       );
+    });
+
+    it("reuses duplicate toolId in the same agent flow", async () => {
+      api.get.mockResolvedValueOnce({ flowId: ID.flow }).mockResolvedValueOnce({
+        items: [
+          { _id: ID.entry, isEntryPoint: true },
+          { _id: ID.node, type: "aiAgentJob" },
+          {
+            _id: ID.tool,
+            type: "aiAgentJobTool",
+            label: "unlock_account",
+            config: { toolId: "unlock_account", description: "Existing tool" },
+          },
+        ],
+      });
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "tool",
+        name: "Unlock Account",
+        config: {
+          toolId: "unlock_account",
+          description: "Unlocks a locked user account",
+        },
+      });
+
+      expect(result.reusedExisting).toBe(true);
+      expect(result.toolId).toBe(ID.tool);
+      expect(result.toolNodeId).toBe(ID.tool);
+      expect(result.requestedToolId).toBe("unlock_account");
+      expect(result._hints.resource).toBe("cognigy://guide/tools-setup");
+      expect(result._hints.warning).toContain('"unlock_account"');
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it("reuses duplicate tool when existing node matches by label only", async () => {
+      api.get.mockResolvedValueOnce({ flowId: ID.flow }).mockResolvedValueOnce({
+        items: [
+          { _id: ID.entry, isEntryPoint: true },
+          { _id: ID.node, type: "aiAgentJob" },
+          {
+            _id: ID.tool,
+            type: "aiAgentJobTool",
+            label: "unlock_account",
+            config: { description: "Existing tool without explicit toolId" },
+          },
+        ],
+      });
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "tool",
+        name: "Unlock Account",
+        config: {
+          toolId: "unlock_account",
+          description: "Unlocks a locked user account",
+        },
+      });
+
+      expect(result.reusedExisting).toBe(true);
+      expect(result.toolId).toBe(ID.tool);
+      expect(result.toolNodeId).toBe(ID.tool);
+      expect(result.requestedToolId).toBe("unlock_account");
+      expect(api.post).not.toHaveBeenCalled();
     });
 
     it("creates resolve node with default answer for general-purpose tool", async () => {
