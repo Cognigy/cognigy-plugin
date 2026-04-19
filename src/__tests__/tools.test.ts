@@ -2032,6 +2032,48 @@ describe("ToolHandlers v2", () => {
       expect(result.resourceIds).toEqual(["60d5ec49f1a2c8b1a4e0f102"]);
     });
 
+    it("auto-includes LLM connections referenced by referenceId during export", async () => {
+      const graph = makeGraph();
+      const llm = graph[ID.project].resources.find(
+        (resource: any) => resource._id === "60d5ec49f1a2c8b1a4e0f106",
+      );
+      const connection = graph[ID.project].resources.find(
+        (resource: any) => resource._id === "60d5ec49f1a2c8b1a4e0f107",
+      );
+
+      llm.dependencies = [];
+      llm.properties = {
+        ...llm.properties,
+        connectionId: "conn-ref-1",
+      };
+      connection.referenceId = "conn-ref-1";
+
+      api.get.mockResolvedValueOnce(graph);
+      api.post.mockResolvedValueOnce({ _id: ID.task2 });
+
+      const result = await h.handleToolCall("manage_packages", {
+        operation: "export",
+        projectId: ID.project,
+        resourceIds: ["60d5ec49f1a2c8b1a4e0f106"],
+        name: "support-bot",
+        waitForCompletion: false,
+      });
+
+      expect(api.post).toHaveBeenCalledWith("/new/v2.0/packages", {
+        projectId: ID.project,
+        name: expect.stringMatching(/^support-bot_/),
+        description: undefined,
+        resourceIds: ["60d5ec49f1a2c8b1a4e0f106", "60d5ec49f1a2c8b1a4e0f107"],
+      });
+      expect(result.dependencyResources).toEqual([
+        expect.objectContaining({
+          id: "60d5ec49f1a2c8b1a4e0f107",
+          type: "connection",
+          includedAsDependency: true,
+        }),
+      ]);
+    });
+
     it("downloads an existing package to disk", async () => {
       const dir = mkdtempSync(join(tmpdir(), "cognigy-mcp-package-download-"));
       const outputPath = join(dir, "exports");

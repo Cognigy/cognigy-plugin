@@ -453,6 +453,20 @@ function collectDependencies(
   }
 }
 
+function buildResourcesByReferenceId(
+  resources: GraphResource[],
+): Map<string, GraphResource> {
+  return new Map(
+    resources
+      .filter(
+        (resource): resource is GraphResource & { referenceId: string } =>
+          typeof resource.referenceId === "string" &&
+          resource.referenceId.length > 0,
+      )
+      .map((resource) => [resource.referenceId, resource]),
+  );
+}
+
 export function buildPackageExportPlan(
   projectId: string,
   graph: Record<string, GraphSubgraph>,
@@ -484,6 +498,8 @@ export function buildPackageExportPlan(
   const resourcesById = new Map<string, GraphResource>(
     exportableResources.map((resource) => [resourceId(resource), resource]),
   );
+  const resourcesByReferenceId =
+    buildResourcesByReferenceId(exportableResources);
 
   const skippedResources: PackageExportSkippedResource[] = [];
   const skippedResourceIds = new Set<string>();
@@ -554,11 +570,21 @@ export function buildPackageExportPlan(
         resource.properties?.connectionId ??
         (resource as any).connectionId ??
         undefined;
-      if (!connId || selectedExplicitResources.has(connId)) continue;
-      const connResource = resourcesById.get(connId);
-      if (connResource && !dependencyCandidates.has(connId)) {
-        dependencyCandidates.set(connId, connResource);
+      if (!connId) continue;
+
+      const connResource =
+        resourcesById.get(connId) ?? resourcesByReferenceId.get(connId);
+      const resolvedConnId = connResource ? resourceId(connResource) : connId;
+
+      if (
+        !connResource ||
+        selectedExplicitResources.has(resolvedConnId) ||
+        dependencyCandidates.has(resolvedConnId)
+      ) {
+        continue;
       }
+
+      dependencyCandidates.set(resolvedConnId, connResource);
     }
   }
 
