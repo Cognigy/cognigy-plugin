@@ -491,8 +491,23 @@ export const tools: ToolDefinition[] = [
   // 9. create_tool
   {
     name: "create_tool",
-    description:
-      'Create a tool as a child of an AI Agent\'s Job node. Tools extend what the agent can do.\n\nTool types:\n- tool: General-purpose tool with custom logic branch. Use this for most requests (e.g., "unlock account", "check status", "validate input"). Provide toolId, description, and optional parameters (JSON Schema). After creation, use manage_flow_nodes with parentNodeId = returned toolNodeId and mode = "appendChild" to add logic nodes (say, code, ifThenElse, httpRequest, etc.) inside the tool branch.\n- knowledge: Search a Knowledge Store. Provide knowledgeStoreId, toolId, description.\n- send_email: Send emails. Provide toolId, description, recipient.\n- mcp: Connect to an EXTERNAL MCP (Model Context Protocol) server. ONLY use when the user explicitly asks to integrate with a specific external MCP server and provides an MCP server URL. Do NOT use for general tool requests — use "tool" or "http" instead.\n- http: Call an external HTTP API. Use when the user wants to call a specific REST/HTTP endpoint. Provide toolId, description, url, method, and optionally headers, body, preProcessCode, postProcessCode. Creates an aiAgentJobTool with child HTTP Request node (and optional pre/post-process Code nodes).\n\nDefault choice: When unsure which toolType to use, default to "tool" (general-purpose). Only use "mcp" or "http" when the user specifically mentions an external MCP server or a specific HTTP API endpoint.\n\nIMPORTANT: Create exactly one tool per business action. If the same toolId already exists, create_tool reuses the existing tool node instead of creating a duplicate. If you need more logic for that action, reuse the same toolNodeId with manage_flow_nodes or update_tool.\n\nPrerequisites: Agent must exist (created via create_ai_agent).\nTo list tools: list_resources { resourceType: \'tool\', aiAgentId }.\nTo delete: delete_resource { resourceType: \'tool\', id: toolId, aiAgentId }.\nAfter creating, use talk_to_agent to test.',
+    description: `Create a tool as a child of an AI Agent's Job node. Tools extend what the agent can do.
+
+Tool types:
+- tool: General-purpose tool with custom logic branch. Use this for most requests (e.g., "unlock account", "check status", "validate input"). Provide toolId, description, and optional parameters (JSON Schema). After creation, use manage_flow_nodes with parentNodeId = returned toolNodeId and mode = "appendChild" to add logic nodes (say, code, ifThenElse, httpRequest, etc.) inside the tool branch.
+- knowledge: Search a Knowledge Store. Provide knowledgeStoreId, toolId, description.
+- send_email: Send emails. Provide toolId, description, recipient.
+- mcp: Connect to an EXTERNAL MCP (Model Context Protocol) server. ONLY use when the user explicitly asks to integrate with a specific external MCP server and provides an MCP server URL. Do NOT use for general tool requests — use "tool" or "http" instead.
+- http: Call an external HTTP API. Use when the user wants to call a specific REST/HTTP endpoint. Provide toolId, description, url, method, and optionally headers, body, preProcessCode, postProcessCode. Creates an aiAgentJobTool with child HTTP Request node (and optional pre/post-process Code nodes).
+
+Default choice: When unsure which toolType to use, default to "tool" (general-purpose). Only use "mcp" or "http" when the user specifically mentions an external MCP server or a specific HTTP API endpoint.
+
+IMPORTANT: Create exactly one tool per business action. If the same toolId already exists, create_tool reuses the existing tool node instead of creating a duplicate. If you need more logic for that action, reuse the same toolNodeId with manage_flow_nodes or update_tool.
+
+Prerequisites: Agent must exist (created via create_ai_agent).
+To list tools: list_resources { resourceType: 'tool', aiAgentId }.
+To delete: delete_resource { resourceType: 'tool', id: toolId, aiAgentId }.
+After creating, use talk_to_agent to test.`,
     annotations: {
       title: "Create Tool",
       readOnlyHint: false,

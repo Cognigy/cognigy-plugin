@@ -4,30 +4,34 @@ A Model Context Protocol (MCP) server that connects your AI assistant to the [Co
 
 ## Features
 
-- **13 workflow tools** covering ~115 Cognigy API endpoints
+- **15 workflow tools** for agent creation, deployment, packaging, and voice setup
 - **One-call agent setup**: creates Agent + Flow + AI Agent Job Node + REST Endpoint automatically
 - **Self-improvement loop**: talk to your agent, evaluate responses, update the job description, repeat
 - **Knowledge store support**: attach RAG knowledge stores to agents as tools
+- **Browser voice deployment**: create Voice Gateway endpoints with WebRTC demo URLs
+- **Voice preview setup**: configure supported speech providers for voice experiences
 - **System prompt included**: AI assistants automatically become Cognigy experts via MCP resource
 - Built-in rate limiting, Zod input validation, and RFC 7807 error responses
 
 ## Tools
 
-| Tool                | Type  | Description                                                                                        |
-| ------------------- | ----- | -------------------------------------------------------------------------------------------------- |
-| `create_ai_agent`   | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint                 |
-| `update_ai_agent`   | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature)                        |
-| `setup_llm`         | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation         |
-| `talk_to_agent`     | Write | Send a message to an AI Agent and get its response                                                 |
-| `list_resources`    | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more                          |
-| `get_resource`      | Read  | Get detailed information about a single resource                                                   |
-| `delete_resource`   | Write | Permanently delete a resource                                                                      |
-| `manage_knowledge`  | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG                        |
-| `create_tool`       | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node                                    |
-| `update_tool`       | Write | Update an existing tool node's configuration                                                       |
-| `manage_webchat`    | Write | Create or configure a Webchat v3 endpoint for website deployment                                   |
-| `manage_flow_nodes` | Write | Create, update, delete, or list flow nodes for conversation logic                                  |
-| `manage_packages`   | Write | List exportable resources, upload, inspect, import, export, and download Cognigy package zip files |
+| Tool                   | Type  | Description                                                                                        |
+| ---------------------- | ----- | -------------------------------------------------------------------------------------------------- |
+| `create_ai_agent`      | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint                 |
+| `update_ai_agent`      | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature)                        |
+| `setup_llm`            | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation         |
+| `talk_to_agent`        | Write | Send a message to an AI Agent and get its response                                                 |
+| `list_resources`       | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more                          |
+| `get_resource`         | Read  | Get detailed information about a single resource                                                   |
+| `delete_resource`      | Write | Permanently delete a resource                                                                      |
+| `manage_knowledge`     | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG                        |
+| `create_tool`          | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node                                    |
+| `update_tool`          | Write | Update an existing tool node's configuration                                                       |
+| `manage_webchat`       | Write | Create or configure a Webchat v3 endpoint for website deployment                                   |
+| `manage_flow_nodes`    | Write | Create, update, delete, or list flow nodes for conversation logic                                  |
+| `manage_packages`      | Write | List exportable resources, upload, inspect, import, export, and download Cognigy package zip files |
+| `manage_voice_gateway` | Write | Create or configure a Voice Gateway endpoint with WebRTC for browser-based voice interaction       |
+| `manage_settings`      | Write | Manage project-level settings including voice preview speech providers                             |
 
 The server also includes built-in guides (MCP resources) that AI assistants automatically read for detailed workflows, field references, and troubleshooting.
 
@@ -113,7 +117,7 @@ Create a complete AI Agent in one tool call, then iterate and improve through co
 2. **Test** → Talk to your agent via REST endpoint
 3. **Improve** → Update persona, guardrails, job description, tools
 4. **Test Again** → Compare responses and iterate
-5. **Deploy** → Publish to Webchat with one call
+5. **Deploy** → Publish to Webchat or create a Voice Gateway endpoint with one call
 
 ## Configuration
 
@@ -193,6 +197,16 @@ include dependencies, and save the zip to /absolute/path/to/exports/.
 ```
 
 Uses `manage_packages` with `operation: 'list_exportable'` to discover candidates, then `operation: 'export'`, then `operation: 'download'` when needed.
+
+### 8. Configure voice preview and create a browser voice endpoint
+
+```
+Set the voice preview provider for project <projectId> to Microsoft, then create
+a Voice Gateway endpoint for flow <flowId> named "Support Voice" and give me the
+WebRTC demo URL I can open in the browser.
+```
+
+This uses `manage_settings` with `operation: 'set_voice_preview'` to configure speech, then `manage_voice_gateway` to provision a `voiceGateway2` endpoint with a `webrtcDemoUrl`.
 
 ## Security
 

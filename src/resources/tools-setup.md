@@ -18,6 +18,7 @@ Rule of thumb: each tool in an agent flow should have a unique `toolId`. If you 
 
 ### tool — General-purpose tool with custom logic
 
+```text
 create_tool {
 aiAgentId: "...",
 toolType: "tool",
@@ -29,6 +30,7 @@ parameters: '{"type":"object","properties":{"city":{"type":"string"}}}',
 toolResponseValue: "{{JSON.stringify(input.result)}}"
 }
 }
+```
 
 IMPORTANT: The node label in the flow uses `toolId` (snake_case), not the display `name`. Always provide `toolId`.
 
@@ -36,6 +38,7 @@ The Resolve Tool Action node is auto-created with an `answer` field that control
 
 ### knowledge — Search a Knowledge Store
 
+```text
 create_tool {
 aiAgentId: "...",
 toolType: "knowledge",
@@ -46,9 +49,11 @@ toolId: "search_faq",
 description: "Search the FAQ knowledge base"
 }
 }
+```
 
 ### send_email — Send emails
 
+```text
 create_tool {
 aiAgentId: "...",
 toolType: "send_email",
@@ -59,11 +64,13 @@ description: "Send an email to support",
 recipient: "support@example.com"
 }
 }
+```
 
 ### mcp — Connect to an EXTERNAL MCP server (specialized — not for general use)
 
 ⚠️ ONLY use this when the user explicitly asks to integrate with an external MCP (Model Context Protocol) server and provides a server URL. For general tool requests (e.g., "unlock account", "check status"), use toolType "tool" instead.
 
+```text
 create_tool {
 aiAgentId: "...",
 toolType: "mcp",
@@ -74,6 +81,7 @@ mcpServerUrl: "https://mcp.example.com",
 timeout: 30
 }
 }
+```
 
 ### http — Call an external HTTP API
 
@@ -86,6 +94,7 @@ aiAgentJobTool (the tool node the LLM sees)
 
 #### Example — simple GET with post-processing
 
+```text
 create_tool {
 aiAgentId: "...",
 toolType: "http",
@@ -100,9 +109,11 @@ headers: { "X-Api-Key": "your-api-key" },
 postProcessCode: "input.weather = input.httpResponse.body.current; delete input.httpResponse;"
 }
 }
+```
 
 #### Example — POST with pre/post-processing and custom tool response
 
+```text
 create_tool {
 aiAgentId: "...",
 toolType: "http",
@@ -120,6 +131,7 @@ postProcessCode: "input.orderResult = { orderId: input.httpResponse.body.id, sta
 toolResponseValue: "{{JSON.stringify(input.orderResult)}}"
 }
 }
+```
 
 #### Tool response value (toolResponseValue)
 
@@ -209,14 +221,19 @@ Read cognigy://guide/flow-nodes for config schemas of each node type.
 ## Updating tools (update_tool)
 
 Modify an existing tool node's label or config:
+
+```text
 update_tool {
 aiAgentId: "...",
 toolNodeId: "...",
 name: "Updated Weather Tool",
 config: { description: "Updated description for the LLM" }
 }
+```
 
 For http tools, include HTTP fields in config to update child nodes:
+
+```text
 update_tool {
 aiAgentId: "...",
 toolNodeId: "...",
@@ -226,6 +243,7 @@ url: "https://api.weather.com/v2/current",
 postProcessCode: "input.result = input.httpResponse.body;"
 }
 }
+```
 
 ## Managing tools
 
