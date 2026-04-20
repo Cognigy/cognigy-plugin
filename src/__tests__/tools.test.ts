@@ -1678,6 +1678,47 @@ describe("ToolHandlers v2", () => {
       expect(result.llmStatus).toBe("unknown");
       expect(result._hints).toBeDefined();
     });
+
+    it("returns explicit package-reuse guidance when a new project is auto-created without an LLM", async () => {
+      const mockProject = { _id: ID.project, name: "New Project" };
+      const mockAgent = {
+        _id: ID.agent,
+        referenceId: "ref-uuid",
+        name: "Test Agent",
+      };
+      const mockFlow = { _id: ID.flow, referenceId: "flow-uuid", name: "Flow" };
+      const mockEndpoint = {
+        _id: ID.endpoint,
+        URLToken: "xyz",
+        channel: "rest",
+      };
+
+      api.post
+        .mockResolvedValueOnce(mockProject)
+        .mockResolvedValueOnce(mockAgent)
+        .mockResolvedValueOnce(mockFlow)
+        .mockResolvedValueOnce({ _id: ID.node })
+        .mockResolvedValueOnce(mockEndpoint);
+      api.get
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.entry, isEntryPoint: true }],
+        })
+        .mockResolvedValueOnce({ items: [] });
+      api.patch.mockResolvedValue({});
+
+      const result = await h.handleToolCall("create_ai_agent", {
+        name: "Test Agent",
+        description: "A test agent",
+      });
+
+      expect(result.projectCreated).toBe(true);
+      expect(result.llmStatus).toBe("unknown");
+      expect(result._hints.resource).toBe("cognigy://guide/agent-creation");
+      expect(result._hints.action).toContain("A new project was auto-created");
+      expect(result._hints.action).toContain("non-empty connectionId");
+      expect(result._hints.action).toContain("manage_packages");
+      expect(result._hints.action).toContain("do not call talk_to_agent");
+    });
   });
 
   // =========================================================================

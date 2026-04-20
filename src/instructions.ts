@@ -2,14 +2,16 @@ export const SERVER_INSTRUCTIONS = `Cognigy.AI MCP Server — builds and iterati
 
 BUILD WORKFLOW (follow this order for new agents):
 1. list_resources { resourceType: "project" } → list ALL projects
-2. ENSURE LLM EXISTS — this step is MANDATORY before creating an agent. Do NOT skip or call setup_llm without completing these checks first:
-   a. Check the TARGET project for existing LLMs: list_resources { resourceType: "llm_model", projectId: "<targetProjectId>" }
-   b. If LLM already exists → proceed to step 3.
-   c. If NO LLM in target project, check whether the user has MORE THAN ONE project (from step 1 results).
+2. ENSURE LLM EXISTS — this step is MANDATORY before testing an agent, and should be completed before agent creation whenever the target project already exists. Do NOT skip or call setup_llm without completing these checks first:
+   a. If the user wants a NEW project and no projectId exists yet, create it first via create_ai_agent with omitted projectId. Then immediately continue with the checks below against the returned projectId if llmStatus is "unknown".
+   b. Check the TARGET project for existing LLMs: list_resources { resourceType: "llm_model", projectId: "<targetProjectId>" }
+   c. If the target project already has a reusable LLM with a non-empty connectionId → proceed to step 3.
+   d. If NO reusable LLM exists in the target project, check whether the user has MORE THAN ONE project (from step 1 results).
       - If user has multiple projects: check the OTHER projects for LLMs (list_resources { resourceType: "llm_model", projectId } for each).
-      - If any other project has an LLM: REUSE VIA PACKAGES automatically (see LLM REUSE VIA PACKAGES section below). Prefer reusing an existing working LLM + connection instead of creating a new LLM.
-      - If user has only one project (or no other project has LLMs): proceed to setup_llm (step 2d).
-   d. setup_llm — ONLY as last resort, after confirming there is no reusable LLM package path or that package transfer failed. Ask the user for provider, model, and API key. NEVER guess or hallucinate API keys or connection details.
+      - Choose only source-project candidates whose llm_model has a non-empty connectionId. An LLM without a connectionId is not a valid reuse candidate.
+      - If another project has a reusable LLM with connectionId: REUSE VIA PACKAGES automatically (see LLM REUSE VIA PACKAGES section below). Prefer reusing an existing working LLM + connection instead of creating a new LLM.
+      - If user has only one project (or no other project has reusable LLMs with connectionId): proceed to setup_llm (step 2e).
+   e. setup_llm — ONLY as last resort, after confirming there is no reusable LLM package path or that package transfer failed. Ask the user for provider, model, and API key. NEVER guess or hallucinate API keys or connection details.
 3. create_ai_agent { projectId, name, description } → returns agent + flow + endpoint + endpointUrl
 4. ONLY test the agent if an LLM is confirmed working in the project:
    - talk_to_agent { endpointUrl, message } → test the agent
@@ -50,11 +52,12 @@ When another project already has a working LLM, you should transfer that LLM + c
 CRITICAL: An LLM resource WITHOUT its connection is useless. The connection holds the API credentials (API key). You MUST export BOTH the largeLanguageModel AND its associated connection resource together.
 
 Automated transfer workflow:
-  1. manage_packages { operation: "list_exportable", projectId: "<sourceProjectId>" } → find BOTH the largeLanguageModel resource ID AND the connection resource ID. Look for resources with type "largeLanguageModel" and type "connection". The connection that belongs to the LLM typically shares the same provider name or is referenced by the LLM.
-  2. manage_packages { operation: "export", projectId: "<sourceProjectId>", resourceIds: ["<llmResourceId>", "<connectionResourceId>"], name: "llm-transfer" } → exports BOTH the LLM and connection together as a package and downloads the .zip file locally. ALWAYS include both resource IDs — do not rely on automatic dependency resolution for connections.
-  3. manage_packages { operation: "upload_and_inspect", projectId: "<targetProjectId>", filePath: "<path from step 2>" } → upload the exported .zip into the target project and inspect it.
-  4. manage_packages { operation: "import", projectId: "<targetProjectId>", packageId: "<packageId from step 3>" } → import the package into the target project.
-  5. Verify with list_resources { resourceType: "llm_model", projectId: "<targetProjectId>" } that the LLM is now available before creating or testing the agent.
+  1. list_resources { resourceType: "llm_model", projectId: "<sourceProjectId>" } → confirm the source project has an llm_model with a non-empty connectionId.
+  2. manage_packages { operation: "list_exportable", projectId: "<sourceProjectId>" } → find BOTH the largeLanguageModel resource ID AND the connection resource ID. Look for resources with type "largeLanguageModel" and type "connection". The connection that belongs to the LLM is identified by the llm_model.connectionId.
+  3. manage_packages { operation: "export", projectId: "<sourceProjectId>", resourceIds: ["<llmResourceId>", "<connectionResourceId>"], name: "llm-transfer" } → exports BOTH the LLM and connection together as a package and downloads the .zip file locally. ALWAYS include both resource IDs — do not rely on automatic dependency resolution for connections.
+  4. manage_packages { operation: "upload_and_inspect", projectId: "<targetProjectId>", filePath: "<path from step 3>" } → upload the exported .zip into the target project and inspect it.
+  5. manage_packages { operation: "import", projectId: "<targetProjectId>", packageId: "<packageId from step 4>" } → import the package into the target project.
+  6. Verify with list_resources { resourceType: "llm_model", projectId: "<targetProjectId>" } that the LLM is now available before creating or testing the agent.
 
 TOOL TYPE SELECTION (create_tool):
 - Default to toolType "tool" for general requests (e.g., "unlock account", "check balance", "validate user"). This is the most common and versatile type.
@@ -66,7 +69,7 @@ TOOL TYPE SELECTION (create_tool):
 RULES:
 - create_ai_agent auto-provisions flow + AI Agent Job Node + REST endpoint. Do NOT create these separately.
 - An LLM resource MUST exist AND be successfully connected in the project before calling talk_to_agent. Do NOT attempt to test an agent without a confirmed working LLM — it will fail silently or return empty responses. If LLM setup failed or was not completed, skip testing and inform the user.
-- If another project already has a reusable LLM, DO NOT call setup_llm first. Transfer the LLM + connection via manage_packages and only fall back to setup_llm if reuse is unavailable or failed.
+- If another project already has a reusable LLM with connectionId, DO NOT call setup_llm first. Transfer the LLM + connection via manage_packages and only fall back to setup_llm if reuse is unavailable or failed.
 - NEVER hallucinate or guess API keys, connection URLs, or credentials. If an LLM needs to be created and no API key was provided by the user, ASK for it. Do NOT invent values.
 - Cognigy Connections are PROJECT-SCOPED. A connectionId from project A cannot be used in project B — it will fail with "Connection does not exist". The ONLY way to share a connection across projects is via package export/import (see LLM REUSE VIA PACKAGES). Do NOT attempt to pass a cross-project connectionId to setup_llm.
 - NEVER use dangerouslySkipConnectionTest to bypass a missing or cross-project connection. Fix the connection by importing the package or by creating a real same-project connection.

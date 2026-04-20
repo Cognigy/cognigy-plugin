@@ -1371,11 +1371,14 @@ export class ToolHandlers {
       }
 
       if (llmStatus === "unknown") {
+        const nextAction = createdProject
+          ? `A new project was auto-created as "${projectId}". Immediately inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Choose only a source project whose llm_model has a non-empty connectionId, reuse that LLM via manage_packages export/upload_and_inspect/import, verify the import with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and do not call talk_to_agent until the import is confirmed. Only use setup_llm if no reusable LLM with connectionId exists or package transfer fails.`
+          : `Inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Choose only a source project whose llm_model has a non-empty connectionId, reuse that LLM via manage_packages export/upload_and_inspect/import, verify the import with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and do not call talk_to_agent until the import is confirmed. Only use setup_llm if no reusable LLM with connectionId exists or package transfer fails.`;
         return withHints(result, {
           warning:
             "Could not verify LLM resource in project. Agent may not generate responses.",
           resource: "cognigy://guide/agent-creation",
-          action: `Verify whether another project already has a reusable LLM to import via manage_packages; only use setup_llm with projectId "${projectId}" if no reusable LLM exists.`,
+          action: nextAction,
         });
       }
 

@@ -2,32 +2,38 @@
 
 ## Prerequisites
 
-- A project (use list_resources { resourceType: "project" } to find one)
-- A working LLM resource in the project
+- A project (use list_resources { resourceType: "project" } to find one, or let create_ai_agent create one)
+- A working LLM resource in the target project before testing the agent
 
 ## Steps
 
 1. list_resources { resourceType: "project" } — inspect all projects
-2. Choose or create the target project, then run list_resources { resourceType: "llm_model", projectId } — check if the target already has an LLM
-3. If the target project has no LLM, check the other projects for reusable LLMs
-4. If another project already has a working LLM, transfer it together with its connection:
+2. Choose the target project
+   - If it already exists: use its projectId
+   - If the user wants a new project: call create_ai_agent without projectId, keep the returned projectId, and if llmStatus is "unknown" continue with the LLM reuse steps below before testing the agent
+3. Run list_resources { resourceType: "llm_model", projectId } — check whether the target project already has a reusable LLM with a non-empty connectionId
+4. If the target project has no reusable LLM, check the other projects for reusable LLMs
+   - Run list_resources { resourceType: "llm_model", projectId } for each other project
+   - Choose only candidates whose llm_model has a non-empty connectionId
+   - Do not treat an LLM without connectionId as a valid reuse candidate
+5. If another project already has a reusable LLM, transfer it together with its connection:
    - manage_packages { operation: "list_exportable", projectId: "<sourceProjectId>" }
    - manage_packages { operation: "export", projectId: "<sourceProjectId>", resourceIds: ["<llmResourceId>", "<connectionResourceId>"], name: "llm-transfer" }
    - manage_packages { operation: "upload_and_inspect", projectId: "<targetProjectId>", filePath: "<savedTo from export>" }
    - manage_packages { operation: "import", projectId: "<targetProjectId>", packageId: "<packageId from upload_and_inspect>" }
-   - list_resources { resourceType: "llm_model", projectId: "<targetProjectId>" } — verify the import succeeded
-5. Only if no reusable LLM exists, or the package transfer failed: setup_llm { projectId, provider: "openAI", modelType: "gpt-4o", apiKey }
+   - list_resources { resourceType: "llm_model", projectId: "<targetProjectId>" } — verify the import succeeded before testing or continuing setup
+6. Only if no reusable LLM with connectionId exists, or the package transfer failed: setup_llm { projectId, provider: "openAI", modelType: "gpt-4o", apiKey }
    - With isDefault: true (the default), agents auto-use this LLM — no extra step needed.
    - Save the `referenceId` from the response if you need to assign it explicitly later.
      (See cognigy://guide/llm-providers for valid provider/modelType values)
-6. create_ai_agent { projectId, name, description }
+7. create_ai_agent { projectId, name, description }
    — Returns: agent, flow, endpoint, endpointUrl
    — The default LLM is automatically assigned to the agent's job node. If llmStatus is "configured", no extra step is needed.
-7. (Only if llmStatus is "unknown" after create) Assign LLM to agent:
+8. (Only if llmStatus is "unknown" after create) Do not test yet. First repeat steps 4-6 for the returned projectId, then assign LLM to agent if needed:
    update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: "<referenceId from step 4 or 5>" } }
-8. Only after the project has a confirmed working LLM: talk_to_agent { endpointUrl, message }
-9. Refine the agent using update_ai_agent — see "All configuration fields" below
-10. Repeat 8-9 until satisfied
+9. Only after the project has a confirmed working LLM: talk_to_agent { endpointUrl, message }
+10. Refine the agent using update_ai_agent — see "All configuration fields" below
+11. Repeat 9-10 until satisfied
 
 ## Adding tools (optional)
 
@@ -93,6 +99,7 @@ Always use ALL relevant fields when configuring an agent. Do not put everything 
 ## Key facts
 
 - create_ai_agent auto-provisions: flow, AI Agent Job Node, REST endpoint
+- If the target project was just auto-created and llmStatus is "unknown", immediately inspect other projects for reusable llm_model entries with connectionId before falling back to setup_llm.
 - Cognigy connections are project-scoped. If you want to reuse an LLM from another project, import BOTH the LLM and its connection via manage_packages before testing the agent.
 - create_tool auto-provisions: flow nodes for tools. Do NOT create tool nodes manually.
 - Duplicate `toolId` values can cause empty or failed responses. Check the flow/tools before assuming the problem is the LLM or connection.

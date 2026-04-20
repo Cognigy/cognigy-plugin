@@ -136,12 +136,14 @@ All configuration is passed via `env` in the MCP config. No `.env` file needed.
 ### 1. Create a customer support agent
 
 ```
-Create a Cognigy AI Agent called "Support Bot" in project <projectId>.
-Give it a helpful customer support persona, set up GPT-4 as the LLM,
-and return the endpoint URL so I can test it.
+Create a Cognigy AI Agent called "Support Bot" in project <projectId> with a helpful
+customer support persona. If the project has no working LLM, first look for another
+project with an llm_model that has a connectionId, import that LLM and its connection
+via manage_packages, and only fall back to setup_llm if no reusable LLM exists.
+Return the endpoint URL only after the project has a confirmed working LLM.
 ```
 
-The MCP server will call `setup_llm` to create the LLM resource, then `create_ai_agent` to provision the agent, flow, job node, and REST endpoint in a single workflow.
+The MCP server should first check whether the target project already has a working LLM. If not, it should prefer reusing an LLM plus its connection from another project via `manage_packages`, and only use `setup_llm` as the last resort before calling `create_ai_agent`.
 
 ### 2. Test and improve the agent
 
