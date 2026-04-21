@@ -4082,6 +4082,87 @@ export class ToolHandlers {
             "Voice preview settings configured. You can now use manage_voice_gateway to create a voice endpoint, or test voice preview in the Cognigy UI.",
         };
       }
+      case "set_knowledge_ai": {
+        const patchPayload: Record<string, any> = {};
+        const updatedFields: string[] = [];
+
+        if (data.knowledgeSearchModelId || data.answerExtractionModelId) {
+          patchPayload.generativeAISettings = {
+            enabled: true,
+            useCasesSettings: {},
+          };
+          if (data.knowledgeSearchModelId) {
+            patchPayload.generativeAISettings.useCasesSettings.knowledgeSearch =
+              {
+                largeLanguageModelId: data.knowledgeSearchModelId,
+              };
+            updatedFields.push("knowledgeSearchModelId");
+          }
+          if (data.answerExtractionModelId) {
+            patchPayload.generativeAISettings.useCasesSettings.answerExtraction =
+              {
+                largeLanguageModelId: data.answerExtractionModelId,
+              };
+            updatedFields.push("answerExtractionModelId");
+          }
+        }
+
+        if (
+          data.contentParser !== undefined ||
+          data.azureDIConnectionId !== undefined
+        ) {
+          patchPayload.knowledgeAISettings = {};
+          if (data.contentParser !== undefined) {
+            patchPayload.knowledgeAISettings.fileExtractor = data.contentParser;
+            updatedFields.push("contentParser");
+          }
+          if (data.azureDIConnectionId !== undefined) {
+            patchPayload.knowledgeAISettings.azureDIConnectionId =
+              data.azureDIConnectionId;
+            if (!updatedFields.includes("azureDIConnectionId")) {
+              updatedFields.push("azureDIConnectionId");
+            }
+          }
+        }
+
+        try {
+          await this.apiClient.patch(
+            `/new/v2.0/projects/${data.projectId}/settings`,
+            patchPayload,
+          );
+        } catch (error: any) {
+          return withHints(
+            {
+              error: `Failed to update Knowledge AI settings: ${error.message}`,
+            },
+            {
+              resource: "cognigy://guide/settings",
+              action:
+                "Verify the projectId, llm_model referenceIds, and content parser connection details, then retry.",
+            },
+          );
+        }
+
+        return {
+          updated: true,
+          updatedFields,
+          ...(data.knowledgeSearchModelId
+            ? { knowledgeSearchModelId: data.knowledgeSearchModelId }
+            : {}),
+          ...(data.answerExtractionModelId
+            ? { answerExtractionModelId: data.answerExtractionModelId }
+            : {}),
+          ...(data.contentParser ? { contentParser: data.contentParser } : {}),
+          ...(data.azureDIConnectionId
+            ? { azureDIConnectionId: data.azureDIConnectionId }
+            : {}),
+          ...(data.knowledgeSearchModelId || data.answerExtractionModelId
+            ? { generativeAIEnabled: true }
+            : {}),
+          _hint:
+            "Knowledge AI settings configured. If you are preparing a new project, ensure the referenced LLMs already exist in this project before creating knowledge stores or answer extraction flows.",
+        };
+      }
 
       default:
         throw new Error(`Unknown operation: ${(data as any).operation}`);

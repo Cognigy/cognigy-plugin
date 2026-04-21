@@ -412,7 +412,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "manage_knowledge",
     description:
-      "Manage knowledge bases for RAG. Create stores, add sources (URLs, text, or files), and list chunks to verify content.\n\nBEFORE USING THIS TOOL: Read cognigy://guide/knowledge-setup for the full setup workflow, prerequisites, and required steps.\n\nPREREQUISITE: An embedding model must be configured in the project before creating or using knowledge stores. Use setup_llm to create an embedding model first (e.g., setup_llm { projectId, provider: 'openAI', modelType: 'text-embedding-ada-002', apiKey }).\n\nFor URL sources: provide type 'url' and url field — the page is scraped and ingested automatically.\nFor text sources: provide text field (type defaults to 'manual') — a source and chunk are created.\nFor file sources (PDF, TXT, DOCX, CTXT, PPTX): provide type 'file' with filePath pointing to a local file. The server reads the file from disk and uploads it. Ingestion is async.\nTo verify content: use list_chunks with knowledgeStoreId (and optionally sourceId, filter).\n\nTo list stores: list_resources { resourceType: 'knowledge_store' }.\nTo delete: delete_resource { resourceType: 'knowledge_store', id }.",
+      "Manage knowledge bases for RAG. Create stores, add sources (URLs, text, or files), and list chunks to verify content.\n\nBEFORE USING THIS TOOL: Read cognigy://guide/knowledge-setup for the full setup workflow, prerequisites, and required steps.\n\nPREREQUISITES:\n- An embedding model must be configured in the project before creating or using knowledge stores. Use setup_llm to create an embedding model first (e.g., setup_llm { projectId, provider: 'openAI', modelType: 'text-embedding-ada-002', apiKey }).\n- If the project will use Knowledge Search or Answer Extraction, configure the project's Knowledge AI Settings with manage_settings { operation: 'set_knowledge_ai', ... } before assuming those features will work. The referenced model IDs must be llm_model referenceIds from the SAME project.\n\nFor URL sources: provide type 'url' and url field — the page is scraped and ingested automatically.\nFor text sources: provide text field (type defaults to 'manual') — a source and chunk are created.\nFor file sources (PDF, TXT, DOCX, CTXT, PPTX): provide type 'file' with filePath pointing to a local file. The server reads the file from disk and uploads it. Ingestion is async.\nTo verify content: use list_chunks with knowledgeStoreId (and optionally sourceId, filter).\n\nTo list stores: list_resources { resourceType: 'knowledge_store' }.\nTo delete: delete_resource { resourceType: 'knowledge_store', id }.",
     annotations: {
       title: "Manage Knowledge",
       readOnlyHint: false,
@@ -1547,7 +1547,7 @@ After creating, use talk_to_agent to test.`,
   {
     name: "manage_settings",
     description:
-      "Manage project-level settings in Cognigy. Currently supports configuring Voice Preview Settings (speech provider and connection).\n\nBEFORE USING THIS TOOL: Read cognigy://guide/settings for the full workflow.\n\nOperations:\n- set_voice_preview: Configure the speech provider for voice preview. Requires projectId and provider. If connectionId is omitted, the tool auto-detects an existing speech connection for the chosen provider. If no connection is found, it returns instructions to upload a package containing one via manage_packages.\n\nSupported providers: microsoft, google, aws, deepgram, elevenlabs.",
+      'Manage project-level settings in Cognigy, including Voice Preview Settings and Knowledge AI Settings.\n\nBEFORE USING THIS TOOL: Read cognigy://guide/settings for the full workflow.\n\nOperations:\n- set_voice_preview: Configure the speech provider for voice preview. Requires projectId and provider. If connectionId is omitted, the tool auto-detects an existing speech connection for the chosen provider. If no connection is found, it returns instructions to upload a package containing one via manage_packages.\n- set_knowledge_ai: Configure Knowledge AI Settings for the project. Use this to set the Knowledge Search model, the Answer Extraction model, and the Content Parser. Model IDs must be llm_model referenceIds from the SAME project. If you provide a model ID, the tool automatically enables generative AI settings for the project. If contentParser is "azure", azureDIConnectionId is required.\n\nSupported speech providers: microsoft, google, aws, deepgram, elevenlabs.',
     annotations: {
       title: "Manage Settings",
       readOnlyHint: false,
@@ -1560,7 +1560,7 @@ After creating, use talk_to_agent to test.`,
       properties: {
         operation: {
           type: "string",
-          enum: ["set_voice_preview"],
+          enum: ["set_voice_preview", "set_knowledge_ai"],
           description: "Which operation to perform",
         },
         projectId: {
@@ -1577,8 +1577,29 @@ After creating, use talk_to_agent to test.`,
           description:
             "Connection referenceId to use. If omitted, auto-detects an existing speech connection for the provider.",
         },
+        knowledgeSearchModelId: {
+          type: "string",
+          description:
+            "llm_model referenceId from the SAME project to use for Knowledge Search.",
+        },
+        answerExtractionModelId: {
+          type: "string",
+          description:
+            "llm_model referenceId from the SAME project to use for Answer Extraction.",
+        },
+        contentParser: {
+          type: "string",
+          enum: ["default", "legacy", "azure"],
+          description:
+            "Content Parser to use for Knowledge AI document processing.",
+        },
+        azureDIConnectionId: {
+          type: "string",
+          description:
+            "Azure AI Document Intelligence connection referenceId. Required when contentParser is azure.",
+        },
       },
-      required: ["operation", "projectId", "provider"],
+      required: ["operation", "projectId"],
     },
   },
 ];

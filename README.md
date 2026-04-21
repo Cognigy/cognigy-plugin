@@ -31,7 +31,7 @@ A Model Context Protocol (MCP) server that connects your AI assistant to the [Co
 | `manage_flow_nodes`    | Write | Create, update, delete, or list flow nodes for conversation logic                                  |
 | `manage_packages`      | Write | List exportable resources, upload, inspect, import, export, and download Cognigy package zip files |
 | `manage_voice_gateway` | Write | Create or configure a Voice Gateway endpoint with WebRTC for browser-based voice interaction       |
-| `manage_settings`      | Write | Manage project-level settings including voice preview speech providers                             |
+| `manage_settings`      | Write | Manage project-level settings including voice preview and Knowledge AI configuration               |
 
 The server also includes built-in guides (MCP resources) that AI assistants automatically read for detailed workflows, field references, and troubleshooting.
 
@@ -165,6 +165,8 @@ so the agent can search it when answering questions.
 
 The server will call `manage_knowledge` to create the store and ingest the URL, then `create_tool` to attach it as a knowledge search tool on the agent's job node.
 
+If the project will use Knowledge Search or Answer Extraction, the server should first configure Knowledge AI Settings with `manage_settings { operation: 'set_knowledge_ai', ... }` using model IDs from the same project.
+
 ### 4. Get analytics on recent conversations
 
 ```
@@ -209,6 +211,16 @@ WebRTC demo URL I can open in the browser.
 ```
 
 This uses `manage_settings` with `operation: 'set_voice_preview'` to configure speech, then `manage_voice_gateway` to provision a `voiceGateway2` endpoint with a `webrtcDemoUrl`.
+
+### 9. Configure Knowledge AI settings for search and answer extraction
+
+```
+Configure Knowledge AI settings for project <projectId> by setting the Knowledge Search
+model, the Answer Extraction model, and the Content Parser. If I am creating a new
+project, ask me before reusing those settings from another project.
+```
+
+This uses `manage_settings` with `operation: 'set_knowledge_ai'` to configure `knowledgeSearch`, `answerExtraction`, and `contentParser` at the project-settings level.
 
 ## Security
 

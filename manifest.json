@@ -112,7 +112,7 @@
     },
     {
       "name": "manage_settings",
-      "description": "Manage project-level settings including voice preview speech providers"
+      "description": "Manage project-level settings including voice preview and Knowledge AI configuration"
     }
   ],
   "tools_generated": false,

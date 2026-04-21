@@ -566,11 +566,56 @@ const speechProviderEnum = z.enum([
   "elevenlabs",
 ]);
 
-export const manageSettingsSchema = z.discriminatedUnion("operation", [
-  z.object({
-    operation: z.literal("set_voice_preview"),
+const knowledgeContentParserEnum = z.enum(["default", "legacy", "azure"]);
+
+const manageVoicePreviewSettingsSchema = z.object({
+  operation: z.literal("set_voice_preview"),
+  projectId: idSchema,
+  provider: speechProviderEnum,
+  connectionId: z.string().optional(),
+});
+
+const manageKnowledgeAiSettingsSchema = z
+  .object({
+    operation: z.literal("set_knowledge_ai"),
     projectId: idSchema,
-    provider: speechProviderEnum,
-    connectionId: z.string().optional(),
-  }),
+    knowledgeSearchModelId: z.string().optional(),
+    answerExtractionModelId: z.string().optional(),
+    contentParser: knowledgeContentParserEnum.optional(),
+    azureDIConnectionId: z.string().optional(),
+  })
+  .refine(
+    (data) =>
+      data.knowledgeSearchModelId !== undefined ||
+      data.answerExtractionModelId !== undefined ||
+      data.contentParser !== undefined ||
+      data.azureDIConnectionId !== undefined,
+    {
+      message: "Provide at least one Knowledge AI setting to update.",
+      path: ["operation"],
+    },
+  )
+  .refine(
+    (data) => data.contentParser !== "azure" || !!data.azureDIConnectionId,
+    {
+      message:
+        "azureDIConnectionId is required when contentParser is set to azure.",
+      path: ["azureDIConnectionId"],
+    },
+  )
+  .refine(
+    (data) =>
+      !data.contentParser ||
+      data.contentParser === "azure" ||
+      data.azureDIConnectionId === undefined,
+    {
+      message:
+        "azureDIConnectionId can only be provided when contentParser is azure or omitted.",
+      path: ["azureDIConnectionId"],
+    },
+  );
+
+export const manageSettingsSchema = z.union([
+  manageVoicePreviewSettingsSchema,
+  manageKnowledgeAiSettingsSchema,
 ]);

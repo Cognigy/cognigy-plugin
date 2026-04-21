@@ -27,6 +27,9 @@ KNOWLEDGE STORES:
 - Knowledge stores should ALWAYS be attached as tools (via create_tool { toolType: "knowledge" } or knowledgeStoreReferenceId on create_ai_agent).
 - This creates a dedicated search tool the agent can invoke during conversations.
 - Only attach knowledge to the agent persona (via update_ai_agent) if the user EXPLICITLY asks to put it on the persona.
+- Knowledge Search and Answer Extraction depend on project-level Knowledge AI Settings. Configure them with manage_settings { operation: "set_knowledge_ai", ... } before assuming knowledge features will work.
+- If the user is creating a NEW project and intends to use knowledge stores, ask whether they want to reuse the Knowledge Search model, Answer Extraction model, and Content Parser from another project. Do NOT automatically import or ignore these settings.
+- If the user confirms reuse, first make sure the required LLMs and connections exist in the target project, then apply the project settings with manage_settings. These model IDs must be from the SAME project.
 
 ADDING CUSTOM LOGIC (flow nodes inside tools):
 Flow nodes are helpers for tools — they add logic INSIDE a tool's branch (e.g., conditionals, code, say nodes).

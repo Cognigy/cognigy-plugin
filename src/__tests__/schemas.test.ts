@@ -650,4 +650,57 @@ describe("manageSettingsSchema", () => {
       }),
     ).toThrow();
   });
+
+  it("accepts set_knowledge_ai with model ids", () => {
+    const result = schemas.manageSettingsSchema.parse({
+      operation: "set_knowledge_ai",
+      projectId: VALID_ID,
+      knowledgeSearchModelId: "llm-ref-1",
+      answerExtractionModelId: "llm-ref-2",
+    });
+    expect(result.operation).toBe("set_knowledge_ai");
+    expect(result.knowledgeSearchModelId).toBe("llm-ref-1");
+    expect(result.answerExtractionModelId).toBe("llm-ref-2");
+  });
+
+  it("accepts set_knowledge_ai with azure content parser", () => {
+    const result = schemas.manageSettingsSchema.parse({
+      operation: "set_knowledge_ai",
+      projectId: VALID_ID,
+      contentParser: "azure",
+      azureDIConnectionId: "conn-ref-1",
+    });
+    expect(result.contentParser).toBe("azure");
+    expect(result.azureDIConnectionId).toBe("conn-ref-1");
+  });
+
+  it("rejects set_knowledge_ai without fields", () => {
+    expect(() =>
+      schemas.manageSettingsSchema.parse({
+        operation: "set_knowledge_ai",
+        projectId: VALID_ID,
+      }),
+    ).toThrow();
+  });
+
+  it("rejects azure content parser without azureDIConnectionId", () => {
+    expect(() =>
+      schemas.manageSettingsSchema.parse({
+        operation: "set_knowledge_ai",
+        projectId: VALID_ID,
+        contentParser: "azure",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects azureDIConnectionId when parser is non-azure", () => {
+    expect(() =>
+      schemas.manageSettingsSchema.parse({
+        operation: "set_knowledge_ai",
+        projectId: VALID_ID,
+        contentParser: "default",
+        azureDIConnectionId: "conn-ref-1",
+      }),
+    ).toThrow();
+  });
 });

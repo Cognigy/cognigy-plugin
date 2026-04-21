@@ -2483,6 +2483,78 @@ describe("ToolHandlers v2", () => {
 
       expect(result.connectionId).toBe("correct-match");
     });
+
+    it("updates Knowledge AI settings with model ids and content parser", async () => {
+      api.patch.mockResolvedValueOnce({});
+
+      const result = await h.handleToolCall("manage_settings", {
+        operation: "set_knowledge_ai",
+        projectId: ID.project,
+        knowledgeSearchModelId: "llm-ref-1",
+        answerExtractionModelId: "llm-ref-2",
+        contentParser: "default",
+      });
+
+      expect(result.updated).toBe(true);
+      expect(result.generativeAIEnabled).toBe(true);
+      expect(result.updatedFields).toEqual([
+        "knowledgeSearchModelId",
+        "answerExtractionModelId",
+        "contentParser",
+      ]);
+      expect(api.patch).toHaveBeenCalledWith(
+        `/new/v2.0/projects/${ID.project}/settings`,
+        {
+          generativeAISettings: {
+            enabled: true,
+            useCasesSettings: {
+              knowledgeSearch: { largeLanguageModelId: "llm-ref-1" },
+              answerExtraction: { largeLanguageModelId: "llm-ref-2" },
+            },
+          },
+          knowledgeAISettings: {
+            fileExtractor: "default",
+          },
+        },
+      );
+    });
+
+    it("updates Knowledge AI settings for azure content parser", async () => {
+      api.patch.mockResolvedValueOnce({});
+
+      const result = await h.handleToolCall("manage_settings", {
+        operation: "set_knowledge_ai",
+        projectId: ID.project,
+        contentParser: "azure",
+        azureDIConnectionId: "azure-di-conn",
+      });
+
+      expect(result.updated).toBe(true);
+      expect(result.contentParser).toBe("azure");
+      expect(result.azureDIConnectionId).toBe("azure-di-conn");
+      expect(api.patch).toHaveBeenCalledWith(
+        `/new/v2.0/projects/${ID.project}/settings`,
+        {
+          knowledgeAISettings: {
+            fileExtractor: "azure",
+            azureDIConnectionId: "azure-di-conn",
+          },
+        },
+      );
+    });
+
+    it("returns error when Knowledge AI PATCH fails", async () => {
+      api.patch.mockRejectedValueOnce(new Error("Forbidden"));
+
+      const result = await h.handleToolCall("manage_settings", {
+        operation: "set_knowledge_ai",
+        projectId: ID.project,
+        knowledgeSearchModelId: "llm-ref-1",
+      });
+
+      expect(result.error).toContain("Failed to update Knowledge AI settings");
+      expect(result._hints.resource).toBe("cognigy://guide/settings");
+    });
   });
 
   // =========================================================================

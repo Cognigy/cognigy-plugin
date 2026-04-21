@@ -83,7 +83,7 @@ const RESOURCE_MAP: Record<
   "cognigy://guide/settings": {
     name: "Settings Guide",
     description:
-      "How to configure project-level settings including voice preview speech providers",
+      "How to configure project-level settings including voice preview and Knowledge AI settings",
     file: "settings.md",
   },
 };
