@@ -10,6 +10,19 @@
 | google      | gemini-2.0-flash, gemini-1.5-pro                           | GoogleVertexAIProvider | Requires apiKey                                               |
 | mistral     | mistral-small-2503, mistral-medium-latest                  | MistralProvider        | Requires apiKey                                               |
 
+## Model groups
+
+`setup_llm` can create different kinds of Cognigy LLM resources. The important distinction is the `modelType`:
+
+- Chat models: used for AI Agents, Knowledge Search, and Answer Extraction.
+  Examples: `gpt-4o`, `gpt-4o-mini`, `gpt-4.1`, `claude-sonnet-4-0`, `gemini-2.0-flash`, `mistral-small-2503`.
+- Embedding models: used for knowledge-store vector indexing.
+  Examples: `text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-ada-002`, `luminous-embedding-128`, `amazon.titan-embed-text-v2:0`, `Pharia-1-Embedding-4608`, `gemini-embedding-001`, `custom-embedding-model`.
+
+Chat/completion models are not embedding models. `gpt-4o-mini` is a chat model, not a valid embedding-model choice for knowledge-store indexing.
+
+When using `list_resources { resourceType: "llm_model", projectId }`, inspect the returned `modelType` and select the model by its exact role. Do not infer that all LLMs are interchangeable.
+
 ## Credential resolution
 
 - Provide apiKey — a Connection is auto-created, then the LLM resource is linked to it

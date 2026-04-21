@@ -160,6 +160,23 @@ function buildRichSayObject(
   };
 }
 
+function buildAiAgentNodePreview(
+  agent: {
+    name?: string;
+    image?: string;
+    imageOptimizedFormat?: boolean;
+  } | null,
+  fallbackName: string,
+  jobName?: string,
+): Record<string, any> {
+  return {
+    keyValue: jobName ?? fallbackName,
+    aiAgentName: agent?.name ?? fallbackName,
+    aiAgentImage: agent?.image ?? DEFAULT_AGENT_IMAGE,
+    aiAgentImageOptimizedFormat: agent?.imageOptimizedFormat ?? true,
+  };
+}
+
 function transformConfigForApi(
   nodeType: string,
   config: Record<string, any>,
@@ -1181,6 +1198,7 @@ export class ToolHandlers {
             aiAgent: agent.referenceId,
             outputImmediately: true,
           },
+          preview: buildAiAgentNodePreview(agent, data.name),
         },
       );
       const jobNodeId = jobNode._id || jobNode.id;
@@ -1220,12 +1238,7 @@ export class ToolHandlers {
         await this.apiClient.patch(
           `/v2.0/flows/${flowId}/chart/nodes/${jobNodeId}`,
           {
-            preview: {
-              keyValue: data.name,
-              aiAgentName: agent.name ?? data.name,
-              aiAgentImage: agent.image ?? DEFAULT_AGENT_IMAGE,
-              aiAgentImageOptimizedFormat: agent.imageOptimizedFormat ?? true,
-            },
+            preview: buildAiAgentNodePreview(agent, data.name),
           },
         );
       } catch (previewError: any) {
@@ -1547,13 +1560,11 @@ export class ToolHandlers {
               jobNode.config?.name ??
               currentAgent?.name ??
               rest.name;
-            nodePatch.preview = {
-              keyValue: previewName,
-              aiAgentName: currentAgent?.name ?? rest.name,
-              aiAgentImage: currentAgent?.image ?? DEFAULT_AGENT_IMAGE,
-              aiAgentImageOptimizedFormat:
-                currentAgent?.imageOptimizedFormat ?? true,
-            };
+            nodePatch.preview = buildAiAgentNodePreview(
+              currentAgent,
+              rest.name ?? previewName ?? "AI Agent",
+              previewName,
+            );
           }
 
           jobNodeResult = await this.apiClient.patch(

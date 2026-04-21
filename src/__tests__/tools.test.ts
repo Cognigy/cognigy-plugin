@@ -60,6 +60,8 @@ describe("ToolHandlers v2", () => {
         _id: ID.agent,
         referenceId: "ref-uuid",
         name: "Test Agent",
+        image: "default-avatar:4",
+        imageOptimizedFormat: true,
       };
       const mockFlow = {
         _id: ID.flow,
@@ -95,6 +97,18 @@ describe("ToolHandlers v2", () => {
       );
       expect(result.llmStatus).toBe("configured");
       expect(result._hints).toBeUndefined();
+      expect(api.post).toHaveBeenNthCalledWith(
+        3,
+        `/v2.0/flows/${ID.flow}/chart/nodes`,
+        expect.objectContaining({
+          preview: {
+            keyValue: "Test Agent",
+            aiAgentName: "Test Agent",
+            aiAgentImage: "default-avatar:4",
+            aiAgentImageOptimizedFormat: true,
+          },
+        }),
+      );
     });
 
     it("returns llmStatus unknown with hints when no LLM", async () => {

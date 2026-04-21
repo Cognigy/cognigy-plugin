@@ -163,9 +163,23 @@ https://docs.example.com/faq as a source, then attach it to my Support Bot
 so the agent can search it when answering questions.
 ```
 
-The server will call `manage_knowledge` to create the store and ingest the URL, then `create_tool` to attach it as a knowledge search tool on the agent's job node.
+The server will call `manage_knowledge` to create the store and ingest the URL,
+then `create_tool` to attach it as a knowledge search tool on the agent's job
+node.
 
-If the project will use Knowledge Search or Answer Extraction, the server should first configure Knowledge AI Settings with `manage_settings { operation: 'set_knowledge_ai', ... }` using model IDs from the same project.
+If the project will use Knowledge Search, the server should first configure
+Knowledge AI Settings with `manage_settings { operation: 'set_knowledge_ai',
+... }` using model IDs from the same project.
+
+The model roles are different:
+
+- The knowledge store itself needs an embedding model such as
+  `text-embedding-3-small`, `text-embedding-3-large`,
+  `text-embedding-ada-002`, `gemini-embedding-001`, or another
+  embedding-capable model.
+- `knowledgeSearchModelId` is a separate Knowledge AI setting for search
+  behavior.
+- Chat models such as `gpt-4o-mini` are not embedding models.
 
 ### 4. Get analytics on recent conversations
 
@@ -212,15 +226,18 @@ WebRTC demo URL I can open in the browser.
 
 This uses `manage_settings` with `operation: 'set_voice_preview'` to configure speech, then `manage_voice_gateway` to provision a `voiceGateway2` endpoint with a `webrtcDemoUrl`.
 
-### 9. Configure Knowledge AI settings for search and answer extraction
+### 9. Configure Knowledge AI settings for search
 
 ```
 Configure Knowledge AI settings for project <projectId> by setting the Knowledge Search
-model, the Answer Extraction model, and the Content Parser. If I am creating a new
-project, ask me before reusing those settings from another project.
+model and the Content Parser. If I am creating a new project, ask me before importing
+the needed model from another project and applying the same setting in the new project.
 ```
 
-This uses `manage_settings` with `operation: 'set_knowledge_ai'` to configure `knowledgeSearch`, `answerExtraction`, and `contentParser` at the project-settings level.
+This uses `manage_settings` with `operation: 'set_knowledge_ai'` to configure
+`knowledgeSearch` and `contentParser` at the project-settings level. Reusing
+settings does not mean copying another project's settings alone; the required
+model must exist in the target project first, either by import or by creating it there.
 
 ## Security
 

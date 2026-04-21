@@ -3,11 +3,21 @@
 ## Prerequisites
 
 - An **embedding model** must be configured in the project before creating knowledge stores.
-  Use setup_llm to create one first (e.g., `setup_llm { projectId, provider: "openAI", modelType: "text-embedding-ada-002", apiKey }`).
-  To check: `list_resources { resourceType: "llm_model", projectId }` — look for an embedding model.
-- The project's **Knowledge AI Settings** should be configured before relying on Knowledge Search or Answer Extraction.
-  Use `manage_settings { operation: "set_knowledge_ai", projectId, knowledgeSearchModelId: "<llm referenceId>" }` for Knowledge Search, and add `answerExtractionModelId` if your flow uses Answer Extraction.
+  Use `setup_llm` to create one first (e.g., `setup_llm { projectId, provider: "openAI", modelType: "text-embedding-ada-002", apiKey }`).
+  To check: `list_resources { resourceType: "llm_model", projectId }` and inspect `modelType`.
+  Valid embedding-model examples: `text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-ada-002`, `luminous-embedding-128`, `amazon.titan-embed-text-v2:0`, `Pharia-1-Embedding-4608`, `gemini-embedding-001`, `custom-embedding-model`.
+  Invalid embedding choices: chat/completion models such as `gpt-4o`, `gpt-4o-mini`, `gpt-4.1`, `claude-sonnet-4-0`, or `mistral-small-2503`.
+- Knowledge Search depends on the knowledge-store embedding index. If the project has no embedding model, Knowledge Search will fail even if a text model exists.
+- The project's **Knowledge AI Settings** should be configured before relying on Knowledge Search.
+  Use `manage_settings { operation: "set_knowledge_ai", projectId, knowledgeSearchModelId: "<llm referenceId>" }` for Knowledge Search.
   If you use the Azure content parser, also set `contentParser: "azure"` and `azureDIConnectionId`.
+
+## Important Distinction
+
+- The embedding model is for the knowledge store index itself.
+- `knowledgeSearchModelId` is a separate project setting for Knowledge Search.
+- For normal AI-agent knowledge-store setups, `answerExtractionModelId` is usually not needed.
+- Do not reuse the same model blindly across these roles. A project can use an embedding model for the store and a separate chat-capable model for Knowledge Search.
 
 ## Steps
 
@@ -42,6 +52,7 @@
 - For URLs, ensure the page is publicly accessible
 - Text sources are best for structured FAQ content
 - File sources are best for existing documents (PDFs, Word docs, etc.)
-- If the user is creating a new project and wants knowledge features, ask whether they want to reuse their Knowledge Search / Answer Extraction settings from another project before importing any LLMs.
+- Cache `list_resources { resourceType: "llm_model", projectId }` results while you are working in the same project. Only refresh after imports, `setup_llm`, or other changes.
+- If the user is creating a new project and wants knowledge features, ask whether they want to reuse their Knowledge Search model and Content Parser choice from another project before importing any LLMs.
 - DEFAULT: Knowledge stores are attached as tools — this gives the agent a dedicated search capability it can invoke during conversations. Use create_tool { toolType: "knowledge" } or knowledgeStoreReferenceId on create_ai_agent.
 - EXCEPTION: Only attach knowledge to the agent persona (via update_ai_agent) if the user explicitly requests persona-level knowledge attachment.
