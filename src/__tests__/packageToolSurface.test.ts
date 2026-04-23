@@ -1,6 +1,7 @@
 import { describe, it, expect } from "@jest/globals";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import { getGuideById } from "../guides.js";
 import { tools } from "../tools/definitions.js";
 
 const repoRoot = join(process.cwd());
@@ -23,8 +24,8 @@ describe("manage_packages tool surface", () => {
   });
 
   it("has a registered guide resource and backing file", () => {
-    const indexSource = readFileSync(join(repoRoot, "src/index.ts"), "utf-8");
-    expect(indexSource).toContain("cognigy://guide/package-management");
+    const guide = getGuideById("package-management");
+    expect(guide?.uri).toBe("cognigy://guide/package-management");
     expect(
       existsSync(join(repoRoot, "src/resources/package-management.md")),
     ).toBe(true);

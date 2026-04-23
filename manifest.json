@@ -113,6 +113,10 @@
     {
       "name": "manage_settings",
       "description": "Manage project-level settings including voice preview and Knowledge AI configuration"
+    },
+    {
+      "name": "read_guide",
+      "description": "Load the full markdown content of a built-in Cognigy workflow guide"
     }
   ],
   "tools_generated": false,

@@ -3,35 +3,43 @@
 ## Prerequisites
 
 - An **embedding model** must be configured in the project before creating knowledge stores.
-  Use `setup_llm` to create one first (e.g., `setup_llm { projectId, provider: "openAI", modelType: "text-embedding-ada-002", apiKey }`).
+  Use `setup_llm` to create one first if the target project does not already have one (e.g., `setup_llm { projectId, provider: "openAI", modelType: "<embedding model type>", apiKey }`).
   To check: `list_resources { resourceType: "llm_model", projectId }` and inspect `modelType`.
-  Valid embedding-model examples: `text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-ada-002`, `luminous-embedding-128`, `amazon.titan-embed-text-v2:0`, `Pharia-1-Embedding-4608`, `gemini-embedding-001`, `custom-embedding-model`.
-  Invalid embedding choices: chat/completion models such as `gpt-4o`, `gpt-4o-mini`, `gpt-4.1`, `claude-sonnet-4-0`, or `mistral-small-2503`.
-- Knowledge Search depends on the knowledge-store embedding index. If the project has no embedding model, Knowledge Search will fail even if a text model exists.
-- The project's **Knowledge AI Settings** should be configured before relying on Knowledge Search.
-  Use `manage_settings { operation: "set_knowledge_ai", projectId, knowledgeSearchModelId: "<llm referenceId>" }` for Knowledge Search.
+  Use provider docs or an existing same-project model to identify the correct embedding-capable model type for the store index.
+- Configure the project's **Knowledge AI Settings** before creating the store in normal AI-agent knowledge flows.
+  Use `manage_settings { operation: "set_knowledge_ai", projectId, knowledgeSearchModelId: "<llm referenceId>" }`.
   If you use the Azure content parser, also set `contentParser: "azure"` and `azureDIConnectionId`.
 
 ## Important Distinction
 
 - The embedding model is for the knowledge store index itself.
-- `knowledgeSearchModelId` is a separate project setting for Knowledge Search.
+- `knowledgeSearchModelId` is a separate project setting for Knowledge Search and must reference an `llm_model` from the same project.
 - For normal AI-agent knowledge-store setups, `answerExtractionModelId` is usually not needed.
-- Do not reuse the same model blindly across these roles. A project can use an embedding model for the store and a separate chat-capable model for Knowledge Search.
+- The model you pick for the AI Agent itself is a separate decision. The agent response model should not be reused for `knowledgeSearchModelId` just because it is already available.
+- The accepted model type for `knowledgeSearchModelId` is instance-dependent. Start with existing same-project candidates and rely on the API response.
+- Model names shown in examples are not a whitelist for either role.
 
 ## Steps
 
-1. manage_knowledge { operation: "create_store", projectId, name }
-2. manage_knowledge { operation: "create_source", knowledgeStoreId, type, ... }
+1. list_resources { resourceType: "llm_model", projectId }
+   - For Knowledge Search, prefer `list_resources { resourceType: "llm_model", projectId, useCase: "knowledgeSearch" }` so the candidates match the Settings UI dropdown
+   - Refresh this after any package import
+   - Start with the source project's exact Knowledge Search model when reusing an existing setup
+   - Import the full required source-project model set before the first `manage_settings { operation: "set_knowledge_ai", ... }` attempt
+   - If multiple required models share one connection, import that connection once alongside all of those models
+2. manage_settings { operation: "set_knowledge_ai", projectId, knowledgeSearchModelId, contentParser }
+   - Do this before `manage_knowledge { operation: "create_store", ... }` in normal AI-agent knowledge flows
+3. manage_knowledge { operation: "create_store", projectId, name }
+4. manage_knowledge { operation: "create_source", knowledgeStoreId, type, ... }
    - type: "url" — scrape a web page. Provide `url`.
    - type: "manual" — store text directly. Provide `text`.
    - type: "file" — upload a local document. Provide `filePath` (absolute path, e.g. "/Users/me/docs/report.pdf").
    - IMPORTANT: URL and file ingestion is async. Content is NOT searchable immediately.
    - Wait 10-60 seconds before searching.
-3. manage_knowledge { operation: "list_chunks", knowledgeStoreId }
+5. manage_knowledge { operation: "list_chunks", knowledgeStoreId }
    - Verify content was ingested correctly
    - If no results right after create_source, wait and retry
-4. Attach to agent as a TOOL (default approach):
+6. Attach to agent as a TOOL (default approach):
    - **During agent creation** — create_ai_agent { projectId, name, knowledgeStoreReferenceId: storeReferenceId }
      This automatically creates a knowledge search tool on the agent's Job Node.
    - **After agent creation** — create_tool { aiAgentId, toolType: "knowledge", name: "Search KB", config: { knowledgeStoreId: storeReferenceId, toolId: "search_kb", description: "Search the knowledge base" } }
@@ -53,6 +61,11 @@
 - Text sources are best for structured FAQ content
 - File sources are best for existing documents (PDFs, Word docs, etc.)
 - Cache `list_resources { resourceType: "llm_model", projectId }` results while you are working in the same project. Only refresh after imports, `setup_llm`, or other changes.
-- If the user is creating a new project and wants knowledge features, ask whether they want to reuse their Knowledge Search model and Content Parser choice from another project before importing any LLMs.
+- The use-case-filtered `llm_model` list is a better source of truth for `knowledgeSearchModelId` than the unfiltered project-wide list.
+- Treat `manage_settings` validation as authoritative for which project model works for Knowledge Search on that instance.
+- If all same-project candidates fail for `knowledgeSearchModelId`, stop and report the exact rejected model IDs and messages.
+- If the source project's exact Knowledge Search model is not yet in the target project, import it before trying a different model.
+- Do not infer that an untried candidate is rejected or unsupported. Only report actual API results.
+- If the user is creating a new project and another project already has a working knowledge setup, reproduce that exact Knowledge Search model and Content Parser choice before inventing a new combination.
 - DEFAULT: Knowledge stores are attached as tools — this gives the agent a dedicated search capability it can invoke during conversations. Use create_tool { toolType: "knowledge" } or knowledgeStoreReferenceId on create_ai_agent.
 - EXCEPTION: Only attach knowledge to the agent persona (via update_ai_agent) if the user explicitly requests persona-level knowledge attachment.

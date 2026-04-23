@@ -777,6 +777,27 @@ describe("ToolHandlers v2", () => {
         expect(result.items).toHaveLength(1);
       }
     });
+
+    it("uses the useCase-filtered LLM endpoint when requested", async () => {
+      api.get.mockResolvedValue({
+        items: [{ _id: ID.llm, referenceId: "llm-ref-1", name: "Embedding" }],
+        total: 1,
+      });
+
+      const result = await h.handleToolCall("list_resources", {
+        resourceType: "llm_model",
+        projectId: ID.project,
+        useCase: "knowledgeSearch",
+      });
+
+      expect(api.get).toHaveBeenCalledWith("/new/v2.0/largelanguagemodels", {
+        params: expect.objectContaining({
+          projectId: ID.project,
+          useCase: "knowledgeSearch",
+        }),
+      });
+      expect(result.items).toHaveLength(1);
+    });
   });
 
   // =========================================================================
@@ -1731,6 +1752,7 @@ describe("ToolHandlers v2", () => {
       expect(result._hints.action).toContain("A new project was auto-created");
       expect(result._hints.action).toContain("non-empty connectionId");
       expect(result._hints.action).toContain("manage_packages");
+      expect(result._hints.action).toContain("exact Knowledge Search model");
       expect(result._hints.action).toContain("do not call talk_to_agent");
     });
   });
@@ -2559,6 +2581,18 @@ describe("ToolHandlers v2", () => {
 
     it("returns error when Knowledge AI PATCH fails", async () => {
       api.patch.mockRejectedValueOnce(new Error("Forbidden"));
+      api.get.mockResolvedValueOnce({
+        items: [
+          {
+            _id: ID.llm,
+            referenceId: "llm-ref-embed",
+            name: "openAI - text-embedding-ada-002 - 1776758615449",
+            provider: "openAI",
+            modelType: "text-embedding-ada-002",
+            connectionId: "conn-ref-1",
+          },
+        ],
+      });
 
       const result = await h.handleToolCall("manage_settings", {
         operation: "set_knowledge_ai",
@@ -2568,6 +2602,13 @@ describe("ToolHandlers v2", () => {
 
       expect(result.error).toContain("Failed to update Knowledge AI settings");
       expect(result._hints.resource).toBe("cognigy://guide/settings");
+      expect(result.allowedKnowledgeSearchModels).toEqual([
+        expect.objectContaining({
+          referenceId: "llm-ref-embed",
+          modelType: "text-embedding-ada-002",
+        }),
+      ]);
+      expect(result._hints.action).toContain('useCase: "knowledgeSearch"');
     });
   });
 

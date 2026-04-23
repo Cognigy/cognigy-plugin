@@ -13,6 +13,11 @@ import { randomUUID } from "crypto";
 import { pathToFileURL } from "url";
 import axios from "axios";
 import { CognigyApiClient } from "../api/client.js";
+import {
+  listGuideMetadata,
+  readGuideContent,
+  resolveGuide,
+} from "../guides.js";
 import { logger } from "../utils/logger.js";
 import { filterResponse, filterList, withHints } from "./filters.js";
 import { buildWebchatSettings, deepMerge } from "./webchatSettings.js";
@@ -1385,8 +1390,8 @@ export class ToolHandlers {
 
       if (llmStatus === "unknown") {
         const nextAction = createdProject
-          ? `A new project was auto-created as "${projectId}". Immediately inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Choose only a source project whose llm_model has a non-empty connectionId, reuse that LLM via manage_packages export/upload_and_inspect/import, verify the import with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and do not call talk_to_agent until the import is confirmed. Only use setup_llm if no reusable LLM with connectionId exists or package transfer fails.`
-          : `Inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Choose only a source project whose llm_model has a non-empty connectionId, reuse that LLM via manage_packages export/upload_and_inspect/import, verify the import with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and do not call talk_to_agent until the import is confirmed. Only use setup_llm if no reusable LLM with connectionId exists or package transfer fails.`;
+          ? `A new project was auto-created as "${projectId}". Immediately inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Choose only source-project llm_model entries with a non-empty connectionId, transfer the required LLM resources plus their shared connection resource(s) via manage_packages export/upload_and_inspect/import, verify the import with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and do not call talk_to_agent until the import is confirmed. If this workflow will use knowledge, transfer the source project's embedding model and exact Knowledge Search model together before calling manage_settings. Only use setup_llm if no reusable LLM with connectionId exists or package transfer fails.`
+          : `Inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Choose only source-project llm_model entries with a non-empty connectionId, transfer the required LLM resources plus their shared connection resource(s) via manage_packages export/upload_and_inspect/import, verify the import with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and do not call talk_to_agent until the import is confirmed. If this workflow will use knowledge, transfer the source project's embedding model and exact Knowledge Search model together before calling manage_settings. Only use setup_llm if no reusable LLM with connectionId exists or package transfer fails.`;
         return withHints(result, {
           warning:
             "Could not verify LLM resource in project. Agent may not generate responses.",
@@ -2107,8 +2112,15 @@ export class ToolHandlers {
         break;
       }
       case "llm_model": {
-        const res: any = await this.apiClient.get("/v2.0/largelanguagemodels", {
-          params: { projectId, ...paging },
+        const endpoint = data.useCase
+          ? "/new/v2.0/largelanguagemodels"
+          : "/v2.0/largelanguagemodels";
+        const res: any = await this.apiClient.get(endpoint, {
+          params: {
+            projectId,
+            ...(data.useCase ? { useCase: data.useCase } : {}),
+            ...paging,
+          },
         });
         items = res.items ?? res;
         total = res.total;
@@ -4142,14 +4154,46 @@ export class ToolHandlers {
             patchPayload,
           );
         } catch (error: any) {
+          let allowedKnowledgeSearchModels: any[] | undefined;
+          let allowedKnowledgeSearchModelsError: string | undefined;
+
+          if (data.knowledgeSearchModelId) {
+            try {
+              const res: any = await this.apiClient.get(
+                "/new/v2.0/largelanguagemodels",
+                {
+                  params: {
+                    projectId: data.projectId,
+                    useCase: "knowledgeSearch",
+                    limit: 100,
+                  },
+                },
+              );
+              const items = res.items ?? res;
+              allowedKnowledgeSearchModels = filterList(
+                "llm_model",
+                Array.isArray(items) ? items : [],
+              );
+            } catch (candidateError: any) {
+              allowedKnowledgeSearchModelsError = candidateError.message;
+            }
+          }
+
           return withHints(
             {
               error: `Failed to update Knowledge AI settings: ${error.message}`,
+              ...(allowedKnowledgeSearchModels
+                ? { allowedKnowledgeSearchModels }
+                : {}),
+              ...(allowedKnowledgeSearchModelsError
+                ? {
+                    allowedKnowledgeSearchModelsError,
+                  }
+                : {}),
             },
             {
               resource: "cognigy://guide/settings",
-              action:
-                "Verify the projectId, llm_model referenceIds, and content parser connection details, then retry.",
+              action: `Verify the projectId, same-project llm_model referenceIds, and content parser connection details, then retry. For Knowledge Search, call list_resources { resourceType: "llm_model", projectId: "${data.projectId}", useCase: "knowledgeSearch" } to match the Settings UI dropdown before choosing another model. If you are reusing another project's knowledge workflow, ensure the exact source-project Knowledge Search model has already been imported into this project before trying a different model.`,
             },
           );
         }
@@ -4227,6 +4271,43 @@ export class ToolHandlers {
     return base.replace(/^http/, "ws");
   }
 
+  private async handleReadGuide(args: any): Promise<any> {
+    const data = schemas.readGuideSchema.parse(args);
+
+    if (!data.guideId && !data.uri) {
+      return {
+        guides: listGuideMetadata(),
+        _instruction:
+          "Call read_guide again with either guideId or uri to load the full markdown content of that guide.",
+      };
+    }
+
+    const guide = resolveGuide(data);
+    if (!guide) {
+      return withHints(
+        {
+          error: `Unknown guide: ${data.guideId ?? data.uri}`,
+          guides: listGuideMetadata(),
+        },
+        {
+          action:
+            "Call read_guide with one of the available guideId values or with a cognigy://guide/... uri from the list.",
+        },
+      );
+    }
+
+    return {
+      guideId: guide.guideId,
+      uri: guide.uri,
+      name: guide.name,
+      description: guide.description,
+      mimeType: "text/markdown",
+      content: readGuideContent(guide),
+      _instruction:
+        "Use the content field as the authoritative guide text for this workflow.",
+    };
+  }
+
   // =========================================================================
   // Main dispatcher
   // =========================================================================
@@ -4282,6 +4363,9 @@ export class ToolHandlers {
           break;
         case "manage_settings":
           result = await this.handleManageSettings(args);
+          break;
+        case "read_guide":
+          result = await this.handleReadGuide(args);
           break;
         default:
           throw new Error(`Unknown tool: ${toolName}`);

@@ -16,12 +16,13 @@
    - Run list_resources { resourceType: "llm_model", projectId } for each other project
    - Choose only candidates whose llm_model has a non-empty connectionId
    - Do not treat an LLM without connectionId as a valid reuse candidate
-5. If another project already has a reusable LLM, transfer it together with its connection:
+5. If another project already has a reusable LLM, transfer the required model set together with its connection resource(s):
    - manage_packages { operation: "list_exportable", projectId: "<sourceProjectId>" }
-   - manage_packages { operation: "export", projectId: "<sourceProjectId>", resourceIds: ["<llmResourceId>", "<connectionResourceId>"], name: "llm-transfer" }
+   - If this workflow will use knowledge, identify the source project's exact Knowledge Search model and embedding model before exporting anything
+   - manage_packages { operation: "export", projectId: "<sourceProjectId>", resourceIds: ["<llmResourceId1>", "<llmResourceId2>", "<connectionResourceId>"], name: "llm-transfer" }
    - manage_packages { operation: "upload_and_inspect", projectId: "<targetProjectId>", filePath: "<savedTo from export>" }
    - manage_packages { operation: "import", projectId: "<targetProjectId>", packageId: "<packageId from upload_and_inspect>" }
-   - list_resources { resourceType: "llm_model", projectId: "<targetProjectId>" } — verify the import succeeded before testing or continuing setup
+   - list_resources { resourceType: "llm_model", projectId: "<targetProjectId>" } — verify the required models are present before testing or continuing setup
 6. Only if no reusable LLM with connectionId exists, or the package transfer failed: setup_llm { projectId, provider: "openAI", modelType: "gpt-4o", apiKey }
    - With isDefault: true (the default), agents auto-use this LLM — no extra step needed.
    - Save the `referenceId` from the response if you need to assign it explicitly later.
@@ -100,7 +101,8 @@ Always use ALL relevant fields when configuring an agent. Do not put everything 
 
 - create_ai_agent auto-provisions: flow, AI Agent Job Node, REST endpoint
 - If the target project was just auto-created and llmStatus is "unknown", immediately inspect other projects for reusable llm_model entries with connectionId before falling back to setup_llm.
-- Cognigy connections are project-scoped. If you want to reuse an LLM from another project, import BOTH the LLM and its connection via manage_packages before testing the agent.
+- Cognigy connections are project-scoped. If you want to reuse LLMs from another project, import the required model set and their distinct connection resource(s) via manage_packages before testing the agent.
+- For knowledge workflows, do not guess with the agent response model for Knowledge Search. Import the source project's exact Knowledge Search model into the target project before the first Knowledge AI settings attempt.
 - create_tool auto-provisions: flow nodes for tools. Do NOT create tool nodes manually.
 - Duplicate `toolId` values can cause empty or failed responses. Check the flow/tools before assuming the problem is the LLM or connection.
 - **Knowledge**: Always attach knowledge stores as tools (via create_tool { toolType: "knowledge" } or knowledgeStoreReferenceId on create_ai_agent). Knowledge tools give the agent a dedicated search capability. Only attach to the persona (via update_ai_agent) if the user explicitly requests persona-level knowledge.

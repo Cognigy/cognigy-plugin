@@ -4,13 +4,13 @@ A Model Context Protocol (MCP) server that connects your AI assistant to the [Co
 
 ## Features
 
-- **15 workflow tools** for agent creation, deployment, packaging, and voice setup
+- **16 workflow tools** for agent creation, deployment, packaging, voice setup, and guide access
 - **One-call agent setup**: creates Agent + Flow + AI Agent Job Node + REST Endpoint automatically
 - **Self-improvement loop**: talk to your agent, evaluate responses, update the job description, repeat
 - **Knowledge store support**: attach RAG knowledge stores to agents as tools
 - **Browser voice deployment**: create Voice Gateway endpoints with WebRTC demo URLs
 - **Voice preview setup**: configure supported speech providers for voice experiences
-- **System prompt included**: AI assistants automatically become Cognigy experts via MCP resource
+- **Built-in guides**: workflow guides are exposed both as MCP resources and through the `read_guide` tool
 - Built-in rate limiting, Zod input validation, and RFC 7807 error responses
 
 ## Tools
@@ -32,8 +32,9 @@ A Model Context Protocol (MCP) server that connects your AI assistant to the [Co
 | `manage_packages`      | Write | List exportable resources, upload, inspect, import, export, and download Cognigy package zip files |
 | `manage_voice_gateway` | Write | Create or configure a Voice Gateway endpoint with WebRTC for browser-based voice interaction       |
 | `manage_settings`      | Write | Manage project-level settings including voice preview and Knowledge AI configuration               |
+| `read_guide`           | Read  | Load the full markdown content of a built-in Cognigy workflow guide                                |
 
-The server also includes built-in guides (MCP resources) that AI assistants automatically read for detailed workflows, field references, and troubleshooting.
+The server also includes built-in guides for detailed workflows, field references, and troubleshooting. They are exposed as MCP resources and through `read_guide`, which is the reliable cross-client path when an assistant needs the full content of a guide.
 
 ## Installation
 
@@ -143,7 +144,7 @@ via manage_packages, and only fall back to setup_llm if no reusable LLM exists.
 Return the endpoint URL only after the project has a confirmed working LLM.
 ```
 
-The MCP server should first check whether the target project already has a working LLM. If not, it should prefer reusing an LLM plus its connection from another project via `manage_packages`, and only use `setup_llm` as the last resort before calling `create_ai_agent`.
+The MCP server should first check whether the target project already has a working LLM. If not, it should prefer reusing the required LLM resource set plus its connection resources from another project via `manage_packages`, and only use `setup_llm` as the last resort before calling `create_ai_agent`.
 
 ### 2. Test and improve the agent
 
@@ -171,15 +172,36 @@ If the project will use Knowledge Search, the server should first configure
 Knowledge AI Settings with `manage_settings { operation: 'set_knowledge_ai',
 ... }` using model IDs from the same project.
 
+For normal AI-agent knowledge flows, this should happen before
+`manage_knowledge { operation: 'create_store', ... }`.
+
 The model roles are different:
 
-- The knowledge store itself needs an embedding model such as
-  `text-embedding-3-small`, `text-embedding-3-large`,
-  `text-embedding-ada-002`, `gemini-embedding-001`, or another
-  embedding-capable model.
+- The knowledge store itself needs an embedding-capable model for the index.
 - `knowledgeSearchModelId` is a separate Knowledge AI setting for search
-  behavior.
-- Chat models such as `gpt-4o-mini` are not embedding models.
+  behavior, but the accepted model type is instance-dependent.
+- If reusing another project's knowledge setup, identify the exact source-project
+  Knowledge Search model first and import it into the target project before the
+  first `set_knowledge_ai` attempt.
+- Import the full required knowledge model set in one pass. If the embedding
+  model, Knowledge Search model, and agent model share one connection, transfer
+  that single connection once alongside all of those models.
+- After importing LLMs into the target project, enumerate the target
+  project's `llm_model` resources and try those same-project IDs before
+  creating a new model.
+- For Knowledge Search specifically, use `list_resources` with
+  `resourceType: 'llm_model'` and `useCase: 'knowledgeSearch'` so the
+  candidates match the Settings UI dropdown rather than the unfiltered
+  project-wide LLM list.
+- Do not substitute a fresh or generic model for `knowledgeSearchModelId`
+  unless the user explicitly asks for that and existing same-project candidates
+  have already failed API validation.
+- If the exact source-project Knowledge Search model is missing from the target
+  project, import it before trying a different model.
+- If all same-project candidates fail, report the exact attempted model IDs
+  and API errors rather than claiming a platform-side bug.
+- Do not describe an untried model as "likely" unsupported or rejected.
+- Treat model names in examples as examples only, not as the source of truth.
 
 ### 4. Get analytics on recent conversations
 
@@ -230,14 +252,18 @@ This uses `manage_settings` with `operation: 'set_voice_preview'` to configure s
 
 ```
 Configure Knowledge AI settings for project <projectId> by setting the Knowledge Search
-model and the Content Parser. If I am creating a new project, ask me before importing
-the needed model from another project and applying the same setting in the new project.
+model and the Content Parser. If I am creating a new project and another project already
+has a working knowledge setup, reproduce that exact Knowledge Search model and Content
+Parser choice in the new project before trying generic defaults.
 ```
 
 This uses `manage_settings` with `operation: 'set_knowledge_ai'` to configure
 `knowledgeSearch` and `contentParser` at the project-settings level. Reusing
 settings does not mean copying another project's settings alone; the required
 model must exist in the target project first, either by import or by creating it there.
+For knowledge workflows, the MCP should import the full required source-project model set
+in one pass, reuse shared connections only once, and try the imported same-project model
+IDs before falling back to `setup_llm`.
 
 ## Security
 

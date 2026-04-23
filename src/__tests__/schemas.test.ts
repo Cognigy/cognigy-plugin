@@ -407,6 +407,15 @@ describe("listResourcesSchema", () => {
     expect(result.resourceType).toBe("agent");
   });
 
+  it("accepts llm_model useCase filter", () => {
+    const result = schemas.listResourcesSchema.parse({
+      resourceType: "llm_model",
+      projectId: VALID_ID,
+      useCase: "knowledgeSearch",
+    });
+    expect(result.useCase).toBe("knowledgeSearch");
+  });
+
   it("rejects invalid resource type", () => {
     expect(() =>
       schemas.listResourcesSchema.parse({
@@ -700,6 +709,34 @@ describe("manageSettingsSchema", () => {
         projectId: VALID_ID,
         contentParser: "default",
         azureDIConnectionId: "conn-ref-1",
+      }),
+    ).toThrow();
+  });
+});
+
+describe("readGuideSchema", () => {
+  it("accepts guideId", () => {
+    const result = schemas.readGuideSchema.parse({ guideId: "settings" });
+    expect(result.guideId).toBe("settings");
+  });
+
+  it("accepts uri", () => {
+    const result = schemas.readGuideSchema.parse({
+      uri: "cognigy://guide/settings",
+    });
+    expect(result.uri).toBe("cognigy://guide/settings");
+  });
+
+  it("accepts empty input for guide listing", () => {
+    const result = schemas.readGuideSchema.parse({});
+    expect(result).toEqual({});
+  });
+
+  it("rejects guideId and uri together", () => {
+    expect(() =>
+      schemas.readGuideSchema.parse({
+        guideId: "settings",
+        uri: "cognigy://guide/settings",
       }),
     ).toThrow();
   });

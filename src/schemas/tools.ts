@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GUIDE_IDS } from "../guides.js";
 
 const idSchema = z.string().regex(/^[a-f0-9]{24}$/, "Must be a 24-char hex ID");
 
@@ -81,6 +82,7 @@ export const listResourcesSchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   channel: z.string().optional(),
+  useCase: z.string().optional(),
   ...paginationSchema,
 });
 
@@ -619,3 +621,14 @@ export const manageSettingsSchema = z.union([
   manageVoicePreviewSettingsSchema,
   manageKnowledgeAiSettingsSchema,
 ]);
+
+// Tool 16: read_guide
+export const readGuideSchema = z
+  .object({
+    guideId: z.enum(GUIDE_IDS).optional(),
+    uri: z.string().optional(),
+  })
+  .refine((data) => !(data.guideId && data.uri), {
+    message: "Provide guideId or uri, not both",
+    path: ["guideId"],
+  });
