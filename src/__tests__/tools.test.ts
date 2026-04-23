@@ -77,7 +77,7 @@ describe("ToolHandlers v2", () => {
       api.post
         .mockResolvedValueOnce(mockAgent)
         .mockResolvedValueOnce(mockFlow)
-        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ _id: ID.node })
         .mockResolvedValueOnce(mockEndpoint);
       api.get
         .mockResolvedValueOnce({
@@ -98,6 +98,16 @@ describe("ToolHandlers v2", () => {
       expect(result.llmStatus).toBe("configured");
       expect(result._hints).toBeUndefined();
       expect(api.post).toHaveBeenNthCalledWith(
+        1,
+        "/v2.0/aiagents",
+        expect.objectContaining({
+          projectId: ID.project,
+          name: "Test Agent",
+          image: "default-avatar:1",
+          imageOptimizedFormat: true,
+        }),
+      );
+      expect(api.post).toHaveBeenNthCalledWith(
         3,
         `/v2.0/flows/${ID.flow}/chart/nodes`,
         expect.objectContaining({
@@ -105,6 +115,65 @@ describe("ToolHandlers v2", () => {
             keyValue: "Test Agent",
             aiAgentName: "Test Agent",
             aiAgentImage: "default-avatar:4",
+            aiAgentImageOptimizedFormat: true,
+          },
+        }),
+      );
+    });
+
+    it("falls back to the default preview avatar when the created agent returns a blank image", async () => {
+      const mockAgent = {
+        _id: ID.agent,
+        referenceId: "ref-uuid",
+        name: "Test Agent",
+        image: "   ",
+      };
+      const mockFlow = {
+        _id: ID.flow,
+        referenceId: "flow-uuid",
+        name: "Test Agent Flow",
+      };
+      const mockEndpoint = {
+        _id: ID.endpoint,
+        URLToken: "abc123",
+        channel: "rest",
+      };
+
+      api.post
+        .mockResolvedValueOnce(mockAgent)
+        .mockResolvedValueOnce(mockFlow)
+        .mockResolvedValueOnce({ _id: ID.node })
+        .mockResolvedValueOnce(mockEndpoint);
+      api.get
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.entry, isEntryPoint: true }],
+        })
+        .mockResolvedValueOnce({ items: [{ _id: ID.llm }] })
+        .mockResolvedValueOnce({ nodes: [] })
+        .mockResolvedValueOnce({ items: [] });
+      api.patch.mockResolvedValue({});
+
+      await h.handleToolCall("create_ai_agent", baseArgs);
+
+      expect(api.post).toHaveBeenNthCalledWith(
+        3,
+        `/v2.0/flows/${ID.flow}/chart/nodes`,
+        expect.objectContaining({
+          preview: {
+            keyValue: "Test Agent",
+            aiAgentName: "Test Agent",
+            aiAgentImage: "default-avatar:1",
+            aiAgentImageOptimizedFormat: true,
+          },
+        }),
+      );
+      expect(api.patch).toHaveBeenCalledWith(
+        `/v2.0/flows/${ID.flow}/chart/nodes/${ID.node}`,
+        expect.objectContaining({
+          preview: {
+            keyValue: "Test Agent",
+            aiAgentName: "Test Agent",
+            aiAgentImage: "default-avatar:1",
             aiAgentImageOptimizedFormat: true,
           },
         }),

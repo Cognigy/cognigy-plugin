@@ -174,11 +174,18 @@ function buildAiAgentNodePreview(
   fallbackName: string,
   jobName?: string,
 ): Record<string, any> {
+  const previewImage =
+    typeof agent?.image === "string" && agent.image.trim().length > 0
+      ? agent.image
+      : DEFAULT_AGENT_IMAGE;
   return {
     keyValue: jobName ?? fallbackName,
     aiAgentName: agent?.name ?? fallbackName,
-    aiAgentImage: agent?.image ?? DEFAULT_AGENT_IMAGE,
-    aiAgentImageOptimizedFormat: agent?.imageOptimizedFormat ?? true,
+    aiAgentImage: previewImage,
+    aiAgentImageOptimizedFormat:
+      typeof agent?.imageOptimizedFormat === "boolean"
+        ? agent.imageOptimizedFormat
+        : true,
   };
 }
 
