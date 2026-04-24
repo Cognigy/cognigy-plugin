@@ -7,13 +7,18 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: "Version bump type"
-        required: true
+        description: "Version bump type (ignored when exact version is set)"
+        required: false
+        default: patch
         type: choice
         options:
           - patch
           - minor
           - major
+      version:
+        description: "Exact version to publish, e.g. 1.0.1 or v1.0.1"
+        required: false
+        type: string
 
 jobs:
   publish:
@@ -72,23 +77,45 @@ jobs:
               core.info('No major/minor label found, defaulting to patch');
             }
 
-      - name: Resolve bump type
-        id: bump_type
+      - name: Resolve version request
+        id: version_request
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_BUMP: ${{ inputs.bump }}
+          INPUT_VERSION: ${{ inputs.version }}
+          PR_BUMP: ${{ steps.pr.outputs.bump }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "value=${{ inputs.bump }}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_VERSION" ]; then
+            VERSION="${INPUT_VERSION#v}"
+            VERSION="${VERSION#V}"
+            node -e '
+              const version = process.argv[1];
+              const pattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+              if (!pattern.test(version)) {
+                console.error(`Invalid version: ${version}`);
+                process.exit(1);
+              }
+            ' "$VERSION"
+            echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "label=explicit version $VERSION" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            BUMP="${INPUT_BUMP:-patch}"
+            echo "value=$BUMP" >> "$GITHUB_OUTPUT"
+            echo "label=$BUMP" >> "$GITHUB_OUTPUT"
           else
-            echo "value=${{ steps.pr.outputs.bump }}" >> "$GITHUB_OUTPUT"
+            BUMP="${PR_BUMP:-patch}"
+            echo "value=$BUMP" >> "$GITHUB_OUTPUT"
+            echo "label=$BUMP" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Bump version
-        if: steps.bump_type.outputs.value != ''
+        if: steps.version_request.outputs.value != ''
         id: version
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           OLD_VERSION=$(node -p "require('./package.json').version")
-          npm version ${{ steps.bump_type.outputs.value }} --no-git-tag-version
+          npm version "${{ steps.version_request.outputs.value }}" --no-git-tag-version
           NEW_VERSION=$(node -p "require('./package.json').version")
           # Sync version into manifest.json
           node -e "
@@ -100,22 +127,50 @@ jobs:
           echo "old=$OLD_VERSION" >> "$GITHUB_OUTPUT"
           echo "new=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Validate npm version availability
+        if: steps.version_request.outputs.value != ''
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          PACKAGE_VERSION="${{ steps.version.outputs.new }}"
+
+          if ! TIME_JSON=$(npm view "$PACKAGE_NAME" time --json 2> npm-view.err); then
+            if grep -q "E404" npm-view.err; then
+              TIME_JSON="{}"
+            else
+              cat npm-view.err
+              echo "::error::Could not read npm metadata for $PACKAGE_NAME"
+              exit 1
+            fi
+          fi
+
+          VERSION_TIME=$(TIME_JSON="$TIME_JSON" PACKAGE_VERSION="$PACKAGE_VERSION" node -e '
+            const time = JSON.parse(process.env.TIME_JSON || "{}");
+            process.stdout.write(time[process.env.PACKAGE_VERSION] || "");
+          ')
+
+          if [ -n "$VERSION_TIME" ]; then
+            echo "::error::$PACKAGE_NAME@$PACKAGE_VERSION has a registry time entry ($VERSION_TIME) and cannot be published. Pick a different version."
+            exit 1
+          fi
+
+          echo "$PACKAGE_NAME@$PACKAGE_VERSION has no npm registry time entry."
+
       - name: Generate changelog
-        if: steps.bump_type.outputs.value != ''
+        if: steps.version_request.outputs.value != ''
         run: npx conventional-changelog -p conventionalcommits -i CHANGELOG.md -s -r 0
 
       - name: Publish to npm
-        if: steps.bump_type.outputs.value != ''
+        if: steps.version_request.outputs.value != ''
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Build MCPB bundle
-        if: steps.bump_type.outputs.value != ''
+        if: steps.version_request.outputs.value != ''
         run: npx @anthropic-ai/mcpb pack
 
       - name: Commit version bump and tag
-        if: steps.bump_type.outputs.value != ''
+        if: steps.version_request.outputs.value != ''
         run: |
           git add package.json manifest.json CHANGELOG.md
           git commit -m "release: v${{ steps.version.outputs.new }}"
@@ -123,7 +178,7 @@ jobs:
           git push origin main --tags
 
       - name: Extract changelog for this version
-        if: steps.bump_type.outputs.value != ''
+        if: steps.version_request.outputs.value != ''
         id: changelog
         uses: actions/github-script@v7
         with:
@@ -141,7 +196,7 @@ jobs:
             core.setOutput('body', section);
 
       - name: Create GitHub release with MCPB bundle
-        if: steps.bump_type.outputs.value != ''
+        if: steps.version_request.outputs.value != ''
         uses: actions/github-script@v7
         with:
           script: |
@@ -196,10 +251,10 @@ jobs:
       - name: Summary
         run: |
           {
-            if [ -n "${{ steps.bump_type.outputs.value }}" ]; then
+            if [ -n "${{ steps.version_request.outputs.value }}" ]; then
               echo "### Published"
               echo ""
-              echo "- Bump: \`${{ steps.bump_type.outputs.value }}\` (${{ steps.version.outputs.old }} → ${{ steps.version.outputs.new }})"
+              echo "- Version request: \`${{ steps.version_request.outputs.label }}\` (${{ steps.version.outputs.old }} → ${{ steps.version.outputs.new }})"
               echo "- npm: [\`@cognigy/mcp-server@${{ steps.version.outputs.new }}\`](https://www.npmjs.com/package/@cognigy/mcp-server)"
               echo "- GitHub release: \`v${{ steps.version.outputs.new }}\` (with \`.mcpb\` bundle)"
               if grep -q 'npm publish.*--provenance' .github/workflows/release.yml; then
