@@ -37,7 +37,12 @@ describe("ToolHandlers v2", () => {
       put: jest.fn(),
       uploadFile: jest.fn(),
     } as any;
-    h = new ToolHandlers(api, "https://endpoint-trial.cognigy.ai");
+    h = new ToolHandlers(
+      api,
+      "https://endpoint-trial.cognigy.ai",
+      "",
+      "https://static-trial.cognigy.ai",
+    );
   });
 
   // =========================================================================
@@ -55,6 +60,8 @@ describe("ToolHandlers v2", () => {
         _id: ID.agent,
         referenceId: "ref-uuid",
         name: "Test Agent",
+        image: "default-avatar:4",
+        imageOptimizedFormat: true,
       };
       const mockFlow = {
         _id: ID.flow,
@@ -70,13 +77,15 @@ describe("ToolHandlers v2", () => {
       api.post
         .mockResolvedValueOnce(mockAgent)
         .mockResolvedValueOnce(mockFlow)
-        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ _id: ID.node })
         .mockResolvedValueOnce(mockEndpoint);
       api.get
         .mockResolvedValueOnce({
           items: [{ _id: ID.entry, isEntryPoint: true }],
         })
-        .mockResolvedValueOnce({ items: [{ _id: ID.llm }] });
+        .mockResolvedValueOnce({ items: [{ _id: ID.llm }] })
+        .mockResolvedValueOnce({ nodes: [] })
+        .mockResolvedValueOnce({ items: [] });
 
       const result = await h.handleToolCall("create_ai_agent", baseArgs);
 
@@ -88,6 +97,87 @@ describe("ToolHandlers v2", () => {
       );
       expect(result.llmStatus).toBe("configured");
       expect(result._hints).toBeUndefined();
+      expect(api.post).toHaveBeenNthCalledWith(
+        1,
+        "/v2.0/aiagents",
+        expect.objectContaining({
+          projectId: ID.project,
+          name: "Test Agent",
+          image: "default-avatar:1",
+          imageOptimizedFormat: true,
+        }),
+      );
+      expect(api.post).toHaveBeenNthCalledWith(
+        3,
+        `/v2.0/flows/${ID.flow}/chart/nodes`,
+        expect.objectContaining({
+          preview: {
+            keyValue: "Test Agent",
+            aiAgentName: "Test Agent",
+            aiAgentImage: "default-avatar:4",
+            aiAgentImageOptimizedFormat: true,
+          },
+        }),
+      );
+    });
+
+    it("falls back to the default preview avatar when the created agent returns a blank image", async () => {
+      const mockAgent = {
+        _id: ID.agent,
+        referenceId: "ref-uuid",
+        name: "Test Agent",
+        image: "   ",
+      };
+      const mockFlow = {
+        _id: ID.flow,
+        referenceId: "flow-uuid",
+        name: "Test Agent Flow",
+      };
+      const mockEndpoint = {
+        _id: ID.endpoint,
+        URLToken: "abc123",
+        channel: "rest",
+      };
+
+      api.post
+        .mockResolvedValueOnce(mockAgent)
+        .mockResolvedValueOnce(mockFlow)
+        .mockResolvedValueOnce({ _id: ID.node })
+        .mockResolvedValueOnce(mockEndpoint);
+      api.get
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.entry, isEntryPoint: true }],
+        })
+        .mockResolvedValueOnce({ items: [{ _id: ID.llm }] })
+        .mockResolvedValueOnce({ nodes: [] })
+        .mockResolvedValueOnce({ items: [] });
+      api.patch.mockResolvedValue({});
+
+      await h.handleToolCall("create_ai_agent", baseArgs);
+
+      expect(api.post).toHaveBeenNthCalledWith(
+        3,
+        `/v2.0/flows/${ID.flow}/chart/nodes`,
+        expect.objectContaining({
+          preview: {
+            keyValue: "Test Agent",
+            aiAgentName: "Test Agent",
+            aiAgentImage: "default-avatar:1",
+            aiAgentImageOptimizedFormat: true,
+          },
+        }),
+      );
+      expect(api.patch).toHaveBeenCalledWith(
+        `/v2.0/flows/${ID.flow}/chart/nodes/${ID.node}`,
+        expect.objectContaining({
+          preview: {
+            keyValue: "Test Agent",
+            aiAgentName: "Test Agent",
+            aiAgentImage: "default-avatar:1",
+            aiAgentImageOptimizedFormat: true,
+          },
+        }),
+      );
     });
 
     it("returns llmStatus unknown with hints when no LLM", async () => {
@@ -112,6 +202,8 @@ describe("ToolHandlers v2", () => {
         .mockResolvedValueOnce({
           items: [{ _id: ID.entry, isEntryPoint: true }],
         })
+        .mockResolvedValueOnce({ items: [] })
+        .mockResolvedValueOnce({ nodes: [] })
         .mockResolvedValueOnce({ items: [] });
 
       const result = await h.handleToolCall("create_ai_agent", baseArgs);
@@ -143,9 +235,13 @@ describe("ToolHandlers v2", () => {
         .mockResolvedValueOnce(mockFlow)
         .mockResolvedValueOnce({})
         .mockRejectedValueOnce(new Error("Endpoint failed"));
-      api.get.mockResolvedValueOnce({
-        items: [{ _id: ID.entry, isEntryPoint: true }],
-      });
+      api.get
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.entry, isEntryPoint: true }],
+        })
+        .mockResolvedValueOnce({ items: [] })
+        .mockResolvedValueOnce({ nodes: [] })
+        .mockResolvedValueOnce({ items: [] });
       api.delete.mockResolvedValue({});
 
       const result = await h.handleToolCall("create_ai_agent", baseArgs);
@@ -153,6 +249,57 @@ describe("ToolHandlers v2", () => {
       expect(result.failed.step).toBe("endpoint");
       expect(api.delete).toHaveBeenCalledWith(`/v2.0/flows/${ID.flow}`);
       expect(api.delete).toHaveBeenCalledWith(`/v2.0/aiagents/${ID.agent}`);
+    });
+
+    it("removes backend-created unlock_account placeholder tool after creating the job node", async () => {
+      const mockAgent = {
+        _id: ID.agent,
+        referenceId: "ref-uuid",
+        name: "Test Agent",
+      };
+      const mockFlow = {
+        _id: ID.flow,
+        referenceId: "flow-uuid",
+        name: "Test Agent Flow",
+      };
+      const mockEndpoint = {
+        _id: ID.endpoint,
+        URLToken: "abc123",
+        channel: "rest",
+      };
+      const placeholderToolId = "aaaaaaaaaaaaaaaaaaaaa999";
+
+      api.post
+        .mockResolvedValueOnce(mockAgent)
+        .mockResolvedValueOnce(mockFlow)
+        .mockResolvedValueOnce({ _id: ID.node })
+        .mockResolvedValueOnce(mockEndpoint);
+      api.get
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.entry, isEntryPoint: true }],
+        })
+        .mockResolvedValueOnce({ items: [{ _id: ID.llm }] })
+        .mockResolvedValueOnce({
+          relations: [
+            {
+              node: ID.node,
+              children: [placeholderToolId],
+            },
+          ],
+          nodes: [
+            {
+              _id: placeholderToolId,
+              preview: "unlock_account",
+            },
+          ],
+        });
+      api.delete.mockResolvedValue({});
+
+      await h.handleToolCall("create_ai_agent", baseArgs);
+
+      expect(api.delete).toHaveBeenCalledWith(
+        `/v2.0/flows/${ID.flow}/chart/nodes/${placeholderToolId}`,
+      );
     });
   });
 
@@ -290,6 +437,9 @@ describe("ToolHandlers v2", () => {
         ...mockLlm,
         connectionId: "existing-conn-uuid",
       };
+      api.get.mockResolvedValueOnce({
+        items: [{ _id: "conn1", referenceId: "existing-conn-uuid" }],
+      });
       api.post
         .mockResolvedValueOnce(llmWithExistingConn)
         .mockResolvedValueOnce(mockTestSuccess);
@@ -303,6 +453,9 @@ describe("ToolHandlers v2", () => {
 
       expect(result.provider).toBe("openAI");
       expect(result.connectionTest.isCredentialsValid).toBe(true);
+      expect(api.get).toHaveBeenCalledWith("/new/v2.0/connections", {
+        params: { projectId: ID.project },
+      });
       expect(api.post).toHaveBeenCalledTimes(2);
       expect(api.post).toHaveBeenCalledWith(
         "/v2.0/largelanguagemodels",
@@ -324,6 +477,9 @@ describe("ToolHandlers v2", () => {
     });
 
     it("deletes model and returns error when connection test fails", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [{ _id: "conn1", referenceId: "bad-conn-uuid" }],
+      });
       api.post
         .mockResolvedValueOnce(mockLlm)
         .mockResolvedValueOnce(mockTestFailure);
@@ -345,6 +501,9 @@ describe("ToolHandlers v2", () => {
     });
 
     it("keeps model with warning when test endpoint itself errors", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [{ _id: "conn1", referenceId: "some-conn-uuid" }],
+      });
       api.post
         .mockResolvedValueOnce(mockLlm)
         .mockRejectedValueOnce(new Error("Network timeout"));
@@ -364,6 +523,9 @@ describe("ToolHandlers v2", () => {
     });
 
     it("skips test and returns warning when dangerouslySkipConnectionTest is true", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [{ _id: "conn1", referenceId: "some-conn-uuid" }],
+      });
       api.post.mockResolvedValueOnce(mockLlm);
 
       const result = await h.handleToolCall("setup_llm", {
@@ -381,6 +543,9 @@ describe("ToolHandlers v2", () => {
     });
 
     it("still attempts cleanup even if delete fails after test failure", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [{ _id: "conn1", referenceId: "bad-conn-uuid" }],
+      });
       api.post
         .mockResolvedValueOnce(mockLlm)
         .mockResolvedValueOnce(mockTestFailure);
@@ -397,6 +562,21 @@ describe("ToolHandlers v2", () => {
       expect(api.delete).toHaveBeenCalledWith(
         `/v2.0/largelanguagemodels/${ID.llm}`,
       );
+    });
+
+    it("rejects connectionId that does not belong to the target project", async () => {
+      api.get.mockResolvedValueOnce({ items: [] });
+
+      const result = await h.handleToolCall("setup_llm", {
+        projectId: ID.project,
+        provider: "openAI",
+        modelType: "gpt-4o",
+        connectionId: "foreign-conn-uuid",
+      });
+
+      expect(result.error).toContain("was not found in the target project");
+      expect(result._hints.resource).toBe("cognigy://guide/package-management");
+      expect(api.post).not.toHaveBeenCalled();
     });
   });
 
@@ -665,6 +845,27 @@ describe("ToolHandlers v2", () => {
         });
         expect(result.items).toHaveLength(1);
       }
+    });
+
+    it("uses the useCase-filtered LLM endpoint when requested", async () => {
+      api.get.mockResolvedValue({
+        items: [{ _id: ID.llm, referenceId: "llm-ref-1", name: "Embedding" }],
+        total: 1,
+      });
+
+      const result = await h.handleToolCall("list_resources", {
+        resourceType: "llm_model",
+        projectId: ID.project,
+        useCase: "knowledgeSearch",
+      });
+
+      expect(api.get).toHaveBeenCalledWith("/new/v2.0/largelanguagemodels", {
+        params: expect.objectContaining({
+          projectId: ID.project,
+          useCase: "knowledgeSearch",
+        }),
+      });
+      expect(result.items).toHaveLength(1);
     });
   });
 
@@ -1125,6 +1326,70 @@ describe("ToolHandlers v2", () => {
       );
     });
 
+    it("reuses duplicate toolId in the same agent flow", async () => {
+      api.get.mockResolvedValueOnce({ flowId: ID.flow }).mockResolvedValueOnce({
+        items: [
+          { _id: ID.entry, isEntryPoint: true },
+          { _id: ID.node, type: "aiAgentJob" },
+          {
+            _id: ID.tool,
+            type: "aiAgentJobTool",
+            label: "unlock_account",
+            config: { toolId: "unlock_account", description: "Existing tool" },
+          },
+        ],
+      });
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "tool",
+        name: "Unlock Account",
+        config: {
+          toolId: "unlock_account",
+          description: "Unlocks a locked user account",
+        },
+      });
+
+      expect(result.reusedExisting).toBe(true);
+      expect(result.toolId).toBe(ID.tool);
+      expect(result.toolNodeId).toBe(ID.tool);
+      expect(result.requestedToolId).toBe("unlock_account");
+      expect(result._hints.resource).toBe("cognigy://guide/tools-setup");
+      expect(result._hints.warning).toContain('"unlock_account"');
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it("reuses duplicate tool when existing node matches by label only", async () => {
+      api.get.mockResolvedValueOnce({ flowId: ID.flow }).mockResolvedValueOnce({
+        items: [
+          { _id: ID.entry, isEntryPoint: true },
+          { _id: ID.node, type: "aiAgentJob" },
+          {
+            _id: ID.tool,
+            type: "aiAgentJobTool",
+            label: "unlock_account",
+            config: { description: "Existing tool without explicit toolId" },
+          },
+        ],
+      });
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "tool",
+        name: "Unlock Account",
+        config: {
+          toolId: "unlock_account",
+          description: "Unlocks a locked user account",
+        },
+      });
+
+      expect(result.reusedExisting).toBe(true);
+      expect(result.toolId).toBe(ID.tool);
+      expect(result.toolNodeId).toBe(ID.tool);
+      expect(result.requestedToolId).toBe("unlock_account");
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
     it("creates resolve node with default answer for general-purpose tool", async () => {
       mockFlowWithJobNode();
       const toolNodeId = "aaaaaaaaaaaaaaaaaaaaa001";
@@ -1517,6 +1782,48 @@ describe("ToolHandlers v2", () => {
       expect(result.llmStatus).toBe("unknown");
       expect(result._hints).toBeDefined();
     });
+
+    it("returns explicit package-reuse guidance when a new project is auto-created without an LLM", async () => {
+      const mockProject = { _id: ID.project, name: "New Project" };
+      const mockAgent = {
+        _id: ID.agent,
+        referenceId: "ref-uuid",
+        name: "Test Agent",
+      };
+      const mockFlow = { _id: ID.flow, referenceId: "flow-uuid", name: "Flow" };
+      const mockEndpoint = {
+        _id: ID.endpoint,
+        URLToken: "xyz",
+        channel: "rest",
+      };
+
+      api.post
+        .mockResolvedValueOnce(mockProject)
+        .mockResolvedValueOnce(mockAgent)
+        .mockResolvedValueOnce(mockFlow)
+        .mockResolvedValueOnce({ _id: ID.node })
+        .mockResolvedValueOnce(mockEndpoint);
+      api.get
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.entry, isEntryPoint: true }],
+        })
+        .mockResolvedValueOnce({ items: [] });
+      api.patch.mockResolvedValue({});
+
+      const result = await h.handleToolCall("create_ai_agent", {
+        name: "Test Agent",
+        description: "A test agent",
+      });
+
+      expect(result.projectCreated).toBe(true);
+      expect(result.llmStatus).toBe("unknown");
+      expect(result._hints.resource).toBe("cognigy://guide/agent-creation");
+      expect(result._hints.action).toContain("A new project was auto-created");
+      expect(result._hints.action).toContain("non-empty connectionId");
+      expect(result._hints.action).toContain("manage_packages");
+      expect(result._hints.action).toContain("exact Knowledge Search model");
+      expect(result._hints.action).toContain("do not call talk_to_agent");
+    });
   });
 
   // =========================================================================
@@ -1871,6 +2178,48 @@ describe("ToolHandlers v2", () => {
       expect(result.resourceIds).toEqual(["60d5ec49f1a2c8b1a4e0f102"]);
     });
 
+    it("auto-includes LLM connections referenced by referenceId during export", async () => {
+      const graph = makeGraph();
+      const llm = graph[ID.project].resources.find(
+        (resource: any) => resource._id === "60d5ec49f1a2c8b1a4e0f106",
+      );
+      const connection = graph[ID.project].resources.find(
+        (resource: any) => resource._id === "60d5ec49f1a2c8b1a4e0f107",
+      );
+
+      llm.dependencies = [];
+      llm.properties = {
+        ...llm.properties,
+        connectionId: "conn-ref-1",
+      };
+      connection.referenceId = "conn-ref-1";
+
+      api.get.mockResolvedValueOnce(graph);
+      api.post.mockResolvedValueOnce({ _id: ID.task2 });
+
+      const result = await h.handleToolCall("manage_packages", {
+        operation: "export",
+        projectId: ID.project,
+        resourceIds: ["60d5ec49f1a2c8b1a4e0f106"],
+        name: "support-bot",
+        waitForCompletion: false,
+      });
+
+      expect(api.post).toHaveBeenCalledWith("/new/v2.0/packages", {
+        projectId: ID.project,
+        name: expect.stringMatching(/^support-bot_/),
+        description: undefined,
+        resourceIds: ["60d5ec49f1a2c8b1a4e0f106", "60d5ec49f1a2c8b1a4e0f107"],
+      });
+      expect(result.dependencyResources).toEqual([
+        expect.objectContaining({
+          id: "60d5ec49f1a2c8b1a4e0f107",
+          type: "connection",
+          includedAsDependency: true,
+        }),
+      ]);
+    });
+
     it("downloads an existing package to disk", async () => {
       const dir = mkdtempSync(join(tmpdir(), "cognigy-mcp-package-download-"));
       const outputPath = join(dir, "exports");
@@ -1923,6 +2272,412 @@ describe("ToolHandlers v2", () => {
 
       expect(result.task.progress).toBe(0.5);
       expect(result.task.status).toBe("active");
+    });
+  });
+
+  // =========================================================================
+  // Dispatcher
+  // =========================================================================
+  // =========================================================================
+  // manage_voice_gateway
+  // =========================================================================
+  describe("manage_voice_gateway", () => {
+    it("creates endpoint and provisions WebRTC client", async () => {
+      const mockCreated = {
+        _id: ID.endpoint,
+        URLToken: "vg-token-123",
+        channel: "voiceGateway2",
+        name: "Voice Agent",
+      };
+      const mockEndpoint = {
+        ...mockCreated,
+        localeId: "loc-123",
+        webrtcClient: true,
+      };
+
+      // POST create endpoint
+      api.post.mockResolvedValueOnce(mockCreated);
+      // GET after create
+      api.get
+        .mockResolvedValueOnce({ localeReference: "loc-123" }) // flow lookup
+        .mockResolvedValueOnce(mockEndpoint) // after POST
+        .mockResolvedValueOnce({ ...mockEndpoint, webrtcClient: true }); // after PATCH
+      // PATCH to provision WebRTC
+      api.patch.mockResolvedValueOnce({});
+
+      const result = await h.handleToolCall("manage_voice_gateway", {
+        projectId: ID.project,
+        flowId: ID.flow,
+        name: "Voice Agent",
+      });
+
+      expect(result.created).toBe(true);
+      expect(result.channel).toBe("voiceGateway2");
+      expect(result.webrtcProvisioned).toBe(true);
+      expect(result.webrtcDemoUrl).toContain("vg-token-123");
+
+      // Verify endpoint creation call
+      expect(api.post).toHaveBeenCalledWith(
+        "/new/v2.0/endpoints",
+        expect.objectContaining({
+          channel: "voiceGateway2",
+          flowId: ID.flow,
+          name: "Voice Agent",
+        }),
+      );
+
+      // Verify WebRTC provisioning call
+      expect(api.patch).toHaveBeenCalledWith(
+        `/new/v2.0/endpoints/${ID.endpoint}`,
+        expect.objectContaining({
+          createWebrtcClient: true,
+          channel: "voiceGateway2",
+        }),
+      );
+    });
+
+    it("returns error when projectId missing for create", async () => {
+      const result = await h.handleToolCall("manage_voice_gateway", {
+        flowId: ID.flow,
+      });
+      expect(result.error).toContain("projectId is required");
+    });
+
+    it("returns error when flowId missing for create", async () => {
+      const result = await h.handleToolCall("manage_voice_gateway", {
+        projectId: ID.project,
+      });
+      expect(result.error).toContain("flowId is required");
+    });
+
+    it("updates existing endpoint with new widget config", async () => {
+      const existingEndpoint = {
+        _id: ID.endpoint,
+        URLToken: "vg-token-456",
+        channel: "voiceGateway2",
+        name: "Voice Agent",
+        webrtcClient: true,
+        webrtcWidgetConfig: {
+          label: "Old",
+          theme: "DARK_MODE",
+          transcription: { enabled: true, backgroundMode: "transparent" },
+          demoPage: {
+            background: { mode: "color", color: "#FFFFFF" },
+            position: "centered",
+          },
+        },
+      };
+
+      api.get
+        .mockResolvedValueOnce(existingEndpoint) // initial fetch
+        .mockResolvedValueOnce({
+          ...existingEndpoint,
+          webrtcWidgetConfig: {
+            ...existingEndpoint.webrtcWidgetConfig,
+            theme: "AI_PURPLE",
+          },
+        }); // after patch
+      api.patch.mockResolvedValueOnce({});
+
+      const result = await h.handleToolCall("manage_voice_gateway", {
+        endpointId: ID.endpoint,
+        webrtcWidgetConfig: { theme: "AI_PURPLE" },
+      });
+
+      expect(result.updated).toBe(true);
+      expect(result.webrtcProvisioned).toBe(true);
+      expect(api.patch).toHaveBeenCalledWith(
+        `/new/v2.0/endpoints/${ID.endpoint}`,
+        expect.objectContaining({
+          webrtcWidgetConfig: expect.objectContaining({ theme: "AI_PURPLE" }),
+        }),
+      );
+    });
+
+    it("provisions WebRTC when updating endpoint without webrtcClient", async () => {
+      const existingEndpoint = {
+        _id: ID.endpoint,
+        URLToken: "vg-token-789",
+        channel: "voiceGateway2",
+        name: "Voice Agent",
+        // no webrtcClient
+      };
+
+      api.get
+        .mockResolvedValueOnce(existingEndpoint)
+        .mockResolvedValueOnce({ ...existingEndpoint, webrtcClient: true });
+      api.patch.mockResolvedValueOnce({});
+
+      const result = await h.handleToolCall("manage_voice_gateway", {
+        endpointId: ID.endpoint,
+        name: "Updated Name",
+      });
+
+      expect(result.updated).toBe(true);
+      expect(api.patch).toHaveBeenCalledWith(
+        `/new/v2.0/endpoints/${ID.endpoint}`,
+        expect.objectContaining({
+          createWebrtcClient: true,
+          name: "Updated Name",
+        }),
+      );
+    });
+
+    it("returns current info when no changes requested on existing endpoint", async () => {
+      const existingEndpoint = {
+        _id: ID.endpoint,
+        URLToken: "vg-token-000",
+        channel: "voiceGateway2",
+        name: "Voice Agent",
+        webrtcClient: true,
+      };
+
+      api.get.mockResolvedValueOnce(existingEndpoint);
+
+      const result = await h.handleToolCall("manage_voice_gateway", {
+        endpointId: ID.endpoint,
+      });
+
+      expect(result.note).toContain("No changes requested");
+      expect(api.patch).not.toHaveBeenCalled();
+    });
+
+    it("returns partial success when WebRTC provisioning fails on create", async () => {
+      const mockCreated = {
+        _id: ID.endpoint,
+        URLToken: "vg-fail-token",
+        channel: "voiceGateway2",
+        name: "Voice Agent",
+      };
+
+      api.post.mockResolvedValueOnce(mockCreated);
+      api.get
+        .mockResolvedValueOnce({ localeReference: "loc-123" }) // flow
+        .mockResolvedValueOnce(mockCreated); // after POST
+      api.patch.mockRejectedValueOnce(new Error("WebRTC provision failed"));
+
+      const result = await h.handleToolCall("manage_voice_gateway", {
+        projectId: ID.project,
+        flowId: ID.flow,
+      });
+
+      expect(result.created).toBe(true);
+      expect(result.webrtcProvisioned).toBe(false);
+      expect(result._hints.warning).toContain(
+        "WebRTC client provisioning failed",
+      );
+    });
+  });
+
+  // =========================================================================
+  // manage_settings
+  // =========================================================================
+  describe("manage_settings", () => {
+    it("auto-detects connection and updates settings", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [
+          {
+            referenceId: "conn-ref-123",
+            extension: "@cognigy/audio-preview-provider",
+            type: "MicrosoftSpeechProvider",
+            name: "Microsoft Speech",
+          },
+        ],
+      });
+      api.patch.mockResolvedValueOnce({});
+
+      const result = await h.handleToolCall("manage_settings", {
+        operation: "set_voice_preview",
+        projectId: ID.project,
+        provider: "microsoft",
+      });
+
+      expect(result.updated).toBe(true);
+      expect(result.provider).toBe("microsoft");
+      expect(result.connectionId).toBe("conn-ref-123");
+      expect(api.patch).toHaveBeenCalledWith(
+        `/new/v2.0/projects/${ID.project}/settings`,
+        {
+          audioPreviewSettings: {
+            provider: "microsoft",
+            connections: {
+              microsoft: { connectionId: "conn-ref-123" },
+            },
+          },
+        },
+      );
+    });
+
+    it("uses explicit connectionId without auto-detect", async () => {
+      api.patch.mockResolvedValueOnce({});
+
+      const result = await h.handleToolCall("manage_settings", {
+        operation: "set_voice_preview",
+        projectId: ID.project,
+        provider: "google",
+        connectionId: "explicit-conn-id",
+      });
+
+      expect(result.updated).toBe(true);
+      expect(result.connectionId).toBe("explicit-conn-id");
+      expect(api.get).not.toHaveBeenCalled();
+    });
+
+    it("returns error when no connection found", async () => {
+      api.get.mockResolvedValueOnce({ items: [] });
+
+      const result = await h.handleToolCall("manage_settings", {
+        operation: "set_voice_preview",
+        projectId: ID.project,
+        provider: "deepgram",
+      });
+
+      expect(result.error).toContain("No speech connection found");
+      expect(result._hints.action).toContain("manage_packages");
+      expect(api.patch).not.toHaveBeenCalled();
+    });
+
+    it("returns error when PATCH fails", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [
+          {
+            referenceId: "conn-ref-456",
+            extension: "@cognigy/audio-preview-provider",
+            type: "AWSSpeechProvider",
+          },
+        ],
+      });
+      api.patch.mockRejectedValueOnce(new Error("Forbidden"));
+
+      const result = await h.handleToolCall("manage_settings", {
+        operation: "set_voice_preview",
+        projectId: ID.project,
+        provider: "aws",
+      });
+
+      expect(result.error).toContain("Failed to update voice preview");
+    });
+
+    it("filters connections by extension and type", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [
+          {
+            referenceId: "wrong-ext",
+            extension: "@cognigy/some-other",
+            type: "GoogleSpeechProvider",
+          },
+          {
+            referenceId: "wrong-type",
+            extension: "@cognigy/audio-preview-provider",
+            type: "MicrosoftSpeechProvider",
+          },
+          {
+            referenceId: "correct-match",
+            extension: "@cognigy/audio-preview-provider",
+            type: "GoogleSpeechProvider",
+          },
+        ],
+      });
+      api.patch.mockResolvedValueOnce({});
+
+      const result = await h.handleToolCall("manage_settings", {
+        operation: "set_voice_preview",
+        projectId: ID.project,
+        provider: "google",
+      });
+
+      expect(result.connectionId).toBe("correct-match");
+    });
+
+    it("updates Knowledge AI settings with model ids and content parser", async () => {
+      api.patch.mockResolvedValueOnce({});
+
+      const result = await h.handleToolCall("manage_settings", {
+        operation: "set_knowledge_ai",
+        projectId: ID.project,
+        knowledgeSearchModelId: "llm-ref-1",
+        answerExtractionModelId: "llm-ref-2",
+        contentParser: "default",
+      });
+
+      expect(result.updated).toBe(true);
+      expect(result.generativeAIEnabled).toBe(true);
+      expect(result.updatedFields).toEqual([
+        "knowledgeSearchModelId",
+        "answerExtractionModelId",
+        "contentParser",
+      ]);
+      expect(api.patch).toHaveBeenCalledWith(
+        `/new/v2.0/projects/${ID.project}/settings`,
+        {
+          generativeAISettings: {
+            enabled: true,
+            useCasesSettings: {
+              knowledgeSearch: { largeLanguageModelId: "llm-ref-1" },
+              answerExtraction: { largeLanguageModelId: "llm-ref-2" },
+            },
+          },
+          knowledgeAISettings: {
+            fileExtractor: "default",
+          },
+        },
+      );
+    });
+
+    it("updates Knowledge AI settings for azure content parser", async () => {
+      api.patch.mockResolvedValueOnce({});
+
+      const result = await h.handleToolCall("manage_settings", {
+        operation: "set_knowledge_ai",
+        projectId: ID.project,
+        contentParser: "azure",
+        azureDIConnectionId: "azure-di-conn",
+      });
+
+      expect(result.updated).toBe(true);
+      expect(result.contentParser).toBe("azure");
+      expect(result.azureDIConnectionId).toBe("azure-di-conn");
+      expect(api.patch).toHaveBeenCalledWith(
+        `/new/v2.0/projects/${ID.project}/settings`,
+        {
+          knowledgeAISettings: {
+            fileExtractor: "azure",
+            azureDIConnectionId: "azure-di-conn",
+          },
+        },
+      );
+    });
+
+    it("returns error when Knowledge AI PATCH fails", async () => {
+      api.patch.mockRejectedValueOnce(new Error("Forbidden"));
+      api.get.mockResolvedValueOnce({
+        items: [
+          {
+            _id: ID.llm,
+            referenceId: "llm-ref-embed",
+            name: "openAI - text-embedding-ada-002 - 1776758615449",
+            provider: "openAI",
+            modelType: "text-embedding-ada-002",
+            connectionId: "conn-ref-1",
+          },
+        ],
+      });
+
+      const result = await h.handleToolCall("manage_settings", {
+        operation: "set_knowledge_ai",
+        projectId: ID.project,
+        knowledgeSearchModelId: "llm-ref-1",
+      });
+
+      expect(result.error).toContain("Failed to update Knowledge AI settings");
+      expect(result._hints.resource).toBe("cognigy://guide/settings");
+      expect(result.allowedKnowledgeSearchModels).toEqual([
+        expect.objectContaining({
+          referenceId: "llm-ref-embed",
+          modelType: "text-embedding-ada-002",
+        }),
+      ]);
+      expect(result._hints.action).toContain('useCase: "knowledgeSearch"');
     });
   });
 

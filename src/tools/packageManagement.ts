@@ -140,6 +140,7 @@ export interface PackageExportableResource {
   disabledReason?: "function_export_not_supported" | "retired_model";
   dependencyCount: number;
   modelType?: string;
+  connectionId?: string;
 }
 
 export interface PackageExportSkippedResource {
@@ -452,6 +453,20 @@ function collectDependencies(
   }
 }
 
+function buildResourcesByReferenceId(
+  resources: GraphResource[],
+): Map<string, GraphResource> {
+  return new Map(
+    resources
+      .filter(
+        (resource): resource is GraphResource & { referenceId: string } =>
+          typeof resource.referenceId === "string" &&
+          resource.referenceId.length > 0,
+      )
+      .map((resource) => [resource.referenceId, resource]),
+  );
+}
+
 export function buildPackageExportPlan(
   projectId: string,
   graph: Record<string, GraphSubgraph>,
@@ -483,6 +498,8 @@ export function buildPackageExportPlan(
   const resourcesById = new Map<string, GraphResource>(
     exportableResources.map((resource) => [resourceId(resource), resource]),
   );
+  const resourcesByReferenceId =
+    buildResourcesByReferenceId(exportableResources);
 
   const skippedResources: PackageExportSkippedResource[] = [];
   const skippedResourceIds = new Set<string>();
@@ -542,6 +559,32 @@ export function buildPackageExportPlan(
   if (options?.includeDependencies !== false) {
     for (const resource of selectedExplicitResources.values()) {
       collectDependencies(resourcesById, resource, dependencyCandidates);
+    }
+
+    // Auto-include connections referenced by selected largeLanguageModel resources.
+    // The graph dependency tree may not link LLM → connection explicitly,
+    // but an LLM without its connection is non-functional after import.
+    for (const resource of selectedExplicitResources.values()) {
+      if (resource.type !== "largeLanguageModel") continue;
+      const connId =
+        resource.properties?.connectionId ??
+        (resource as any).connectionId ??
+        undefined;
+      if (!connId) continue;
+
+      const connResource =
+        resourcesById.get(connId) ?? resourcesByReferenceId.get(connId);
+      const resolvedConnId = connResource ? resourceId(connResource) : connId;
+
+      if (
+        !connResource ||
+        selectedExplicitResources.has(resolvedConnId) ||
+        dependencyCandidates.has(resolvedConnId)
+      ) {
+        continue;
+      }
+
+      dependencyCandidates.set(resolvedConnId, connResource);
     }
   }
 
@@ -700,9 +743,20 @@ export function buildPackageExportablePreview(
         dependencyCount: Array.isArray((resource as any)?.dependencies)
           ? (resource as any).dependencies.length
           : 0,
-        ...(resource.type === "largeLanguageModel" &&
-        resource.properties?.modelType
-          ? { modelType: resource.properties.modelType }
+        ...(resource.type === "largeLanguageModel"
+          ? {
+              ...(resource.properties?.modelType
+                ? { modelType: resource.properties.modelType }
+                : {}),
+              ...((resource.properties?.connectionId ??
+                (resource as any).connectionId) != null
+                ? {
+                    connectionId:
+                      resource.properties?.connectionId ??
+                      (resource as any).connectionId,
+                  }
+                : {}),
+            }
           : {}),
       };
     });

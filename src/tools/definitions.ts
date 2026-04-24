@@ -14,7 +14,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "create_ai_agent",
     description:
-      "Create a complete AI Agent with auto-provisioned flow, AI Agent Job Node, and REST endpoint. Returns everything needed for talk_to_agent.\n\nBEFORE USING THIS TOOL: Read cognigy://guide/agent-creation for the full setup workflow, prerequisites, and required steps.\n\nIf projectId is omitted, a new project is auto-created using the agent name.\n\nLLM SETUP (required for the agent to generate responses):\n1. Use setup_llm to create an LLM resource in the project (with isDefault: true, the default).\n2. If the LLM is not set as default, assign it via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: \"<llm referenceId>\" } }.\n\nKNOWLEDGE: If knowledgeStoreReferenceId is provided, a knowledge search tool is automatically created on the agent's Job Node. This is the preferred way to give agents access to knowledge stores.\n\nReturns: agent, flow, endpoint objects, endpointUrl, llmStatus, and the projectId used. If a knowledge tool was created, it is included in the response.\nIf llmStatus is 'unknown', read cognigy://guide/agent-creation for next steps.",
+      'Create a complete AI Agent with auto-provisioned flow, AI Agent Job Node, and REST endpoint. Returns everything needed for talk_to_agent.\n\nBEFORE USING THIS TOOL: Use read_guide { guideId: "agent-creation" } for the full setup workflow, prerequisites, and required steps.\n\nIf projectId is omitted, a new project is auto-created using the agent name.\n\nLLM SETUP (required for the agent to generate responses):\n1. Ensure the target project already has a working LLM. If another project already has one, prefer reusing the required llm_model resources together with their shared connection resource(s) via manage_packages export/import.\n2. Use setup_llm only if no reusable LLM with connectionId exists or package transfer failed.\n3. If the LLM is not set as default, assign it via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: "<llm referenceId>" } }.\n\nKNOWLEDGE: If knowledgeStoreReferenceId is provided, a knowledge search tool is automatically created on the agent\'s Job Node. This is the preferred way to give agents access to knowledge stores.\n\nReturns: agent, flow, endpoint objects, endpointUrl, llmStatus, and the projectId used. If a knowledge tool was created, it is included in the response.\nIf llmStatus is \'unknown\', especially after auto-creating a new project, use read_guide { guideId: "agent-creation" } for the required LLM reuse steps and do not call talk_to_agent until a working LLM is confirmed.',
     annotations: {
       title: "Create AI Agent",
       readOnlyHint: false,
@@ -53,7 +53,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "update_ai_agent",
     description:
-      "Update an AI Agent's configuration. This tool updates both the AI Agent resource and the AI Agent Job Node config.\n\nUSE ALL RELEVANT FIELDS — do not put everything in description alone. Distribute configuration across the appropriate fields:\n\nAGENT-LEVEL FIELDS (the agent's identity):\n- name: Display name\n- description: Agent PERSONA — who the agent is, personality, tone, and high-level behavior. This is the primary identity field.\n- instructions: Agent GUARDRAILS — high-level constraints and policies (up to 1000 chars). Things the agent must always/never do.\n\nJOB-LEVEL FIELDS (jobConfig — how the agent performs its job):\n- jobName: Job title / role name (e.g., 'Customer Support Specialist')\n- jobDescription: Detailed responsibilities, scope, expertise areas, and what tools are available for this job\n- jobInstructions: Step-by-step procedures, output format requirements, decision trees for the job\n- llmProviderReferenceId: LLM to use (from setup_llm or list_resources { resourceType: 'llm_model' })\n- temperature: 0-1, lower = more deterministic (default: 0.7)\n- maxTokens: 100-8000 (default: 4000)\n\nKNOWLEDGE: Always use create_tool { toolType: 'knowledge' } to attach knowledge stores as tools. Only use persona-level knowledge if the user explicitly requests it.\n\nRead cognigy://guide/agent-creation for the full field reference, examples, and how the fields work together.\n\nRequires: aiAgentId (from create_ai_agent or list_resources { resourceType: 'agent' }).\nAfter updating, use talk_to_agent to test the changes.",
+      "Update an AI Agent's configuration. This tool updates both the AI Agent resource and the AI Agent Job Node config.\n\nUSE ALL RELEVANT FIELDS — do not put everything in description alone. Distribute configuration across the appropriate fields:\n\nAGENT-LEVEL FIELDS (the agent's identity):\n- name: Display name\n- description: Agent PERSONA — who the agent is, personality, tone, and high-level behavior. This is the primary identity field.\n- instructions: Agent GUARDRAILS — high-level constraints and policies (up to 1000 chars). Things the agent must always/never do.\n\nJOB-LEVEL FIELDS (jobConfig — how the agent performs its job):\n- jobName: Job title / role name (e.g., 'Customer Support Specialist')\n- jobDescription: Detailed responsibilities, scope, expertise areas, and what tools are available for this job\n- jobInstructions: Step-by-step procedures, output format requirements, decision trees for the job\n- llmProviderReferenceId: LLM to use (from setup_llm or list_resources { resourceType: 'llm_model' })\n- temperature: 0-1, lower = more deterministic (default: 0.7)\n- maxTokens: 100-8000 (default: 4000)\n\nKNOWLEDGE: Always use create_tool { toolType: 'knowledge' } to attach knowledge stores as tools. Only use persona-level knowledge if the user explicitly requests it.\n\nUse read_guide { guideId: \"agent-creation\" } for the full field reference, examples, and how the fields work together.\n\nRequires: aiAgentId (from create_ai_agent or list_resources { resourceType: 'agent' }).\nAfter updating, use talk_to_agent to test the changes.",
     annotations: {
       title: "Update AI Agent",
       readOnlyHint: false,
@@ -126,7 +126,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "setup_llm",
     description:
-      "Create an LLM resource (GPT-4, Claude, etc.) in a project.\n\nAfter creation, the connection is normally tested by sending a minimal probe to the provider. If this connection test runs and fails (for example, invalid credentials or model name), the model is deleted and an error is returned — this prevents broken model references from silently breaking downstream flows.\n\nIf the provider's test endpoint is unreachable or returns a non-testable status, the model is kept but a warning is returned so you know connectivity could not be fully verified.\n\nIf dangerouslySkipConnectionTest is true, the connection test is not run at all; the model is kept and the response includes a warning that no connectivity check was performed. Only use this flag when you explicitly accept the risk that the created LLM might not be callable.\n\nIf isDefault is true (the default), agents in the project will automatically use this LLM. If isDefault is false, you must explicitly assign it to the agent via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: '<referenceId from this response>' } }.\n\nThe response includes the LLM's referenceId — use this value for jobConfig.llmProviderReferenceId if assigning manually.\n\nFor valid provider names and model strings, read cognigy://guide/llm-providers.\nTo list existing LLMs: use list_resources { resourceType: 'llm_model', projectId }.\nTo delete: use delete_resource { resourceType: 'llm_model', id }.",
+      "Create a NEW LLM resource (GPT-4, Claude, etc.) in a project. This is a LAST RESORT — only use when no existing LLM can be reused.\n\nPRECONDITION — you MUST have already completed ALL of these before calling this tool:\n1. Listed all projects: list_resources { resourceType: 'project' }\n2. Checked every other project for existing LLMs: list_resources { resourceType: 'llm_model', projectId }\n3. Attempted package reuse where another project already has a reusable LLM with connectionId\n4. Proceeding only because reuse is unavailable, transfer failed, or the user explicitly asked for a brand-new LLM\nIf you have not completed steps 1-4, STOP and do them first. Do NOT call this tool.\n\nMODEL ROLE WARNING:\n- Chat/completion models are used for AI Agents.\n- Embedding models are used for knowledge-store indexing.\n- Knowledge Search and Answer Extraction use same-project llm_model IDs accepted by the Cognigy API for that use case.\n- Do not use setup_llm as an automatic workaround for knowledgeSearchModelId failures while existing same-project candidates still exist.\n\nIMPORTANT: NEVER guess or hallucinate API keys. If creating a new LLM and no apiKey or connectionId was provided by the user, ASK for the required credentials.\n\nAfter creation, the connection is normally tested by sending a minimal probe to the provider. If this connection test runs and fails (for example, invalid credentials or model name), the model is deleted and an error is returned — this prevents broken model references from silently breaking downstream flows.\n\nIf the provider's test endpoint is unreachable or returns a non-testable status, the model is kept but a warning is returned so you know connectivity could not be fully verified.\n\nIf dangerouslySkipConnectionTest is true, the connection test is not run at all; the model is kept and the response includes a warning that no connectivity check was performed. Only use this flag when you explicitly accept the risk that the created LLM might not be callable. Never use it to bypass a missing or cross-project connection.\n\nIf isDefault is true (the default), agents in the project will automatically use this LLM. If isDefault is false, you must explicitly assign it to the agent via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: '<referenceId from this response>' } }.\n\nThe response includes the LLM's referenceId — use this value for jobConfig.llmProviderReferenceId if assigning manually.\n\nFor valid provider names and model strings, use read_guide { guideId: \"llm-providers\" }.\nTo list existing LLMs: use list_resources { resourceType: 'llm_model', projectId }.\nTo delete: use delete_resource { resourceType: 'llm_model', id }.",
     annotations: {
       title: "Setup LLM",
       readOnlyHint: false,
@@ -147,7 +147,7 @@ export const tools: ToolDefinition[] = [
         modelType: {
           type: "string",
           description:
-            "Model type string (e.g., 'gpt-4o', 'gpt-4o-mini', 'claude-sonnet-4-0', 'claude-opus-4-0', 'mistral-small-2503')",
+            "Model type string. Chat examples: 'gpt-4o', 'gpt-4o-mini', 'claude-sonnet-4-0', 'mistral-small-2503'. Embedding examples: 'text-embedding-3-small', 'text-embedding-3-large', 'text-embedding-ada-002', 'gemini-embedding-001'.",
         },
         name: {
           type: "string",
@@ -162,7 +162,7 @@ export const tools: ToolDefinition[] = [
         connectionId: {
           type: "string",
           description:
-            "Existing Cognigy Connection referenceId (UUID). Use instead of apiKey if a connection already exists.",
+            "Existing Cognigy Connection referenceId (UUID) from the SAME project. Connections are project-scoped — a connectionId from a different project will NOT work and will be rejected. To reuse a connection from another project, use the package export/import workflow (see LLM REUSE VIA PACKAGES in server instructions) instead of passing a cross-project connectionId here.",
         },
         isDefault: {
           type: "boolean",
@@ -172,9 +172,11 @@ export const tools: ToolDefinition[] = [
           type: "boolean",
           description:
             "LAST RESORT ONLY — Skip the automatic connection validation after creating the model. " +
-            "This may leave a broken model reference that silently fails downstream. " +
+            "This creates an LLM that may be completely non-functional. " +
+            "Do NOT use this to work around a failed connection test — a failed test means the credentials are wrong or the connection doesn't exist. " +
+            "Skipping the test does NOT fix the underlying problem, it just hides it. " +
             "Only use when the test endpoint is known to be unavailable (e.g., air-gapped environments, " +
-            "unsupported custom model providers). Default: false.",
+            "unsupported custom model providers) AND the user has explicitly confirmed. Default: false.",
         },
       },
       required: ["projectId", "provider", "modelType"],
@@ -242,7 +244,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "list_resources",
     description:
-      "List resources in a Cognigy project. Use this to discover projects, agents, flows, endpoints, LLM models, knowledge stores, conversations, extensions, functions, or tools.\n\nSet resourceType to 'project' to find projectIds (no projectId needed). 'tool' requires aiAgentId instead of projectId. All other types require projectId. Packages are handled through manage_packages.\n\nReturns a paginated list with id, name, and type-specific fields.",
+      "List resources in a Cognigy project. Use this to discover projects, agents, flows, endpoints, LLM models, knowledge stores, conversations, extensions, functions, or tools.\n\nSet resourceType to 'project' to find projectIds (no projectId needed). 'tool' requires aiAgentId instead of projectId. All other types require projectId. For `llm_model`, you can also pass `useCase` to match the UI's use-case-filtered model dropdowns (for example `knowledgeSearch`). Packages are handled through manage_packages.\n\nReturns a paginated list with id, name, and type-specific fields.",
     annotations: {
       title: "List Resources",
       readOnlyHint: true,
@@ -291,6 +293,11 @@ export const tools: ToolDefinition[] = [
           type: "string",
           description:
             "Channel filter, e.g. 'rest', 'webchat3' (conversations only)",
+        },
+        useCase: {
+          type: "string",
+          description:
+            "llm_model only — filter LLMs to the models allowed for a specific use case, matching the Cognigy UI dropdown. Example: 'knowledgeSearch', 'answerExtraction', 'aiAgent', or 'promptNode'.",
         },
         limit: {
           type: "number",
@@ -410,7 +417,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "manage_knowledge",
     description:
-      "Manage knowledge bases for RAG. Create stores, add sources (URLs, text, or files), and list chunks to verify content.\n\nBEFORE USING THIS TOOL: Read cognigy://guide/knowledge-setup for the full setup workflow, prerequisites, and required steps.\n\nPREREQUISITE: An embedding model must be configured in the project before creating or using knowledge stores. Use setup_llm to create an embedding model first (e.g., setup_llm { projectId, provider: 'openAI', modelType: 'text-embedding-ada-002', apiKey }).\n\nFor URL sources: provide type 'url' and url field — the page is scraped and ingested automatically.\nFor text sources: provide text field (type defaults to 'manual') — a source and chunk are created.\nFor file sources (PDF, TXT, DOCX, CTXT, PPTX): provide type 'file' with filePath pointing to a local file. The server reads the file from disk and uploads it. Ingestion is async.\nTo verify content: use list_chunks with knowledgeStoreId (and optionally sourceId, filter).\n\nTo list stores: list_resources { resourceType: 'knowledge_store' }.\nTo delete: delete_resource { resourceType: 'knowledge_store', id }.",
+      "Manage knowledge bases for RAG. Create stores, add sources (URLs, text, or files), and list chunks to verify content.\n\nBEFORE USING THIS TOOL: Use read_guide { guideId: \"knowledge-setup\" } for the full setup workflow.\n\nPREREQUISITES:\n- An embedding-capable model must be configured in the project before creating or using knowledge stores.\n- For normal AI-agent knowledge-store setups, configure Knowledge AI settings with manage_settings { operation: 'set_knowledge_ai', ... } before creating the store.\n- knowledgeSearchModelId must be an llm_model referenceId from the SAME project.\n- If you are reusing another project's knowledge workflow, import the exact source-project Knowledge Search model into the target project before guessing with a different model.\n\nFor URL sources: provide type 'url' and url field — the page is scraped and ingested automatically.\nFor text sources: provide text field (type defaults to 'manual') — a source and chunk are created.\nFor file sources (PDF, TXT, DOCX, CTXT, PPTX): provide type 'file' with filePath pointing to a local file. The server reads the file from disk and uploads it. Ingestion is async.\nTo verify content: use list_chunks with knowledgeStoreId (and optionally sourceId, filter).\n\nTo list stores: use list_resources { resourceType: 'knowledge_store' }.\nTo delete: use delete_resource { resourceType: 'knowledge_store', id }.\nAvoid repeated list_resources scans for the same unchanged project — reuse previous llm_model results unless imports or setup changed the state.",
     annotations: {
       title: "Manage Knowledge",
       readOnlyHint: false,
@@ -489,8 +496,23 @@ export const tools: ToolDefinition[] = [
   // 9. create_tool
   {
     name: "create_tool",
-    description:
-      "Create a tool as a child of an AI Agent's Job node. Tools extend what the agent can do.\n\nTool types:\n- tool: General-purpose tool with custom logic branch. Provide toolId, description, and optional parameters (JSON Schema). After creation, use manage_flow_nodes with parentNodeId = returned toolNodeId and mode = \"appendChild\" to add logic nodes (say, code, ifThenElse, httpRequest, etc.) inside the tool branch.\n- knowledge: Search a Knowledge Store. Provide knowledgeStoreId, toolId, description.\n- send_email: Send emails. Provide toolId, description, recipient.\n- mcp: Connect to a remote MCP server. Provide mcpName, mcpServerUrl, timeout.\n- http: Call an external HTTP API. Provide toolId, description, url, method, and optionally headers, body, preProcessCode, postProcessCode. Creates an aiAgentJobTool with child HTTP Request node (and optional pre/post-process Code nodes).\n\nPrerequisites: Agent must exist (created via create_ai_agent).\nTo list tools: list_resources { resourceType: 'tool', aiAgentId }.\nTo delete: delete_resource { resourceType: 'tool', id: toolId, aiAgentId }.\nAfter creating, use talk_to_agent to test.",
+    description: `Create a tool as a child of an AI Agent's Job node. Tools extend what the agent can do.
+
+Tool types:
+- tool: General-purpose tool with custom logic branch. Use this for most requests (e.g., "unlock account", "check status", "validate input"). Provide toolId, description, and optional parameters (JSON Schema). After creation, use manage_flow_nodes with parentNodeId = returned toolNodeId and mode = "appendChild" to add logic nodes (say, code, ifThenElse, httpRequest, etc.) inside the tool branch.
+- knowledge: Search a Knowledge Store. Provide knowledgeStoreId, toolId, description.
+- send_email: Send emails. Provide toolId, description, recipient.
+- mcp: Connect to an EXTERNAL MCP (Model Context Protocol) server. ONLY use when the user explicitly asks to integrate with a specific external MCP server and provides an MCP server URL. Do NOT use for general tool requests — use "tool" or "http" instead.
+- http: Call an external HTTP API. Use when the user wants to call a specific REST/HTTP endpoint. Provide toolId, description, url, method, and optionally headers, body, preProcessCode, postProcessCode. Creates an aiAgentJobTool with child HTTP Request node (and optional pre/post-process Code nodes).
+
+Default choice: When unsure which toolType to use, default to "tool" (general-purpose). Only use "mcp" or "http" when the user specifically mentions an external MCP server or a specific HTTP API endpoint.
+
+IMPORTANT: Create exactly one tool per business action. If the same toolId already exists, create_tool reuses the existing tool node instead of creating a duplicate. If you need more logic for that action, reuse the same toolNodeId with manage_flow_nodes or update_tool.
+
+Prerequisites: Agent must exist (created via create_ai_agent).
+To list tools: list_resources { resourceType: 'tool', aiAgentId }.
+To delete: delete_resource { resourceType: 'tool', id: toolId, aiAgentId }.
+After creating, use talk_to_agent to test.`,
     annotations: {
       title: "Create Tool",
       readOnlyHint: false,
@@ -510,7 +532,7 @@ export const tools: ToolDefinition[] = [
           type: "string",
           enum: ["tool", "knowledge", "send_email", "mcp", "http"],
           description:
-            "tool: general-purpose with custom logic. knowledge: search a Knowledge Store. send_email: send emails. mcp: connect to MCP server. http: call an external HTTP API.",
+            "tool: general-purpose with custom logic (DEFAULT — use for most requests). knowledge: search a Knowledge Store. send_email: send emails. mcp: connect to an external MCP server (ONLY when user explicitly requests MCP integration with a specific server URL). http: call an external HTTP API (when user specifies a concrete API endpoint).",
         },
         name: {
           type: "string",
@@ -726,7 +748,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "manage_flow_nodes",
     description:
-      'Add flow nodes inside tool branches to build custom logic for AI Agent tools.\n\nIMPORTANT: Nodes should be created INSIDE tool branches. First create a tool with create_tool { toolType: "tool" }, then use this tool to add logic nodes under it (parentNodeId = toolNodeId, mode = "appendChild"). Do NOT add standalone nodes before the AI Agent Job node unless the user explicitly asks for it.\n\nTool branch placement is handled automatically: when you appendChild to an aiAgentJobTool, then, else, case, or default node, the handler auto-rewrites to append mode so nodes land in the correct execution chain. Both appendChild and append work correctly for tool branches.\n\nBRANCHING NODES (ifThenElse, lookup):\n- ifThenElse auto-creates then/else child nodes. lookup auto-creates case/default child nodes.\n- To add nodes inside a branch: list nodes to find the branch child ID, then use mode "append" with parentNodeId = the branch child node ID.\n- Do NOT use mode "appendChild" on then/else/case/default nodes — use "append" instead (the handler auto-corrects this, but "append" is the correct approach).\n- To set case values on a lookup/switch node, update the parent switch with a cases array: config { cases: [{ id: "<caseNodeId>", value: "billing" }] }.\n- To update a single case node directly: update with config { value: "billing" }.\n\nBEFORE USING THIS TOOL: Read cognigy://guide/flow-nodes for the full node type reference, config schemas, branching guidance, and placement rules.\n\nOPERATIONS:\n- list: List all nodes in a flow (returns id, type, label, parentId).\n- create: Add a node inside a tool branch. Requires nodeType and config. Set parentNodeId to the tool node ID and mode to "appendChild" to place nodes inside the tool. Use mode "append" to place after a sibling node within the same branch.\n- update: Modify a node\'s config or label. Only provided config fields are changed — existing fields are preserved. For switch/lookup nodes, include a cases array in config to set case values on child case nodes.\n- delete: Remove a node from the flow.\n\nSUPPORTED NODE TYPES: say, question, ifThenElse, lookup, setSessionContext, code, goTo, sleep, httpRequest. Read cognigy://guide/flow-nodes for config details.\n\nIf a nodeType is not in the supported list, the tool will return an error with the list of supported types.\n\nFor AI Agent tool nodes (knowledge, send_email, mcp, http), use create_tool / update_tool instead — they handle the required parent-child node wiring automatically.',
+      'Add flow nodes inside tool branches to build custom logic for AI Agent tools.\n\nIMPORTANT: Nodes should be created INSIDE tool branches. First create a tool with create_tool { toolType: "tool" }, then use this tool to add logic nodes under it (parentNodeId = toolNodeId, mode = "appendChild"). Do NOT add standalone nodes before the AI Agent Job node unless the user explicitly asks for it.\n\nTool branch placement is handled automatically: when you appendChild to an aiAgentJobTool, then, else, case, or default node, the handler auto-rewrites to append mode so nodes land in the correct execution chain. Both appendChild and append work correctly for tool branches.\n\nBRANCHING NODES (ifThenElse, lookup):\n- ifThenElse auto-creates then/else child nodes. lookup auto-creates case/default child nodes.\n- To add nodes inside a branch: list nodes to find the branch child ID, then use mode "append" with parentNodeId = the branch child node ID.\n- Do NOT use mode "appendChild" on then/else/case/default nodes — use "append" instead (the handler auto-corrects this, but "append" is the correct approach).\n- To set case values on a lookup/switch node, update the parent switch with a cases array: config { cases: [{ id: "<caseNodeId>", value: "billing" }] }.\n- To update a single case node directly: update with config { value: "billing" }.\n\nBEFORE USING THIS TOOL: Use read_guide { guideId: "flow-nodes" } for the full node type reference, config schemas, branching guidance, and placement rules.\n\nOPERATIONS:\n- list: List all nodes in a flow (returns id, type, label, parentId).\n- create: Add a node inside a tool branch. Requires nodeType and config. Set parentNodeId to the tool node ID and mode to "appendChild" to place nodes inside the tool. Use mode "append" to place after a sibling node within the same branch.\n- update: Modify a node\'s config or label. Only provided config fields are changed — existing fields are preserved. For switch/lookup nodes, include a cases array in config to set case values on child case nodes.\n- delete: Remove a node from the flow.\n\nSUPPORTED NODE TYPES: say, question, ifThenElse, lookup, setSessionContext, code, goTo, sleep, httpRequest. Use read_guide { guideId: "flow-nodes" } for config details.\n\nIf a nodeType is not in the supported list, the tool will return an error with the list of supported types.\n\nFor AI Agent tool nodes (knowledge, send_email, mcp, http), use create_tool / update_tool instead — they handle the required parent-child node wiring automatically.',
     annotations: {
       title: "Manage Flow Nodes",
       readOnlyHint: false,
@@ -754,7 +776,7 @@ export const tools: ToolDefinition[] = [
         nodeType: {
           type: "string",
           description:
-            "Node type key from the supported list: say, question, ifThenElse, lookup, setSessionContext, code, goTo, sleep, httpRequest. Read cognigy://guide/flow-nodes for details. Required for create.",
+            "Node type key from the supported list: say, question, ifThenElse, lookup, setSessionContext, code, goTo, sleep, httpRequest. Use read_guide { guideId: 'flow-nodes' } for details. Required for create.",
         },
         label: {
           type: "string",
@@ -775,7 +797,7 @@ export const tools: ToolDefinition[] = [
         config: {
           type: "object",
           description:
-            "Node-type-specific configuration. See cognigy://guide/flow-nodes for the schema of each node type.",
+            "Node-type-specific configuration. Use read_guide { guideId: 'flow-nodes' } for the schema of each node type.",
         },
       },
       required: ["operation", "flowId"],
@@ -918,7 +940,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "manage_webchat",
     description:
-      "Create or configure a Webchat v3 Endpoint. This is the primary tool for deploying an AI Agent as an embeddable website chat widget.\n\nBEFORE USING THIS TOOL: Read cognigy://guide/webchat-setup for the full settings reference, style presets, and common recipes.\n\nCREATE vs UPDATE:\n- To create: provide projectId + flowId (+ optional name). A new webchat3 endpoint is always created.\n- To update: provide endpointId. Settings are merged with existing configuration.\n- Without endpointId, the tool never modifies existing endpoints — it always creates a new one.\n\nTo update an existing webchat, you MUST provide the endpointId. Use list_resources { resourceType: 'endpoint', projectId } to find existing webchat endpoints first.\n\nSTYLE PRESETS: Use stylePreset ('classic', 'modern', 'slick') to apply a predefined look. You can override individual fields in the same call.\n\nSETTINGS are organized into semantic groups (layout, behavior, startBehavior, homeScreen, teaserMessage, chatOptions, privacyNotice, businessHours, unreadMessages, maintenance, watermark, persistentMenu, attachmentUpload, webchatIcon). Only include groups/fields you want to change — everything else is preserved.\n\nFor advanced customization not covered by the groups, use customJson (raw JSON string for Webchat Custom Settings).\n\nRESPONSE HANDLING — CRITICAL:\nThe response always contains demoWebchatUrl — a direct browser link to test the webchat. You MUST ALWAYS present this URL to the user as a clickable link after every successful create or update. Do NOT tell the user to go to the UI to find it. The _integration section contains configUrl and embeddingSnippet — only mention these if the user explicitly asks about embedding or deploying to their website.",
+      "Create or configure a Webchat v3 Endpoint. This is the primary tool for deploying an AI Agent as an embeddable website chat widget.\n\nBEFORE USING THIS TOOL: Use read_guide { guideId: \"webchat-setup\" } for the full settings reference, style presets, and common recipes.\n\nCREATE vs UPDATE:\n- To create: provide projectId + flowId (+ optional name). A new webchat3 endpoint is always created.\n- To update: provide endpointId. Settings are merged with existing configuration.\n- Without endpointId, the tool never modifies existing endpoints — it always creates a new one.\n\nTo update an existing webchat, you MUST provide the endpointId. Use list_resources { resourceType: 'endpoint', projectId } to find existing webchat endpoints first.\n\nSTYLE PRESETS: Use stylePreset ('classic', 'modern', 'slick') to apply a predefined look. You can override individual fields in the same call.\n\nSETTINGS are organized into semantic groups (layout, behavior, startBehavior, homeScreen, teaserMessage, chatOptions, privacyNotice, businessHours, unreadMessages, maintenance, watermark, persistentMenu, attachmentUpload, webchatIcon). Only include groups/fields you want to change — everything else is preserved.\n\nFor advanced customization not covered by the groups, use customJson (raw JSON string for Webchat Custom Settings).\n\nRESPONSE HANDLING — CRITICAL:\nThe response always contains demoWebchatUrl — a direct browser link to test the webchat. You MUST ALWAYS present this URL to the user as a clickable link after every successful create or update. Do NOT tell the user to go to the UI to find it. The _integration section contains configUrl and embeddingSnippet — only mention these if the user explicitly asks about embedding or deploying to their website.",
     annotations: {
       title: "Manage Webchat",
       readOnlyHint: false,
@@ -1417,6 +1439,211 @@ export const tools: ToolDefinition[] = [
           type: "string",
           description:
             "Raw JSON string for advanced Webchat Custom Settings not covered by other fields.",
+        },
+      },
+    },
+  },
+
+  // 14. manage_voice_gateway
+  {
+    name: "manage_voice_gateway",
+    description:
+      'Create or configure a Voice Gateway endpoint with WebRTC support. This deploys an AI Agent as a voice-enabled endpoint that users can talk to via their browser.\n\nBEFORE USING THIS TOOL: Use read_guide { guideId: "voice-gateway-setup" } for the full workflow.\n\nCREATE vs UPDATE:\n- To create: provide projectId + flowId (+ optional name). A new voiceGateway2 endpoint is created with a WebRTC client.\n- To update: provide endpointId. Settings are merged with existing configuration.\n\nThe tool automatically provisions a WebRTC client on the endpoint. After creation, the response includes a webrtcDemoUrl that the user can open in a browser to talk to the agent via voice.\n\nWebRTC widget can be customized with theme (CLEAN_WHITE, DARK_MODE, AI_PURPLE), transcription settings, avatar, and tagline.\n\nRESPONSE HANDLING — CRITICAL:\nThe response always contains webrtcDemoUrl — a direct browser link to talk to the agent via voice. You MUST ALWAYS present this URL to the user as a clickable link. The _integration section contains the WebSocket endpoint URL and an HTML embedding snippet — only mention these if the user asks about embedding.',
+    annotations: {
+      title: "Manage Voice Gateway",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    inputSchema: {
+      type: "object",
+      properties: {
+        endpointId: {
+          type: "string",
+          description:
+            "24-char hex endpoint ID. If provided, updates the existing endpoint. If omitted, creates a new endpoint.",
+        },
+        projectId: {
+          type: "string",
+          description:
+            "24-char hex project ID. Required for create, optional for update.",
+        },
+        flowId: {
+          type: "string",
+          description:
+            "Flow referenceId to connect the voice gateway endpoint to. Required for create.",
+        },
+        name: {
+          type: "string",
+          description:
+            'Endpoint display name (e.g. "Customer Support Voice Agent")',
+        },
+        webrtcWidgetConfig: {
+          type: "object",
+          description:
+            "WebRTC widget appearance and behavior. Defaults are applied if omitted.",
+          properties: {
+            label: {
+              type: "string",
+              description: "AI Agent name displayed in the widget",
+            },
+            theme: {
+              type: "string",
+              enum: ["CLEAN_WHITE", "DARK_MODE", "AI_PURPLE"],
+              description: "Widget color theme (default: DARK_MODE)",
+            },
+            transcription: {
+              type: "object",
+              description: "Transcription display settings",
+              properties: {
+                enabled: {
+                  type: "boolean",
+                  description: "Show live transcription (default: true)",
+                },
+                backgroundMode: {
+                  type: "string",
+                  enum: ["transparent", "custom"],
+                  description:
+                    "Transcription background style (default: transparent)",
+                },
+              },
+            },
+            demoPage: {
+              type: "object",
+              description: "Demo page layout settings",
+              properties: {
+                background: {
+                  type: "object",
+                  properties: {
+                    mode: {
+                      type: "string",
+                      enum: ["color", "image"],
+                    },
+                    color: {
+                      type: "string",
+                      description: 'Background color (default: "#FFFFFF")',
+                    },
+                  },
+                },
+                position: {
+                  type: "string",
+                  enum: ["centered", "bottom-right"],
+                  description:
+                    "Widget position on demo page (default: centered)",
+                },
+              },
+            },
+            avatarLogoUrl: {
+              type: "string",
+              description: "URL for the agent avatar image",
+            },
+            tagline: {
+              type: "string",
+              description: "Short tagline displayed under the agent name",
+            },
+          },
+        },
+      },
+    },
+  },
+
+  // 15. manage_settings
+  {
+    name: "manage_settings",
+    description:
+      'Manage project-level settings in Cognigy, including Voice Preview Settings and Knowledge AI Settings.\n\nBEFORE USING THIS TOOL: Use read_guide { guideId: "settings" } for the full workflow.\n\nOperations:\n- set_voice_preview: Configure the speech provider for voice preview. Requires projectId and provider. If connectionId is omitted, the tool auto-detects an existing speech connection for the chosen provider. If no connection is found, it returns instructions to upload a package containing one via manage_packages.\n- set_knowledge_ai: Configure Knowledge AI Settings for the project. For normal AI-agent knowledge-store setups, use this before creating the knowledge store. Model IDs must be llm_model referenceIds from the SAME project. These are separate from the embedding-model settings used by manage_knowledge for knowledge-store indexing. The accepted model type for knowledgeSearchModelId can vary by Cognigy instance. Use list_resources { resourceType: "llm_model", projectId, useCase: "knowledgeSearch" } to match the Cognigy Settings UI dropdown when choosing candidates. If you are reusing another project\'s knowledge workflow, import the exact source-project Knowledge Search model into the target project before the first set_knowledge_ai attempt.\n\nSupported speech providers: microsoft, google, aws, deepgram, elevenlabs.',
+    annotations: {
+      title: "Manage Settings",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    inputSchema: {
+      type: "object",
+      properties: {
+        operation: {
+          type: "string",
+          enum: ["set_voice_preview", "set_knowledge_ai"],
+          description: "Which operation to perform",
+        },
+        projectId: {
+          type: "string",
+          description: "24-char hex project ID",
+        },
+        provider: {
+          type: "string",
+          enum: ["microsoft", "google", "aws", "deepgram", "elevenlabs"],
+          description: "Speech provider to configure for voice preview",
+        },
+        connectionId: {
+          type: "string",
+          description:
+            "Connection referenceId to use. If omitted, auto-detects an existing speech connection for the provider.",
+        },
+        knowledgeSearchModelId: {
+          type: "string",
+          description:
+            "llm_model referenceId from the SAME project to use for Knowledge Search.",
+        },
+        answerExtractionModelId: {
+          type: "string",
+          description:
+            "Optional llm_model referenceId from the SAME project to use for Answer Extraction.",
+        },
+        contentParser: {
+          type: "string",
+          enum: ["default", "legacy", "azure"],
+          description:
+            "Content Parser to use for Knowledge AI document processing.",
+        },
+        azureDIConnectionId: {
+          type: "string",
+          description:
+            "Azure AI Document Intelligence connection referenceId. Required when contentParser is azure.",
+        },
+      },
+      required: ["operation", "projectId"],
+    },
+  },
+
+  // 16. read_guide
+  {
+    name: "read_guide",
+    description:
+      'Load a built-in Cognigy workflow guide through a normal tool call. Use this when you need the full contents of a guide and cannot rely on the client to resolve a bare `cognigy://guide/...` URI automatically.\n\nCall without arguments to list the available guides. Call with `guideId` or `uri` to load the markdown content for one guide.\n\nTypical use:\n- `read_guide { guideId: "settings" }`\n- `read_guide { uri: "cognigy://guide/knowledge-setup" }`\n\nIf another tool result includes `_hints.guideToolCall`, prefer using that exact tool call.',
+    annotations: {
+      title: "Read Guide",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    inputSchema: {
+      type: "object",
+      properties: {
+        guideId: {
+          type: "string",
+          enum: [
+            "agent-creation",
+            "llm-providers",
+            "troubleshooting",
+            "knowledge-setup",
+            "tools-setup",
+            "webchat-setup",
+            "flow-nodes",
+            "package-management",
+            "voice-gateway-setup",
+            "settings",
+          ],
+          description:
+            "Short guide identifier. Omit together with uri to list available guides.",
+        },
+        uri: {
+          type: "string",
+          description:
+            "Guide resource URI such as cognigy://guide/settings. Omit together with guideId to list available guides.",
         },
       },
     },

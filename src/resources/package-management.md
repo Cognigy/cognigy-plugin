@@ -4,6 +4,23 @@ Use `manage_packages` to import and export Cognigy package `.zip` files.
 
 ## Supported workflow
 
+### Transfer an LLM + connection between projects
+
+Use this when the target project is missing an LLM but another project already has a working one.
+
+1. `manage_packages { operation: "list_exportable", projectId: "<sourceProjectId>" }`
+2. Identify BOTH the `largeLanguageModel` resource ID and its `connection` resource ID
+3. `manage_packages { operation: "export", projectId: "<sourceProjectId>", resourceIds: ["<llmResourceId>", "<connectionResourceId>"], name: "llm-transfer" }`
+4. `manage_packages { operation: "upload_and_inspect", projectId: "<targetProjectId>", filePath: "<savedTo from export>" }`
+5. `manage_packages { operation: "import", projectId: "<targetProjectId>", packageId: "<packageId from upload_and_inspect>" }`
+6. `list_resources { resourceType: "llm_model", projectId: "<targetProjectId>" }` to verify the imported LLM is available
+
+Important:
+
+- export BOTH the LLM and its connection together
+- do not rely on a cross-project `connectionId`; Cognigy connections are project-scoped
+- this workflow can be fully automated through the MCP tools
+
 ### Discover exportable resources
 
 1. `manage_packages { operation: "list_exportable", projectId }`

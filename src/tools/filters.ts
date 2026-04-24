@@ -1,8 +1,15 @@
+import { buildGuideToolHint } from "../guides.js";
+
 export interface ResponseHints {
   hint?: string;
   warning?: string;
   likely_cause?: string;
   resource?: string;
+  guideId?: string;
+  guideToolCall?: {
+    name: "read_guide";
+    arguments: { uri: string };
+  };
   action?: string;
 }
 
@@ -10,7 +17,18 @@ export function withHints<T extends Record<string, unknown>>(
   data: T,
   hints: ResponseHints,
 ): T & { _hints: ResponseHints } {
-  return { ...data, _hints: hints };
+  const guideHint =
+    hints.resource && !hints.guideToolCall
+      ? buildGuideToolHint(hints.resource)
+      : undefined;
+
+  return {
+    ...data,
+    _hints: {
+      ...hints,
+      ...(guideHint ?? {}),
+    },
+  };
 }
 
 const rid = (r: any): string => r._id || r.id;

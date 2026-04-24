@@ -13,6 +13,11 @@ import { randomUUID } from "crypto";
 import { pathToFileURL } from "url";
 import axios from "axios";
 import { CognigyApiClient } from "../api/client.js";
+import {
+  listGuideMetadata,
+  readGuideContent,
+  resolveGuide,
+} from "../guides.js";
 import { logger } from "../utils/logger.js";
 import { filterResponse, filterList, withHints } from "./filters.js";
 import { buildWebchatSettings, deepMerge } from "./webchatSettings.js";
@@ -157,6 +162,30 @@ function buildRichSayObject(
     text: textArr,
     _cognigy: { _default: channelData },
     _data: { _cognigy: { _default: channelData } },
+  };
+}
+
+function buildAiAgentNodePreview(
+  agent: {
+    name?: string;
+    image?: string;
+    imageOptimizedFormat?: boolean;
+  } | null,
+  fallbackName: string,
+  jobName?: string,
+): Record<string, any> {
+  const previewImage =
+    typeof agent?.image === "string" && agent.image.trim().length > 0
+      ? agent.image
+      : DEFAULT_AGENT_IMAGE;
+  return {
+    keyValue: jobName ?? fallbackName,
+    aiAgentName: agent?.name ?? fallbackName,
+    aiAgentImage: previewImage,
+    aiAgentImageOptimizedFormat:
+      typeof agent?.imageOptimizedFormat === "boolean"
+        ? agent.imageOptimizedFormat
+        : true,
   };
 }
 
@@ -400,6 +429,13 @@ const AI_AGENT_TOOL_TYPES = new Set([
   "executeWorkflowTool",
 ]);
 
+const MCP_MANAGED_TOOL_TYPES = new Set([
+  "aiAgentJobTool",
+  "aiAgentJobMCPTool",
+  "knowledgeTool",
+  "sendEmailTool",
+]);
+
 const PROVIDER_CONNECTION_TYPE: Record<string, string> = {
   openAI: "OpenAIProvider",
   azureOpenAI: "AzureOpenAIProviderV2",
@@ -500,6 +536,7 @@ export class ToolHandlers {
     private apiClient: CognigyApiClient,
     private endpointBaseUrl: string,
     private webchatBaseUrl: string = "",
+    private staticFilesBaseUrl: string = "",
   ) {}
 
   private sanitizeArgs(args: Record<string, any>): Record<string, any> {
@@ -1173,6 +1210,7 @@ export class ToolHandlers {
             aiAgent: agent.referenceId,
             outputImmediately: true,
           },
+          preview: buildAiAgentNodePreview(agent, data.name),
         },
       );
       const jobNodeId = jobNode._id || jobNode.id;
@@ -1212,12 +1250,7 @@ export class ToolHandlers {
         await this.apiClient.patch(
           `/v2.0/flows/${flowId}/chart/nodes/${jobNodeId}`,
           {
-            preview: {
-              keyValue: data.name,
-              aiAgentName: agent.name ?? data.name,
-              aiAgentImage: agent.image ?? DEFAULT_AGENT_IMAGE,
-              aiAgentImageOptimizedFormat: agent.imageOptimizedFormat ?? true,
-            },
+            preview: buildAiAgentNodePreview(agent, data.name),
           },
         );
       } catch (previewError: any) {
@@ -1227,7 +1260,70 @@ export class ToolHandlers {
         );
       }
 
-      // Step 4d: If knowledge store provided, create a knowledge tool on the job node
+      // Step 4d: Remove backend-created placeholder child tools that are only
+      // used for UI preview and should not exist in Cognigy MCP flows.
+      try {
+        let placeholderTools: any[] = [];
+
+        try {
+          const chart: any = await this.apiClient.get(
+            `/new/v2.0/flows/${flowId}/chart`,
+            (flow?.localeReference ?? flow?.localeId)
+              ? {
+                  params: {
+                    preferredLocaleId: flow.localeReference ?? flow.localeId,
+                  },
+                }
+              : undefined,
+          );
+          const chartNodes = chart.nodes ?? [];
+          const chartRelations = chart.relations ?? [];
+          const jobRelation = (
+            Array.isArray(chartRelations) ? chartRelations : []
+          ).find((relation: any) => relation.node === jobNodeId);
+          const childNodeIds = new Set(jobRelation?.children ?? []);
+
+          placeholderTools = (
+            Array.isArray(chartNodes) ? chartNodes : []
+          ).filter(
+            (n: any) =>
+              childNodeIds.has(n._id || n.id) && n.preview === "unlock_account",
+          );
+        } catch {
+          // Fall back to the regular node list when the chart endpoint is not available.
+        }
+
+        if (placeholderTools.length === 0) {
+          const nodeList: any = await this.apiClient.get(
+            `/v2.0/flows/${flowId}/chart/nodes`,
+            {
+              params: { limit: 200 },
+            },
+          );
+          const nodeItems = nodeList.items ?? nodeList;
+          placeholderTools = (Array.isArray(nodeItems) ? nodeItems : []).filter(
+            (n: any) =>
+              (n.parentId === jobNodeId || n.parent === jobNodeId) &&
+              (n.label === "unlock_account" ||
+                n.config?.toolId === "unlock_account"),
+          );
+        }
+
+        for (const placeholderTool of placeholderTools) {
+          const placeholderToolId = placeholderTool._id || placeholderTool.id;
+          if (!placeholderToolId) continue;
+          await this.apiClient.delete(
+            `/v2.0/flows/${flowId}/chart/nodes/${placeholderToolId}`,
+          );
+        }
+      } catch (placeholderCleanupError: any) {
+        logger.warn(
+          "Failed to remove backend-created placeholder tool from agent flow",
+          { error: placeholderCleanupError.message },
+        );
+      }
+
+      // Step 4e: If knowledge store provided, create a knowledge tool on the job node
       let knowledgeToolId: string | null = null;
       if (data.knowledgeStoreReferenceId) {
         try {
@@ -1300,11 +1396,14 @@ export class ToolHandlers {
       }
 
       if (llmStatus === "unknown") {
+        const nextAction = createdProject
+          ? `A new project was auto-created as "${projectId}". Immediately inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Choose only source-project llm_model entries with a non-empty connectionId, transfer the required LLM resources plus their shared connection resource(s) via manage_packages export/upload_and_inspect/import, verify the import with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and do not call talk_to_agent until the import is confirmed. If this workflow will use knowledge, transfer the source project's embedding model and exact Knowledge Search model together before calling manage_settings. Only use setup_llm if no reusable LLM with connectionId exists or package transfer fails.`
+          : `Inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Choose only source-project llm_model entries with a non-empty connectionId, transfer the required LLM resources plus their shared connection resource(s) via manage_packages export/upload_and_inspect/import, verify the import with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and do not call talk_to_agent until the import is confirmed. If this workflow will use knowledge, transfer the source project's embedding model and exact Knowledge Search model together before calling manage_settings. Only use setup_llm if no reusable LLM with connectionId exists or package transfer fails.`;
         return withHints(result, {
           warning:
             "Could not verify LLM resource in project. Agent may not generate responses.",
           resource: "cognigy://guide/agent-creation",
-          action: `Run setup_llm with projectId "${projectId}" before talk_to_agent if no LLM is configured.`,
+          action: nextAction,
         });
       }
 
@@ -1473,13 +1572,11 @@ export class ToolHandlers {
               jobNode.config?.name ??
               currentAgent?.name ??
               rest.name;
-            nodePatch.preview = {
-              keyValue: previewName,
-              aiAgentName: currentAgent?.name ?? rest.name,
-              aiAgentImage: currentAgent?.image ?? DEFAULT_AGENT_IMAGE,
-              aiAgentImageOptimizedFormat:
-                currentAgent?.imageOptimizedFormat ?? true,
-            };
+            nodePatch.preview = buildAiAgentNodePreview(
+              currentAgent,
+              rest.name ?? previewName ?? "AI Agent",
+              previewName,
+            );
           }
 
           jobNodeResult = await this.apiClient.patch(
@@ -1536,6 +1633,56 @@ export class ToolHandlers {
     }
 
     let connectionRefId = data.connectionId;
+
+    if (connectionRefId) {
+      try {
+        const connections: any = await this.apiClient.get(
+          "/new/v2.0/connections",
+          {
+            params: { projectId: data.projectId },
+          },
+        );
+        const items = connections?.items ?? connections;
+        const match = (Array.isArray(items) ? items : []).find(
+          (connection: any) =>
+            connection.referenceId === connectionRefId ||
+            connection._id === connectionRefId ||
+            connection.id === connectionRefId,
+        );
+
+        if (!match) {
+          return withHints(
+            {
+              error:
+                "The provided connectionId was not found in the target project. Cognigy connections are project-scoped and cannot be reused across projects directly.",
+              connectionId: connectionRefId,
+              projectId: data.projectId,
+            },
+            {
+              resource: "cognigy://guide/package-management",
+              action:
+                "Import the LLM and its connection into the target project with manage_packages, or provide an apiKey / same-project connectionId.",
+            },
+          );
+        }
+
+        connectionRefId =
+          match.referenceId ?? match._id ?? match.id ?? connectionRefId;
+      } catch (connectionLookupError: any) {
+        return withHints(
+          {
+            error: `Could not verify the provided connectionId in the target project: ${connectionLookupError.message}`,
+            connectionId: connectionRefId,
+            projectId: data.projectId,
+          },
+          {
+            resource: "cognigy://guide/package-management",
+            action:
+              "Verify the connection exists in the target project, or import it together with the LLM via manage_packages before retrying.",
+          },
+        );
+      }
+    }
 
     // If apiKey is provided, auto-create a Connection first
     if (data.apiKey && !connectionRefId) {
@@ -1972,8 +2119,15 @@ export class ToolHandlers {
         break;
       }
       case "llm_model": {
-        const res: any = await this.apiClient.get("/v2.0/largelanguagemodels", {
-          params: { projectId, ...paging },
+        const endpoint = data.useCase
+          ? "/new/v2.0/largelanguagemodels"
+          : "/v2.0/largelanguagemodels";
+        const res: any = await this.apiClient.get(endpoint, {
+          params: {
+            projectId,
+            ...(data.useCase ? { useCase: data.useCase } : {}),
+            ...paging,
+          },
         });
         items = res.items ?? res;
         total = res.total;
@@ -2598,12 +2752,53 @@ export class ToolHandlers {
       );
     }
 
+    const cfg = data.config;
+    const requestedToolId =
+      typeof cfg.toolId === "string" && cfg.toolId.trim().length > 0
+        ? cfg.toolId.trim()
+        : undefined;
+
+    if (requestedToolId) {
+      const duplicateTool = (Array.isArray(allNodes) ? allNodes : []).find(
+        (node: any) =>
+          MCP_MANAGED_TOOL_TYPES.has(node.type) &&
+          (node.config?.toolId === requestedToolId ||
+            node.label === requestedToolId ||
+            node.name === requestedToolId),
+      );
+
+      if (duplicateTool) {
+        const duplicateToolNodeId = duplicateTool._id || duplicateTool.id;
+        return withHints(
+          {
+            toolId: duplicateToolNodeId,
+            toolNodeId: duplicateToolNodeId,
+            requestedToolId,
+            name: duplicateTool.label || duplicateTool.name || data.name,
+            toolType:
+              duplicateTool.type === "knowledgeTool"
+                ? "knowledge"
+                : duplicateTool.type === "sendEmailTool"
+                  ? "send_email"
+                  : duplicateTool.type === "aiAgentJobMCPTool"
+                    ? "mcp"
+                    : data.toolType,
+            reusedExisting: true,
+          },
+          {
+            warning: `A tool with toolId "${requestedToolId}" already exists in this agent flow, so the existing tool was reused instead of creating a duplicate.`,
+            resource: "cognigy://guide/tools-setup",
+            action: `Continue by adding logic inside that tool with manage_flow_nodes using parentNodeId "${duplicateToolNodeId}", or modify it with update_tool { aiAgentId: "${data.aiAgentId}", toolNodeId: "${duplicateToolNodeId}", ... }.`,
+          },
+        );
+      }
+    }
+
     // Step 3: Create the tool node
     const mapping = TOOL_TYPE_MAP[data.toolType];
     if (!mapping) throw new Error(`Unknown toolType: ${data.toolType}`);
 
     const nodeConfig: any = {};
-    const cfg = data.config;
     switch (data.toolType) {
       case "tool":
         if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
@@ -3590,6 +3785,537 @@ export class ToolHandlers {
   }
 
   // =========================================================================
+  // Voice Gateway
+  // =========================================================================
+
+  async handleManageVoiceGateway(args: any): Promise<any> {
+    const data = schemas.manageVoiceGatewaySchema.parse(args);
+
+    let endpointId = data.endpointId ?? null;
+
+    // ---- CREATE ----
+    if (!endpointId) {
+      if (!data.projectId) {
+        return withHints(
+          {
+            error: "projectId is required to create a voice gateway endpoint.",
+          },
+          {
+            resource: "cognigy://guide/voice-gateway-setup",
+            action:
+              "Provide projectId. Use list_resources { resourceType: 'project' } to find one.",
+          },
+        );
+      }
+      if (!data.flowId) {
+        return withHints(
+          {
+            error:
+              "flowId is required to create a voice gateway endpoint. To update an existing one, provide endpointId instead.",
+          },
+          {
+            resource: "cognigy://guide/voice-gateway-setup",
+            action:
+              "Provide flowId. Use list_resources { resourceType: 'flow', projectId } to find one, or create an agent first with create_ai_agent.",
+          },
+        );
+      }
+
+      // Resolve locale — try flow first, fall back to project's primary locale
+      let localeId: string | undefined;
+      try {
+        const flow: any = await this.apiClient.get(
+          `/v2.0/flows/${data.flowId}`,
+        );
+        localeId = flow?.localeReference;
+      } catch {
+        // Fall through to project locale
+      }
+      if (!localeId) {
+        try {
+          const locales: any = await this.apiClient.get("/v2.0/locales", {
+            params: { projectId: data.projectId },
+          });
+          const items = locales?.items ?? locales;
+          if (Array.isArray(items) && items.length > 0) {
+            localeId = items[0].referenceId ?? items[0]._id;
+          }
+        } catch {
+          // Non-critical — endpoint will be created without locale
+        }
+      }
+
+      // Step 1: Create voiceGateway2 endpoint
+      const createPayload: any = {
+        projectId: data.projectId,
+        entrypoint: data.projectId,
+        channel: "voiceGateway2",
+        flowId: data.flowId,
+        name: data.name || "Voice Gateway",
+        targetType: "flow",
+        agentId: "",
+      };
+      if (localeId) createPayload.localeId = localeId;
+
+      let endpoint: any;
+      try {
+        const created: any = await this.apiClient.post(
+          "/new/v2.0/endpoints",
+          createPayload,
+        );
+        endpointId = created._id || created.id;
+        endpoint = await this.apiClient.get(
+          `/new/v2.0/endpoints/${endpointId}`,
+        );
+      } catch (error: any) {
+        return withHints(
+          {
+            error: `Failed to create voice gateway endpoint: ${error.message}`,
+          },
+          {
+            resource: "cognigy://guide/voice-gateway-setup",
+            action: "Check projectId and flowId, then retry.",
+          },
+        );
+      }
+
+      // Step 2: Provision WebRTC client
+      const userWidgetConfig = data.webrtcWidgetConfig ?? {};
+      const webrtcWidgetConfig = {
+        label: userWidgetConfig.label ?? "",
+        active: true,
+        theme: userWidgetConfig.theme ?? "DARK_MODE",
+        transcription: {
+          enabled: userWidgetConfig.transcription?.enabled ?? true,
+          backgroundMode:
+            userWidgetConfig.transcription?.backgroundMode ?? "transparent",
+        },
+        demoPage: {
+          background: {
+            mode: userWidgetConfig.demoPage?.background?.mode ?? "color",
+            color: userWidgetConfig.demoPage?.background?.color ?? "#FFFFFF",
+          },
+          position: userWidgetConfig.demoPage?.position ?? "centered",
+        },
+        ...(userWidgetConfig.avatarLogoUrl
+          ? { avatarLogoUrl: userWidgetConfig.avatarLogoUrl }
+          : {}),
+        ...(userWidgetConfig.tagline
+          ? { tagline: userWidgetConfig.tagline }
+          : {}),
+      };
+
+      try {
+        await this.apiClient.patch(`/new/v2.0/endpoints/${endpointId}`, {
+          createWebrtcClient: true,
+          channel: "voiceGateway2",
+          name: endpoint.name,
+          URLToken: endpoint.URLToken,
+          localeId: endpoint.localeId ?? localeId,
+          webrtcWidgetConfig,
+        });
+        endpoint = await this.apiClient.get(
+          `/new/v2.0/endpoints/${endpointId}`,
+        );
+      } catch (error: any) {
+        // Endpoint created but WebRTC failed — still return what we have
+        return withHints(
+          this.buildVoiceGatewayResponse({
+            created: true,
+            endpointId: endpointId!,
+            endpoint,
+            webrtcProvisioned: false,
+          }),
+          {
+            warning: `Endpoint created but WebRTC client provisioning failed: ${error.message}`,
+            action: `Retry by calling manage_voice_gateway { endpointId: "${endpointId}" }`,
+          },
+        );
+      }
+
+      return this.buildVoiceGatewayResponse({
+        created: true,
+        endpointId: endpointId!,
+        endpoint,
+        webrtcProvisioned: true,
+      });
+    }
+
+    // ---- UPDATE ----
+    try {
+      let endpoint: any = await this.apiClient.get(
+        `/new/v2.0/endpoints/${endpointId}`,
+      );
+
+      const patchPayload: any = {};
+      if (data.name) patchPayload.name = data.name;
+      if (data.flowId) patchPayload.flowId = data.flowId;
+
+      if (data.webrtcWidgetConfig) {
+        const existing = endpoint.webrtcWidgetConfig ?? {};
+        patchPayload.webrtcWidgetConfig = {
+          ...existing,
+          ...data.webrtcWidgetConfig,
+          transcription: {
+            ...(existing.transcription ?? {}),
+            ...(data.webrtcWidgetConfig.transcription ?? {}),
+          },
+          demoPage: {
+            ...(existing.demoPage ?? {}),
+            ...(data.webrtcWidgetConfig.demoPage ?? {}),
+            background: {
+              ...(existing.demoPage?.background ?? {}),
+              ...(data.webrtcWidgetConfig.demoPage?.background ?? {}),
+            },
+          },
+        };
+      }
+
+      // If no WebRTC client yet, provision it
+      if (!endpoint.webrtcClient) {
+        patchPayload.createWebrtcClient = true;
+        patchPayload.channel = "voiceGateway2";
+        patchPayload.URLToken = endpoint.URLToken;
+        if (!patchPayload.webrtcWidgetConfig) {
+          patchPayload.webrtcWidgetConfig = {
+            label: "",
+            active: true,
+            theme: "DARK_MODE",
+            transcription: { enabled: true, backgroundMode: "transparent" },
+            demoPage: {
+              background: { mode: "color", color: "#FFFFFF" },
+              position: "centered",
+            },
+          };
+        }
+      }
+
+      if (Object.keys(patchPayload).length === 0) {
+        return this.buildVoiceGatewayResponse({
+          endpointId: endpointId!,
+          endpoint,
+          webrtcProvisioned: !!endpoint.webrtcClient,
+          note: "No changes requested. Returning current endpoint info.",
+        });
+      }
+
+      await this.apiClient.patch(
+        `/new/v2.0/endpoints/${endpointId}`,
+        patchPayload,
+      );
+      endpoint = await this.apiClient.get(`/new/v2.0/endpoints/${endpointId}`);
+
+      return this.buildVoiceGatewayResponse({
+        updated: true,
+        endpointId: endpointId!,
+        endpoint,
+        webrtcProvisioned: !!endpoint.webrtcClient,
+      });
+    } catch (error: any) {
+      return withHints(
+        { error: `Failed to update voice gateway endpoint: ${error.message}` },
+        {
+          resource: "cognigy://guide/voice-gateway-setup",
+          action: "Verify endpointId and settings, then retry.",
+        },
+      );
+    }
+  }
+
+  // =========================================================================
+  // Settings
+  // =========================================================================
+
+  private static readonly SPEECH_PROVIDER_TYPE_MAP: Record<string, string> = {
+    microsoft: "MicrosoftSpeechProvider",
+    google: "GoogleSpeechProvider",
+    aws: "AWSSpeechProvider",
+    deepgram: "DeepgramSpeechProvider",
+    elevenlabs: "ElevenLabsSpeechProvider",
+  };
+
+  async handleManageSettings(args: any): Promise<any> {
+    const data = schemas.manageSettingsSchema.parse(args);
+
+    switch (data.operation) {
+      case "set_voice_preview": {
+        const { projectId, provider } = data;
+        let connectionRefId = data.connectionId;
+
+        // Auto-detect speech connection if not provided
+        if (!connectionRefId) {
+          const providerType =
+            ToolHandlers.SPEECH_PROVIDER_TYPE_MAP[provider] ?? provider;
+          try {
+            const connections: any = await this.apiClient.get(
+              "/new/v2.0/connections",
+              { params: { projectId } },
+            );
+            const items = connections?.items ?? connections;
+            const match = (Array.isArray(items) ? items : []).find(
+              (c: any) =>
+                c.extension === "@cognigy/audio-preview-provider" &&
+                c.type === providerType,
+            );
+            if (match) {
+              connectionRefId = match.referenceId ?? match._id;
+            }
+          } catch {
+            // Fall through — will report missing connection
+          }
+
+          if (!connectionRefId) {
+            return withHints(
+              {
+                error: `No speech connection found for provider "${provider}".`,
+                provider,
+                providerType,
+              },
+              {
+                action: `Upload a package containing a "${providerType}" speech connection using manage_packages { operation: "upload_and_inspect", projectId: "${projectId}", filePath: "<path>" }, import it, then retry this operation.`,
+                resource: "cognigy://guide/settings",
+              },
+            );
+          }
+        }
+
+        // PATCH project settings
+        try {
+          await this.apiClient.patch(
+            `/new/v2.0/projects/${projectId}/settings`,
+            {
+              audioPreviewSettings: {
+                provider,
+                connections: {
+                  [provider]: { connectionId: connectionRefId },
+                },
+              },
+            },
+          );
+        } catch (error: any) {
+          return withHints(
+            {
+              error: `Failed to update voice preview settings: ${error.message}`,
+            },
+            {
+              resource: "cognigy://guide/settings",
+              action: "Verify projectId and connectionId, then retry.",
+            },
+          );
+        }
+
+        return {
+          updated: true,
+          provider,
+          connectionId: connectionRefId,
+          _hint:
+            "Voice preview settings configured. You can now use manage_voice_gateway to create a voice endpoint, or test voice preview in the Cognigy UI.",
+        };
+      }
+      case "set_knowledge_ai": {
+        const patchPayload: Record<string, any> = {};
+        const updatedFields: string[] = [];
+
+        if (data.knowledgeSearchModelId || data.answerExtractionModelId) {
+          patchPayload.generativeAISettings = {
+            enabled: true,
+            useCasesSettings: {},
+          };
+          if (data.knowledgeSearchModelId) {
+            patchPayload.generativeAISettings.useCasesSettings.knowledgeSearch =
+              {
+                largeLanguageModelId: data.knowledgeSearchModelId,
+              };
+            updatedFields.push("knowledgeSearchModelId");
+          }
+          if (data.answerExtractionModelId) {
+            patchPayload.generativeAISettings.useCasesSettings.answerExtraction =
+              {
+                largeLanguageModelId: data.answerExtractionModelId,
+              };
+            updatedFields.push("answerExtractionModelId");
+          }
+        }
+
+        if (
+          data.contentParser !== undefined ||
+          data.azureDIConnectionId !== undefined
+        ) {
+          patchPayload.knowledgeAISettings = {};
+          if (data.contentParser !== undefined) {
+            patchPayload.knowledgeAISettings.fileExtractor = data.contentParser;
+            updatedFields.push("contentParser");
+          }
+          if (data.azureDIConnectionId !== undefined) {
+            patchPayload.knowledgeAISettings.azureDIConnectionId =
+              data.azureDIConnectionId;
+            if (!updatedFields.includes("azureDIConnectionId")) {
+              updatedFields.push("azureDIConnectionId");
+            }
+          }
+        }
+
+        try {
+          await this.apiClient.patch(
+            `/new/v2.0/projects/${data.projectId}/settings`,
+            patchPayload,
+          );
+        } catch (error: any) {
+          let allowedKnowledgeSearchModels: any[] | undefined;
+          let allowedKnowledgeSearchModelsError: string | undefined;
+
+          if (data.knowledgeSearchModelId) {
+            try {
+              const res: any = await this.apiClient.get(
+                "/new/v2.0/largelanguagemodels",
+                {
+                  params: {
+                    projectId: data.projectId,
+                    useCase: "knowledgeSearch",
+                    limit: 100,
+                  },
+                },
+              );
+              const items = res.items ?? res;
+              allowedKnowledgeSearchModels = filterList(
+                "llm_model",
+                Array.isArray(items) ? items : [],
+              );
+            } catch (candidateError: any) {
+              allowedKnowledgeSearchModelsError = candidateError.message;
+            }
+          }
+
+          return withHints(
+            {
+              error: `Failed to update Knowledge AI settings: ${error.message}`,
+              ...(allowedKnowledgeSearchModels
+                ? { allowedKnowledgeSearchModels }
+                : {}),
+              ...(allowedKnowledgeSearchModelsError
+                ? {
+                    allowedKnowledgeSearchModelsError,
+                  }
+                : {}),
+            },
+            {
+              resource: "cognigy://guide/settings",
+              action: `Verify the projectId, same-project llm_model referenceIds, and content parser connection details, then retry. For Knowledge Search, call list_resources { resourceType: "llm_model", projectId: "${data.projectId}", useCase: "knowledgeSearch" } to match the Settings UI dropdown before choosing another model. If you are reusing another project's knowledge workflow, ensure the exact source-project Knowledge Search model has already been imported into this project before trying a different model.`,
+            },
+          );
+        }
+
+        return {
+          updated: true,
+          updatedFields,
+          ...(data.knowledgeSearchModelId
+            ? { knowledgeSearchModelId: data.knowledgeSearchModelId }
+            : {}),
+          ...(data.answerExtractionModelId
+            ? { answerExtractionModelId: data.answerExtractionModelId }
+            : {}),
+          ...(data.contentParser ? { contentParser: data.contentParser } : {}),
+          ...(data.azureDIConnectionId
+            ? { azureDIConnectionId: data.azureDIConnectionId }
+            : {}),
+          ...(data.knowledgeSearchModelId || data.answerExtractionModelId
+            ? { generativeAIEnabled: true }
+            : {}),
+          _hint:
+            "Knowledge AI settings configured. If you are preparing a new project, ensure the referenced LLMs already exist in this project before creating knowledge stores or answer extraction flows.",
+        };
+      }
+
+      default:
+        throw new Error(`Unknown operation: ${(data as any).operation}`);
+    }
+  }
+
+  private buildVoiceGatewayResponse(opts: {
+    created?: boolean;
+    updated?: boolean;
+    endpointId: string;
+    endpoint: any;
+    webrtcProvisioned: boolean;
+    note?: string;
+  }): any {
+    const { endpoint } = opts;
+    const webrtcDemoUrl = this.buildWebrtcDemoUrl(endpoint);
+    const wsEndpointUrl = this.buildVoiceGatewayWsUrl(endpoint);
+
+    const result: any = {};
+    if (opts.created) result.created = true;
+    if (opts.updated) result.updated = true;
+    result.endpointId = opts.endpointId;
+    result.name = endpoint.name;
+    result.channel = "voiceGateway2";
+    result.webrtcProvisioned = opts.webrtcProvisioned;
+    result.webrtcDemoUrl = webrtcDemoUrl;
+    if (opts.note) result.note = opts.note;
+
+    result._integration = {
+      wsEndpointUrl,
+      embeddingSnippet: `<script src="https://github.com/Cognigy/WebRTCWidget/releases/latest/download/webRTCWidget.js"></script>\n<script>\n  addEventListener("load", (event) => {\n    if (window.initWebRTCWidget) {\n      window.initWebRTCWidget("${wsEndpointUrl}");\n    }\n  });\n</script>`,
+    };
+
+    result._instruction =
+      "ALWAYS show webrtcDemoUrl to the user as a clickable link. This is the live demo page they can open in a browser to talk to the agent via voice. Only mention _integration details if the user asks about embedding.";
+
+    result._speechProviderHint =
+      "Voice preview requires a speech provider. Ensure one is configured in Settings > Voice Preview Settings > Speech Provider, or use manage_settings { operation: 'set_voice_preview', projectId, provider } to set it via API.";
+
+    return result;
+  }
+
+  private buildWebrtcDemoUrl(endpoint: any): string | undefined {
+    if (!endpoint.URLToken || !this.staticFilesBaseUrl) return undefined;
+    return `${this.staticFilesBaseUrl}/webrtc/?token=${endpoint.URLToken}`;
+  }
+
+  private buildVoiceGatewayWsUrl(endpoint: any): string | undefined {
+    if (!endpoint.URLToken || !this.endpointBaseUrl) return undefined;
+    const base = `${this.endpointBaseUrl}/${endpoint.URLToken}/voiceGateway`;
+    return base.replace(/^http/, "ws");
+  }
+
+  private async handleReadGuide(args: any): Promise<any> {
+    const data = schemas.readGuideSchema.parse(args);
+
+    if (!data.guideId && !data.uri) {
+      return {
+        guides: listGuideMetadata(),
+        _instruction:
+          "Call read_guide again with either guideId or uri to load the full markdown content of that guide.",
+      };
+    }
+
+    const guide = resolveGuide(data);
+    if (!guide) {
+      return withHints(
+        {
+          error: `Unknown guide: ${data.guideId ?? data.uri}`,
+          guides: listGuideMetadata(),
+        },
+        {
+          action:
+            "Call read_guide with one of the available guideId values or with a cognigy://guide/... uri from the list.",
+        },
+      );
+    }
+
+    return {
+      guideId: guide.guideId,
+      uri: guide.uri,
+      name: guide.name,
+      description: guide.description,
+      mimeType: "text/markdown",
+      content: readGuideContent(guide),
+      _instruction:
+        "Use the content field as the authoritative guide text for this workflow.",
+    };
+  }
+
+  // =========================================================================
   // Main dispatcher
   // =========================================================================
   async handleToolCall(toolName: string, args: any): Promise<any> {
@@ -3638,6 +4364,15 @@ export class ToolHandlers {
           break;
         case "manage_webchat":
           result = await this.handleManageWebchat(args);
+          break;
+        case "manage_voice_gateway":
+          result = await this.handleManageVoiceGateway(args);
+          break;
+        case "manage_settings":
+          result = await this.handleManageSettings(args);
+          break;
+        case "read_guide":
+          result = await this.handleReadGuide(args);
           break;
         default:
           throw new Error(`Unknown tool: ${toolName}`);

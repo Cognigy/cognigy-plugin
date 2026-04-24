@@ -1,8 +1,5 @@
 #!/usr/bin/env node
 
-import { readFileSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -14,67 +11,16 @@ import {
 
 import { loadConfig } from "./config.js";
 import { CognigyApiClient } from "./api/client.js";
+import {
+  getGuideByUri,
+  listGuideMetadata,
+  readGuideContent,
+} from "./guides.js";
 import { ToolHandlers } from "./tools/handlers.js";
 import { tools } from "./tools/definitions.js";
 import { SERVER_INSTRUCTIONS } from "./instructions.js";
 import { logger } from "./utils/logger.js";
 import { RateLimiter } from "./utils/rateLimiter.js";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const resourceDir = join(__dirname, "resources");
-
-function loadResource(filename: string): string {
-  return readFileSync(join(resourceDir, filename), "utf-8");
-}
-
-const RESOURCE_MAP: Record<
-  string,
-  { name: string; description: string; file: string }
-> = {
-  "cognigy://guide/agent-creation": {
-    name: "Agent Creation Guide",
-    description: "Full workflow for building a Cognigy AI Agent",
-    file: "agent-creation.md",
-  },
-  "cognigy://guide/llm-providers": {
-    name: "LLM Provider Reference",
-    description: "Valid provider names, model strings, and credential info",
-    file: "llm-providers.md",
-  },
-  "cognigy://guide/troubleshooting": {
-    name: "Troubleshooting Guide",
-    description: "Common issues, diagnostic steps, and fixes",
-    file: "troubleshooting.md",
-  },
-  "cognigy://guide/knowledge-setup": {
-    name: "Knowledge Setup Guide",
-    description: "How to add knowledge stores and sources for RAG",
-    file: "knowledge-setup.md",
-  },
-  "cognigy://guide/tools-setup": {
-    name: "Tools Setup Guide",
-    description: "Available tool types, configuration, and prerequisites",
-    file: "tools-setup.md",
-  },
-  "cognigy://guide/webchat-setup": {
-    name: "Webchat v3 Setup Guide",
-    description:
-      "Full settings reference, style presets, common recipes, and embedding for Webchat v3 endpoints",
-    file: "webchat-setup.md",
-  },
-  "cognigy://guide/flow-nodes": {
-    name: "Flow Node Reference",
-    description:
-      "Supported flow node types, config schemas, placement rules, and examples for manage_flow_nodes",
-    file: "flow-nodes.md",
-  },
-  "cognigy://guide/package-management": {
-    name: "Package Management Guide",
-    description:
-      "How to upload, inspect, import, export, and download Cognigy package zip files",
-    file: "package-management.md",
-  },
-};
 
 async function main() {
   try {
@@ -93,6 +39,7 @@ async function main() {
       apiClient,
       config.endpointBaseUrl,
       config.webchatBaseUrl,
+      config.staticFilesBaseUrl,
     );
     const rateLimiter = new RateLimiter(config.rateLimit);
 
@@ -150,21 +97,27 @@ async function main() {
     });
 
     server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-      resources: Object.entries(RESOURCE_MAP).map(([uri, meta]) => ({
-        uri,
-        name: meta.name,
-        description: meta.description,
-        mimeType: "text/markdown",
-      })),
+      resources: listGuideMetadata().map(
+        ({ uri, name, description, mimeType }) => ({
+          uri,
+          name,
+          description,
+          mimeType,
+        }),
+      ),
     }));
 
     server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
       const { uri } = request.params;
-      const meta = RESOURCE_MAP[uri];
-      if (!meta) throw new Error(`Unknown resource: ${uri}`);
+      const guide = getGuideByUri(uri);
+      if (!guide) throw new Error(`Unknown resource: ${uri}`);
       return {
         contents: [
-          { uri, mimeType: "text/markdown", text: loadResource(meta.file) },
+          {
+            uri,
+            mimeType: "text/markdown",
+            text: readGuideContent(guide),
+          },
         ],
       };
     });

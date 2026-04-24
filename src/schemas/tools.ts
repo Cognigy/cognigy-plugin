@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GUIDE_IDS } from "../guides.js";
 
 const idSchema = z.string().regex(/^[a-f0-9]{24}$/, "Must be a 24-char hex ID");
 
@@ -81,6 +82,7 @@ export const listResourcesSchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   channel: z.string().optional(),
+  useCase: z.string().optional(),
   ...paginationSchema,
 });
 
@@ -516,3 +518,117 @@ export const manageWebchatSchema = z.object({
   webchatIcon: webchatIconSchema,
   customJson: z.string().optional(),
 });
+
+// Tool 14: manage_voice_gateway
+
+const webrtcTranscriptionSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    backgroundMode: z.enum(["transparent", "custom"]).optional(),
+  })
+  .optional();
+
+const webrtcDemoPageSchema = z
+  .object({
+    background: z
+      .object({
+        mode: z.enum(["color", "image"]).optional(),
+        color: z.string().optional(),
+      })
+      .optional(),
+    position: z.enum(["centered", "bottom-right"]).optional(),
+  })
+  .optional();
+
+const webrtcWidgetConfigSchema = z
+  .object({
+    label: z.string().optional(),
+    theme: z.enum(["CLEAN_WHITE", "DARK_MODE", "AI_PURPLE"]).optional(),
+    transcription: webrtcTranscriptionSchema,
+    demoPage: webrtcDemoPageSchema,
+    avatarLogoUrl: z.string().optional(),
+    tagline: z.string().optional(),
+  })
+  .optional();
+
+export const manageVoiceGatewaySchema = z.object({
+  endpointId: idSchema.optional(),
+  projectId: idSchema.optional(),
+  flowId: z.string().optional(),
+  name: z.string().min(1).max(200).optional(),
+  webrtcWidgetConfig: webrtcWidgetConfigSchema,
+});
+
+// Tool 15: manage_settings
+const speechProviderEnum = z.enum([
+  "microsoft",
+  "google",
+  "aws",
+  "deepgram",
+  "elevenlabs",
+]);
+
+const knowledgeContentParserEnum = z.enum(["default", "legacy", "azure"]);
+
+const manageVoicePreviewSettingsSchema = z.object({
+  operation: z.literal("set_voice_preview"),
+  projectId: idSchema,
+  provider: speechProviderEnum,
+  connectionId: z.string().optional(),
+});
+
+const manageKnowledgeAiSettingsSchema = z
+  .object({
+    operation: z.literal("set_knowledge_ai"),
+    projectId: idSchema,
+    knowledgeSearchModelId: z.string().optional(),
+    answerExtractionModelId: z.string().optional(),
+    contentParser: knowledgeContentParserEnum.optional(),
+    azureDIConnectionId: z.string().optional(),
+  })
+  .refine(
+    (data) =>
+      data.knowledgeSearchModelId !== undefined ||
+      data.answerExtractionModelId !== undefined ||
+      data.contentParser !== undefined ||
+      data.azureDIConnectionId !== undefined,
+    {
+      message: "Provide at least one Knowledge AI setting to update.",
+      path: ["operation"],
+    },
+  )
+  .refine(
+    (data) => data.contentParser !== "azure" || !!data.azureDIConnectionId,
+    {
+      message:
+        "azureDIConnectionId is required when contentParser is set to azure.",
+      path: ["azureDIConnectionId"],
+    },
+  )
+  .refine(
+    (data) =>
+      !data.contentParser ||
+      data.contentParser === "azure" ||
+      data.azureDIConnectionId === undefined,
+    {
+      message:
+        "azureDIConnectionId can only be provided when contentParser is azure or omitted.",
+      path: ["azureDIConnectionId"],
+    },
+  );
+
+export const manageSettingsSchema = z.union([
+  manageVoicePreviewSettingsSchema,
+  manageKnowledgeAiSettingsSchema,
+]);
+
+// Tool 16: read_guide
+export const readGuideSchema = z
+  .object({
+    guideId: z.enum(GUIDE_IDS).optional(),
+    uri: z.string().optional(),
+  })
+  .refine((data) => !(data.guideId && data.uri), {
+    message: "Provide guideId or uri, not both",
+    path: ["guideId"],
+  });

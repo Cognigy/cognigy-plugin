@@ -407,6 +407,15 @@ describe("listResourcesSchema", () => {
     expect(result.resourceType).toBe("agent");
   });
 
+  it("accepts llm_model useCase filter", () => {
+    const result = schemas.listResourcesSchema.parse({
+      resourceType: "llm_model",
+      projectId: VALID_ID,
+      useCase: "knowledgeSearch",
+    });
+    expect(result.useCase).toBe("knowledgeSearch");
+  });
+
   it("rejects invalid resource type", () => {
     expect(() =>
       schemas.listResourcesSchema.parse({
@@ -516,6 +525,218 @@ describe("createToolSchema", () => {
         toolType: "http",
         name: "Tool",
         config: { url: "https://example.com", method: "OPTIONS" },
+      }),
+    ).toThrow();
+  });
+});
+
+describe("manageVoiceGatewaySchema", () => {
+  it("accepts create with projectId and flowId", () => {
+    const result = schemas.manageVoiceGatewaySchema.parse({
+      projectId: VALID_ID,
+      flowId: "some-flow-ref",
+      name: "Voice Agent",
+    });
+    expect(result.projectId).toBe(VALID_ID);
+    expect(result.flowId).toBe("some-flow-ref");
+  });
+
+  it("accepts update with endpointId only", () => {
+    const result = schemas.manageVoiceGatewaySchema.parse({
+      endpointId: VALID_ID,
+    });
+    expect(result.endpointId).toBe(VALID_ID);
+  });
+
+  it("accepts full webrtcWidgetConfig", () => {
+    const result = schemas.manageVoiceGatewaySchema.parse({
+      projectId: VALID_ID,
+      flowId: "ref",
+      webrtcWidgetConfig: {
+        label: "Support",
+        theme: "AI_PURPLE",
+        transcription: { enabled: true, backgroundMode: "transparent" },
+        demoPage: {
+          background: { mode: "color", color: "#000000" },
+          position: "centered",
+        },
+        avatarLogoUrl: "https://example.com/avatar.png",
+        tagline: "Hello",
+      },
+    });
+    expect(result.webrtcWidgetConfig?.theme).toBe("AI_PURPLE");
+  });
+
+  it("rejects invalid endpointId", () => {
+    expect(() =>
+      schemas.manageVoiceGatewaySchema.parse({
+        endpointId: "short",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects invalid theme", () => {
+    expect(() =>
+      schemas.manageVoiceGatewaySchema.parse({
+        projectId: VALID_ID,
+        flowId: "ref",
+        webrtcWidgetConfig: { theme: "INVALID" },
+      }),
+    ).toThrow();
+  });
+
+  it("rejects invalid demoPage position", () => {
+    expect(() =>
+      schemas.manageVoiceGatewaySchema.parse({
+        projectId: VALID_ID,
+        flowId: "ref",
+        webrtcWidgetConfig: {
+          demoPage: { position: "top-left" },
+        },
+      }),
+    ).toThrow();
+  });
+});
+
+describe("manageSettingsSchema", () => {
+  it("accepts set_voice_preview with projectId and provider", () => {
+    const result = schemas.manageSettingsSchema.parse({
+      operation: "set_voice_preview",
+      projectId: VALID_ID,
+      provider: "microsoft",
+    });
+    expect(result.operation).toBe("set_voice_preview");
+    expect(result.provider).toBe("microsoft");
+  });
+
+  it("accepts set_voice_preview with optional connectionId", () => {
+    const result = schemas.manageSettingsSchema.parse({
+      operation: "set_voice_preview",
+      projectId: VALID_ID,
+      provider: "google",
+      connectionId: "some-ref-id",
+    });
+    expect(result.connectionId).toBe("some-ref-id");
+  });
+
+  it("accepts all provider values", () => {
+    for (const p of ["microsoft", "google", "aws", "deepgram", "elevenlabs"]) {
+      expect(() =>
+        schemas.manageSettingsSchema.parse({
+          operation: "set_voice_preview",
+          projectId: VALID_ID,
+          provider: p,
+        }),
+      ).not.toThrow();
+    }
+  });
+
+  it("rejects invalid provider", () => {
+    expect(() =>
+      schemas.manageSettingsSchema.parse({
+        operation: "set_voice_preview",
+        projectId: VALID_ID,
+        provider: "openai",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects missing projectId", () => {
+    expect(() =>
+      schemas.manageSettingsSchema.parse({
+        operation: "set_voice_preview",
+        provider: "microsoft",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects invalid projectId", () => {
+    expect(() =>
+      schemas.manageSettingsSchema.parse({
+        operation: "set_voice_preview",
+        projectId: "short",
+        provider: "microsoft",
+      }),
+    ).toThrow();
+  });
+
+  it("accepts set_knowledge_ai with model ids", () => {
+    const result = schemas.manageSettingsSchema.parse({
+      operation: "set_knowledge_ai",
+      projectId: VALID_ID,
+      knowledgeSearchModelId: "llm-ref-1",
+      answerExtractionModelId: "llm-ref-2",
+    });
+    expect(result.operation).toBe("set_knowledge_ai");
+    expect(result.knowledgeSearchModelId).toBe("llm-ref-1");
+    expect(result.answerExtractionModelId).toBe("llm-ref-2");
+  });
+
+  it("accepts set_knowledge_ai with azure content parser", () => {
+    const result = schemas.manageSettingsSchema.parse({
+      operation: "set_knowledge_ai",
+      projectId: VALID_ID,
+      contentParser: "azure",
+      azureDIConnectionId: "conn-ref-1",
+    });
+    expect(result.contentParser).toBe("azure");
+    expect(result.azureDIConnectionId).toBe("conn-ref-1");
+  });
+
+  it("rejects set_knowledge_ai without fields", () => {
+    expect(() =>
+      schemas.manageSettingsSchema.parse({
+        operation: "set_knowledge_ai",
+        projectId: VALID_ID,
+      }),
+    ).toThrow();
+  });
+
+  it("rejects azure content parser without azureDIConnectionId", () => {
+    expect(() =>
+      schemas.manageSettingsSchema.parse({
+        operation: "set_knowledge_ai",
+        projectId: VALID_ID,
+        contentParser: "azure",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects azureDIConnectionId when parser is non-azure", () => {
+    expect(() =>
+      schemas.manageSettingsSchema.parse({
+        operation: "set_knowledge_ai",
+        projectId: VALID_ID,
+        contentParser: "default",
+        azureDIConnectionId: "conn-ref-1",
+      }),
+    ).toThrow();
+  });
+});
+
+describe("readGuideSchema", () => {
+  it("accepts guideId", () => {
+    const result = schemas.readGuideSchema.parse({ guideId: "settings" });
+    expect(result.guideId).toBe("settings");
+  });
+
+  it("accepts uri", () => {
+    const result = schemas.readGuideSchema.parse({
+      uri: "cognigy://guide/settings",
+    });
+    expect(result.uri).toBe("cognigy://guide/settings");
+  });
+
+  it("accepts empty input for guide listing", () => {
+    const result = schemas.readGuideSchema.parse({});
+    expect(result).toEqual({});
+  });
+
+  it("rejects guideId and uri together", () => {
+    expect(() =>
+      schemas.readGuideSchema.parse({
+        guideId: "settings",
+        uri: "cognigy://guide/settings",
       }),
     ).toThrow();
   });
