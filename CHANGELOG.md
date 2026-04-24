@@ -1,3 +1,24 @@
+## [1.0.1](https://github.com/Cognigy/cognigy-mcp/compare/v0.2.17...v1.0.1) (2026-04-24)
+
+### ⚠ BREAKING CHANGES
+
+* read_guide tool for hard-coup. of resources with tools | fixes in handlers
+
+### Features
+
+* **tool:** create voice gateway to establish webRTC through tool ([2ee961b](https://github.com/Cognigy/cognigy-mcp/commit/2ee961b1bcabff47ac8f8bf9e205da2281be2b31))
+* **tool:** manage_settings supports knowledge store models, coupled with manage_knowledge ([044447f](https://github.com/Cognigy/cognigy-mcp/commit/044447fe77e3a2c2c6fec67a5f1a2ea239dd2c52))
+* **tool:** manage_settings to manage speech providers ([7cb6427](https://github.com/Cognigy/cognigy-mcp/commit/7cb64272c2edbd3bc75681cdcdff4b1b6703e077))
+
+### Bug Fixes
+
+* **avatar:** re-fixed avatar image blank bug in flow ([c1ef5e5](https://github.com/Cognigy/cognigy-mcp/commit/c1ef5e5b776f4546d8474a7ebb55f58301066a51))
+* fixed handling auto child-node creation | resource reuse on new projects with pkgs fixed ([b1b8e46](https://github.com/Cognigy/cognigy-mcp/commit/b1b8e464dd51f1165b8d95ab0778952a789cbd14))
+* improve agent avatar preview and knowledge model guidance ([5682e5c](https://github.com/Cognigy/cognigy-mcp/commit/5682e5c49b03a6cf007bc7abdb262c2be48bc410))
+* include LLM connection dependencies by referenceId ([ec8f94b](https://github.com/Cognigy/cognigy-mcp/commit/ec8f94b059d457e35a9011e43ea17a5d3e70fea6))
+* **llm:** llm and connection coupling | create_ai_agent tune | pkg over setup for llm ([7598537](https://github.com/Cognigy/cognigy-mcp/commit/7598537d2b98b39d3af3d0cf88f524a0e8a16f5e))
+* read_guide tool for hard-coup. of resources with tools | fixes in handlers ([eb61841](https://github.com/Cognigy/cognigy-mcp/commit/eb618411602b7a245d91966cd2e43d17fb69ff89))
+
 ## [0.2.17](https://github.com/Cognigy/cognigy-mcp/compare/v0.2.16...v0.2.17) (2026-04-09)
 
 ### Features
