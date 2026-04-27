@@ -2862,6 +2862,10 @@ export class ToolHandlers {
             resolveConfig.answer =
               cfg.toolResponseValue ?? "{{JSON.stringify(input.result)}}";
           }
+          const resolveLabel =
+            resolveSpec.type === "aiAgentToolAnswer"
+              ? `${toolLabel} - Resolve`
+              : resolveSpec.label;
           const resolveNode: any = await this.apiClient.post(
             `/v2.0/flows/${flowId}/chart/nodes`,
             {
@@ -2869,7 +2873,7 @@ export class ToolHandlers {
               extension: "@cognigy/basic-nodes",
               mode: "append",
               target: toolNodeId,
-              label: resolveSpec.label,
+              label: resolveLabel,
               config: resolveConfig,
             },
           );
@@ -2946,7 +2950,7 @@ export class ToolHandlers {
           extension: "@cognigy/basic-nodes",
           mode: "append",
           target: toolNodeId,
-          label: "Resolve Tool Action",
+          label: `${toolLabel} - Resolve`,
           config: {
             answer: resolveAnswer,
           },
@@ -3195,9 +3199,23 @@ export class ToolHandlers {
             { config: { code: cfg.preProcessCode } },
           );
           updatedFields.push("preProcessCode");
+        } else if (cfg.preProcessNodeId) {
+          skippedUpdates.push(
+            "Pre-process Code node with the provided preProcessNodeId was not found",
+          );
+        } else if (toolNode) {
+          await this.apiClient.post(`/v2.0/flows/${flowId}/chart/nodes`, {
+            type: "code",
+            extension: "@cognigy/basic-nodes",
+            mode: "append",
+            target: data.toolNodeId,
+            label: `${toolLabel} - Pre-Process`,
+            config: { code: cfg.preProcessCode },
+          });
+          updatedFields.push("preProcessCode");
         } else {
           skippedUpdates.push(
-            "Pre-process Code node not found — pass config.preProcessNodeId to update it explicitly",
+            "Tool node not found — cannot provision pre-process Code node",
           );
         }
       }
@@ -3212,10 +3230,29 @@ export class ToolHandlers {
             { config: { code: cfg.postProcessCode } },
           );
           updatedFields.push("postProcessCode");
-        } else {
+        } else if (cfg.postProcessNodeId) {
           skippedUpdates.push(
-            "Post-process Code node not found — pass config.postProcessNodeId to update it explicitly",
+            "Post-process Code node with the provided postProcessNodeId was not found",
           );
+        } else {
+          const httpAnchor =
+            findById(cfg.httpNodeId) ??
+            findByLabelSuffix("HTTP Request", "httpRequest");
+          if (httpAnchor) {
+            await this.apiClient.post(`/v2.0/flows/${flowId}/chart/nodes`, {
+              type: "code",
+              extension: "@cognigy/basic-nodes",
+              mode: "append",
+              target: httpAnchor._id || httpAnchor.id,
+              label: `${toolLabel} - Post-Process`,
+              config: { code: cfg.postProcessCode },
+            });
+            updatedFields.push("postProcessCode");
+          } else {
+            skippedUpdates.push(
+              "HTTP Request node not found — cannot provision post-process Code node (it is wired after the HTTP Request)",
+            );
+          }
         }
       }
 
@@ -3225,6 +3262,7 @@ export class ToolHandlers {
         );
         const resolveNode =
           findById(cfg.resolveNodeId) ??
+          findByLabelSuffix("Resolve", "aiAgentToolAnswer") ??
           (resolveCandidates.length === 1 ? resolveCandidates[0] : undefined);
         if (resolveNode) {
           await this.apiClient.patch(
@@ -3234,7 +3272,7 @@ export class ToolHandlers {
           updatedFields.push("toolResponseValue");
         } else if (resolveCandidates.length > 1) {
           skippedUpdates.push(
-            "Multiple Resolve Tool Action nodes exist — pass config.resolveNodeId (from create_tool's childNodes.resolveNodeId) to pick one",
+            `Multiple Resolve Tool Action nodes exist and none matched the label "${toolLabel} - Resolve" — pass config.resolveNodeId (from create_tool's childNodes.resolveNodeId) to pick one`,
           );
         } else {
           skippedUpdates.push(

@@ -630,7 +630,7 @@ After creating, use talk_to_agent to test.`,
   {
     name: "update_tool",
     description:
-      "Update an existing tool node's configuration in an AI Agent's flow. Accepts the same config fields as create_tool.\n\nRequires: aiAgentId (to resolve the flow) and toolNodeId (the node ID from create_tool or list_resources { resourceType: 'tool', aiAgentId }).\n\nYou can update the name (display label) and/or tool-type-specific config fields. For http tools, config fields like url, method, headers, body update the child HTTP Request node, and preProcessCode/postProcessCode update the child Code nodes.\n\nAfter updating, use talk_to_agent to test the changes.",
+      "Update an existing tool node's configuration in an AI Agent's flow. Accepts the same config fields as create_tool.\n\nRequires: aiAgentId (to resolve the flow) and toolNodeId (the node ID from create_tool or list_resources { resourceType: 'tool', aiAgentId }).\n\nYou can update the name (display label) and/or tool-type-specific config fields. For http tools, config fields like url, method, headers, body update the child HTTP Request node, and preProcessCode/postProcessCode update the child Code nodes. If a pre-/post-process Code node does not yet exist (because the tool was originally created without that field), passing preProcessCode or postProcessCode here will provision and wire a new Code node — the same as if it had been included on create_tool. To target a specific existing Code node directly when label-based lookup is ambiguous, pass preProcessNodeId / postProcessNodeId.\n\nAfter updating, use talk_to_agent to test the changes.",
     annotations: {
       title: "Update Tool",
       readOnlyHint: false,

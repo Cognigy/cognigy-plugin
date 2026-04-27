@@ -281,6 +281,9 @@ describe('create_tool – HTTP tool path', () => {
     const toolCallBody = api.post.mock.calls[0][1];
     expect(toolCallBody.label).toBe('fetch_user_posts');
 
+    const resolveCallBody = api.post.mock.calls[1][1];
+    expect(resolveCallBody.label).toBe('fetch_user_posts - Resolve');
+
     const preCallBody = api.post.mock.calls[2][1];
     expect(preCallBody.label).toBe('fetch_user_posts - Pre-Process');
 
@@ -396,6 +399,35 @@ describe('update_tool – HTTP child-node resolution', () => {
     );
   });
 
+  // New tools created on or after this PR carry per-tool Resolve labels —
+  // update_tool can disambiguate without an explicit resolveNodeId.
+  it('resolves Resolve node by per-tool label even when multiple Resolve nodes exist', async () => {
+    const otherResolveId = 'bbbbbbbbbbbbbbbbbbbbb001';
+    api.get
+      .mockResolvedValueOnce({ flowId: ID.flow })
+      .mockResolvedValueOnce({
+        items: [
+          { _id: MOCK_IDS.toolNode, type: 'aiAgentJobTool', label: 'search_recipes' },
+          { _id: MOCK_IDS.resolveNode, type: 'aiAgentToolAnswer', label: 'search_recipes - Resolve' },
+          { _id: otherResolveId, type: 'aiAgentToolAnswer', label: 'other_tool - Resolve' },
+        ],
+      });
+    api.patch.mockResolvedValue({});
+
+    const result = await h.handleToolCall('update_tool', {
+      aiAgentId: ID.agent,
+      toolNodeId: MOCK_IDS.toolNode,
+      toolType: 'http',
+      config: { toolResponseValue: '{{JSON.stringify(input.recipes)}}' },
+    });
+
+    expect(result.updatedFields).toContain('toolResponseValue');
+    expect(api.patch).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes/${MOCK_IDS.resolveNode}`,
+      { config: { answer: '{{JSON.stringify(input.recipes)}}' } },
+    );
+  });
+
   it('honors explicit resolveNodeId when multiple Resolve nodes exist', async () => {
     const otherResolveId = 'bbbbbbbbbbbbbbbbbbbbb001';
     api.get
@@ -467,5 +499,119 @@ describe('update_tool – HTTP child-node resolution', () => {
       `/v2.0/flows/${ID.flow}/chart/nodes/${MOCK_IDS.postNode}`,
       { config: { code: 'input.y = 2;' } },
     );
+  });
+
+  // Tool was created without postProcessCode → no post Code child exists.
+  // Calling update_tool with postProcessCode should provision the missing node.
+  it('auto-provisions a post-process Code node when one does not exist', async () => {
+    api.get
+      .mockResolvedValueOnce({ flowId: ID.flow })
+      .mockResolvedValueOnce({
+        items: [
+          { _id: MOCK_IDS.toolNode, type: 'aiAgentJobTool', label: 'search_recipes' },
+          { _id: MOCK_IDS.resolveNode, type: 'aiAgentToolAnswer', label: 'Resolve Tool Action' },
+          { _id: MOCK_IDS.httpNode, type: 'httpRequest', label: 'search_recipes - HTTP Request' },
+        ],
+      });
+    api.post.mockResolvedValueOnce({ _id: MOCK_IDS.postNode });
+
+    const result = await h.handleToolCall('update_tool', {
+      aiAgentId: ID.agent,
+      toolNodeId: MOCK_IDS.toolNode,
+      toolType: 'http',
+      config: { postProcessCode: 'input.recipes = input.httprequest.body.meals;' },
+    });
+
+    expect(result.updatedFields).toContain('postProcessCode');
+    expect(result._hints?.warning).toBeUndefined();
+    expect(api.post).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes`,
+      expect.objectContaining({
+        type: 'code',
+        mode: 'append',
+        target: MOCK_IDS.httpNode,
+        label: 'search_recipes - Post-Process',
+        config: { code: 'input.recipes = input.httprequest.body.meals;' },
+      }),
+    );
+  });
+
+  it('auto-provisions a pre-process Code node when one does not exist', async () => {
+    api.get
+      .mockResolvedValueOnce({ flowId: ID.flow })
+      .mockResolvedValueOnce({
+        items: [
+          { _id: MOCK_IDS.toolNode, type: 'aiAgentJobTool', label: 'search_recipes' },
+          { _id: MOCK_IDS.resolveNode, type: 'aiAgentToolAnswer', label: 'Resolve Tool Action' },
+          { _id: MOCK_IDS.httpNode, type: 'httpRequest', label: 'search_recipes - HTTP Request' },
+        ],
+      });
+    api.post.mockResolvedValueOnce({ _id: MOCK_IDS.preNode });
+
+    const result = await h.handleToolCall('update_tool', {
+      aiAgentId: ID.agent,
+      toolNodeId: MOCK_IDS.toolNode,
+      toolType: 'http',
+      config: { preProcessCode: 'input.normalized = String(input.aiAgent.toolArgs.q || "").trim();' },
+    });
+
+    expect(result.updatedFields).toContain('preProcessCode');
+    expect(api.post).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes`,
+      expect.objectContaining({
+        type: 'code',
+        mode: 'append',
+        target: MOCK_IDS.toolNode,
+        label: 'search_recipes - Pre-Process',
+      }),
+    );
+  });
+
+  // If the caller explicitly says "use this preProcessNodeId" but the ID does
+  // not exist, do NOT silently auto-provision — they identified a specific
+  // target, and a stale ID is more likely a bug to surface than to paper over.
+  it('does not auto-provision when an explicit preProcessNodeId is provided but missing', async () => {
+    api.get
+      .mockResolvedValueOnce({ flowId: ID.flow })
+      .mockResolvedValueOnce({
+        items: [
+          { _id: MOCK_IDS.toolNode, type: 'aiAgentJobTool', label: 'search_recipes' },
+        ],
+      });
+
+    const result = await h.handleToolCall('update_tool', {
+      aiAgentId: ID.agent,
+      toolNodeId: MOCK_IDS.toolNode,
+      toolType: 'http',
+      config: {
+        preProcessCode: 'input.x = 1;',
+        preProcessNodeId: 'aaaaaaaaaaaaaaaaaaaaadea',
+      },
+    });
+
+    expect(result.updatedFields).not.toContain('preProcessCode');
+    expect(api.post).not.toHaveBeenCalled();
+    expect(result._hints?.warning).toContain('Pre-process Code node with the provided preProcessNodeId was not found');
+  });
+
+  it('skips post-process auto-provision and warns when no HTTP Request anchor exists', async () => {
+    api.get
+      .mockResolvedValueOnce({ flowId: ID.flow })
+      .mockResolvedValueOnce({
+        items: [
+          { _id: MOCK_IDS.toolNode, type: 'aiAgentJobTool', label: 'search_recipes' },
+        ],
+      });
+
+    const result = await h.handleToolCall('update_tool', {
+      aiAgentId: ID.agent,
+      toolNodeId: MOCK_IDS.toolNode,
+      toolType: 'http',
+      config: { postProcessCode: 'input.x = 1;' },
+    });
+
+    expect(result.updatedFields).not.toContain('postProcessCode');
+    expect(api.post).not.toHaveBeenCalled();
+    expect(result._hints?.warning).toContain('HTTP Request node not found');
   });
 });

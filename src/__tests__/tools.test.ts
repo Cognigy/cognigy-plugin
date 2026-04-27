@@ -1405,7 +1405,7 @@ describe("ToolHandlers v2", () => {
         expect.stringContaining("/chart/nodes"),
         expect.objectContaining({
           type: "aiAgentToolAnswer",
-          label: "Resolve Tool Action",
+          label: "fetch_weather - Resolve",
           config: { answer: "{{JSON.stringify(input.result)}}" },
         }),
       );

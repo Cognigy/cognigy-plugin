@@ -248,7 +248,7 @@ describe('update_tool', () => {
     );
   });
 
-  it('skips code node updates with warning when nodes not found', async () => {
+  it('skips code node provisioning with warning when anchor nodes are missing', async () => {
     mockAgentWithFlow();
     api.patch.mockResolvedValue({});
     api.get.mockResolvedValueOnce({ items: [] });
@@ -260,7 +260,8 @@ describe('update_tool', () => {
     });
 
     expect(result._hints).toBeDefined();
-    expect(result._hints.warning).toContain('Pre-process Code node not found');
-    expect(result._hints.warning).toContain('Post-process Code node not found');
+    expect(result._hints.warning).toContain('Tool node not found');
+    expect(result._hints.warning).toContain('HTTP Request node not found');
+    expect(api.post).not.toHaveBeenCalled();
   });
 });
