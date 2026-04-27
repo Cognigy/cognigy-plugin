@@ -737,6 +737,26 @@ After creating, use talk_to_agent to test.`,
               description:
                 "CognigyScript expression for the Resolve Tool Action node's answer field. Controls what value is returned to the LLM. For http tools, default: '{{JSON.stringify(input.httprequest)}}'. For general-purpose tools, default: '{{JSON.stringify(input.result)}}'. Set to match where your code stores results.",
             },
+            httpNodeId: {
+              type: "string",
+              description:
+                "Optional 24-char hex ID of the HTTP Request child node (from create_tool's childNodes.httpNodeId). Pass this to target the node directly when label-based lookup fails (http only).",
+            },
+            preProcessNodeId: {
+              type: "string",
+              description:
+                "Optional 24-char hex ID of the pre-process Code child node (from create_tool's childNodes.preProcessNodeId). Pass this to target the node directly when label-based lookup fails (http only).",
+            },
+            postProcessNodeId: {
+              type: "string",
+              description:
+                "Optional 24-char hex ID of the post-process Code child node (from create_tool's childNodes.postProcessNodeId). Pass this to target the node directly when label-based lookup fails (http only).",
+            },
+            resolveNodeId: {
+              type: "string",
+              description:
+                "Optional 24-char hex ID of the Resolve Tool Action child node (from create_tool's childNodes.resolveNodeId). Required to update toolResponseValue when more than one Resolve Tool Action node exists in the flow.",
+            },
           },
         },
       },

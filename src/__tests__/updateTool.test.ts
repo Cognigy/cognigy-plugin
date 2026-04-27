@@ -165,7 +165,8 @@ describe('update_tool', () => {
     api.patch.mockResolvedValue({});
     api.get.mockResolvedValueOnce({
       items: [
-        { _id: 'http-node-001', type: 'httpRequest', parentId: ID.tool },
+        { _id: ID.tool, type: 'aiAgentJobTool', label: 'fetch_data' },
+        { _id: 'http-node-001', type: 'httpRequest', label: 'fetch_data - HTTP Request' },
       ],
     });
 
@@ -203,7 +204,8 @@ describe('update_tool', () => {
     api.patch.mockResolvedValue({});
     api.get.mockResolvedValueOnce({
       items: [
-        { _id: 'code-pre-001', type: 'code', label: 'Pre-Process Transform', parentId: ID.tool },
+        { _id: ID.tool, type: 'aiAgentJobTool', label: 'fetch_data' },
+        { _id: 'code-pre-001', type: 'code', label: 'fetch_data - Pre-Process' },
       ],
     });
 
@@ -226,8 +228,9 @@ describe('update_tool', () => {
     api.patch.mockResolvedValue({});
     api.get.mockResolvedValueOnce({
       items: [
-        { _id: 'code-pre-001', type: 'code', label: 'Pre-Process', parentId: ID.tool },
-        { _id: 'code-post-001', type: 'code', label: 'Post-Process', parentId: ID.tool },
+        { _id: ID.tool, type: 'aiAgentJobTool', label: 'fetch_data' },
+        { _id: 'code-pre-001', type: 'code', label: 'fetch_data - Pre-Process' },
+        { _id: 'code-post-001', type: 'code', label: 'fetch_data - Post-Process' },
       ],
     });
 

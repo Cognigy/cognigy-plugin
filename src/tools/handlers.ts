@@ -3141,17 +3141,29 @@ export class ToolHandlers {
       const nodes: any = await this.apiClient.get(
         `/v2.0/flows/${flowId}/chart/nodes`,
         {
-          params: { limit: 100 },
+          params: { limit: 200 },
         },
       );
-      const allNodes = nodes.items ?? nodes;
-      const childNodes = (Array.isArray(allNodes) ? allNodes : []).filter(
-        (n: any) =>
-          n.parentId === data.toolNodeId || n.parent === data.toolNodeId,
+      const rawNodes = nodes.items ?? nodes;
+      const allNodes = Array.isArray(rawNodes) ? rawNodes : [];
+
+      const toolNode = allNodes.find(
+        (n) => (n._id || n.id) === data.toolNodeId,
       );
+      const toolLabel: string = toolNode?.label ?? "";
+
+      const findById = (id?: string) =>
+        id ? allNodes.find((n) => (n._id || n.id) === id) : undefined;
+      const findByLabelSuffix = (suffix: string, type: string) => {
+        if (!toolLabel) return undefined;
+        const target = `${toolLabel} - ${suffix}`;
+        return allNodes.find((n) => n.type === type && n.label === target);
+      };
 
       if (hasHttpUpdates) {
-        const httpNode = childNodes.find((n: any) => n.type === "httpRequest");
+        const httpNode =
+          findById(cfg.httpNodeId) ??
+          findByLabelSuffix("HTTP Request", "httpRequest");
         if (httpNode) {
           const httpPatch = buildHttpNodeConfig({
             url: cfg.url,
@@ -3168,19 +3180,15 @@ export class ToolHandlers {
           }
         } else {
           skippedUpdates.push(
-            "HTTP node not found — http config was not updated",
+            "HTTP node not found — pass config.httpNodeId (from create_tool's childNodes.httpNodeId) to update it explicitly",
           );
         }
       }
 
       if (cfg.preProcessCode !== undefined) {
-        const codeNodes = childNodes.filter((n: any) => n.type === "code");
         const preNode =
-          codeNodes.find(
-            (n: any) =>
-              n.label?.includes("Pre-Process") ||
-              n.label?.includes("pre-process"),
-          ) ?? codeNodes[0];
+          findById(cfg.preProcessNodeId) ??
+          findByLabelSuffix("Pre-Process", "code");
         if (preNode) {
           await this.apiClient.patch(
             `/v2.0/flows/${flowId}/chart/nodes/${preNode._id || preNode.id}`,
@@ -3189,20 +3197,15 @@ export class ToolHandlers {
           updatedFields.push("preProcessCode");
         } else {
           skippedUpdates.push(
-            "Pre-process Code node not found — preProcessCode was not updated",
+            "Pre-process Code node not found — pass config.preProcessNodeId to update it explicitly",
           );
         }
       }
 
       if (cfg.postProcessCode !== undefined) {
-        const codeNodes = childNodes.filter((n: any) => n.type === "code");
         const postNode =
-          codeNodes.find(
-            (n: any) =>
-              n.label?.includes("Post-Process") ||
-              n.label?.includes("post-process"),
-          ) ??
-          (codeNodes.length > 1 ? codeNodes[codeNodes.length - 1] : undefined);
+          findById(cfg.postProcessNodeId) ??
+          findByLabelSuffix("Post-Process", "code");
         if (postNode) {
           await this.apiClient.patch(
             `/v2.0/flows/${flowId}/chart/nodes/${postNode._id || postNode.id}`,
@@ -3211,24 +3214,31 @@ export class ToolHandlers {
           updatedFields.push("postProcessCode");
         } else {
           skippedUpdates.push(
-            "Post-process Code node not found — postProcessCode was not updated",
+            "Post-process Code node not found — pass config.postProcessNodeId to update it explicitly",
           );
         }
       }
 
       if (cfg.toolResponseValue !== undefined) {
-        const resolveNode = childNodes.find(
-          (n: any) => n.type === "aiAgentToolAnswer",
+        const resolveCandidates = allNodes.filter(
+          (n) => n.type === "aiAgentToolAnswer",
         );
+        const resolveNode =
+          findById(cfg.resolveNodeId) ??
+          (resolveCandidates.length === 1 ? resolveCandidates[0] : undefined);
         if (resolveNode) {
           await this.apiClient.patch(
             `/v2.0/flows/${flowId}/chart/nodes/${resolveNode._id || resolveNode.id}`,
             { config: { answer: cfg.toolResponseValue } },
           );
           updatedFields.push("toolResponseValue");
+        } else if (resolveCandidates.length > 1) {
+          skippedUpdates.push(
+            "Multiple Resolve Tool Action nodes exist — pass config.resolveNodeId (from create_tool's childNodes.resolveNodeId) to pick one",
+          );
         } else {
           skippedUpdates.push(
-            "Resolve Tool Action node not found — toolResponseValue was not updated",
+            "Resolve Tool Action node not found — pass config.resolveNodeId to update it explicitly",
           );
         }
       }

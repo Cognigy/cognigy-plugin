@@ -309,3 +309,163 @@ describe('create_tool – HTTP tool path', () => {
     expect(resolveCallBody.config.answer).toBe('{{JSON.stringify(input.customResult)}}');
   });
 });
+
+describe('update_tool – HTTP child-node resolution', () => {
+  let api: jest.Mocked<CognigyApiClient>;
+  let h: ToolHandlers;
+
+  beforeEach(() => {
+    api = {
+      get: jest.fn(),
+      post: jest.fn(),
+      patch: jest.fn(),
+      delete: jest.fn(),
+      put: jest.fn(),
+    } as any;
+    h = new ToolHandlers(api, 'https://endpoint-trial.cognigy.ai');
+  });
+
+  // Real /chart/nodes responses do NOT include parentId on nodes — the tree
+  // relationship lives in the chart's separate `relations` array. These
+  // fixtures mirror that shape: tool node + child nodes share no parent link.
+  function mockFlowAndChildren() {
+    api.get
+      .mockResolvedValueOnce({ flowId: ID.flow })
+      .mockResolvedValueOnce({
+        items: [
+          { _id: ID.node, type: 'aiAgentJob', label: 'AI Agent Job' },
+          { _id: MOCK_IDS.toolNode, type: 'aiAgentJobTool', label: 'search_recipes' },
+          { _id: MOCK_IDS.resolveNode, type: 'aiAgentToolAnswer', label: 'Resolve Tool Action' },
+          { _id: MOCK_IDS.httpNode, type: 'httpRequest', label: 'search_recipes - HTTP Request' },
+          { _id: MOCK_IDS.postNode, type: 'code', label: 'search_recipes - Post-Process' },
+        ],
+      });
+  }
+
+  it('resolves post-process Code node by label prefix', async () => {
+    mockFlowAndChildren();
+    api.patch.mockResolvedValue({});
+
+    const result = await h.handleToolCall('update_tool', {
+      aiAgentId: ID.agent,
+      toolNodeId: MOCK_IDS.toolNode,
+      toolType: 'http',
+      config: { postProcessCode: 'input.x = 1;' },
+    });
+
+    expect(result.updatedFields).toContain('postProcessCode');
+    expect(api.patch).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes/${MOCK_IDS.postNode}`,
+      { config: { code: 'input.x = 1;' } },
+    );
+  });
+
+  it('resolves HTTP node by label prefix and patches url/method', async () => {
+    mockFlowAndChildren();
+    api.patch.mockResolvedValue({});
+
+    const result = await h.handleToolCall('update_tool', {
+      aiAgentId: ID.agent,
+      toolNodeId: MOCK_IDS.toolNode,
+      toolType: 'http',
+      config: { url: 'https://api.example.com/v2', method: 'POST' },
+    });
+
+    expect(result.updatedFields).toContain('http');
+    expect(api.patch).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes/${MOCK_IDS.httpNode}`,
+      { config: { url: 'https://api.example.com/v2', type: 'POST' } },
+    );
+  });
+
+  it('resolves singleton Resolve Tool Action node', async () => {
+    mockFlowAndChildren();
+    api.patch.mockResolvedValue({});
+
+    const result = await h.handleToolCall('update_tool', {
+      aiAgentId: ID.agent,
+      toolNodeId: MOCK_IDS.toolNode,
+      toolType: 'http',
+      config: { toolResponseValue: '{{JSON.stringify(input.recipes)}}' },
+    });
+
+    expect(result.updatedFields).toContain('toolResponseValue');
+    expect(api.patch).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes/${MOCK_IDS.resolveNode}`,
+      { config: { answer: '{{JSON.stringify(input.recipes)}}' } },
+    );
+  });
+
+  it('honors explicit resolveNodeId when multiple Resolve nodes exist', async () => {
+    const otherResolveId = 'bbbbbbbbbbbbbbbbbbbbb001';
+    api.get
+      .mockResolvedValueOnce({ flowId: ID.flow })
+      .mockResolvedValueOnce({
+        items: [
+          { _id: MOCK_IDS.toolNode, type: 'aiAgentJobTool', label: 'search_recipes' },
+          { _id: MOCK_IDS.resolveNode, type: 'aiAgentToolAnswer', label: 'Resolve Tool Action' },
+          { _id: otherResolveId, type: 'aiAgentToolAnswer', label: 'Resolve Tool Action' },
+        ],
+      });
+    api.patch.mockResolvedValue({});
+
+    const result = await h.handleToolCall('update_tool', {
+      aiAgentId: ID.agent,
+      toolNodeId: MOCK_IDS.toolNode,
+      toolType: 'http',
+      config: {
+        toolResponseValue: '{{JSON.stringify(input.recipes)}}',
+        resolveNodeId: MOCK_IDS.resolveNode,
+      },
+    });
+
+    expect(result.updatedFields).toContain('toolResponseValue');
+    expect(api.patch).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes/${MOCK_IDS.resolveNode}`,
+      { config: { answer: '{{JSON.stringify(input.recipes)}}' } },
+    );
+  });
+
+  it('warns when multiple Resolve nodes exist and no resolveNodeId provided', async () => {
+    const otherResolveId = 'bbbbbbbbbbbbbbbbbbbbb001';
+    api.get
+      .mockResolvedValueOnce({ flowId: ID.flow })
+      .mockResolvedValueOnce({
+        items: [
+          { _id: MOCK_IDS.toolNode, type: 'aiAgentJobTool', label: 'search_recipes' },
+          { _id: MOCK_IDS.resolveNode, type: 'aiAgentToolAnswer', label: 'Resolve Tool Action' },
+          { _id: otherResolveId, type: 'aiAgentToolAnswer', label: 'Resolve Tool Action' },
+        ],
+      });
+
+    const result = await h.handleToolCall('update_tool', {
+      aiAgentId: ID.agent,
+      toolNodeId: MOCK_IDS.toolNode,
+      toolType: 'http',
+      config: { toolResponseValue: '{{x}}' },
+    });
+
+    expect(result.updatedFields).not.toContain('toolResponseValue');
+    expect(result._hints?.warning).toContain('Multiple Resolve Tool Action nodes');
+  });
+
+  it('honors explicit child node IDs over label-based lookup', async () => {
+    mockFlowAndChildren();
+    api.patch.mockResolvedValue({});
+
+    await h.handleToolCall('update_tool', {
+      aiAgentId: ID.agent,
+      toolNodeId: MOCK_IDS.toolNode,
+      toolType: 'http',
+      config: {
+        postProcessCode: 'input.y = 2;',
+        postProcessNodeId: MOCK_IDS.postNode,
+      },
+    });
+
+    expect(api.patch).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes/${MOCK_IDS.postNode}`,
+      { config: { code: 'input.y = 2;' } },
+    );
+  });
+});
