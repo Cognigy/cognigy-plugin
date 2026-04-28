@@ -474,7 +474,11 @@ async function resolveFlowForAgent(
   }
 
   // Strategy 3: search project flows by naming convention
-  const projectId = agent.projectId || agent.project?._id || agent.project?.id;
+  const projectId =
+    agent.projectReference ||
+    agent.projectId ||
+    agent.project?._id ||
+    agent.project?.id;
   if (projectId) {
     try {
       const flows: any = await apiClient.get("/v2.0/flows", {
@@ -1891,11 +1895,24 @@ export class ToolHandlers {
       }
 
       const { flowId, agent } = resolved;
+
+      let flowReferenceId: string | null = null;
+      let flowProjectReference: string | null = null;
+      try {
+        const flowObj: any = await this.apiClient.get(`/v2.0/flows/${flowId}`);
+        flowReferenceId = flowObj.referenceId ?? null;
+        flowProjectReference = flowObj.projectReference ?? null;
+      } catch {
+        // fall through — we'll still match on flowId
+      }
+
       const projectId =
         data.projectId ||
+        agent.projectReference ||
         agent.projectId ||
         agent.project?._id ||
-        agent.project?.id;
+        agent.project?.id ||
+        flowProjectReference;
 
       if (!projectId) {
         return withHints(
@@ -1905,15 +1922,6 @@ export class ToolHandlers {
           },
           { action: "Provide projectId explicitly alongside aiAgentId." },
         );
-      }
-
-      // Fetch the flow's referenceId — endpoints may store either _id or referenceId
-      let flowReferenceId: string | null = null;
-      try {
-        const flowObj: any = await this.apiClient.get(`/v2.0/flows/${flowId}`);
-        flowReferenceId = flowObj.referenceId ?? null;
-      } catch {
-        // fall through — we'll still match on flowId
       }
 
       // Search for an existing REST endpoint connected to this flow
@@ -2346,7 +2354,10 @@ export class ToolHandlers {
     const agent = resolved?.agent;
     const flowId = resolved?.flowId;
     const projectId =
-      agent?.projectId ?? agent?.project?._id ?? agent?.project?.id;
+      agent?.projectReference ??
+      agent?.projectId ??
+      agent?.project?._id ??
+      agent?.project?.id;
 
     // Step 1: delete endpoints that reference the agent's flow
     if (flowId && projectId) {

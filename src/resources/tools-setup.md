@@ -92,6 +92,32 @@ aiAgentJobTool (the tool node the LLM sees)
 └─ HTTP Request node (makes the API call)
 └─ [Code node: post-process] (optional)
 
+#### HTTP response shape — read this before writing postProcessCode
+
+The HTTP Request node writes the response into the `input` object. Two things about this are not obvious from the schema and silently break tools when missed:
+
+1. **Default storage key.** The response is stored at `input.httprequest` by default. This is the same key used in the default `toolResponseValue` of `{{JSON.stringify(input.httprequest)}}`.
+2. **Wrapping.** The value at `input.httprequest` is NOT the raw response body. It is a wrapper object — typically:
+
+   ```text
+   input.httprequest = {
+     result:     <parsed body>,   // JSON for application/json responses, string otherwise
+     statusCode: 200,
+     length:     <bytes>
+   }
+   ```
+
+   So if the API returns `{ "meals": [...] }`, your `postProcessCode` reads `input.httprequest.result.meals`, NOT `input.httprequest.meals` and NOT `input.httprequest.body.meals`.
+
+If you are unsure of the exact shape in your Cognigy version, instrument the post-process on the very first run (`input.debug = { keys: Object.keys(input.httprequest), sample: input.httprequest };`) instead of guessing — a wrong key returns `undefined`, the Resolve Tool Action serializes that, and the LLM honestly reports "no results found" even when the API call succeeded.
+
+#### Code node rules
+
+Both `preProcessCode` and `postProcessCode` run inside Cognigy Code nodes. Two rules apply:
+
+- **No top-level `return`.** Code nodes are not full functions; the engine rejects `return` at the top level. Mutate `input` directly — `input.foo = bar;` instead of `return { foo: bar };`. If you need to short-circuit, set a flag and check it in a downstream node.
+- **`input` is the only persistent surface.** Anything you write to `input.*` is visible to subsequent nodes (post-process, Resolve, downstream flow). Local `const`/`let` variables disappear at the end of the node.
+
 #### Example — simple GET with post-processing
 
 ```text
@@ -106,7 +132,7 @@ parameters: '{"type":"object","properties":{"city":{"type":"string"}}}',
 url: "https://api.weather.com/v1/current?q={{input.aiAgent.toolArgs.city}}",
 method: "GET",
 headers: { "X-Api-Key": "your-api-key" },
-postProcessCode: "input.weather = input.httpResponse.body.current; delete input.httpResponse;"
+postProcessCode: "input.weather = input.httprequest.result.current; delete input.httprequest;"
 }
 }
 ```
@@ -127,7 +153,7 @@ method: "POST",
 headers: { "Authorization": "Bearer {{context.apiToken}}" },
 body: "{{JSON.stringify(input.orderPayload)}}",
 preProcessCode: "input.orderPayload = { items: input.aiAgent.toolArgs.items, customer: input.aiAgent.toolArgs.customerId, timestamp: new Date().toISOString() };",
-postProcessCode: "input.orderResult = { orderId: input.httpResponse.body.id, status: input.httpResponse.body.status }; delete input.httpResponse;",
+postProcessCode: "input.orderResult = { orderId: input.httprequest.result.id, status: input.httprequest.result.status }; delete input.httprequest;",
 toolResponseValue: "{{JSON.stringify(input.orderResult)}}"
 }
 }
@@ -139,7 +165,7 @@ The `toolResponseValue` field controls what the Resolve Tool Action node returns
 
 Defaults (if omitted):
 
-- **http tools**: `{{JSON.stringify(input.httprequest)}}` — returns the raw HTTP response object
+- **http tools**: `{{JSON.stringify(input.httprequest)}}` — returns the wrapped response object (`{ result, statusCode, length }`). The LLM sees the wrapper, not just the parsed body. For most tools you will want to override this with a trimmed payload from your `postProcessCode`.
 - **general-purpose tools**: `{{JSON.stringify(input.result)}}` — returns the `input.result` field
 
 IMPORTANT: The Resolve Tool Action node MUST have an `answer` value, otherwise nothing is returned to the LLM and the tool appears to produce no output. If your code stores results in a custom field, set toolResponseValue to match.
@@ -149,7 +175,7 @@ Common patterns:
 - `{{JSON.stringify(input.result)}}` — return a processed result object (default for general-purpose tools)
 - `{{JSON.stringify(input.orderResult)}}` — return a named result from post-processing
 - `{{input.summary}}` — return a plain string value
-- `{{JSON.stringify(input.httprequest)}}` — return the raw HTTP response (default for http tools)
+- `{{JSON.stringify(input.httprequest.result)}}` — return only the parsed body of an HTTP response, dropping the `statusCode` / `length` wrapper
 
 ## Accessing tool parameters in code
 
@@ -240,10 +266,12 @@ toolNodeId: "...",
 toolType: "http",
 config: {
 url: "https://api.weather.com/v2/current",
-postProcessCode: "input.result = input.httpResponse.body;"
+postProcessCode: "input.result = input.httprequest.result;"
 }
 }
 ```
+
+If the tool was originally created without `preProcessCode` / `postProcessCode`, passing them here will provision and wire the missing Code node automatically — no need to delete and recreate the tool. To target a specific existing child by ID (useful after a rename, or when the tool's flow contains other tools with the same label prefix), pass `httpNodeId` / `preProcessNodeId` / `postProcessNodeId` / `resolveNodeId` from the `childNodes` block in `create_tool`'s response.
 
 ## Managing tools
 

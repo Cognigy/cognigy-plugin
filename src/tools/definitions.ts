@@ -211,7 +211,7 @@ export const tools: ToolDefinition[] = [
         projectId: {
           type: "string",
           description:
-            "24-char hex project ID. Optional — speeds up endpoint lookup when using aiAgentId. If omitted, derived from the agent.",
+            "24-char hex project ID. Pass alongside aiAgentId when known (returned by create_ai_agent and list_resources) — saves a server-side lookup that can fail. Not used when endpointUrl is provided.",
         },
         message: {
           type: "string",
@@ -497,6 +497,8 @@ export const tools: ToolDefinition[] = [
   {
     name: "create_tool",
     description: `Create a tool as a child of an AI Agent's Job node. Tools extend what the agent can do.
+
+BEFORE USING THIS TOOL: read_guide { guideId: "tools-setup" } — this is required, not optional. The guide documents environment-specific conventions that are NOT obvious from this schema and that silently produce broken tools when missed: the wrapped HTTP response shape (input.httprequest is an object containing { result, statusCode, length }, NOT the raw response body), where LLM tool-call arguments live (input.aiAgent.toolArgs.<param>, NOT input.data), and Code-node rules (top-level return is forbidden — mutate input directly). Skipping the guide because "REST is obvious" or "Code nodes are just JS" is the most common cause of HTTP tools that fire successfully but return empty results to the LLM.
 
 Tool types:
 - tool: General-purpose tool with custom logic branch. Use this for most requests (e.g., "unlock account", "check status", "validate input"). Provide toolId, description, and optional parameters (JSON Schema). After creation, use manage_flow_nodes with parentNodeId = returned toolNodeId and mode = "appendChild" to add logic nodes (say, code, ifThenElse, httpRequest, etc.) inside the tool branch.
