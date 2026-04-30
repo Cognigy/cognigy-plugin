@@ -194,6 +194,10 @@ export const updateToolSchema = z.object({
       preProcessCode: z.string().optional(),
       postProcessCode: z.string().optional(),
       toolResponseValue: z.string().optional(),
+      httpNodeId: idSchema.optional(),
+      preProcessNodeId: idSchema.optional(),
+      postProcessNodeId: idSchema.optional(),
+      resolveNodeId: idSchema.optional(),
     })
     .optional(),
 });

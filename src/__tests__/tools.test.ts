@@ -673,6 +673,47 @@ describe("ToolHandlers v2", () => {
       expect(result.endpointAutoCreated || result.error).toBeDefined();
     });
 
+    it("falls back to flow.projectReference when the agent payload lacks a projectId", async () => {
+      api.get
+        .mockResolvedValueOnce({
+          _id: ID.agent,
+          name: "Test Agent",
+          flowId: ID.flow,
+          // no projectId or project field on the agent
+        })
+        .mockResolvedValueOnce({
+          _id: ID.flow,
+          referenceId: "ref-flow-uuid",
+          projectReference: ID.project,
+        })
+        .mockResolvedValueOnce({
+          items: [
+            {
+              _id: ID.endpoint,
+              channel: "rest",
+              flowId: ID.flow,
+              URLToken: "tok-resolved-via-flow",
+            },
+          ],
+        });
+
+      const result = await h.handleTalkToAgent({
+        aiAgentId: ID.agent,
+        message: "Hi",
+      });
+
+      expect(result.error).not.toBe(
+        "Could not determine projectId for this agent.",
+      );
+      expect(result.sessionId).toBeDefined();
+      expect(api.get).toHaveBeenCalledWith(
+        "/v2.0/endpoints",
+        expect.objectContaining({
+          params: expect.objectContaining({ projectId: ID.project }),
+        }),
+      );
+    });
+
     it("returns error when flow resolution fails", async () => {
       // Mock resolveFlowForAgent: agent without any flow reference
       api.get
@@ -1405,7 +1446,7 @@ describe("ToolHandlers v2", () => {
         expect.stringContaining("/chart/nodes"),
         expect.objectContaining({
           type: "aiAgentToolAnswer",
-          label: "Resolve Tool Action",
+          label: "fetch_weather - Resolve",
           config: { answer: "{{JSON.stringify(input.result)}}" },
         }),
       );

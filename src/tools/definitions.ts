@@ -211,7 +211,7 @@ export const tools: ToolDefinition[] = [
         projectId: {
           type: "string",
           description:
-            "24-char hex project ID. Optional — speeds up endpoint lookup when using aiAgentId. If omitted, derived from the agent.",
+            "24-char hex project ID. Pass alongside aiAgentId when known (returned by create_ai_agent and list_resources) — saves a server-side lookup that can fail. Not used when endpointUrl is provided.",
         },
         message: {
           type: "string",
@@ -498,6 +498,8 @@ export const tools: ToolDefinition[] = [
     name: "create_tool",
     description: `Create a tool as a child of an AI Agent's Job node. Tools extend what the agent can do.
 
+BEFORE USING THIS TOOL: read_guide { guideId: "tools-setup" } — this is required, not optional. The guide documents environment-specific conventions that are NOT obvious from this schema and that silently produce broken tools when missed: the wrapped HTTP response shape (input.httprequest is an object containing { result, statusCode, length }, NOT the raw response body), where LLM tool-call arguments live (input.aiAgent.toolArgs.<param>, NOT input.data), and Code-node rules (top-level return is forbidden — mutate input directly). Skipping the guide because "REST is obvious" or "Code nodes are just JS" is the most common cause of HTTP tools that fire successfully but return empty results to the LLM.
+
 Tool types:
 - tool: General-purpose tool with custom logic branch. Use this for most requests (e.g., "unlock account", "check status", "validate input"). Provide toolId, description, and optional parameters (JSON Schema). After creation, use manage_flow_nodes with parentNodeId = returned toolNodeId and mode = "appendChild" to add logic nodes (say, code, ifThenElse, httpRequest, etc.) inside the tool branch.
 - knowledge: Search a Knowledge Store. Provide knowledgeStoreId, toolId, description.
@@ -630,7 +632,7 @@ After creating, use talk_to_agent to test.`,
   {
     name: "update_tool",
     description:
-      "Update an existing tool node's configuration in an AI Agent's flow. Accepts the same config fields as create_tool.\n\nRequires: aiAgentId (to resolve the flow) and toolNodeId (the node ID from create_tool or list_resources { resourceType: 'tool', aiAgentId }).\n\nYou can update the name (display label) and/or tool-type-specific config fields. For http tools, config fields like url, method, headers, body update the child HTTP Request node, and preProcessCode/postProcessCode update the child Code nodes.\n\nAfter updating, use talk_to_agent to test the changes.",
+      "Update an existing tool node's configuration in an AI Agent's flow. Accepts the same config fields as create_tool.\n\nRequires: aiAgentId (to resolve the flow) and toolNodeId (the node ID from create_tool or list_resources { resourceType: 'tool', aiAgentId }).\n\nYou can update the name (display label) and/or tool-type-specific config fields. For http tools, config fields like url, method, headers, body update the child HTTP Request node, and preProcessCode/postProcessCode update the child Code nodes. If a pre-/post-process Code node does not yet exist (because the tool was originally created without that field), passing preProcessCode or postProcessCode here will provision and wire a new Code node — the same as if it had been included on create_tool. To target a specific existing Code node directly when label-based lookup is ambiguous, pass preProcessNodeId / postProcessNodeId.\n\nAfter updating, use talk_to_agent to test the changes.",
     annotations: {
       title: "Update Tool",
       readOnlyHint: false,
@@ -736,6 +738,26 @@ After creating, use talk_to_agent to test.`,
               type: "string",
               description:
                 "CognigyScript expression for the Resolve Tool Action node's answer field. Controls what value is returned to the LLM. For http tools, default: '{{JSON.stringify(input.httprequest)}}'. For general-purpose tools, default: '{{JSON.stringify(input.result)}}'. Set to match where your code stores results.",
+            },
+            httpNodeId: {
+              type: "string",
+              description:
+                "Optional 24-char hex ID of the HTTP Request child node (from create_tool's childNodes.httpNodeId). Pass this to target the node directly when label-based lookup fails (http only).",
+            },
+            preProcessNodeId: {
+              type: "string",
+              description:
+                "Optional 24-char hex ID of the pre-process Code child node (from create_tool's childNodes.preProcessNodeId). Pass this to target the node directly when label-based lookup fails (http only).",
+            },
+            postProcessNodeId: {
+              type: "string",
+              description:
+                "Optional 24-char hex ID of the post-process Code child node (from create_tool's childNodes.postProcessNodeId). Pass this to target the node directly when label-based lookup fails (http only).",
+            },
+            resolveNodeId: {
+              type: "string",
+              description:
+                "Optional 24-char hex ID of the Resolve Tool Action child node (from create_tool's childNodes.resolveNodeId). Required to update toolResponseValue when more than one Resolve Tool Action node exists in the flow.",
             },
           },
         },

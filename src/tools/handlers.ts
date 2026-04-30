@@ -474,7 +474,11 @@ async function resolveFlowForAgent(
   }
 
   // Strategy 3: search project flows by naming convention
-  const projectId = agent.projectId || agent.project?._id || agent.project?.id;
+  const projectId =
+    agent.projectReference ||
+    agent.projectId ||
+    agent.project?._id ||
+    agent.project?.id;
   if (projectId) {
     try {
       const flows: any = await apiClient.get("/v2.0/flows", {
@@ -1891,11 +1895,24 @@ export class ToolHandlers {
       }
 
       const { flowId, agent } = resolved;
+
+      let flowReferenceId: string | null = null;
+      let flowProjectReference: string | null = null;
+      try {
+        const flowObj: any = await this.apiClient.get(`/v2.0/flows/${flowId}`);
+        flowReferenceId = flowObj.referenceId ?? null;
+        flowProjectReference = flowObj.projectReference ?? null;
+      } catch {
+        // fall through — we'll still match on flowId
+      }
+
       const projectId =
         data.projectId ||
+        agent.projectReference ||
         agent.projectId ||
         agent.project?._id ||
-        agent.project?.id;
+        agent.project?.id ||
+        flowProjectReference;
 
       if (!projectId) {
         return withHints(
@@ -1905,15 +1922,6 @@ export class ToolHandlers {
           },
           { action: "Provide projectId explicitly alongside aiAgentId." },
         );
-      }
-
-      // Fetch the flow's referenceId — endpoints may store either _id or referenceId
-      let flowReferenceId: string | null = null;
-      try {
-        const flowObj: any = await this.apiClient.get(`/v2.0/flows/${flowId}`);
-        flowReferenceId = flowObj.referenceId ?? null;
-      } catch {
-        // fall through — we'll still match on flowId
       }
 
       // Search for an existing REST endpoint connected to this flow
@@ -2346,7 +2354,10 @@ export class ToolHandlers {
     const agent = resolved?.agent;
     const flowId = resolved?.flowId;
     const projectId =
-      agent?.projectId ?? agent?.project?._id ?? agent?.project?.id;
+      agent?.projectReference ??
+      agent?.projectId ??
+      agent?.project?._id ??
+      agent?.project?.id;
 
     // Step 1: delete endpoints that reference the agent's flow
     if (flowId && projectId) {
@@ -2862,6 +2873,10 @@ export class ToolHandlers {
             resolveConfig.answer =
               cfg.toolResponseValue ?? "{{JSON.stringify(input.result)}}";
           }
+          const resolveLabel =
+            resolveSpec.type === "aiAgentToolAnswer"
+              ? `${toolLabel} - Resolve`
+              : resolveSpec.label;
           const resolveNode: any = await this.apiClient.post(
             `/v2.0/flows/${flowId}/chart/nodes`,
             {
@@ -2869,7 +2884,7 @@ export class ToolHandlers {
               extension: "@cognigy/basic-nodes",
               mode: "append",
               target: toolNodeId,
-              label: resolveSpec.label,
+              label: resolveLabel,
               config: resolveConfig,
             },
           );
@@ -2946,7 +2961,7 @@ export class ToolHandlers {
           extension: "@cognigy/basic-nodes",
           mode: "append",
           target: toolNodeId,
-          label: "Resolve Tool Action",
+          label: `${toolLabel} - Resolve`,
           config: {
             answer: resolveAnswer,
           },
@@ -3141,17 +3156,29 @@ export class ToolHandlers {
       const nodes: any = await this.apiClient.get(
         `/v2.0/flows/${flowId}/chart/nodes`,
         {
-          params: { limit: 100 },
+          params: { limit: 200 },
         },
       );
-      const allNodes = nodes.items ?? nodes;
-      const childNodes = (Array.isArray(allNodes) ? allNodes : []).filter(
-        (n: any) =>
-          n.parentId === data.toolNodeId || n.parent === data.toolNodeId,
+      const rawNodes = nodes.items ?? nodes;
+      const allNodes = Array.isArray(rawNodes) ? rawNodes : [];
+
+      const toolNode = allNodes.find(
+        (n) => (n._id || n.id) === data.toolNodeId,
       );
+      const toolLabel: string = toolNode?.label ?? "";
+
+      const findById = (id?: string) =>
+        id ? allNodes.find((n) => (n._id || n.id) === id) : undefined;
+      const findByLabelSuffix = (suffix: string, type: string) => {
+        if (!toolLabel) return undefined;
+        const target = `${toolLabel} - ${suffix}`;
+        return allNodes.find((n) => n.type === type && n.label === target);
+      };
 
       if (hasHttpUpdates) {
-        const httpNode = childNodes.find((n: any) => n.type === "httpRequest");
+        const httpNode =
+          findById(cfg.httpNodeId) ??
+          findByLabelSuffix("HTTP Request", "httpRequest");
         if (httpNode) {
           const httpPatch = buildHttpNodeConfig({
             url: cfg.url,
@@ -3168,67 +3195,99 @@ export class ToolHandlers {
           }
         } else {
           skippedUpdates.push(
-            "HTTP node not found — http config was not updated",
+            "HTTP node not found — pass config.httpNodeId (from create_tool's childNodes.httpNodeId) to update it explicitly",
           );
         }
       }
 
       if (cfg.preProcessCode !== undefined) {
-        const codeNodes = childNodes.filter((n: any) => n.type === "code");
         const preNode =
-          codeNodes.find(
-            (n: any) =>
-              n.label?.includes("Pre-Process") ||
-              n.label?.includes("pre-process"),
-          ) ?? codeNodes[0];
+          findById(cfg.preProcessNodeId) ??
+          findByLabelSuffix("Pre-Process", "code");
         if (preNode) {
           await this.apiClient.patch(
             `/v2.0/flows/${flowId}/chart/nodes/${preNode._id || preNode.id}`,
             { config: { code: cfg.preProcessCode } },
           );
           updatedFields.push("preProcessCode");
+        } else if (cfg.preProcessNodeId) {
+          skippedUpdates.push(
+            "Pre-process Code node with the provided preProcessNodeId was not found",
+          );
+        } else if (toolNode) {
+          await this.apiClient.post(`/v2.0/flows/${flowId}/chart/nodes`, {
+            type: "code",
+            extension: "@cognigy/basic-nodes",
+            mode: "append",
+            target: data.toolNodeId,
+            label: `${toolLabel} - Pre-Process`,
+            config: { code: cfg.preProcessCode },
+          });
+          updatedFields.push("preProcessCode");
         } else {
           skippedUpdates.push(
-            "Pre-process Code node not found — preProcessCode was not updated",
+            "Tool node not found — cannot provision pre-process Code node",
           );
         }
       }
 
       if (cfg.postProcessCode !== undefined) {
-        const codeNodes = childNodes.filter((n: any) => n.type === "code");
         const postNode =
-          codeNodes.find(
-            (n: any) =>
-              n.label?.includes("Post-Process") ||
-              n.label?.includes("post-process"),
-          ) ??
-          (codeNodes.length > 1 ? codeNodes[codeNodes.length - 1] : undefined);
+          findById(cfg.postProcessNodeId) ??
+          findByLabelSuffix("Post-Process", "code");
         if (postNode) {
           await this.apiClient.patch(
             `/v2.0/flows/${flowId}/chart/nodes/${postNode._id || postNode.id}`,
             { config: { code: cfg.postProcessCode } },
           );
           updatedFields.push("postProcessCode");
-        } else {
+        } else if (cfg.postProcessNodeId) {
           skippedUpdates.push(
-            "Post-process Code node not found — postProcessCode was not updated",
+            "Post-process Code node with the provided postProcessNodeId was not found",
           );
+        } else {
+          const httpAnchor =
+            findById(cfg.httpNodeId) ??
+            findByLabelSuffix("HTTP Request", "httpRequest");
+          if (httpAnchor) {
+            await this.apiClient.post(`/v2.0/flows/${flowId}/chart/nodes`, {
+              type: "code",
+              extension: "@cognigy/basic-nodes",
+              mode: "append",
+              target: httpAnchor._id || httpAnchor.id,
+              label: `${toolLabel} - Post-Process`,
+              config: { code: cfg.postProcessCode },
+            });
+            updatedFields.push("postProcessCode");
+          } else {
+            skippedUpdates.push(
+              "HTTP Request node not found — cannot provision post-process Code node (it is wired after the HTTP Request)",
+            );
+          }
         }
       }
 
       if (cfg.toolResponseValue !== undefined) {
-        const resolveNode = childNodes.find(
-          (n: any) => n.type === "aiAgentToolAnswer",
+        const resolveCandidates = allNodes.filter(
+          (n) => n.type === "aiAgentToolAnswer",
         );
+        const resolveNode =
+          findById(cfg.resolveNodeId) ??
+          findByLabelSuffix("Resolve", "aiAgentToolAnswer") ??
+          (resolveCandidates.length === 1 ? resolveCandidates[0] : undefined);
         if (resolveNode) {
           await this.apiClient.patch(
             `/v2.0/flows/${flowId}/chart/nodes/${resolveNode._id || resolveNode.id}`,
             { config: { answer: cfg.toolResponseValue } },
           );
           updatedFields.push("toolResponseValue");
+        } else if (resolveCandidates.length > 1) {
+          skippedUpdates.push(
+            `Multiple Resolve Tool Action nodes exist and none matched the label "${toolLabel} - Resolve" — pass config.resolveNodeId (from create_tool's childNodes.resolveNodeId) to pick one`,
+          );
         } else {
           skippedUpdates.push(
-            "Resolve Tool Action node not found — toolResponseValue was not updated",
+            "Resolve Tool Action node not found — pass config.resolveNodeId to update it explicitly",
           );
         }
       }

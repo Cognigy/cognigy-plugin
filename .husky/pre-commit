@@ -1,0 +1,7 @@
+files=$(git diff --cached --name-only --diff-filter=ACMRT | grep -E '\.(cjs|js|json|md|mjs|ts|tsx|yaml|yml)$' || true)
+
+if [ -z "$files" ]; then
+  exit 0
+fi
+
+echo "$files" | xargs npx prettier --check
