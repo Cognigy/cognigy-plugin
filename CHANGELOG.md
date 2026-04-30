@@ -1,3 +1,15 @@
+## [1.0.2](https://github.com/Cognigy/cognigy-mcp/compare/v1.0.1...v1.0.2) (2026-04-30)
+
+### Features
+
+* **tools:** provision HTTP tool code nodes on update ([b3aa229](https://github.com/Cognigy/cognigy-mcp/commit/b3aa2295d5634647e56a85c8563a2302db5a5be7))
+
+### Bug Fixes
+
+* disable husky in CI [skip ci] ([b2d219f](https://github.com/Cognigy/cognigy-mcp/commit/b2d219f07c367cbeb57c1cfd563bbb7f62e98a8c))
+* **tools:** derive projectId from agent and flow references ([1da91fd](https://github.com/Cognigy/cognigy-mcp/commit/1da91fd86dd4d17b72143369d29df09acb087893))
+* **tools:** resolve HTTP tool child nodes for updates ([f6d343d](https://github.com/Cognigy/cognigy-mcp/commit/f6d343d7c58a42af82520cbd484d78c431aee3bc))
+
 ## [1.0.1](https://github.com/Cognigy/cognigy-mcp/compare/v0.2.17...v1.0.1) (2026-04-24)
 
 ### ⚠ BREAKING CHANGES
@@ -90,4 +102,6 @@
 
 ## [0.1.3](https://github.com/Cognigy/cognigy-mcp/compare/v0.1.2...v0.1.3) (2026-03-04)
 
-## 0.1.2 (2026-03-04)
+## [0.1.2](https://github.com/Cognigy/cognigy-mcp/compare/v0.1.1...v0.1.2) (2026-03-04)
+
+## 0.1.1 (2026-03-04)
