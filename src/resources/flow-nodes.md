@@ -4,6 +4,8 @@ Use `manage_flow_nodes` to add logic nodes **inside tool branches only**. Nodes 
 
 **CRITICAL: NEVER add nodes before the AI Agent Job node.** Pre-agent nodes cause conversation loops and break the agent's ability to orchestrate. ALL logic — including authentication, data collection, greetings, and conditional behavior — must be implemented as agent tools.
 
+**Voice exception — Set Session Config:** The one node that _should_ run before the AI Agent node is a `setSessionConfig` (Set Session Config) node, and only in **voice** flows. It applies per-session speech settings (barge-in, ASR, STT/TTS, input timeouts) and must be the **first** node. The `audit_voice_agent` tool checks for this and can create it via `insertBefore`. Do not add any other pre-agent nodes.
+
 ## Quick Start (tool-first workflow)
 
 ```
@@ -26,6 +28,7 @@ Nodes MUST be placed inside tool branches using `parentNodeId` and `mode`.
 ## Supported Node Types
 
 ### say — Send Message
+
 Category: message
 
 Send a text message to the user. Supports rich output types.
@@ -45,6 +48,7 @@ Send a text message to the user. Supports rich output types.
 | data | object | No | Custom data payload attached to the message |
 
 **Example:**
+
 ```json
 {
   "operation": "create",
@@ -64,6 +68,7 @@ Send a text message to the user. Supports rich output types.
 ---
 
 ### question — Ask Question
+
 Category: message
 
 Ask the user a question. The answer is captured and stored.
@@ -78,6 +83,7 @@ Ask the user a question. The answer is captured and stored.
 | resultLocation | string | No | Where to store the answer (default: `input.result`) |
 
 **Example:**
+
 ```json
 {
   "operation": "create",
@@ -94,6 +100,7 @@ Ask the user a question. The answer is captured and stored.
 ---
 
 ### ifThenElse — Conditional Branch
+
 Category: logic
 
 Branch the flow based on a CognigyScript condition. Auto-creates `then` and `else` child nodes.
@@ -104,6 +111,7 @@ Branch the flow based on a CognigyScript condition. Auto-creates `then` and `els
 | condition | string | Yes | CognigyScript expression (without `{{ }}`), e.g. `input.intent === "order_status"` or `context.isVIP === true` |
 
 **Example:**
+
 ```json
 {
   "operation": "create",
@@ -121,6 +129,7 @@ Branch the flow based on a CognigyScript condition. Auto-creates `then` and `els
 ---
 
 ### lookup — Switch / Multi-Branch
+
 Category: logic
 
 Switch on intent, state, type, or a CognigyScript expression. Auto-creates `case` and `default` child nodes.
@@ -138,6 +147,7 @@ Switch on intent, state, type, or a CognigyScript expression. Auto-creates `case
 ---
 
 ### setSessionContext — Set Context
+
 Category: data
 
 Store a key-value pair in the persistent session context. Each node stores **one** entry. To store multiple values, create multiple `setSessionContext` nodes.
@@ -150,6 +160,7 @@ Store a key-value pair in the persistent session context. Each node stores **one
 | contextEntries | array | No | Convenience alias — `[{ key, value }]`. Only the **first** entry is used; create separate nodes for additional entries. |
 
 **Example — using key/value directly (preferred):**
+
 ```json
 {
   "operation": "create",
@@ -164,6 +175,7 @@ Store a key-value pair in the persistent session context. Each node stores **one
 ```
 
 **Example — using contextEntries alias:**
+
 ```json
 {
   "operation": "create",
@@ -171,9 +183,7 @@ Store a key-value pair in the persistent session context. Each node stores **one
   "nodeType": "setSessionContext",
   "label": "Save User Name",
   "config": {
-    "contextEntries": [
-      { "key": "userName", "value": "{{input.result}}" }
-    ]
+    "contextEntries": [{ "key": "userName", "value": "{{input.result}}" }]
   }
 }
 ```
@@ -183,6 +193,7 @@ Store a key-value pair in the persistent session context. Each node stores **one
 ---
 
 ### code — Execute Code
+
 Category: data
 
 Run custom JavaScript. Has access to `input`, `context`, `actions`, and `profile`.
@@ -193,6 +204,7 @@ Run custom JavaScript. Has access to `input`, `context`, `actions`, and `profile
 | code | string | Yes | JavaScript code to execute |
 
 **Example:**
+
 ```json
 {
   "operation": "create",
@@ -208,6 +220,7 @@ Run custom JavaScript. Has access to `input`, `context`, `actions`, and `profile
 ---
 
 ### goTo — Go To Node/Flow
+
 Category: logic
 
 Jump execution to another flow or a specific node.
@@ -222,6 +235,7 @@ Jump execution to another flow or a specific node.
 ---
 
 ### sleep — Wait
+
 Category: logic
 
 Pause execution for a duration.
@@ -231,9 +245,11 @@ Pause execution for a duration.
 |-------|------|----------|-------------|
 | milliseconds | number | Yes | Milliseconds to wait |
 | delay | number | No | Alias for `milliseconds` (supported for backward compatibility) |
+
 ---
 
 ### httpRequest — HTTP Request
+
 Category: service
 
 Call an external API.
@@ -251,6 +267,7 @@ Call an external API.
 | inputStore | string | No | Input key to store the response (auto-sets storage to input) |
 
 **Example:**
+
 ```json
 {
   "operation": "create",
@@ -260,7 +277,7 @@ Call an external API.
   "config": {
     "url": "https://api.example.com/orders/{{context.orderId}}",
     "type": "GET",
-    "headers": {"Authorization": "Bearer {{context.apiToken}}"},
+    "headers": { "Authorization": "Bearer {{context.apiToken}}" },
     "contextStore": "orderData"
   }
 }
@@ -271,6 +288,7 @@ Call an external API.
 ## Branching nodes
 
 `ifThenElse` and `lookup` nodes auto-create child branch nodes when created:
+
 - **ifThenElse** creates `then` and `else` child nodes
 - **lookup** creates `case` and `default` child nodes
 
@@ -350,6 +368,7 @@ manage_flow_nodes {
 When you create a `lookup` (switch) node, the case child nodes start with empty values. To set what each case matches:
 
 **Option 1 — Update via parent switch with `cases` array (recommended):**
+
 ```json
 {
   "operation": "update",
@@ -365,6 +384,7 @@ When you create a `lookup` (switch) node, the case child nodes start with empty 
 ```
 
 **Option 2 — Update individual case nodes directly:**
+
 ```json
 {
   "operation": "update",

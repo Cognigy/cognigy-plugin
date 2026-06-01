@@ -1,7 +1,7 @@
 {
   "manifest_version": "0.3",
   "name": "nice-cognigy-mcp-server",
-  "display_name": "NiCE Cognigy MCP Server",
+  "display_name": "NiCE Cognigy MCP",
   "version": "1.0.2",
   "description": "Create, test, and manage AI Agents in the NiCE Cognigy platform",
   "long_description": "An MCP server that lets you create and manage AI Agents in NiCE Cognigy directly from Claude.\n\nBuild agents from scratch, configure LLMs, connect knowledge and tools, then deploy to webchat, evaluate performance, and iterate quickly. Go from idea to AI Agents faster and experiment with building, testing, and refining.\n\nSupports: Al Agent creation and configuration, LLM setup, knowledge management (RAG), tool creation (HTTP, MCP, email, knowledge), flow node editing, webchat deployment, and direct Agent testing via REST endpoints.",
@@ -23,24 +23,14 @@
   "homepage": "https://www.cognigy.com",
   "support": "https://docs.cognigy.com",
   "license": "MIT",
-  "privacy_policies": [
-    "https://trust.cognigy.com"
-  ],
-  "keywords": [
-    "cognigy",
-    "ai-agents",
-    "conversational-ai",
-    "mcp",
-    "llm"
-  ],
+  "privacy_policies": ["https://trust.cognigy.com"],
+  "keywords": ["cognigy", "ai-agents", "conversational-ai", "mcp", "llm"],
   "server": {
     "type": "node",
     "entry_point": "dist/index.js",
     "mcp_config": {
       "command": "node",
-      "args": [
-        "${__dirname}/dist/index.js"
-      ],
+      "args": ["${__dirname}/dist/index.js"],
       "env": {
         "COGNIGY_API_BASE_URL": "${user_config.cognigy_api_base_url}",
         "COGNIGY_API_KEY": "${user_config.cognigy_api_key}"
@@ -127,14 +117,15 @@
     {
       "name": "read_guide",
       "description": "Load the full markdown content of a built-in Cognigy workflow guide"
+    },
+    {
+      "name": "audit_voice_agent",
+      "description": "Audit a voice AI agent against the Go-Live Checklist and optionally apply safe fixes (dry-run by default)"
     }
   ],
   "tools_generated": false,
   "compatibility": {
-    "platforms": [
-      "darwin",
-      "win32"
-    ],
+    "platforms": ["darwin", "win32"],
     "runtimes": {
       "node": ">=20.0.0"
     }

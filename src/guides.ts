@@ -15,6 +15,7 @@ export const GUIDE_IDS = [
   "flow-nodes",
   "package-management",
   "voice-gateway-setup",
+  "voice-go-live-checklist",
   "settings",
 ] as const;
 
@@ -95,6 +96,14 @@ export const GUIDE_DEFINITIONS: readonly GuideDefinition[] = [
     description:
       "How to create a Voice Gateway endpoint with WebRTC for browser-based voice interaction",
     file: "voice-gateway-setup.md",
+  },
+  {
+    guideId: "voice-go-live-checklist",
+    uri: "cognigy://guide/voice-go-live-checklist",
+    name: "Voice Go-Live Checklist Guide",
+    description:
+      "How audit_voice_agent checks and fixes a voice AI agent against the Go-Live Checklist, which items are auto-fixable, and which are manual",
+    file: "voice-go-live-checklist.md",
   },
   {
     guideId: "settings",

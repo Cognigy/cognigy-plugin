@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# NiCE Cognigy MCP Server - Setup Script
+# NiCE Cognigy MCP - Setup Script
 # This script helps you set up the MCP server for the first time
 
 set -e
 
-echo "🚀 NiCE Cognigy MCP Server Setup"
+echo "🚀 NiCE Cognigy MCP Setup"
 echo "=============================="
 echo ""
 

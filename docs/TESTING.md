@@ -253,7 +253,7 @@ Typical verification steps:
 2. Confirm the `.mcpb` file was created
 3. Open the `.mcpb` file with Claude Desktop
 4. Complete the install dialog with your API URL and API key
-5. Restart Claude Desktop and verify the `NiCE Cognigy MCP Server` appears
+5. Restart Claude Desktop and verify the `NiCE Cognigy MCP` appears
 
 ## 4. Run Automated Checks
 

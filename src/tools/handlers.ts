@@ -22,6 +22,13 @@ import { logger } from "../utils/logger.js";
 import { filterResponse, filterList, withHints } from "./filters.js";
 import { buildWebchatSettings, deepMerge } from "./webchatSettings.js";
 import { getNodeEntry, supportedNodeTypes } from "./nodeRegistry.js";
+import {
+  evaluateChecks,
+  summarize,
+  nodeId as voiceNodeId,
+  type VoiceCheck,
+  type VoiceFix,
+} from "./voiceChecklist.js";
 import * as schemas from "../schemas/tools.js";
 import {
   buildPackageExportablePreview,
@@ -4375,6 +4382,174 @@ export class ToolHandlers {
   }
 
   // =========================================================================
+  // Tool 17: audit_voice_agent
+  // =========================================================================
+  async handleAuditVoiceAgent(args: any): Promise<any> {
+    const data = schemas.auditVoiceAgentSchema.parse(args);
+    const { aiAgentId, endpointId, projectId, apply, only } = data;
+
+    // Resolve the flow to audit.
+    let flowId = data.flowId;
+    if (!flowId) {
+      const resolved = await resolveFlowForAgent(this.apiClient, aiAgentId!);
+      if (!resolved) {
+        return withHints(
+          { error: "Could not resolve a flow for this agent." },
+          {
+            resource: "cognigy://guide/voice-go-live-checklist",
+            action:
+              "Provide flowId directly, or ensure the agent was created via create_ai_agent.",
+          },
+        );
+      }
+      flowId = resolved.flowId;
+    }
+
+    const fetchNodes = async (): Promise<any[]> => {
+      const res: any = await this.apiClient.get(
+        `/v2.0/flows/${flowId}/chart/nodes`,
+        { params: { limit: 200 } },
+      );
+      const items = res.items ?? res;
+      return Array.isArray(items) ? items : [];
+    };
+
+    const fetchEndpoint = async (): Promise<any | null> => {
+      if (!endpointId) return null;
+      try {
+        return await this.apiClient.get(`/v2.0/endpoints/${endpointId}`);
+      } catch {
+        return null;
+      }
+    };
+
+    let nodes = await fetchNodes();
+    let endpoint = await fetchEndpoint();
+
+    // Best-effort LLM resolution for the fallback check (advisory only).
+    let llm: any = null;
+    if (projectId) {
+      try {
+        const agentNode = nodes.find((n: any) => n.type === "aiAgentJob");
+        const ref = agentNode?.config?.llmProviderReferenceId;
+        const res: any = await this.apiClient.get("/v2.0/largelanguagemodels", {
+          params: { projectId, limit: 100 },
+        });
+        const models = res.items ?? res;
+        if (Array.isArray(models) && models.length > 0) {
+          llm =
+            (ref && ref !== "default"
+              ? models.find((m: any) => m.referenceId === ref)
+              : undefined) ??
+            models.find((m: any) => m.isDefault) ??
+            null;
+        }
+      } catch {
+        llm = null;
+      }
+    }
+
+    const describeFix = (fix: VoiceFix): Record<string, any> =>
+      fix.kind === "patchNode"
+        ? { kind: "patchNode", nodeId: fix.nodeId, config: fix.config }
+        : {
+            kind: "createSessionConfig",
+            beforeNodeId: fix.targetNodeId,
+            label: fix.label,
+            config: fix.config,
+          };
+
+    const formatCheck = (c: VoiceCheck): Record<string, any> => {
+      const out: Record<string, any> = {
+        id: c.id,
+        section: c.section,
+        title: c.title,
+        status: c.status,
+        detail: c.detail,
+        autoFixable: c.autoFixable,
+      };
+      if (c.fix) out.proposedFix = describeFix(c.fix);
+      return out;
+    };
+
+    const checks = evaluateChecks({ nodes, endpoint, llm });
+
+    if (!apply) {
+      return {
+        flowId,
+        mode: "dry-run",
+        summary: summarize(checks),
+        checks: checks.map(formatCheck),
+        _note:
+          "Dry-run: no changes made. Re-run with apply: true to apply the auto-fixable fixes (the checks with a proposedFix). Use only: [ids] to apply a subset.",
+      };
+    }
+
+    // Apply the auto-fixable fixes.
+    const nodeConfigById = new Map<string, Record<string, any>>(
+      nodes.map((n: any) => [voiceNodeId(n), n.config ?? {}]),
+    );
+    const toApply = checks.filter(
+      (c) => c.autoFixable && c.fix && (!only || only.includes(c.id)),
+    );
+    const appliedFixes: any[] = [];
+
+    for (const c of toApply) {
+      const fix = c.fix!;
+      try {
+        if (fix.kind === "patchNode") {
+          const existing = nodeConfigById.get(fix.nodeId) ?? {};
+          const merged = { ...existing, ...fix.config };
+          await this.apiClient.patch(
+            `/v2.0/flows/${flowId}/chart/nodes/${fix.nodeId}`,
+            { config: merged },
+          );
+          appliedFixes.push({
+            id: c.id,
+            applied: true,
+            nodeId: fix.nodeId,
+            fields: Object.keys(fix.config),
+          });
+        } else {
+          const created: any = await this.apiClient.post(
+            `/v2.0/flows/${flowId}/chart/nodes`,
+            {
+              type: "setSessionConfig",
+              extension: "@cognigy/voicegateway2",
+              mode: "insertBefore",
+              target: fix.targetNodeId,
+              label: fix.label,
+              config: fix.config,
+            },
+          );
+          appliedFixes.push({
+            id: c.id,
+            applied: true,
+            createdNodeId: created._id || created.id,
+          });
+        }
+      } catch (err: any) {
+        appliedFixes.push({ id: c.id, applied: false, error: err.message });
+      }
+    }
+
+    // Re-audit so the response reflects the post-fix state.
+    nodes = await fetchNodes();
+    endpoint = await fetchEndpoint();
+    const postChecks = evaluateChecks({ nodes, endpoint, llm });
+
+    return {
+      flowId,
+      mode: "apply",
+      appliedFixes,
+      summary: summarize(postChecks),
+      checks: postChecks.map(formatCheck),
+      _note:
+        "Applied auto-fixable fixes and re-audited. Verify the flow in the UI — especially node ordering when a Set Session Config node was created. Advisory checks (warn) and manual items are not auto-fixed; see cognigy://guide/voice-go-live-checklist.",
+    };
+  }
+
+  // =========================================================================
   // Main dispatcher
   // =========================================================================
   async handleToolCall(toolName: string, args: any): Promise<any> {
@@ -4432,6 +4607,9 @@ export class ToolHandlers {
           break;
         case "read_guide":
           result = await this.handleReadGuide(args);
+          break;
+        case "audit_voice_agent":
+          result = await this.handleAuditVoiceAgent(args);
           break;
         default:
           throw new Error(`Unknown tool: ${toolName}`);

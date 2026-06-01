@@ -1670,4 +1670,54 @@ After creating, use talk_to_agent to test.`,
       },
     },
   },
+
+  // 17. audit_voice_agent
+  {
+    name: "audit_voice_agent",
+    description:
+      'Audit a voice AI agent against the deterministic subset of the Voice AI Go-Live Checklist and optionally apply safe fixes.\n\nBEFORE USING THIS TOOL: Use read_guide { guideId: "voice-go-live-checklist" } for the full list of checks, which are auto-fixable, and which are manual.\n\nWHAT IT CHECKS (read from the flow chart, and optionally the endpoint/LLM):\n- 3.1 Flow Configuration: first node is a Set Session Config node; barge-in off; continuous ASR off; user input timeout (5–7 s, ≥5 retries); flow input timeout (~1500 ms) with filler; flow timeout does not fail on error; AI Agent "Stream to Output" on; AI Agent does not stop the flow on error.\n- 3.2 LLM: AI Agent error message configured; Log LLM Latency on; fallback LLM configured (advisory).\n- 3.3 Speech Services: STT hints present (advisory).\n- 3.6 Audio Experience: silence overlay delay 0 (when configured).\n- 3.7 Deployment: Output Transformer enabled (advisory).\n\nProvide aiAgentId (the flow is resolved automatically) or flowId directly. Pass endpointId to also audit the Output Transformer, and projectId to resolve the LLM for the fallback check.\n\nDRY-RUN BY DEFAULT: With apply omitted/false the tool only reports — each fixable failing check includes a proposedFix and nothing is changed. Set apply: true to apply the safe fixes (PATCH node config; create a Set Session Config node as the first node via insertBefore). Use only: ["check.id", ...] to apply a subset.\n\nManual / out-of-scope items (most of 3.3 speech provider status, all of 3.8 release readiness) live in the external Voice Gateway app or are runtime/operational and are NOT covered — see the guide.',
+    annotations: {
+      title: "Audit Voice Agent",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    inputSchema: {
+      type: "object",
+      properties: {
+        aiAgentId: {
+          type: "string",
+          description:
+            "24-char hex AI Agent ID. The flow is resolved automatically. Provide this or flowId.",
+        },
+        flowId: {
+          type: "string",
+          description:
+            "24-char hex flow ID. Use instead of aiAgentId when the flow is known directly.",
+        },
+        endpointId: {
+          type: "string",
+          description:
+            "24-char hex endpoint ID (optional). When provided, the Output Transformer check is evaluated.",
+        },
+        projectId: {
+          type: "string",
+          description:
+            "24-char hex project ID (optional). When provided, the agent's LLM is resolved for the fallback check.",
+        },
+        apply: {
+          type: "boolean",
+          description:
+            "If true, apply the safe auto-fixes for failing checks. Default false (dry-run report only).",
+        },
+        only: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            'Optional list of check IDs to apply when apply is true (e.g. ["vg.barge-in-off", "agent.stream-output"]). If omitted, all auto-fixable failing checks are applied.',
+        },
+      },
+    },
+  },
 ];

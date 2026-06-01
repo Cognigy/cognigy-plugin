@@ -1,4 +1,4 @@
-# NiCE Cognigy MCP Server
+# NiCE Cognigy MCP
 
 A Model Context Protocol (MCP) server that connects your AI assistant to the [Cognigy.AI](https://www.cognigy.com) REST API. Create, test, and improve LLM-based AI Agents through a self-improvement loop — without leaving your AI assistant.
 
@@ -15,24 +15,25 @@ A Model Context Protocol (MCP) server that connects your AI assistant to the [Co
 
 ## Tools
 
-| Tool                   | Type  | Description                                                                                        |
-| ---------------------- | ----- | -------------------------------------------------------------------------------------------------- |
-| `create_ai_agent`      | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint                 |
-| `update_ai_agent`      | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature)                        |
-| `setup_llm`            | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation         |
-| `talk_to_agent`        | Write | Send a message to an AI Agent and get its response                                                 |
-| `list_resources`       | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more                          |
-| `get_resource`         | Read  | Get detailed information about a single resource                                                   |
-| `delete_resource`      | Write | Permanently delete a resource                                                                      |
-| `manage_knowledge`     | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG                        |
-| `create_tool`          | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node                                    |
-| `update_tool`          | Write | Update an existing tool node's configuration                                                       |
-| `manage_webchat`       | Write | Create or configure a Webchat v3 endpoint for website deployment                                   |
-| `manage_flow_nodes`    | Write | Create, update, delete, or list flow nodes for conversation logic                                  |
-| `manage_packages`      | Write | List exportable resources, upload, inspect, import, export, and download Cognigy package zip files |
-| `manage_voice_gateway` | Write | Create or configure a Voice Gateway endpoint with WebRTC for browser-based voice interaction       |
-| `manage_settings`      | Write | Manage project-level settings including voice preview and Knowledge AI configuration               |
-| `read_guide`           | Read  | Load the full markdown content of a built-in Cognigy workflow guide                                |
+| Tool                   | Type  | Description                                                                                         |
+| ---------------------- | ----- | --------------------------------------------------------------------------------------------------- |
+| `create_ai_agent`      | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint                  |
+| `update_ai_agent`      | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature)                         |
+| `setup_llm`            | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation          |
+| `talk_to_agent`        | Write | Send a message to an AI Agent and get its response                                                  |
+| `list_resources`       | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more                           |
+| `get_resource`         | Read  | Get detailed information about a single resource                                                    |
+| `delete_resource`      | Write | Permanently delete a resource                                                                       |
+| `manage_knowledge`     | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG                         |
+| `create_tool`          | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node                                     |
+| `update_tool`          | Write | Update an existing tool node's configuration                                                        |
+| `manage_webchat`       | Write | Create or configure a Webchat v3 endpoint for website deployment                                    |
+| `manage_flow_nodes`    | Write | Create, update, delete, or list flow nodes for conversation logic                                   |
+| `manage_packages`      | Write | List exportable resources, upload, inspect, import, export, and download Cognigy package zip files  |
+| `manage_voice_gateway` | Write | Create or configure a Voice Gateway endpoint with WebRTC for browser-based voice interaction        |
+| `manage_settings`      | Write | Manage project-level settings including voice preview and Knowledge AI configuration                |
+| `read_guide`           | Read  | Load the full markdown content of a built-in Cognigy workflow guide                                 |
+| `audit_voice_agent`    | Write | Audit a voice agent against the Go-Live Checklist; reports by default, applies safe fixes on demand |
 
 The server also includes built-in guides for detailed workflows, field references, and troubleshooting. They are exposed as MCP resources and through `read_guide`, which is the reliable cross-client path when an assistant needs the full content of a guide.
 

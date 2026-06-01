@@ -2735,6 +2735,133 @@ describe("ToolHandlers v2", () => {
 });
 
 // =========================================================================
+// audit_voice_agent
+// =========================================================================
+describe("audit_voice_agent", () => {
+  let api: jest.Mocked<CognigyApiClient>;
+  let h: ToolHandlers;
+
+  beforeEach(() => {
+    api = {
+      get: jest.fn(),
+      post: jest.fn(),
+      patch: jest.fn(),
+      delete: jest.fn(),
+      put: jest.fn(),
+      uploadFile: jest.fn(),
+    } as any;
+    h = new ToolHandlers(api, "https://endpoint-trial.cognigy.ai");
+  });
+
+  const badNodes = [
+    {
+      _id: ID.entry,
+      type: "aiAgentJob",
+      isEntryPoint: true,
+      config: {
+        storeLocation: "input",
+        errorHandling: "stop",
+        errorMessage: "",
+        debugLogLLMLatency: false,
+      },
+    },
+  ];
+
+  it("dry-run reports failures and proposes fixes without mutating", async () => {
+    api.get.mockResolvedValueOnce({ items: badNodes });
+
+    const result = await h.handleToolCall("audit_voice_agent", {
+      flowId: ID.flow,
+    });
+
+    expect(result.mode).toBe("dry-run");
+    expect(result.summary.fail).toBeGreaterThan(0);
+    const first = result.checks.find(
+      (c: any) => c.id === "vg.session-config-first",
+    );
+    expect(first.status).toBe("fail");
+    expect(first.proposedFix.kind).toBe("createSessionConfig");
+    expect(api.post).not.toHaveBeenCalled();
+    expect(api.patch).not.toHaveBeenCalled();
+  });
+
+  it("apply creates the Set Session Config node via insertBefore and patches the agent", async () => {
+    const goodNodes = [
+      {
+        _id: ID.node,
+        type: "setSessionConfig",
+        isEntryPoint: true,
+        config: {
+          bargeInOnSpeech: false,
+          bargeInOnDtmf: false,
+          asrEnabled: false,
+          userNoInputTimeoutEnable: true,
+          userNoInputTimeout: 6000,
+          userNoInputRetries: 5,
+          flowNoInputTimeoutEnable: true,
+          flowNoInputTimeout: 1500,
+          flowNoInputSpeech: "One moment please.",
+          flowNoInputFail: false,
+          sttHints: ["Acme"],
+        },
+      },
+      {
+        _id: ID.entry,
+        type: "aiAgentJob",
+        isEntryPoint: false,
+        config: {
+          storeLocation: "stream",
+          errorHandling: "continue",
+          errorMessage: "Sorry.",
+          debugLogLLMLatency: true,
+        },
+      },
+    ];
+    api.get
+      .mockResolvedValueOnce({ items: badNodes }) // initial audit
+      .mockResolvedValueOnce({ items: goodNodes }); // re-audit
+    api.post.mockResolvedValue({ _id: ID.node });
+    api.patch.mockResolvedValue({});
+
+    const result = await h.handleToolCall("audit_voice_agent", {
+      flowId: ID.flow,
+      apply: true,
+    });
+
+    expect(result.mode).toBe("apply");
+    const createCall = api.post.mock.calls.find(
+      (c: any[]) => c[1]?.type === "setSessionConfig",
+    );
+    expect(createCall).toBeDefined();
+    expect(createCall![1].mode).toBe("insertBefore");
+    expect(createCall![1].extension).toBe("@cognigy/voicegateway2");
+    expect(createCall![1].target).toBe(ID.entry);
+    expect(api.patch).toHaveBeenCalled();
+    expect(result.appliedFixes.some((f: any) => f.applied)).toBe(true);
+    expect(result.summary.fail).toBe(0);
+  });
+
+  it("only: limits applied fixes to the listed check ids", async () => {
+    api.get
+      .mockResolvedValueOnce({ items: badNodes })
+      .mockResolvedValueOnce({ items: badNodes });
+    api.patch.mockResolvedValue({});
+
+    const result = await h.handleToolCall("audit_voice_agent", {
+      flowId: ID.flow,
+      apply: true,
+      only: ["agent.stream-output"],
+    });
+
+    const applied = result.appliedFixes.map((f: any) => f.id);
+    expect(applied).toEqual(["agent.stream-output"]);
+    expect(
+      api.post.mock.calls.some((c: any[]) => c[1]?.type === "setSessionConfig"),
+    ).toBe(false);
+  });
+});
+
+// =========================================================================
 // Integration tests (gated)
 // =========================================================================
 const runIntegration = process.env.INTEGRATION_TEST === "true";

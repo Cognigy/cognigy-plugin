@@ -741,3 +741,41 @@ describe("readGuideSchema", () => {
     ).toThrow();
   });
 });
+
+describe("auditVoiceAgentSchema", () => {
+  it("accepts aiAgentId alone", () => {
+    expect(() =>
+      schemas.auditVoiceAgentSchema.parse({ aiAgentId: VALID_ID }),
+    ).not.toThrow();
+  });
+
+  it("accepts flowId alone", () => {
+    expect(() =>
+      schemas.auditVoiceAgentSchema.parse({ flowId: VALID_ID }),
+    ).not.toThrow();
+  });
+
+  it("accepts apply, only, endpointId, projectId", () => {
+    expect(() =>
+      schemas.auditVoiceAgentSchema.parse({
+        aiAgentId: VALID_ID,
+        endpointId: VALID_ID,
+        projectId: VALID_ID,
+        apply: true,
+        only: ["vg.barge-in-off"],
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects when neither aiAgentId nor flowId is provided", () => {
+    expect(() =>
+      schemas.auditVoiceAgentSchema.parse({ apply: true }),
+    ).toThrow();
+  });
+
+  it("rejects an invalid id", () => {
+    expect(() =>
+      schemas.auditVoiceAgentSchema.parse({ aiAgentId: "nope" }),
+    ).toThrow();
+  });
+});

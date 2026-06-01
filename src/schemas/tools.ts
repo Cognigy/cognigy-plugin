@@ -626,6 +626,21 @@ export const manageSettingsSchema = z.union([
   manageKnowledgeAiSettingsSchema,
 ]);
 
+// Tool 17: audit_voice_agent
+export const auditVoiceAgentSchema = z
+  .object({
+    aiAgentId: idSchema.optional(),
+    flowId: idSchema.optional(),
+    endpointId: idSchema.optional(),
+    projectId: idSchema.optional(),
+    apply: z.boolean().optional(),
+    only: z.array(z.string()).optional(),
+  })
+  .refine((d) => d.aiAgentId || d.flowId, {
+    message: "Either aiAgentId or flowId must be provided",
+    path: ["aiAgentId"],
+  });
+
 // Tool 16: read_guide
 export const readGuideSchema = z
   .object({
