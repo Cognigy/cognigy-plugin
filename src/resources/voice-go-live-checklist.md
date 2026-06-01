@@ -42,19 +42,19 @@ Each fixable check carries a `proposedFix` in the dry-run report. `summary` coun
 
 ### Auto-fixable (applied with `apply: true`)
 
-| ID                           | Section | Checks                                                      | Fix                                                                                           |
-| ---------------------------- | ------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `vg.session-config-first`    | 3.1     | First node is a Set Session Config node                     | Creates a `setSessionConfig` node with recommended defaults, `insertBefore` the AI Agent node |
-| `vg.barge-in-off`            | 3.1     | `bargeInOnSpeech` and `bargeInOnDtmf` off                   | Sets both to `false`                                                                          |
-| `vg.continuous-asr-off`      | 3.1     | `asrEnabled` off (for Flux)                                 | Sets `asrEnabled = false`                                                                     |
-| `vg.user-input-timeout`      | 3.1     | `userNoInputTimeout` 5000–7000 ms, `userNoInputRetries` ≥ 5 | Sets enable=true, 6000 ms, 5 retries                                                          |
-| `vg.flow-input-timeout`      | 3.1     | `flowNoInputTimeoutEnable` on, ~1500 ms, filler phrase set  | Enables, 1500 ms, default filler if missing                                                   |
-| `vg.flow-fails-on-error-off` | 3.1     | `flowNoInputFail` off                                       | Sets `flowNoInputFail = false`                                                                |
-| `agent.stream-output`        | 3.1     | AI Agent `storeLocation = "stream"`                         | Sets `storeLocation = "stream"`                                                               |
-| `agent.fails-on-error-off`   | 3.1     | AI Agent `errorHandling` ≠ `"stop"`                         | Sets `errorHandling = "continue"`                                                             |
-| `agent.error-message`        | 3.2     | AI Agent `errorMessage` non-empty                           | Sets a default voice error message                                                            |
-| `agent.log-llm-latency`      | 3.2     | AI Agent `debugLogLLMLatency` on                            | Sets `debugLogLLMLatency = true`                                                              |
-| `vg.silence-overlay-delay`   | 3.6     | `silenceOverlayDelay = 0` when overlay configured           | Sets delay to 0 (only when overlay is in use)                                                 |
+| ID                           | Section | Checks                                                      | Fix                                                                                               |
+| ---------------------------- | ------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `vg.session-config-first`    | 3.1     | First node is a Set Session Config node                     | Creates a `setSessionConfig` node with recommended defaults, `prepend`ed before the AI Agent node |
+| `vg.barge-in-off`            | 3.1     | `bargeInOnSpeech` and `bargeInOnDtmf` off                   | Sets both to `false`                                                                              |
+| `vg.continuous-asr-off`      | 3.1     | `asrEnabled` off (for Flux)                                 | Sets `asrEnabled = false`                                                                         |
+| `vg.user-input-timeout`      | 3.1     | `userNoInputTimeout` 5000–7000 ms, `userNoInputRetries` ≥ 5 | Sets enable=true, 6000 ms, 5 retries                                                              |
+| `vg.flow-input-timeout`      | 3.1     | `flowNoInputTimeoutEnable` on, ~1500 ms, filler phrase set  | Enables, 1500 ms, default filler if missing                                                       |
+| `vg.flow-fails-on-error-off` | 3.1     | `flowNoInputFail` off                                       | Sets `flowNoInputFail = false`                                                                    |
+| `agent.stream-output`        | 3.1     | AI Agent `storeLocation = "stream"`                         | Sets `storeLocation = "stream"`                                                                   |
+| `agent.fails-on-error-off`   | 3.1     | AI Agent `errorHandling` ≠ `"stop"`                         | Sets `errorHandling = "continue"`                                                                 |
+| `agent.error-message`        | 3.2     | AI Agent `errorMessage` non-empty                           | Sets a default voice error message                                                                |
+| `agent.log-llm-latency`      | 3.2     | AI Agent `debugLogLLMLatency` on                            | Sets `debugLogLLMLatency = true`                                                                  |
+| `vg.silence-overlay-delay`   | 3.6     | `silenceOverlayDelay = 0` when overlay configured           | Sets delay to 0 (only when overlay is in use)                                                     |
 
 The Set Session Config value checks report `na` until a Set Session Config node exists. Creating it with `vg.session-config-first` seeds recommended defaults that already satisfy them.
 
@@ -77,4 +77,4 @@ These checklist items are **not** reachable through the Cognigy REST API and mus
 
 ## After applying fixes
 
-`apply: true` returns `appliedFixes` plus a fresh re-audit. Always verify the flow in the UI — particularly **node ordering** when a Set Session Config node was created (it is inserted before the AI Agent node via `insertBefore`).
+`apply: true` returns `appliedFixes` plus a fresh re-audit. Always verify the flow in the UI — particularly **node ordering** when a Set Session Config node was created (it is `prepend`ed before the AI Agent node on the flow's `next` chain).

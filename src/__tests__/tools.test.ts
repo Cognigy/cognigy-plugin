@@ -2785,7 +2785,7 @@ describe("audit_voice_agent", () => {
     expect(api.patch).not.toHaveBeenCalled();
   });
 
-  it("apply creates the Set Session Config node via insertBefore and patches the agent", async () => {
+  it("apply creates the Set Session Config node via prepend and patches the agent", async () => {
     const goodNodes = [
       {
         _id: ID.node,
@@ -2833,7 +2833,7 @@ describe("audit_voice_agent", () => {
       (c: any[]) => c[1]?.type === "setSessionConfig",
     );
     expect(createCall).toBeDefined();
-    expect(createCall![1].mode).toBe("insertBefore");
+    expect(createCall![1].mode).toBe("prepend");
     expect(createCall![1].extension).toBe("@cognigy/voicegateway2");
     expect(createCall![1].target).toBe(ID.entry);
     expect(api.patch).toHaveBeenCalled();

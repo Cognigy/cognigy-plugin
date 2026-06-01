@@ -4514,12 +4514,17 @@ export class ToolHandlers {
             fields: Object.keys(fix.config),
           });
         } else {
+          // `prepend` (not `insertBefore`): a top-level node lives on the chart's
+          // `next` chain (start → agent → …), not in any node's `children`.
+          // insertBefore searches `children` and throws "Error while reading
+          // ChartData" on a top-level target. prepend rewires the next chain so
+          // the new node lands immediately before the AI Agent node.
           const created: any = await this.apiClient.post(
             `/v2.0/flows/${flowId}/chart/nodes`,
             {
               type: "setSessionConfig",
               extension: "@cognigy/voicegateway2",
-              mode: "insertBefore",
+              mode: "prepend",
               target: fix.targetNodeId,
               label: fix.label,
               config: fix.config,
