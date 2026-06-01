@@ -1657,6 +1657,7 @@ After creating, use talk_to_agent to test.`,
             "flow-nodes",
             "package-management",
             "voice-gateway-setup",
+            "voice-go-live-checklist",
             "settings",
           ],
           description:

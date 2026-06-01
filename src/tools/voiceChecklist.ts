@@ -45,9 +45,15 @@ export interface VoiceCheck {
 export interface AuditContext {
   /** Raw chart nodes (each with type, config, isEntryPoint, _id/id). */
   nodes: any[];
-  /** Raw endpoint resource, or null if not resolved. */
+  /**
+   * Endpoint resource. Tri-state: `undefined` = not requested (no endpointId),
+   * `null` = requested but the fetch failed, object = resolved.
+   */
   endpoint?: any | null;
-  /** Raw LLM model resource, or null if not resolved. */
+  /**
+   * LLM model resource. Tri-state: `undefined` = not requested (no projectId),
+   * `null` = requested but could not be resolved, object = resolved.
+   */
   llm?: any | null;
 }
 
@@ -513,7 +519,7 @@ export function evaluateChecks(ctx: AuditContext): VoiceCheck[] {
         id,
         section,
         title,
-        status: ok ? "pass" : "warn",
+        status: ok ? "pass" : "fail",
         detail: ok
           ? "Silence overlay delay is 0."
           : `Silence overlay delay is ${sscConfig.silenceOverlayDelay}. Set it to 0.`,
@@ -566,13 +572,23 @@ export function evaluateChecks(ctx: AuditContext): VoiceCheck[] {
     const id = "endpoint.output-transformer";
     const section = "3.7 Deployment";
     const title = "Endpoint Output Transformer enabled";
-    if (!ctx.endpoint) {
+    if (ctx.endpoint === undefined) {
       checks.push({
         id,
         section,
         title,
         status: "na",
         detail: "Pass endpointId to audit the Output Transformer.",
+        autoFixable: false,
+      });
+    } else if (ctx.endpoint === null) {
+      checks.push({
+        id,
+        section,
+        title,
+        status: "warn",
+        detail:
+          "endpointId was provided but the endpoint could not be fetched (not found or no access). Verify the id and permissions.",
         autoFixable: false,
       });
     } else {
@@ -597,14 +613,24 @@ export function evaluateChecks(ctx: AuditContext): VoiceCheck[] {
     const id = "llm.fallback";
     const section = "3.2 LLM";
     const title = "Fallback LLM configured";
-    if (!ctx.llm) {
+    if (ctx.llm === undefined) {
       checks.push({
         id,
         section,
         title,
         status: "na",
         detail:
-          "LLM resource not resolved. Pass projectId so the agent's LLM can be inspected.",
+          "Pass projectId so the agent's LLM can be resolved and inspected.",
+        autoFixable: false,
+      });
+    } else if (ctx.llm === null) {
+      checks.push({
+        id,
+        section,
+        title,
+        status: "warn",
+        detail:
+          "projectId was provided but the agent's LLM could not be resolved. Verify the project has an LLM assigned.",
         autoFixable: false,
       });
     } else {

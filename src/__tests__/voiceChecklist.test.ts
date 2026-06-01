@@ -149,10 +149,39 @@ describe("evaluateChecks — advisory checks", () => {
     expect(c.autoFixable).toBe(false);
   });
 
-  it("marks endpoint and llm checks na when not provided", () => {
+  it("marks endpoint and llm checks na when not requested (undefined)", () => {
     const checks = evaluateChecks({ nodes: [compliantSsc, compliantAgent] });
     expect(byId(checks, "endpoint.output-transformer").status).toBe("na");
     expect(byId(checks, "llm.fallback").status).toBe("na");
+  });
+
+  it("warns when endpoint/llm were requested but could not be resolved (null)", () => {
+    const checks = evaluateChecks({
+      nodes: [compliantSsc, compliantAgent],
+      endpoint: null,
+      llm: null,
+    });
+    expect(byId(checks, "endpoint.output-transformer").status).toBe("warn");
+    expect(byId(checks, "llm.fallback").status).toBe("warn");
+  });
+
+  it("fails (not warns) when a configured silence overlay has a non-zero delay", () => {
+    const ssc = {
+      _id: SSC_ID,
+      type: "setSessionConfig",
+      isEntryPoint: true,
+      config: {
+        ...RECOMMENDED_SESSION_CONFIG,
+        silenceOverlayAction: "addTrack",
+        silenceOverlayDelay: 5,
+      },
+    };
+    const c = byId(
+      evaluateChecks({ nodes: [ssc, compliantAgent] }),
+      "vg.silence-overlay-delay",
+    );
+    expect(c.status).toBe("fail");
+    expect(c.autoFixable).toBe(true);
   });
 
   it("passes the output transformer check when enabled with code", () => {

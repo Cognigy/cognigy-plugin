@@ -4,7 +4,7 @@ A Model Context Protocol (MCP) server that connects your AI assistant to the [Co
 
 ## Features
 
-- **16 workflow tools** for agent creation, deployment, packaging, voice setup, and guide access
+- **17 workflow tools** for agent creation, deployment, packaging, voice setup, and guide access
 - **One-call agent setup**: creates Agent + Flow + AI Agent Job Node + REST Endpoint automatically
 - **Self-improvement loop**: talk to your agent, evaluate responses, update the job description, repeat
 - **Knowledge store support**: attach RAG knowledge stores to agents as tools

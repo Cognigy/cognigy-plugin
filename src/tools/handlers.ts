@@ -4414,8 +4414,9 @@ export class ToolHandlers {
       return Array.isArray(items) ? items : [];
     };
 
-    const fetchEndpoint = async (): Promise<any | null> => {
-      if (!endpointId) return null;
+    // Tri-state: undefined = not requested, null = fetch failed, object = resolved.
+    const fetchEndpoint = async (): Promise<any | null | undefined> => {
+      if (!endpointId) return undefined;
       try {
         return await this.apiClient.get(`/v2.0/endpoints/${endpointId}`);
       } catch {
@@ -4427,8 +4428,10 @@ export class ToolHandlers {
     let endpoint = await fetchEndpoint();
 
     // Best-effort LLM resolution for the fallback check (advisory only).
-    let llm: any = null;
+    // Tri-state: undefined = not requested, null = could not resolve, object = resolved.
+    let llm: any = undefined;
     if (projectId) {
+      llm = null;
       try {
         const agentNode = nodes.find((n: any) => n.type === "aiAgentJob");
         const ref = agentNode?.config?.llmProviderReferenceId;
