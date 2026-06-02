@@ -172,30 +172,6 @@ function buildRichSayObject(
   };
 }
 
-function buildAiAgentNodePreview(
-  agent: {
-    name?: string;
-    image?: string;
-    imageOptimizedFormat?: boolean;
-  } | null,
-  fallbackName: string,
-  jobName?: string,
-): Record<string, any> {
-  const previewImage =
-    typeof agent?.image === "string" && agent.image.trim().length > 0
-      ? agent.image
-      : DEFAULT_AGENT_IMAGE;
-  return {
-    keyValue: jobName ?? fallbackName,
-    aiAgentName: agent?.name ?? fallbackName,
-    aiAgentImage: previewImage,
-    aiAgentImageOptimizedFormat:
-      typeof agent?.imageOptimizedFormat === "boolean"
-        ? agent.imageOptimizedFormat
-        : true,
-  };
-}
-
 function transformConfigForApi(
   nodeType: string,
   config: Record<string, any>,
@@ -1221,13 +1197,18 @@ export class ToolHandlers {
             aiAgent: agent.referenceId,
             outputImmediately: true,
           },
-          preview: buildAiAgentNodePreview(agent, data.name),
         },
       );
       const jobNodeId = jobNode._id || jobNode.id;
 
       // Step 4a: Auto-assign default LLM to the job node so talk_to_agent works
       // immediately without a separate update_ai_agent call.
+      //
+      // The node preview (agent avatar + name) is computed server-side from
+      // `config.aiAgent`. A config PATCH that omits `aiAgent` makes the backend
+      // recompute the preview as a bare string (the job name), wiping the
+      // avatar. So we always re-send `aiAgent` alongside any config change to
+      // force the backend to regenerate the proper avatar preview object.
       let llmAutoAssigned = false;
       try {
         const llmList: any = await this.apiClient.get(
@@ -1244,7 +1225,12 @@ export class ToolHandlers {
           if (llmRefId) {
             await this.apiClient.patch(
               `/v2.0/flows/${flowId}/chart/nodes/${jobNodeId}`,
-              { config: { llmProviderReferenceId: llmRefId } },
+              {
+                config: {
+                  aiAgent: agent.referenceId,
+                  llmProviderReferenceId: llmRefId,
+                },
+              },
             );
             llmAutoAssigned = true;
           }
@@ -1253,21 +1239,6 @@ export class ToolHandlers {
         logger.warn(
           "Failed to auto-assign LLM to job node — agent may need manual LLM assignment",
           { error: llmErr.message },
-        );
-      }
-
-      // Step 4c: Patch the node preview so the flow editor displays the agent image
-      try {
-        await this.apiClient.patch(
-          `/v2.0/flows/${flowId}/chart/nodes/${jobNodeId}`,
-          {
-            preview: buildAiAgentNodePreview(agent, data.name),
-          },
-        );
-      } catch (previewError: any) {
-        logger.warn(
-          "Failed to set job node preview — agent image may not appear in the flow editor",
-          { error: previewError.message },
         );
       }
 
@@ -1558,36 +1529,33 @@ export class ToolHandlers {
           const jobNodeId = jobNode._id || jobNode.id;
           const nodePatch: Record<string, any> = {};
 
-          if (needsJobPatch) {
-            const nodeConfigPatch: Record<string, any> = {};
-            if (jobConfig!.llmProviderReferenceId !== undefined)
-              nodeConfigPatch.llmProviderReferenceId =
-                jobConfig!.llmProviderReferenceId;
-            if (jobConfig!.jobName !== undefined)
-              nodeConfigPatch.name = jobConfig!.jobName;
-            if (jobConfig!.jobDescription !== undefined)
-              nodeConfigPatch.description = jobConfig!.jobDescription;
-            if (jobConfig!.jobInstructions !== undefined)
-              nodeConfigPatch.instructions = jobConfig!.jobInstructions;
-            if (jobConfig!.temperature !== undefined)
-              nodeConfigPatch.temperature = jobConfig!.temperature;
-            if (jobConfig!.maxTokens !== undefined)
-              nodeConfigPatch.maxTokens = jobConfig!.maxTokens;
+          // The node's avatar preview is computed server-side from
+          // `config.aiAgent`. Any config PATCH that omits it makes the backend
+          // recompute the preview as a bare string (the job name), which wipes
+          // the avatar image in the flow editor. So we always include the
+          // existing `aiAgent` reference in the config patch — both when
+          // changing job fields and when only the agent name/avatar changed —
+          // to force the backend to regenerate the proper avatar preview.
+          if (needsJobPatch || needsPreviewPatch) {
+            const nodeConfigPatch: Record<string, any> = {
+              aiAgent: jobNode.config?.aiAgent,
+            };
+            if (needsJobPatch) {
+              if (jobConfig!.llmProviderReferenceId !== undefined)
+                nodeConfigPatch.llmProviderReferenceId =
+                  jobConfig!.llmProviderReferenceId;
+              if (jobConfig!.jobName !== undefined)
+                nodeConfigPatch.name = jobConfig!.jobName;
+              if (jobConfig!.jobDescription !== undefined)
+                nodeConfigPatch.description = jobConfig!.jobDescription;
+              if (jobConfig!.jobInstructions !== undefined)
+                nodeConfigPatch.instructions = jobConfig!.jobInstructions;
+              if (jobConfig!.temperature !== undefined)
+                nodeConfigPatch.temperature = jobConfig!.temperature;
+              if (jobConfig!.maxTokens !== undefined)
+                nodeConfigPatch.maxTokens = jobConfig!.maxTokens;
+            }
             nodePatch.config = nodeConfigPatch;
-          }
-
-          if (needsPreviewPatch) {
-            const currentAgent = agentResult ?? resolved.agent;
-            const previewName =
-              jobConfig?.jobName ??
-              jobNode.config?.name ??
-              currentAgent?.name ??
-              rest.name;
-            nodePatch.preview = buildAiAgentNodePreview(
-              currentAgent,
-              rest.name ?? previewName ?? "AI Agent",
-              previewName,
-            );
           }
 
           jobNodeResult = await this.apiClient.patch(

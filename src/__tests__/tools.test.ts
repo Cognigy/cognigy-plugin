@@ -107,77 +107,16 @@ describe("ToolHandlers v2", () => {
           imageOptimizedFormat: true,
         }),
       );
-      expect(api.post).toHaveBeenNthCalledWith(
-        3,
-        `/v2.0/flows/${ID.flow}/chart/nodes`,
-        expect.objectContaining({
-          preview: {
-            keyValue: "Test Agent",
-            aiAgentName: "Test Agent",
-            aiAgentImage: "default-avatar:4",
-            aiAgentImageOptimizedFormat: true,
-          },
-        }),
+      // The job node references the agent via config.aiAgent. The avatar
+      // preview is computed server-side from that reference, so the MCP must
+      // NOT hand-craft a `preview` (it lands in the wrong storage path and is
+      // ignored by the flow editor).
+      const nodeCreateCall = api.post.mock.calls.find(
+        (c: any[]) => c[0] === `/v2.0/flows/${ID.flow}/chart/nodes`,
       );
-    });
-
-    it("falls back to the default preview avatar when the created agent returns a blank image", async () => {
-      const mockAgent = {
-        _id: ID.agent,
-        referenceId: "ref-uuid",
-        name: "Test Agent",
-        image: "   ",
-      };
-      const mockFlow = {
-        _id: ID.flow,
-        referenceId: "flow-uuid",
-        name: "Test Agent Flow",
-      };
-      const mockEndpoint = {
-        _id: ID.endpoint,
-        URLToken: "abc123",
-        channel: "rest",
-      };
-
-      api.post
-        .mockResolvedValueOnce(mockAgent)
-        .mockResolvedValueOnce(mockFlow)
-        .mockResolvedValueOnce({ _id: ID.node })
-        .mockResolvedValueOnce(mockEndpoint);
-      api.get
-        .mockResolvedValueOnce({
-          items: [{ _id: ID.entry, isEntryPoint: true }],
-        })
-        .mockResolvedValueOnce({ items: [{ _id: ID.llm }] })
-        .mockResolvedValueOnce({ nodes: [] })
-        .mockResolvedValueOnce({ items: [] });
-      api.patch.mockResolvedValue({});
-
-      await h.handleToolCall("create_ai_agent", baseArgs);
-
-      expect(api.post).toHaveBeenNthCalledWith(
-        3,
-        `/v2.0/flows/${ID.flow}/chart/nodes`,
-        expect.objectContaining({
-          preview: {
-            keyValue: "Test Agent",
-            aiAgentName: "Test Agent",
-            aiAgentImage: "default-avatar:1",
-            aiAgentImageOptimizedFormat: true,
-          },
-        }),
-      );
-      expect(api.patch).toHaveBeenCalledWith(
-        `/v2.0/flows/${ID.flow}/chart/nodes/${ID.node}`,
-        expect.objectContaining({
-          preview: {
-            keyValue: "Test Agent",
-            aiAgentName: "Test Agent",
-            aiAgentImage: "default-avatar:1",
-            aiAgentImageOptimizedFormat: true,
-          },
-        }),
-      );
+      expect(nodeCreateCall).toBeDefined();
+      expect(nodeCreateCall![1].config.aiAgent).toBe("ref-uuid");
+      expect(nodeCreateCall![1]).not.toHaveProperty("preview");
     });
 
     it("returns llmStatus unknown with hints when no LLM", async () => {
@@ -341,6 +280,7 @@ describe("ToolHandlers v2", () => {
       const mockJobNode = {
         _id: "job-node-id-000000000001",
         type: "aiAgentJob",
+        config: { aiAgent: "ref-uuid" },
       };
 
       api.get
@@ -354,11 +294,51 @@ describe("ToolHandlers v2", () => {
       });
 
       expect(result.updated).toContain("jobNode");
+      // aiAgent must be re-sent so the backend regenerates the avatar preview
+      // object rather than overwriting it with the bare job-name string.
       expect(api.patch).toHaveBeenCalledWith(
         `/v2.0/flows/${ID.flow}/chart/nodes/job-node-id-000000000001`,
         {
-          config: { llmProviderReferenceId: "llm-ref-uuid", temperature: 0.5 },
+          config: {
+            aiAgent: "ref-uuid",
+            llmProviderReferenceId: "llm-ref-uuid",
+            temperature: 0.5,
+          },
         },
+      );
+    });
+
+    it("re-sends aiAgent on a name-only update so the avatar preview is regenerated", async () => {
+      const mockAgent = {
+        _id: ID.agent,
+        referenceId: "ref-uuid",
+        name: "Renamed Agent",
+        flowId: ID.flow,
+      };
+      const mockJobNode = {
+        _id: "job-node-id-000000000001",
+        type: "aiAgentJob",
+        config: { aiAgent: "ref-uuid" },
+      };
+
+      // PATCH agent (name) first, then GET agent + nodes for the preview refresh.
+      api.patch.mockResolvedValue(mockAgent);
+      api.get
+        .mockResolvedValueOnce(mockAgent)
+        .mockResolvedValueOnce({ items: [mockJobNode] });
+
+      const result = await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        name: "Renamed Agent",
+      });
+
+      expect(result.updated).toContain("agent");
+      // Even with no jobConfig, the node config patch must carry aiAgent to
+      // force the backend to recompute the avatar preview (otherwise it would
+      // overwrite the preview object with the bare name string).
+      expect(api.patch).toHaveBeenCalledWith(
+        `/v2.0/flows/${ID.flow}/chart/nodes/job-node-id-000000000001`,
+        { config: { aiAgent: "ref-uuid" } },
       );
     });
 
@@ -1783,9 +1763,16 @@ describe("ToolHandlers v2", () => {
       });
 
       expect(result.llmStatus).toBe("configured");
+      // The config patch must re-send aiAgent so the backend regenerates the
+      // avatar preview object instead of clobbering it with a bare string.
       expect(api.patch).toHaveBeenCalledWith(
         `/v2.0/flows/${ID.flow}/chart/nodes/${ID.node}`,
-        { config: { llmProviderReferenceId: "llm-ref-uuid" } },
+        {
+          config: {
+            aiAgent: "ref-uuid",
+            llmProviderReferenceId: "llm-ref-uuid",
+          },
+        },
       );
     });
 
