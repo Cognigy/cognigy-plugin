@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "nice-cognigy-mcp-server",
   "display_name": "NiCE Cognigy MCP Connector",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Create, test, and manage AI Agents in the NiCE Cognigy platform",
   "long_description": "An MCP server that lets you create and manage AI Agents in NiCE Cognigy directly from Claude.\n\nBuild agents from scratch, configure LLMs, connect knowledge and tools, then deploy to webchat, evaluate performance, and iterate quickly. Go from idea to AI Agents faster and experiment with building, testing, and refining.\n\nSupports: AI Agent creation and configuration, LLM setup, knowledge management (RAG), tool creation (HTTP, MCP, email, knowledge), flow node editing, webchat deployment, and direct Agent testing via REST endpoints.",
   "icon": "assets/claude-icon.png",
