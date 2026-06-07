@@ -26,7 +26,7 @@ async function main() {
   try {
     const config = loadConfig();
     logger.setLevel(config.logLevel);
-    logger.info("Starting NiCE Cognigy MCP", {
+    logger.info("Starting NiCE Cognigy MCP Connector", {
       name: config.serverName,
       version: config.serverVersion,
     });
@@ -124,10 +124,10 @@ async function main() {
 
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    logger.info("NiCE Cognigy MCP started successfully");
+    logger.info("NiCE Cognigy MCP Connector started successfully");
 
     const shutdown = async () => {
-      logger.info("Shutting down NiCE Cognigy MCP");
+      logger.info("Shutting down NiCE Cognigy MCP Connector");
       rateLimiter.destroy();
       await server.close();
       process.exit(0);
