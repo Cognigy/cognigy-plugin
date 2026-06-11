@@ -1,0 +1,17 @@
+{
+  "name": "cognigy-mcp",
+  "owner": {
+    "name": "Cognigy",
+    "url": "https://www.cognigy.com"
+  },
+  "metadata": {
+    "description": "Official marketplace for the NiCE Cognigy MCP plugin — build, test, and deploy AI Agents on the NiCE Cognigy platform from Claude Code."
+  },
+  "plugins": [
+    {
+      "name": "cognigy",
+      "source": "./plugin",
+      "description": "NiCE Cognigy MCP — build, test, and deploy AI Agents on the NiCE Cognigy platform from Claude Code"
+    }
+  ]
+}

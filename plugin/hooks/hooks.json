@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mkdir -p \"${CLAUDE_PLUGIN_DATA}\" && npm install --prefix \"${CLAUDE_PLUGIN_DATA}\" @cognigy/mcp-server@latest --no-fund --no-audit --loglevel=error >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ]
+  }
+}

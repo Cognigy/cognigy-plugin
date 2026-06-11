@@ -43,6 +43,19 @@ The server also includes built-in guides for detailed workflows, field reference
 
 Download the `.mcpb` file from the [latest release](https://github.com/Cognigy/cognigy-mcp/releases/latest) and double-click it. Claude Desktop opens an install dialog — enter your API URL and API key. No Node.js required.
 
+### Claude Code (plugin — auto-updating)
+
+Install the plugin from this repo's marketplace. The plugin always launches the latest published server, so you get server updates automatically with no manual reinstall.
+
+```
+/plugin marketplace add Cognigy/cognigy-mcp
+/plugin install cognigy@cognigy-mcp
+```
+
+On enable, Claude Code prompts for your **Cognigy API base URL** (default `https://api-trial.cognigy.ai`) and **API key** (Cognigy.AI → User Menu → My Profile → API Keys). The key is stored in your system keychain. Requires [Node.js 20+](https://nodejs.org).
+
+The first session downloads the server into the plugin's data directory, which takes a moment. If the Cognigy tools don't appear right away on that first launch, run `/mcp`, reconnect the `cognigy` server (or restart Claude Code) — later sessions connect instantly and refresh the server to the latest published version automatically.
+
 ### One-command setup (all MCP clients)
 
 Requires [Node.js 20+](https://nodejs.org).
