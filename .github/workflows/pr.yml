@@ -2,6 +2,8 @@ name: PR Checks
 
 on:
   pull_request:
+    # include `edited` so the PR-title lint re-runs when the title changes
+    types: [opened, edited, synchronize, reopened]
 
 jobs:
   verify:
@@ -15,7 +17,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -23,6 +25,13 @@ jobs:
 
       - name: Validate commit messages
         run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.sha }} --verbose
+
+      # PRs are squash-merged, so the PR title becomes the commit subject on main that
+      # semantic-release reads to decide the version bump. It must be a conventional commit.
+      - name: Validate PR title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$PR_TITLE" | npx commitlint --verbose
 
       - name: Run tests
         run: npm test

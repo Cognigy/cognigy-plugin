@@ -5,41 +5,37 @@ on:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      bump:
-        description: "Version bump type (ignored when exact version is set)"
-        required: false
-        default: patch
-        type: choice
-        options:
-          - patch
-          - minor
-          - major
-      version:
-        description: "Exact version to publish, e.g. 1.0.1 or v1.0.1"
-        required: false
-        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
 
 jobs:
-  publish:
+  release:
+    name: Release
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'release:') }}
-    permissions:
-      contents: write
-      id-token: write
-      pull-requests: read
     env:
       HUSKY: 0
     steps:
+      - name: Generate App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.BYPASS_BRANCH_PROTECTION_APP_ID }}
+          private-key: ${{ secrets.BYPASS_BRANCH_PROTECTION_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
@@ -48,221 +44,9 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Detect bump type from PR labels (push trigger)
-        if: github.event_name == 'push'
-        id: pr
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const commits = await github.rest.repos.listPullRequestsAssociatedWithCommit({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              commit_sha: context.sha,
-            });
-
-            const pr = commits.data.find(p => p.merged_at);
-            if (!pr) {
-              core.setOutput('bump', 'patch');
-              core.info('No merged PR found, defaulting to patch');
-              return;
-            }
-
-            const labels = pr.labels.map(l => l.name.toLowerCase());
-            core.info(`PR #${pr.number} labels: ${labels.join(', ')}`);
-
-            if (labels.includes('major')) {
-              core.setOutput('bump', 'major');
-            } else if (labels.includes('minor')) {
-              core.setOutput('bump', 'minor');
-            } else {
-              core.setOutput('bump', 'patch');
-              core.info('No major/minor label found, defaulting to patch');
-            }
-
-      - name: Resolve version request
-        id: version_request
+      - name: Release
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_BUMP: ${{ inputs.bump }}
-          INPUT_VERSION: ${{ inputs.version }}
-          PR_BUMP: ${{ steps.pr.outputs.bump }}
-        run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_VERSION" ]; then
-            VERSION="${INPUT_VERSION#v}"
-            VERSION="${VERSION#V}"
-            node -e '
-              const version = process.argv[1];
-              const pattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
-              if (!pattern.test(version)) {
-                console.error(`Invalid version: ${version}`);
-                process.exit(1);
-              }
-            ' "$VERSION"
-            echo "value=$VERSION" >> "$GITHUB_OUTPUT"
-            echo "label=explicit version $VERSION" >> "$GITHUB_OUTPUT"
-          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            BUMP="${INPUT_BUMP:-patch}"
-            echo "value=$BUMP" >> "$GITHUB_OUTPUT"
-            echo "label=$BUMP" >> "$GITHUB_OUTPUT"
-          else
-            BUMP="${PR_BUMP:-patch}"
-            echo "value=$BUMP" >> "$GITHUB_OUTPUT"
-            echo "label=$BUMP" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Bump version
-        if: steps.version_request.outputs.value != ''
-        id: version
-        run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          OLD_VERSION=$(node -p "require('./package.json').version")
-          npm version "${{ steps.version_request.outputs.value }}" --no-git-tag-version
-          NEW_VERSION=$(node -p "require('./package.json').version")
-          # Sync version into manifest.json
-          node -e "
-            const fs = require('fs');
-            const m = JSON.parse(fs.readFileSync('manifest.json','utf8'));
-            m.version = '$NEW_VERSION';
-            fs.writeFileSync('manifest.json', JSON.stringify(m, null, 2) + '\n');
-          "
-          echo "old=$OLD_VERSION" >> "$GITHUB_OUTPUT"
-          echo "new=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Validate npm version availability
-        if: steps.version_request.outputs.value != ''
-        run: |
-          PACKAGE_NAME=$(node -p "require('./package.json').name")
-          PACKAGE_VERSION="${{ steps.version.outputs.new }}"
-
-          if ! TIME_JSON=$(npm view "$PACKAGE_NAME" time --json 2> npm-view.err); then
-            if grep -q "E404" npm-view.err; then
-              TIME_JSON="{}"
-            else
-              cat npm-view.err
-              echo "::error::Could not read npm metadata for $PACKAGE_NAME"
-              exit 1
-            fi
-          fi
-
-          VERSION_TIME=$(TIME_JSON="$TIME_JSON" PACKAGE_VERSION="$PACKAGE_VERSION" node -e '
-            const time = JSON.parse(process.env.TIME_JSON || "{}");
-            process.stdout.write(time[process.env.PACKAGE_VERSION] || "");
-          ')
-
-          if [ -n "$VERSION_TIME" ]; then
-            echo "::error::$PACKAGE_NAME@$PACKAGE_VERSION has a registry time entry ($VERSION_TIME) and cannot be published. Pick a different version."
-            exit 1
-          fi
-
-          echo "$PACKAGE_NAME@$PACKAGE_VERSION has no npm registry time entry."
-
-      - name: Generate changelog
-        if: steps.version_request.outputs.value != ''
-        run: npx conventional-changelog -p conventionalcommits -i CHANGELOG.md -s -r 0
-
-      - name: Publish to npm
-        if: steps.version_request.outputs.value != ''
-        run: npm publish --access public
-        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Build MCPB bundle
-        if: steps.version_request.outputs.value != ''
-        run: npx @anthropic-ai/mcpb pack
-
-      - name: Commit version bump and tag
-        if: steps.version_request.outputs.value != ''
-        run: |
-          git add package.json manifest.json CHANGELOG.md
-          git commit -m "release: v${{ steps.version.outputs.new }}"
-          git tag "v${{ steps.version.outputs.new }}"
-          git push origin main --tags
-
-      - name: Extract changelog for this version
-        if: steps.version_request.outputs.value != ''
-        id: changelog
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
-            const version = '${{ steps.version.outputs.new }}';
-
-            // Extract the section for this version (between two ## headings)
-            const versionEscaped = version.replace(/\./g, '\\.');
-            const regex = new RegExp(`## \\[?${versionEscaped}\\]?[^\\n]*\\n([\\s\\S]*?)(?=\\n## |$)`);
-            const match = changelog.match(regex);
-            const section = match ? match[1].trim() : '';
-
-            core.setOutput('body', section);
-
-      - name: Create GitHub release with MCPB bundle
-        if: steps.version_request.outputs.value != ''
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-
-            const tag = `v${{ steps.version.outputs.new }}`;
-            const version = `${{ steps.version.outputs.new }}`;
-            const changelogBody = `${{ steps.changelog.outputs.body }}`;
-
-            const release = await github.rest.repos.createRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag_name: tag,
-              name: tag,
-              body: [
-                `## @cognigy/mcp-server@${version}`,
-                '',
-                changelogBody,
-                '',
-                '---',
-                '',
-                '### Install',
-                '',
-                '**One-command setup** (requires [Node.js 20+](https://nodejs.org)):',
-                '',
-                '| MCP Client | Command |',
-                '|---|---|',
-                '| Cursor | `npx @cognigy/mcp-server init --client cursor` |',
-                '| Claude Desktop | `npx @cognigy/mcp-server init --client claude` |',
-                '| Claude Code | `npx @cognigy/mcp-server init --client claude-code` |',
-                '| VS Code (Copilot) | `npx @cognigy/mcp-server init --client vscode` |',
-                '',
-                '**Claude Desktop (one-click):** Download the `.mcpb` file below and double-click it. No Node.js required.',
-              ].join('\n'),
-              draft: false,
-              prerelease: version.startsWith('0.'),
-            });
-
-            const mcpbFiles = fs.readdirSync('.').filter(f => f.endsWith('.mcpb'));
-            for (const file of mcpbFiles) {
-              const data = fs.readFileSync(file);
-              await github.rest.repos.uploadReleaseAsset({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: release.data.id,
-                name: file,
-                data: data,
-              });
-              core.info(`Uploaded ${file} to release ${tag}`);
-            }
-
-      - name: Summary
-        run: |
-          {
-            if [ -n "${{ steps.version_request.outputs.value }}" ]; then
-              echo "### Published"
-              echo ""
-              echo "- Version request: \`${{ steps.version_request.outputs.label }}\` (${{ steps.version.outputs.old }} → ${{ steps.version.outputs.new }})"
-              echo "- npm: [\`@cognigy/mcp-server@${{ steps.version.outputs.new }}\`](https://www.npmjs.com/package/@cognigy/mcp-server)"
-              echo "- GitHub release: \`v${{ steps.version.outputs.new }}\` (with \`.mcpb\` bundle)"
-              if grep -q 'npm publish.*--provenance' .github/workflows/release.yml; then
-                echo "- Provenance: Signed"
-              else
-                echo "- Provenance: Not signed"
-              fi
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npx semantic-release

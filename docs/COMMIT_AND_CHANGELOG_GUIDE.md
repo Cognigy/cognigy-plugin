@@ -1,117 +1,74 @@
-# Commit & Changelog Workflow Guide
+# Commit & Release Workflow Guide
 
-This project uses **Conventional Commits** to auto-generate a semantic changelog on every release.
+This project releases automatically with [**semantic-release**](https://semantic-release.gitbook.io/).
+The version bump, `CHANGELOG.md`, git tag, npm publish, and GitHub release are all derived from
+[Conventional Commit](https://www.conventionalcommits.org/) messages that land on `main`. There
+are **no manual version bumps and no hand-edited changelog**.
+
+For the short contributor-facing rules, see [`CONTRIBUTING.md`](./CONTRIBUTING.md). This guide is
+the deeper "how it actually works" reference.
 
 ---
 
-## Overview: How It Works
+## Overview: how it works
 
 ```
 Developer writes code
     ↓
-Commits using conventional format  ←  enforced by commitlint in PR checks
+Commits using conventional format   ← commitlint enforces this in PR checks
     ↓
-Opens PR → PR checks run (tests, prettier, commitlint)
+Opens PR → PR checks run (tests, prettier, commitlint on commits + PR title)
     ↓
-PR merged to main
+PR is squash-merged to main → the PR title becomes the single commit subject
     ↓
-Release workflow triggers automatically:
-  1. Detects bump type from PR labels (major/minor/patch)
-  2. Bumps version in package.json + manifest.json
-  3. Auto-generates CHANGELOG.md from commits since last tag
-  4. Publishes to npm
-  5. Commits changelog + version bump
-  6. Creates GitHub release (changelog included in release body)
+release.yml runs semantic-release on the push to main:
+  1. Analyzes commits since the last tag → decides major / minor / patch (or no release)
+  2. Generates release notes + updates CHANGELOG.md
+  3. Bumps version in package.json, syncs manifest.json, builds the .mcpb bundle
+  4. Commits "chore(release): x.y.z [skip ci]" and the tag, pushing to main
+     (as the "Cognigy bypass branch protection" App, which bypasses branch protection)
+  5. Publishes to npm
+  6. Creates the GitHub release (notes + .mcpb asset + link to the README install section)
 ```
+
+Because PRs are **squash-merged**, the **PR title is the commit subject** semantic-release reads.
+A PR title must therefore be a valid Conventional Commit — CI lints it and blocks merge otherwise.
+
+`[skip ci]` on the release commit stops it from re-triggering the workflow.
 
 ---
 
-## What Changes (Implementation Plan)
-
-### 1. New dev dependencies
-
-**`@commitlint/cli`**
-The CLI that actually runs commit message validation. It reads each commit message and checks it against a ruleset. Without this, there is no enforcement — developers could write any commit message and the changelog generator would either skip it or produce garbage entries.
-
-**`@commitlint/config-conventional`**
-The ruleset that defines _what_ a valid conventional commit looks like (allowed types like `feat`, `fix`, `chore`, required format `type(scope): description`, etc.). commitlint is just the engine — this package is the rules it enforces. Without it, you'd have to write every rule by hand.
-
-**`conventional-changelog-cli`**
-The CLI that reads your git history (commits + tags) and generates a formatted `CHANGELOG.md`. It groups commits by type, links to commits/PRs, and organizes them under version headings. This is the tool that actually produces the changelog file in the release workflow.
-
-**`conventional-changelog-conventionalcommits`**
-The preset that tells the changelog generator _how_ to parse commits and _which_ types map to which changelog sections (e.g. `feat` → "Features", `fix` → "Bug Fixes", `chore` → hidden). Without this preset, the generator wouldn't know how to interpret conventional commit messages.
-
-### 2. New file: `commitlint.config.js`
-
-A one-liner config that extends `@commitlint/config-conventional`.
-
-### 3. Updated workflow: `.github/workflows/pr.yml`
-
-Add a **commitlint step** that validates all commit messages in the PR. This runs alongside the existing tests and prettier checks.
-
-```yaml
-- name: Validate commit messages
-  run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.sha }} --verbose
-```
-
-### 4. Updated workflow: `.github/workflows/release.yml`
-
-Add a **changelog generation step** between version bump and npm publish:
-
-```yaml
-- name: Generate changelog
-  run: npx conventional-changelog -p conventionalcommits -i CHANGELOG.md -s -r 0
-
-- name: Commit version bump and changelog
-  run: |
-    git add package.json manifest.json CHANGELOG.md
-    git commit -m "release: v$NEW_VERSION"
-    git tag "v$NEW_VERSION"
-    git push origin main --tags
-```
-
-Also update the GitHub release step to include the changelog section for the new version in the release body (instead of just install instructions).
-
-### 5. Existing `CHANGELOG.md` → replaced
-
-The current manually-maintained CHANGELOG.md will be replaced by the auto-generated one on the first release after this change. Historical entries from before conventional-changelog adoption won't appear unless we seed them (optional).
-
----
-
-## Commit Message Format
-
-Every commit **must** follow [Conventional Commits](https://www.conventionalcommits.org/):
+## Commit message format
 
 ```
 <type>(<optional scope>): <description>
 
-[optional body]
+[optional body — wrap lines at 200 chars]
 
 [optional footer(s)]
 ```
 
-### Types
+### Types, version bump, and changelog section
 
-| Type       | When to use                              | Appears in changelog? |
-| ---------- | ---------------------------------------- | --------------------- |
-| `feat`     | New feature or capability                | Yes — **Features**    |
-| `fix`      | Bug fix                                  | Yes — **Bug Fixes**   |
-| `perf`     | Performance improvement                  | Yes — **Performance** |
-| `revert`   | Reverts a previous commit                | Yes — **Reverts**     |
-| `docs`     | Documentation only                       | No                    |
-| `style`    | Formatting, whitespace (no logic change) | No                    |
-| `refactor` | Code restructuring (no feature/fix)      | No                    |
-| `test`     | Adding or updating tests                 | No                    |
-| `build`    | Build system or dependency changes       | No                    |
-| `ci`       | CI/CD pipeline changes                   | No                    |
-| `chore`    | Maintenance tasks                        | No                    |
+| Type       | When to use                              | Version bump | Changelog section        |
+| ---------- | ---------------------------------------- | ------------ | ------------------------ |
+| `feat`     | New feature or capability                | minor        | Features                 |
+| `fix`      | Bug fix                                  | patch        | Bug Fixes                |
+| `perf`     | Performance improvement                  | patch        | Performance Improvements |
+| `revert`   | Reverts a previous commit                | patch        | Reverts                  |
+| `docs`     | Documentation only                       | patch        | Documentation            |
+| `refactor` | Code restructuring (no feature/fix)      | patch        | Code Refactoring         |
+| `style`    | Formatting, whitespace (no logic change) | none         | hidden                   |
+| `test`     | Adding or updating tests                 | none         | hidden                   |
+| `build`    | Build system or dependency changes       | none         | hidden                   |
+| `ci`       | CI/CD pipeline changes                   | none         | hidden                   |
+| `chore`    | Maintenance tasks                        | none         | hidden                   |
 
-> Types marked "No" are valid commits but excluded from the changelog to keep it user-facing.
+The version bump and section mapping are configured in [`.releaserc.json`](../.releaserc.json)
+(`@semantic-release/commit-analyzer` `releaseRules` and `@semantic-release/release-notes-generator`
+`presetConfig`). A PR whose type resolves to "none" merges without cutting a release.
 
 ### Scopes (optional)
-
-Clarify what area is affected:
 
 ```
 feat(tools): add manage_packages tool
@@ -119,9 +76,10 @@ fix(llm): handle timeout on connection test
 docs(readme): update install instructions
 ```
 
-### Breaking Changes
+### Breaking changes
 
-Add `!` after type/scope, or include a `BREAKING CHANGE:` footer:
+Add `!` after the type/scope, or include a `BREAKING CHANGE:` footer. Either bumps a **major**
+version regardless of type:
 
 ```
 feat(tools)!: rename manage_webchat to configure_webchat
@@ -129,35 +87,21 @@ feat(tools)!: rename manage_webchat to configure_webchat
 BREAKING CHANGE: manage_webchat has been renamed to configure_webchat.
 ```
 
-Breaking changes always appear prominently in the changelog regardless of type.
-
----
-
-## PR Labels for Version Bumps
-
-The release workflow determines the semver bump from PR labels (this already exists today):
-
-| Label    | Version bump | When to use                         |
-| -------- | ------------ | ----------------------------------- |
-| `major`  | `X.0.0`      | Breaking changes                    |
-| `minor`  | `0.X.0`      | New features (backwards-compatible) |
-| _(none)_ | `0.0.X`      | Bug fixes, docs, chores (default)   |
-
 ---
 
 ## Examples
 
 ```bash
-# Feature
+# Feature → minor
 git commit -m "feat: add knowledge store bulk import"
 
 # Feature with scope
 git commit -m "feat(tools): add manage_packages tool for package upload and import"
 
-# Bug fix
+# Bug fix → patch
 git commit -m "fix(llm): prevent crash when provider metadata is missing"
 
-# Chore (won't appear in changelog)
+# Chore → no release, hidden from changelog
 git commit -m "chore: update dev dependencies"
 
 # Multi-line with body
@@ -169,46 +113,49 @@ before styles were ready. Added a loading gate to prevent FOUC."
 
 ---
 
-## Generated Changelog Example
-
-After a release, `CHANGELOG.md` will look like:
+## Generated changelog example
 
 ```markdown
-## [0.3.0](https://github.com/Cognigy/cognigy-mcp/compare/v0.2.12...v0.3.0) (2026-04-01)
+## [1.1.0](https://github.com/Cognigy/cognigy-mcp/compare/v1.0.3...v1.1.0) (2026-06-09)
 
 ### Features
 
 - **tools:** add manage_packages tool for package upload and import (15a5593)
-- add knowledge store bulk import (abc1234)
 
 ### Bug Fixes
 
 - **llm:** prevent crash when provider metadata is missing (def5678)
-
-## [0.2.12](https://github.com/Cognigy/cognigy-mcp/compare/v0.2.11...v0.2.12) ...
 ```
 
-Each entry links to the commit and groups changes by type. The GitHub release body will contain the same content for the released version.
+Each entry links to the commit. The GitHub release body carries the same notes plus a link to
+the README install section.
 
 ---
 
 ## Enforcement
 
-- **CI (required):** commitlint runs on every PR and blocks merge if any commit message is non-conforming.
-- **Local (optional):** Developers can check locally with `npx commitlint --last` or `echo "feat: my change" | npx commitlint`.
+- **Commits (CI):** commitlint runs on every PR and fails if any commit message is non-conforming.
+- **PR title (CI):** commitlint also lints the PR title (re-running when the title is edited),
+  because the squash subject is what drives the release.
+- **Local preview:** `npx semantic-release --dry-run` (with `GITHUB_TOKEN` set) shows the next
+  computed version and notes without publishing.
 
 ---
 
 ## FAQ
 
 **Q: I have many small WIP commits. Do they all need to follow the format?**
-A: Yes — commitlint checks all commits in the PR. Options: (a) squash WIP commits before review, (b) use squash-merge on GitHub so only the merge commit matters, or (c) use `--no-verify` locally for WIP and rewrite before pushing.
+A: commitlint checks every commit in the PR, but since merges are squashed, the **PR title** is
+what ends up on `main` and drives the release. Keep commits tidy, but the title is what matters.
 
-**Q: What happens to the old manually-written changelog entries?**
-A: The first auto-generated run uses `-r 0` (regenerate all) which builds from git tags. Old manual entries not backed by conventional commits won't appear. We can optionally seed the historical section once.
+**Q: Can I manually edit `CHANGELOG.md` or the version in `package.json`?**
+A: No — both are managed by semantic-release and would be overwritten. To correct a released
+entry, land a follow-up commit (e.g. a `revert` or a `docs` fix); the history is derived from
+commit messages.
 
-**Q: Can I preview what will be in the next changelog?**
-A: Run `npx conventional-changelog -p conventionalcommits -u` locally to see unreleased changes.
+**Q: How do I make a release not happen for a docs/tooling PR?**
+A: Use a `chore`, `ci`, `build`, `test`, or `style` type — these produce no release.
 
-**Q: Can I manually edit the changelog?**
-A: Edits will be overwritten on the next release. If an entry is wrong, fix it via a revert + re-commit with the correct message.
+**Q: Why does pushing the release commit to `main` work when direct pushes are blocked?**
+A: `release.yml` mints a token for the `Cognigy bypass branch protection` GitHub App, which is on
+the `Main branch protection` ruleset's bypass list. The default `GITHUB_TOKEN` cannot bypass it.
