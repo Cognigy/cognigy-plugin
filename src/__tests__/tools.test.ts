@@ -2920,6 +2920,89 @@ describe("audit_voice_agent", () => {
     expect(patchCall![1].config.temperature).toBe(0.7);
   });
 
+  it("accumulates multiple fixes on the same node across patches", async () => {
+    // A Set Session Config node with several failing checks — all patchNode
+    // fixes target the SAME node. Each successive patch must build on the prior
+    // merge, not revert it to the original config.
+    const badSsc = {
+      _id: ID.node,
+      type: "setSessionConfig",
+      isEntryPoint: false,
+      config: {
+        bargeInOnSpeech: true,
+        bargeInOnDtmf: true,
+        asrEnabled: true,
+        flowNoInputFail: true,
+      },
+    };
+    setupFlow({ nodes: [badSsc, goodAgent], firstNodeId: ID.node });
+    api.patch.mockResolvedValue({});
+
+    await h.handleToolCall("audit_voice_agent", {
+      flowId: ID.flow,
+      apply: true,
+    });
+
+    const sscPatches = api.patch.mock.calls.filter((c: any[]) =>
+      c[0].endsWith(`/chart/nodes/${ID.node}`),
+    );
+    expect(sscPatches.length).toBeGreaterThan(1);
+    // The final patch carries every earlier fix, not just its own field.
+    const finalConfig = sscPatches[sscPatches.length - 1][1].config;
+    expect(finalConfig.bargeInOnSpeech).toBe(false);
+    expect(finalConfig.asrEnabled).toBe(false);
+    expect(finalConfig.flowNoInputFail).toBe(false);
+  });
+
+  it("re-fetches a node's config before patching when enrichment missed it", async () => {
+    // If enrichment transiently fails, the cached snapshot has no config. The
+    // apply path must re-fetch the full node before patching rather than
+    // PATCHing a partial config that clobbers existing fields.
+    const indexUrl = `/v2.0/flows/${ID.flow}/chart/nodes`;
+    const perNodeUrl = `${indexUrl}/${ID.entry}`;
+    let perNodeCalls = 0;
+    api.get.mockImplementation(async (url: string) => {
+      if (url === `/new/v2.0/flows/${ID.flow}/chart`) {
+        return {
+          nodes: [
+            { _id: START_ID, type: "start" },
+            { _id: ID.entry, type: "aiAgentJob" },
+          ],
+          relations: [{ node: START_ID, next: [ID.entry] }],
+        };
+      }
+      if (url === perNodeUrl) {
+        perNodeCalls += 1;
+        if (perNodeCalls === 1) throw new Error("transient enrichment failure");
+        return {
+          _id: ID.entry,
+          type: "aiAgentJob",
+          config: { temperature: 0.7, storeLocation: "input" },
+        };
+      }
+      if (url === indexUrl) {
+        return { items: [{ _id: ID.entry, type: "aiAgentJob" }] };
+      }
+      return {};
+    });
+    api.patch.mockResolvedValue({});
+
+    await h.handleToolCall("audit_voice_agent", {
+      flowId: ID.flow,
+      apply: true,
+      only: ["agent.stream-output"],
+    });
+
+    // First per-node GET (enrichment) threw; the apply path re-fetched.
+    expect(perNodeCalls).toBeGreaterThanOrEqual(2);
+    const patchCall = api.patch.mock.calls.find((c: any[]) =>
+      c[0].endsWith(`/chart/nodes/${ID.entry}`),
+    );
+    expect(patchCall![1].config.storeLocation).toBe("stream");
+    // The unrelated field from the re-fetched config is preserved.
+    expect(patchCall![1].config.temperature).toBe(0.7);
+  });
+
   it("only: limits applied fixes to the listed check ids", async () => {
     setupFlow({ nodes: [badAgent], firstNodeId: ID.entry });
     api.patch.mockResolvedValue({});

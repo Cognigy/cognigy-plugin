@@ -4520,8 +4520,13 @@ export class ToolHandlers {
     }
 
     // Apply the auto-fixable fixes.
-    const nodeConfigById = new Map<string, Record<string, any>>(
-      nodes.map((n: any) => [voiceNodeId(n), n.config ?? {}]),
+    //
+    // The cache maps nodeId → its current config snapshot. `undefined` means the
+    // config was never captured (enrichment missed/failed) — distinct from an
+    // empty config — so the apply path re-fetches before patching rather than
+    // PATCHing a partial config that would clobber unrelated fields.
+    const nodeConfigById = new Map<string, Record<string, any> | undefined>(
+      nodes.map((n: any) => [voiceNodeId(n), n.config]),
     );
     const toApply = checks.filter(
       (c) => c.autoFixable && c.fix && (!only || only.includes(c.id)),
@@ -4532,12 +4537,27 @@ export class ToolHandlers {
       const fix = c.fix!;
       try {
         if (fix.kind === "patchNode") {
-          const existing = nodeConfigById.get(fix.nodeId) ?? {};
+          // Resolve the current config. If it was never captured, re-fetch the
+          // full node so the merge below preserves existing fields.
+          let existing = nodeConfigById.get(fix.nodeId);
+          if (existing === undefined) {
+            try {
+              const full: any = await this.apiClient.get(
+                `/v2.0/flows/${flowId}/chart/nodes/${fix.nodeId}`,
+              );
+              existing = full?.config ?? {};
+            } catch {
+              existing = {};
+            }
+          }
           const merged = { ...existing, ...fix.config };
           await this.apiClient.patch(
             `/v2.0/flows/${flowId}/chart/nodes/${fix.nodeId}`,
             { config: merged },
           );
+          // Update the snapshot so a later fix on the SAME node builds on this
+          // merge instead of reverting it to the original config.
+          nodeConfigById.set(fix.nodeId, merged);
           appliedFixes.push({
             id: c.id,
             applied: true,
