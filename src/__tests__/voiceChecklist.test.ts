@@ -15,10 +15,14 @@ function byId(checks: VoiceCheck[], id: string): VoiceCheck {
   return c;
 }
 
+// isEntryPoint reflects the REAL REST projection: it is a per-descriptor flag,
+// so the aiAgentJob descriptor reports `true` while setSessionConfig reports
+// `false` — the opposite of run order. The evaluator must ignore it and rely on
+// `firstNodeId` (the chart `next` chain) instead.
 const compliantAgent = {
   _id: AGENT_ID,
   type: "aiAgentJob",
-  isEntryPoint: false,
+  isEntryPoint: true,
   config: {
     storeLocation: "stream",
     errorHandling: "continue",
@@ -30,7 +34,7 @@ const compliantAgent = {
 const compliantSsc = {
   _id: SSC_ID,
   type: "setSessionConfig",
-  isEntryPoint: true,
+  isEntryPoint: false,
   config: { ...RECOMMENDED_SESSION_CONFIG, sttHints: ["Acme", "widget"] },
 };
 
@@ -52,25 +56,36 @@ describe("evaluateChecks — Set Session Config presence", () => {
     expect(byId(checks, "vg.user-input-timeout").status).toBe("na");
   });
 
-  it("passes when the Set Session Config node is the entry point", () => {
-    const checks = evaluateChecks({ nodes: [compliantSsc, compliantAgent] });
+  it("passes when the Set Session Config node runs first (firstNodeId)", () => {
+    const checks = evaluateChecks({
+      nodes: [compliantSsc, compliantAgent],
+      firstNodeId: SSC_ID,
+    });
     expect(byId(checks, "vg.session-config-first").status).toBe("pass");
   });
 
-  it("warns when a Set Session Config node exists but is not the entry point", () => {
+  it("warns when a Set Session Config node exists but is not first", () => {
+    // Agent runs first per the next chain, even though SSC reports the same
+    // descriptor flags — ordering is decided by firstNodeId, not isEntryPoint.
     const checks = evaluateChecks({
-      nodes: [
-        { ...compliantSsc, isEntryPoint: false },
-        { ...compliantAgent, isEntryPoint: true },
-      ],
+      nodes: [compliantSsc, compliantAgent],
+      firstNodeId: AGENT_ID,
     });
+    expect(byId(checks, "vg.session-config-first").status).toBe("warn");
+  });
+
+  it("warns when flow ordering cannot be determined (no firstNodeId)", () => {
+    const checks = evaluateChecks({ nodes: [compliantSsc, compliantAgent] });
     expect(byId(checks, "vg.session-config-first").status).toBe("warn");
   });
 });
 
 describe("evaluateChecks — fully compliant flow", () => {
   it("reports no failures", () => {
-    const checks = evaluateChecks({ nodes: [compliantSsc, compliantAgent] });
+    const checks = evaluateChecks({
+      nodes: [compliantSsc, compliantAgent],
+      firstNodeId: SSC_ID,
+    });
     const failures = checks.filter((c) => c.status === "fail");
     expect(failures).toEqual([]);
   });
@@ -80,7 +95,7 @@ describe("evaluateChecks — failing config produces fixes", () => {
   const badSsc = {
     _id: SSC_ID,
     type: "setSessionConfig",
-    isEntryPoint: true,
+    isEntryPoint: false,
     config: {
       bargeInOnSpeech: true,
       bargeInOnDtmf: true,
@@ -94,7 +109,7 @@ describe("evaluateChecks — failing config produces fixes", () => {
   const badAgent = {
     _id: AGENT_ID,
     type: "aiAgentJob",
-    isEntryPoint: false,
+    isEntryPoint: true,
     config: {
       storeLocation: "input",
       errorHandling: "stop",
@@ -138,7 +153,7 @@ describe("evaluateChecks — advisory checks", () => {
     const ssc = {
       _id: SSC_ID,
       type: "setSessionConfig",
-      isEntryPoint: true,
+      isEntryPoint: false,
       config: { ...RECOMMENDED_SESSION_CONFIG },
     };
     const c = byId(
@@ -169,7 +184,7 @@ describe("evaluateChecks — advisory checks", () => {
     const ssc = {
       _id: SSC_ID,
       type: "setSessionConfig",
-      isEntryPoint: true,
+      isEntryPoint: false,
       config: {
         ...RECOMMENDED_SESSION_CONFIG,
         silenceOverlayAction: "addTrack",

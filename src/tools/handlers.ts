@@ -1537,8 +1537,12 @@ export class ToolHandlers {
           // changing job fields and when only the agent name/avatar changed —
           // to force the backend to regenerate the proper avatar preview.
           if (needsJobPatch || needsPreviewPatch) {
+            // The avatar preview is recomputed server-side from `config.aiAgent`;
+            // omitting it wipes the avatar. The `/chart/nodes` index may not
+            // carry `config`, so prefer the authoritative agent reference from
+            // the resolved agent record, falling back to the node's config.
             const nodeConfigPatch: Record<string, any> = {
-              aiAgent: jobNode.config?.aiAgent,
+              aiAgent: resolved.agent?.referenceId ?? jobNode.config?.aiAgent,
             };
             if (needsJobPatch) {
               if (jobConfig!.llmProviderReferenceId !== undefined)
@@ -4373,13 +4377,72 @@ export class ToolHandlers {
       flowId = resolved.flowId;
     }
 
-    const fetchNodes = async (): Promise<any[]> => {
+    // The `/chart/nodes` index returns NO `config` and NO ordering — only
+    // id/type/label/preview/isEntryPoint/parentId. The checklist reads
+    // `node.config.*` and the auto-fix PATCH merges against existing config, so
+    // we must (a) enrich the inspected nodes with their per-node `config` and
+    // (b) derive the true first node from the chart `next` chain. Using the bare
+    // index would yield false failures and let the fix PATCH clobber config.
+    const CONFIG_RELEVANT_TYPES = new Set(["setSessionConfig", "aiAgentJob"]);
+
+    const fetchNodeIndex = async (): Promise<any[]> => {
       const res: any = await this.apiClient.get(
         `/v2.0/flows/${flowId}/chart/nodes`,
         { params: { limit: 200 } },
       );
       const items = res.items ?? res;
       return Array.isArray(items) ? items : [];
+    };
+
+    // Full `config` only comes from the per-node read. Enrich the node types the
+    // checklist actually inspects; leave the rest as cheap index entries.
+    const enrichConfig = async (index: any[]): Promise<any[]> =>
+      Promise.all(
+        index.map(async (n: any) => {
+          if (!CONFIG_RELEVANT_TYPES.has(n?.type)) return n;
+          try {
+            const full: any = await this.apiClient.get(
+              `/v2.0/flows/${flowId}/chart/nodes/${voiceNodeId(n)}`,
+            );
+            return { ...n, config: full?.config ?? n.config ?? {} };
+          } catch {
+            return n;
+          }
+        }),
+      );
+
+    // The true first node is the one the `start` node points at in the chart
+    // `next` chain — NOT whatever reports isEntryPoint. Returns undefined if it
+    // cannot be derived (the evaluator then warns instead of guessing).
+    const fetchFirstNodeId = async (): Promise<string | undefined> => {
+      try {
+        const chart: any = await this.apiClient.get(
+          `/new/v2.0/flows/${flowId}/chart`,
+        );
+        const rels = Array.isArray(chart?.relations) ? chart.relations : [];
+        const chartNodes = Array.isArray(chart?.nodes) ? chart.nodes : [];
+        const startNode = chartNodes.find((n: any) => n?.type === "start");
+        const startId = startNode ? voiceNodeId(startNode) : undefined;
+        if (!startId) return undefined;
+        const startRel = rels.find((r: any) => r?.node === startId);
+        const next = startRel?.next;
+        const firstRef = Array.isArray(next) ? next[0] : next;
+        if (!firstRef) return undefined;
+        return typeof firstRef === "string" ? firstRef : voiceNodeId(firstRef);
+      } catch {
+        return undefined;
+      }
+    };
+
+    const loadFlowState = async (): Promise<{
+      nodes: any[];
+      firstNodeId: string | undefined;
+    }> => {
+      const [nodes, firstNodeId] = await Promise.all([
+        fetchNodeIndex().then(enrichConfig),
+        fetchFirstNodeId(),
+      ]);
+      return { nodes, firstNodeId };
     };
 
     // Tri-state: undefined = not requested, null = fetch failed, object = resolved.
@@ -4392,7 +4455,7 @@ export class ToolHandlers {
       }
     };
 
-    let nodes = await fetchNodes();
+    let { nodes, firstNodeId } = await loadFlowState();
     let endpoint = await fetchEndpoint();
 
     // Best-effort LLM resolution for the fallback check (advisory only).
@@ -4443,7 +4506,7 @@ export class ToolHandlers {
       return out;
     };
 
-    const checks = evaluateChecks({ nodes, endpoint, llm });
+    const checks = evaluateChecks({ nodes, firstNodeId, endpoint, llm });
 
     if (!apply) {
       return {
@@ -4509,10 +4572,11 @@ export class ToolHandlers {
       }
     }
 
-    // Re-audit so the response reflects the post-fix state.
-    nodes = await fetchNodes();
+    // Re-audit so the response reflects the post-fix state. Re-derive ordering
+    // too — a created Set Session Config node changes the first node.
+    ({ nodes, firstNodeId } = await loadFlowState());
     endpoint = await fetchEndpoint();
-    const postChecks = evaluateChecks({ nodes, endpoint, llm });
+    const postChecks = evaluateChecks({ nodes, firstNodeId, endpoint, llm });
 
     return {
       flowId,

@@ -43,8 +43,20 @@ export interface VoiceCheck {
 }
 
 export interface AuditContext {
-  /** Raw chart nodes (each with type, config, isEntryPoint, _id/id). */
+  /**
+   * Chart nodes, each enriched by the handler with its full `config` via the
+   * per-node read (the `/chart/nodes` index carries NO config). Shape per node:
+   * `{ type, config, _id/id, ... }`.
+   */
   nodes: any[];
+  /**
+   * Id of the flow's true first node — the node the `start` node points at in
+   * the chart `next` chain, resolved by the handler. `isEntryPoint` is a
+   * per-descriptor flag (every `aiAgentJob` reports `true`) and MUST NOT be used
+   * for ordering, so the evaluator relies on this instead. `undefined` when the
+   * handler could not derive ordering.
+   */
+  firstNodeId?: string;
   /**
    * Endpoint resource. Tri-state: `undefined` = not requested (no endpointId),
    * `null` = requested but the fetch failed, object = resolved.
@@ -120,14 +132,22 @@ export function evaluateChecks(ctx: AuditContext): VoiceCheck[] {
   const sscConfig: Record<string, any> = ssc?.config ?? {};
   const agent = findByType(nodes, AI_AGENT_JOB_TYPE);
   const agentConfig: Record<string, any> = agent?.config ?? {};
-  const entry = nodes.find((n) => n?.isEntryPoint);
+
+  // Ordering comes from the chart `next` chain via `ctx.firstNodeId`, NOT from
+  // `isEntryPoint` (a per-descriptor flag — every aiAgentJob reports `true`).
+  const firstId = ctx.firstNodeId;
 
   // --- 3.1: first node is a Set Session Config node -----------------------
   {
     const id = "vg.session-config-first";
     const section = "3.1 Flow Configuration";
     const title = "First node is a Set Session Config node";
-    const target = agent ?? entry;
+    // A new Set Session Config node is prepended before the AI Agent node (or,
+    // lacking one, before the current first node).
+    const firstNode = firstId
+      ? nodes.find((n) => nodeId(n) === firstId)
+      : undefined;
+    const target = agent ?? firstNode;
     if (!ssc) {
       checks.push({
         id,
@@ -148,13 +168,24 @@ export function evaluateChecks(ctx: AuditContext): VoiceCheck[] {
             }
           : {}),
       });
-    } else if (entry && nodeId(entry) === nodeId(ssc)) {
+    } else if (!firstId) {
+      // Ordering unknown — do NOT guess from isEntryPoint.
+      checks.push({
+        id,
+        section,
+        title,
+        status: "warn",
+        detail:
+          "A Set Session Config node exists, but flow ordering could not be determined. Verify it runs before the AI Agent node.",
+        autoFixable: false,
+      });
+    } else if (nodeId(ssc) === firstId) {
       checks.push({
         id,
         section,
         title,
         status: "pass",
-        detail: "Set Session Config node is the flow entry point.",
+        detail: "Set Session Config node runs first in the flow.",
         autoFixable: false,
       });
     } else {
@@ -164,7 +195,7 @@ export function evaluateChecks(ctx: AuditContext): VoiceCheck[] {
         title,
         status: "warn",
         detail:
-          "A Set Session Config node exists but is not the flow entry point. Verify it runs before the AI Agent node.",
+          "A Set Session Config node exists but is not the first node in the flow. Verify it runs before the AI Agent node.",
         autoFixable: false,
       });
     }

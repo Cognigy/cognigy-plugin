@@ -2740,22 +2740,94 @@ describe("audit_voice_agent", () => {
     h = new ToolHandlers(api, "https://endpoint-trial.cognigy.ai");
   });
 
-  const badNodes = [
-    {
-      _id: ID.entry,
-      type: "aiAgentJob",
-      isEntryPoint: true,
-      config: {
-        storeLocation: "input",
-        errorHandling: "stop",
-        errorMessage: "",
-        debugLogLLMLatency: false,
-      },
+  const START_ID = "60d5ec49f1a2c8b1a4e0f0aa";
+
+  const badAgent = {
+    _id: ID.entry,
+    type: "aiAgentJob",
+    // Per-descriptor flag: aiAgentJob reports true regardless of run order.
+    isEntryPoint: true,
+    config: {
+      storeLocation: "input",
+      errorHandling: "stop",
+      errorMessage: "",
+      debugLogLLMLatency: false,
     },
-  ];
+  };
+
+  const goodSsc = {
+    _id: ID.node,
+    type: "setSessionConfig",
+    isEntryPoint: false,
+    config: {
+      bargeInOnSpeech: false,
+      bargeInOnDtmf: false,
+      asrEnabled: false,
+      userNoInputTimeoutEnable: true,
+      userNoInputTimeout: 6000,
+      userNoInputRetries: 5,
+      flowNoInputTimeoutEnable: true,
+      flowNoInputTimeout: 1500,
+      flowNoInputSpeech: "One moment please.",
+      flowNoInputFail: false,
+      sttHints: ["Acme"],
+    },
+  };
+
+  const goodAgent = {
+    _id: ID.entry,
+    type: "aiAgentJob",
+    isEntryPoint: true,
+    config: {
+      storeLocation: "stream",
+      errorHandling: "continue",
+      errorMessage: "Sorry.",
+      debugLogLLMLatency: true,
+    },
+  };
+
+  /**
+   * Wire api.get to the REAL chart projections so the handler must do the right
+   * reads:
+   *   - GET /chart/nodes (index): id/type/isEntryPoint only — NO config, NO order
+   *   - GET /chart/nodes/{id}:    full node incl. config (the only config source)
+   *   - GET /new/.../chart:       { nodes:[start,…], relations:[{node,next}] }
+   * `state` is mutable so the apply path can flip it to the post-fix flow before
+   * the handler re-audits.
+   */
+  function setupFlow(initial: { nodes: any[]; firstNodeId: string }) {
+    const state = { nodes: initial.nodes, firstNodeId: initial.firstNodeId };
+    const indexUrl = `/v2.0/flows/${ID.flow}/chart/nodes`;
+    const perNodePrefix = `${indexUrl}/`;
+    const chartUrl = `/new/v2.0/flows/${ID.flow}/chart`;
+    api.get.mockImplementation(async (url: string) => {
+      if (url === chartUrl) {
+        return {
+          nodes: [
+            { _id: START_ID, type: "start" },
+            ...state.nodes.map((n) => ({ _id: n._id, type: n.type })),
+          ],
+          relations: [{ node: START_ID, next: [state.firstNodeId] }],
+        };
+      }
+      if (url.startsWith(perNodePrefix)) {
+        const id = url.slice(perNodePrefix.length);
+        const n = state.nodes.find((x) => x._id === id);
+        return n ? { ...n } : {};
+      }
+      if (url === indexUrl) {
+        // Strip config + ordering to mirror the real lightweight index view.
+        return {
+          items: state.nodes.map(({ config, ...rest }) => rest),
+        };
+      }
+      return {};
+    });
+    return state;
+  }
 
   it("dry-run reports failures and proposes fixes without mutating", async () => {
-    api.get.mockResolvedValueOnce({ items: badNodes });
+    setupFlow({ nodes: [badAgent], firstNodeId: ID.entry });
 
     const result = await h.handleToolCall("audit_voice_agent", {
       flowId: ID.flow,
@@ -2772,42 +2844,36 @@ describe("audit_voice_agent", () => {
     expect(api.patch).not.toHaveBeenCalled();
   });
 
+  it("evaluates config read from the per-node GET, not the bare index", async () => {
+    // A fully compliant flow must report zero failures only if the handler reads
+    // each node's config via the per-node GET — the index carries none.
+    setupFlow({ nodes: [goodSsc, goodAgent], firstNodeId: ID.node });
+
+    const result = await h.handleToolCall("audit_voice_agent", {
+      flowId: ID.flow,
+    });
+
+    expect(result.summary.fail).toBe(0);
+    expect(
+      result.checks.find((c: any) => c.id === "vg.session-config-first").status,
+    ).toBe("pass");
+    // Proof it fetched full config per node rather than trusting the index.
+    expect(api.get).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes/${ID.node}`,
+    );
+  });
+
   it("apply creates the Set Session Config node via prepend and patches the agent", async () => {
-    const goodNodes = [
-      {
-        _id: ID.node,
-        type: "setSessionConfig",
-        isEntryPoint: true,
-        config: {
-          bargeInOnSpeech: false,
-          bargeInOnDtmf: false,
-          asrEnabled: false,
-          userNoInputTimeoutEnable: true,
-          userNoInputTimeout: 6000,
-          userNoInputRetries: 5,
-          flowNoInputTimeoutEnable: true,
-          flowNoInputTimeout: 1500,
-          flowNoInputSpeech: "One moment please.",
-          flowNoInputFail: false,
-          sttHints: ["Acme"],
-        },
-      },
-      {
-        _id: ID.entry,
-        type: "aiAgentJob",
-        isEntryPoint: false,
-        config: {
-          storeLocation: "stream",
-          errorHandling: "continue",
-          errorMessage: "Sorry.",
-          debugLogLLMLatency: true,
-        },
-      },
-    ];
-    api.get
-      .mockResolvedValueOnce({ items: badNodes }) // initial audit
-      .mockResolvedValueOnce({ items: goodNodes }); // re-audit
-    api.post.mockResolvedValue({ _id: ID.node });
+    const state = setupFlow({ nodes: [badAgent], firstNodeId: ID.entry });
+    // Creating the SSC flips the flow to its post-fix state for the re-audit.
+    api.post.mockImplementation(async (_url: string, body: any) => {
+      if (body?.type === "setSessionConfig") {
+        state.nodes = [goodSsc, goodAgent];
+        state.firstNodeId = ID.node;
+        return { _id: ID.node };
+      }
+      return {};
+    });
     api.patch.mockResolvedValue({});
 
     const result = await h.handleToolCall("audit_voice_agent", {
@@ -2828,10 +2894,34 @@ describe("audit_voice_agent", () => {
     expect(result.summary.fail).toBe(0);
   });
 
+  it("patchNode fix merges onto existing config (never clobbers)", async () => {
+    // Agent config has a non-target field (temperature) that the stream-output
+    // fix must preserve — only possible if the handler read the real config.
+    const agentWithExtras = {
+      ...badAgent,
+      config: { ...badAgent.config, temperature: 0.7 },
+    };
+    setupFlow({ nodes: [agentWithExtras], firstNodeId: ID.entry });
+    api.post.mockResolvedValue({ _id: ID.node });
+    api.patch.mockResolvedValue({});
+
+    await h.handleToolCall("audit_voice_agent", {
+      flowId: ID.flow,
+      apply: true,
+      only: ["agent.stream-output"],
+    });
+
+    const patchCall = api.patch.mock.calls.find((c: any[]) =>
+      c[0].endsWith(`/chart/nodes/${ID.entry}`),
+    );
+    expect(patchCall).toBeDefined();
+    expect(patchCall![1].config.storeLocation).toBe("stream");
+    // Pre-existing field survives the merge.
+    expect(patchCall![1].config.temperature).toBe(0.7);
+  });
+
   it("only: limits applied fixes to the listed check ids", async () => {
-    api.get
-      .mockResolvedValueOnce({ items: badNodes })
-      .mockResolvedValueOnce({ items: badNodes });
+    setupFlow({ nodes: [badAgent], firstNodeId: ID.entry });
     api.patch.mockResolvedValue({});
 
     const result = await h.handleToolCall("audit_voice_agent", {
