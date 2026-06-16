@@ -31,3 +31,6 @@ Thumbs.db
 coverage/
 .nyc_output/
 
+# Local planning notes (not for commit)
+.plans/
+

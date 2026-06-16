@@ -36,6 +36,16 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # plugin/skills/**/SKILL.md is generated from the guides by scripts/generate-skills.mjs
+      # and committed. Rebuild and fail if the committed copy drifted from the guides.
+      - name: Verify generated skills are in sync
+        run: |
+          npm run build
+          if ! git diff --exit-code -- plugin/skills; then
+            echo "::error::plugin/skills is out of sync with the guides. Run 'npm run build' (or 'npm run generate:skills') and commit the result." >&2
+            exit 1
+          fi
+
       - name: Collect changed files for Prettier
         id: prettier_files
         shell: bash

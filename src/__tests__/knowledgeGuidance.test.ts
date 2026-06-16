@@ -13,29 +13,35 @@ function readResource(name: string): string {
 }
 
 describe("knowledge guidance", () => {
+  // The detailed knowledge model-selection policy now lives in the knowledge-setup
+  // guide (single source of truth), not inlined in SERVER_INSTRUCTIONS. The guide
+  // feeds both the read_guide tool (all MCP clients) and the generated Claude Code
+  // skill. SERVER_INSTRUCTIONS keeps only the pointer + hard rules.
   it("tells the assistant to try existing same-project models before setup_llm", () => {
-    expect(SERVER_INSTRUCTIONS).toContain(
+    const knowledgeSetup = readResource("knowledge-setup.md");
+
+    expect(knowledgeSetup).toContain(
       "ALWAYS list llm_model resources in the TARGET project and try/reuse imported same-project model IDs first",
     );
-    expect(SERVER_INSTRUCTIONS).toContain(
+    expect(knowledgeSetup).toContain(
       'list_resources { resourceType: "llm_model", projectId, useCase: "knowledgeSearch" }',
     );
-    expect(SERVER_INSTRUCTIONS).toContain(
+    expect(knowledgeSetup).toContain(
       "Do NOT attempt knowledgeSearchModelId with the agent chat model or any other generic default until the source project's exact Knowledge Search choice has been imported and tried",
     );
-    expect(SERVER_INSTRUCTIONS).toContain(
+    expect(knowledgeSetup).toContain(
       'If manage_settings rejects one knowledgeSearchModelId with a message like "model type not allowed", try other existing llm_model IDs in the SAME project before creating a new model.',
     );
-    expect(SERVER_INSTRUCTIONS).toContain(
+    expect(knowledgeSetup).toContain(
       "Do NOT substitute a freshly created or generic model for knowledgeSearchModelId just because the user asked for a new project.",
     );
-    expect(SERVER_INSTRUCTIONS).toContain(
+    expect(knowledgeSetup).toContain(
       "do NOT call setup_llm to create another model as a workaround unless the user explicitly asks for a brand-new model",
     );
-    expect(SERVER_INSTRUCTIONS).toContain(
+    expect(knowledgeSetup).toContain(
       "Do NOT speculatively probe arbitrary unfiltered models for knowledgeSearchModelId",
     );
-    expect(SERVER_INSTRUCTIONS).toContain(
+    expect(knowledgeSetup).toContain(
       "Do NOT fall back to an arbitrary generic model first.",
     );
   });
@@ -74,10 +80,10 @@ describe("knowledge guidance", () => {
     const settingsGuide = readResource("settings.md");
     const agentCreation = readResource("agent-creation.md");
 
-    expect(SERVER_INSTRUCTIONS).toContain(
+    expect(knowledgeSetup).toContain(
       "For knowledge workflows, import the full required source-project model set up front before the first Knowledge AI settings attempt",
     );
-    expect(SERVER_INSTRUCTIONS).toContain(
+    expect(knowledgeSetup).toContain(
       "When multiple required LLMs share the same source-project connection, export/import all of those llm_model resources together with that single connection resource in one package.",
     );
     expect(knowledgeSetup).toContain(
@@ -111,7 +117,7 @@ describe("knowledge guidance", () => {
   it("tells the assistant to report exact failures instead of claiming a platform bug", () => {
     const knowledgeSetup = readResource("knowledge-setup.md");
 
-    expect(SERVER_INSTRUCTIONS).toContain(
+    expect(knowledgeSetup).toContain(
       "Do not describe a knowledgeSearchModelId rejection as a platform-side bug just because a similar model worked in another project.",
     );
     expect(knowledgeSetup).toContain(
@@ -122,7 +128,7 @@ describe("knowledge guidance", () => {
   it("does not let the assistant infer rejection for models it has not tried", () => {
     const knowledgeSetup = readResource("knowledge-setup.md");
 
-    expect(SERVER_INSTRUCTIONS).toContain(
+    expect(knowledgeSetup).toContain(
       'Do not say an untried model is "likely" rejected or unsupported. Only report actual API validation results for models you tried.',
     );
     expect(knowledgeSetup).toContain(
@@ -142,18 +148,20 @@ describe("knowledge guidance", () => {
     );
   });
 
-  it("keeps detailed workflow policy in server instructions and concise guidance in resources", () => {
+  it("keeps the detailed knowledge policy in the guide and only a pointer in server instructions", () => {
     const knowledgeSetup = readResource("knowledge-setup.md");
-    const settingsGuide = readResource("settings.md");
 
+    // New architecture: the guide is the single source of truth for the detailed
+    // policy; SERVER_INSTRUCTIONS only points at it (so the always-on instruction
+    // text stays lean and the same content feeds the generated skill + read_guide).
     expect(SERVER_INSTRUCTIONS).toContain(
-      "Use the guidance below as the source of truth for workflow policy.",
+      'read_guide { guideId: "knowledge-setup" }',
     );
-    expect(knowledgeSetup).not.toContain(
-      "Do not test arbitrary unfiltered models for `knowledgeSearchModelId` just because they are preferred for the agent response model.",
+    expect(SERVER_INSTRUCTIONS).not.toContain(
+      "Do NOT speculatively probe arbitrary unfiltered models for knowledgeSearchModelId",
     );
-    expect(settingsGuide).not.toContain(
-      "Do not create a new generic model just because one existing target-project model was rejected for `knowledgeSearchModelId`.",
+    expect(knowledgeSetup).toContain(
+      "Do NOT speculatively probe arbitrary unfiltered models for knowledgeSearchModelId",
     );
   });
 });

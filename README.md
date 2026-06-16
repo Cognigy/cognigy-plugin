@@ -56,6 +56,13 @@ On enable, Claude Code prompts for your **Cognigy API base URL** (default `https
 
 The first session downloads the server into the plugin's data directory, which takes a moment. If the Cognigy tools don't appear right away on that first launch, run `/mcp`, reconnect the `cognigy` server (or restart Claude Code) — later sessions connect instantly and refresh the server to the latest published version automatically.
 
+Beyond the MCP tools, the plugin ships **skills** and **agents** that make the workflows discoverable without you having to ask for a guide:
+
+- **Skills** (`/skills`) — one per Cognigy guide (agent creation, knowledge/RAG, voice gateway, voice go-live checklist, webchat, flow nodes, packages, settings, LLM providers, tools, troubleshooting). Claude loads the matching skill automatically when your request fits — no need to call `read_guide` yourself. These are generated from the guides, so they stay in sync.
+- **Agents** (`/agents`) — `cognigy-agent-builder` runs the full build-and-test loop for a new agent, and `cognigy-voice-go-live` audits a voice agent against the Go-Live Checklist and applies the safe fixes. Each runs in its own context and reports back a summary.
+
+The `read_guide` tool and `cognigy://guide/<id>` resources are unchanged and remain the workflow path for every other MCP client (Cursor, Cline, Claude Desktop, the `.mcpb` bundle).
+
 ### One-command setup (all MCP clients)
 
 Requires [Node.js 20+](https://nodejs.org).

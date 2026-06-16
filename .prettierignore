@@ -2,3 +2,5 @@ dist
 node_modules
 *.mcpb
 .claude/skills/
+# Generated from src/resources by scripts/generate-skills.mjs — formatting follows the source guides.
+plugin/skills/

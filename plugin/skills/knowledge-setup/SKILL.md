@@ -1,3 +1,12 @@
+---
+name: knowledge-setup
+description: "Use when the user wants to add knowledge, RAG, or a knowledge store/source to a Cognigy agent — covers embedding vs Knowledge Search models, Knowledge AI settings, ingesting sources, and attaching knowledge as a tool."
+---
+
+<!-- GENERATED from src/resources/knowledge-setup.md by scripts/generate-skills.mjs. Do not edit by hand — edit the guide and run `npm run generate:skills`. -->
+
+> The full **Knowledge Setup Guide** is included below — you already have it. Do NOT call `read_guide` for `knowledge-setup`; just follow the content here.
+
 # Adding Knowledge to an Agent
 
 ## Prerequisites
