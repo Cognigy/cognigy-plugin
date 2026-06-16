@@ -11,9 +11,12 @@ if [ -n "$skill_paths" ]; then
     exit 1
   fi
   if ! git diff --quiet -- plugin/skills; then
-    echo "✗ plugin/skills is out of sync — it is GENERATED, do not edit it by hand." >&2
-    echo "  Edit the guide (src/resources/<id>.md or src/guides.ts), then:" >&2
-    echo "    npm run generate:skills && git add plugin/skills" >&2
+    echo "✗ plugin/skills is out of sync with the guides — it is GENERATED, never edit it by hand." >&2
+    echo "  The correct files were just regenerated into your working tree by this hook." >&2
+    echo "  Fix: stage them and commit again —" >&2
+    echo "    git add plugin/skills && git commit ..." >&2
+    echo "  (or regenerate manually anytime with: npm run generate:skills)" >&2
+    echo "  Edit the source, not the skills: src/resources/<id>.md or src/guides.ts" >&2
     git --no-pager diff --stat -- plugin/skills >&2
     exit 1
   fi
