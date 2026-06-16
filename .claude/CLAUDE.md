@@ -45,7 +45,7 @@ The repo ships a Claude Code plugin (`plugin/`). Each guide is **also** a plugin
 - **Change trigger** → edit that guide's `skillTrigger` in `src/guides.ts`, regenerate.
 - **Add** → new `src/resources/<id>.md` + add to `GUIDE_IDS` and `GUIDE_DEFINITIONS`, regenerate. (Now also a `read_guide` guide + resource for free.)
 - **Remove** → delete its `GUIDE_IDS` member + `GUIDE_DEFINITIONS` entry, regenerate (the script wipes/rebuilds `plugin/skills/`).
-- Before commit: `npm run build && git diff --exit-code plugin/skills` must be clean — CI enforces this drift guard (`.github/workflows/pr.yml`). Bump `plugin/.claude-plugin/plugin.json` `version` when shipping skill/agent changes.
+- Before commit: `npm run build && git diff --exit-code plugin/skills` must be clean. Enforced two ways — a husky **pre-commit** hook (`.husky/pre-commit`) regenerates and blocks the commit on drift when a guide/skill path is staged, and CI re-checks it (`.github/workflows/pr.yml`). `plugin/skills/**` is also marked `linguist-generated` (`.gitattributes`). Bump `plugin/.claude-plugin/plugin.json` `version` when shipping skill/agent changes.
 
 **Agents** (`plugin/agents/*.md`) are hand-authored (NOT generated): `cognigy-agent-builder`, `cognigy-voice-go-live`. Edit/add/remove these files directly. See the header JSDoc in `scripts/generate-skills.mjs` for the full process.
 

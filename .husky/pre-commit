@@ -1,3 +1,24 @@
+# Guardrail: plugin/skills/ is GENERATED from the guides — never hand-edited.
+# If a guide source or a generated skill is staged, regenerate and block the
+# commit on any drift (covers both "edited the skill directly" and "edited the
+# guide but forgot to regenerate"). Cheap: only runs when those paths change.
+skill_paths=$(git diff --cached --name-only --diff-filter=ACMRTD \
+  | grep -E '^(src/guides\.ts|src/resources/|plugin/skills/)' || true)
+
+if [ -n "$skill_paths" ]; then
+  if ! npm run build >/dev/null 2>&1; then
+    echo "✗ build failed — cannot verify generated skills. Run 'npm run build'." >&2
+    exit 1
+  fi
+  if ! git diff --quiet -- plugin/skills; then
+    echo "✗ plugin/skills is out of sync — it is GENERATED, do not edit it by hand." >&2
+    echo "  Edit the guide (src/resources/<id>.md or src/guides.ts), then:" >&2
+    echo "    npm run generate:skills && git add plugin/skills" >&2
+    git --no-pager diff --stat -- plugin/skills >&2
+    exit 1
+  fi
+fi
+
 files=$(git diff --cached --name-only --diff-filter=ACMRT | grep -E '\.(cjs|js|json|md|mjs|ts|tsx|yaml|yml)$' || true)
 
 if [ -z "$files" ]; then
