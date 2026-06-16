@@ -33,7 +33,21 @@ Helpers: `withHints(result, {warning, action, resource})` attaches `_hints` guid
 
 ## Guides / resources
 
-Markdown guides in `src/resources/*.md`, surfaced as MCP resources `cognigy://guide/<id>` and via the `read_guide` tool. Registered in `src/guides.ts` (`GUIDE_IDS`, `GUIDE_DEFINITIONS` with `{ guideId, file }`). Build copies `src/resources` → `dist/resources`.
+Markdown guides in `src/resources/*.md`, surfaced as MCP resources `cognigy://guide/<id>` and via the `read_guide` tool. Registered in `src/guides.ts` (`GUIDE_IDS`, `GUIDE_DEFINITIONS` with `{ guideId, uri, name, description, skillTrigger, file }`). Build copies `src/resources` → `dist/resources`.
+
+## Plugin skills & agents — one source, three consumers
+
+The repo ships a Claude Code plugin (`plugin/`). Each guide is **also** a plugin skill, so the same content feeds three consumers: the `read_guide` tool + `cognigy://guide/<id>` resources (all MCP clients), the generated skill `plugin/skills/<id>/SKILL.md` (Claude Code, auto-loads on intent), and `src/instructions.ts` (which points at guides by id instead of inlining steps).
+
+**Skills are GENERATED — never edit `plugin/skills/` by hand.** `scripts/generate-skills.mjs` (run by `npm run build` / `npm run generate:skills`) writes `SKILL.md` from `GUIDE_DEFINITIONS` + `src/resources/<file>`; the `skillTrigger` field becomes the skill's `description` (what Claude matches to auto-load). The generated files are committed (marketplace ships repo files as-is). To work with skills:
+
+- **Edit content** → edit `src/resources/<id>.md`, regenerate, commit guide + regenerated `SKILL.md`.
+- **Change trigger** → edit that guide's `skillTrigger` in `src/guides.ts`, regenerate.
+- **Add** → new `src/resources/<id>.md` + add to `GUIDE_IDS` and `GUIDE_DEFINITIONS`, regenerate. (Now also a `read_guide` guide + resource for free.)
+- **Remove** → delete its `GUIDE_IDS` member + `GUIDE_DEFINITIONS` entry, regenerate (the script wipes/rebuilds `plugin/skills/`).
+- Before commit: `npm run build && git diff --exit-code plugin/skills` must be clean — CI enforces this drift guard (`.github/workflows/pr.yml`). Bump `plugin/.claude-plugin/plugin.json` `version` when shipping skill/agent changes.
+
+**Agents** (`plugin/agents/*.md`) are hand-authored (NOT generated): `cognigy-agent-builder`, `cognigy-voice-go-live`. Edit/add/remove these files directly. See the header JSDoc in `scripts/generate-skills.mjs` for the full process.
 
 ## API client & config
 

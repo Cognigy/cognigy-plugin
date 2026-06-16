@@ -5,13 +5,38 @@
  * Single source of truth: each guide in `src/guides.ts` (GUIDE_DEFINITIONS) with
  * its markdown body in `src/resources/<file>` becomes one plugin skill at
  * `plugin/skills/<guideId>/SKILL.md`. The skill `description` frontmatter is the
- * guide's `skillTrigger` — what Claude Code matches against to auto-load it.
+ * guide's `skillTrigger` — what Claude Code matches against to auto-load it. The
+ * same guide also feeds the `read_guide` tool and the `cognigy://guide/<id>`
+ * MCP resource, so one source serves three consumers.
  *
  * The generated files are COMMITTED (marketplace installs ship repo files as-is,
  * with no user-side build). CI re-runs this and fails on drift, so never edit a
- * generated SKILL.md by hand — edit the guide and regenerate.
+ * generated SKILL.md by hand.
+ *
+ * MAINTENANCE — always edit the source (guide), regenerate, commit both. Never
+ * touch plugin/skills/ directly.
+ *
+ *   Edit a skill's content:  edit src/resources/<id>.md → regenerate → commit
+ *                            the guide + the regenerated SKILL.md.
+ *   Change when it triggers: edit that guide's `skillTrigger` in src/guides.ts
+ *                            (it becomes the skill's `description`) → regenerate.
+ *   Add a skill:             create src/resources/<new-id>.md, add <new-id> to
+ *                            GUIDE_IDS and a GUIDE_DEFINITIONS entry (guideId,
+ *                            uri, name, description, skillTrigger, file) in
+ *                            src/guides.ts → regenerate. It is now also a
+ *                            read_guide guide + MCP resource automatically.
+ *   Remove a skill:          delete its GUIDE_IDS member + GUIDE_DEFINITIONS
+ *                            entry (and optionally the .md) → regenerate. This
+ *                            script wipes and rebuilds plugin/skills/, so the
+ *                            stale directory disappears on its own.
+ *
+ * Bump plugin/.claude-plugin/plugin.json `version` when shipping skill changes so
+ * the marketplace pushes the update. Agents (plugin/agents/*.md) are NOT
+ * generated — hand-author those directly.
  *
  * Run via `npm run build` (after tsc) or standalone `npm run generate:skills`.
+ * Before committing: `npm run build && git diff --exit-code plugin/skills` must
+ * be clean (same check CI enforces).
  */
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from "fs";
 import { dirname, join } from "path";
