@@ -122,7 +122,7 @@ With `scripts/test-local-init.sh`, the installed config points to the local laun
   "mcpServers": {
     "cognigy": {
       "command": "bash",
-      "args": ["/absolute/path/to/cognigy-mcp/scripts/run-local-mcp.sh"],
+      "args": ["/absolute/path/to/cognigy-plugin/scripts/run-local-mcp.sh"],
       "env": {
         "COGNIGY_API_BASE_URL": "base-api-url",
         "COGNIGY_API_KEY": "your-api-key-here"
@@ -155,7 +155,7 @@ With `scripts/test-local-init.sh codex`, it looks like this:
 ```toml
 [mcp_servers.cognigy]
 command = "bash"
-args = ["/absolute/path/to/cognigy-mcp/scripts/run-local-mcp.sh"]
+args = ["/absolute/path/to/cognigy-plugin/scripts/run-local-mcp.sh"]
 
 [mcp_servers.cognigy.env]
 COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai"
@@ -188,7 +188,7 @@ If you want those clients to install a local launcher instead of `npx @cognigy/m
 
 ```bash
 export COGNIGY_MCP_INIT_COMMAND="bash"
-export COGNIGY_MCP_INIT_ARGS='["/absolute/path/to/cognigy-mcp/scripts/run-local-mcp.sh"]'
+export COGNIGY_MCP_INIT_ARGS='["/absolute/path/to/cognigy-plugin/scripts/run-local-mcp.sh"]'
 ```
 
 Without those overrides, generated JSON client configs look like this:
@@ -215,7 +215,7 @@ With the local override variables set, they look like this instead:
   "mcpServers": {
     "cognigy": {
       "command": "bash",
-      "args": ["/absolute/path/to/cognigy-mcp/scripts/run-local-mcp.sh"],
+      "args": ["/absolute/path/to/cognigy-plugin/scripts/run-local-mcp.sh"],
       "env": {
         "COGNIGY_API_BASE_URL": "base-api-url",
         "COGNIGY_API_KEY": "your-api-key-here"

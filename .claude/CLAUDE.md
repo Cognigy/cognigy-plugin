@@ -8,7 +8,9 @@ All code must be formatted with Prettier using the project's default configurati
 
 ## What this is
 
-An MCP (Model Context Protocol) server that lets an LLM create, configure, test, and manage **AI Agents on the NiCE Cognigy platform** over the Cognigy REST API v2.0. Marketed as the "NiCE Cognigy MCP Connector". Ships as an `mcpb` bundle (`manifest.json` is the marketplace entry).
+An MCP (Model Context Protocol) server that lets an LLM create, configure, test, and manage **AI Agents on the NiCE Cognigy platform** over the Cognigy REST API v2.0. Marketed as the "NiCE Cognigy MCP Connector".
+
+This repo (`cognigy-plugin`) is a detached fork of `cognigy-mcp`, repackaged **plugin-first**: the primary, recommended, and primary-maintained distribution is the **Claude Code plugin** (`plugin/` + `.claude-plugin/marketplace.json`). The same server is still distributed standalone — published to npm as `@cognigy/mcp-server` (the `npx`/CLI + manual-config path) and packaged as an `.mcpb` bundle (`manifest.json` is the marketplace entry) for a no-Node quick-install/test build. All three ship the identical server.
 
 ## Tech stack
 

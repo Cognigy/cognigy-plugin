@@ -7,5 +7,5 @@ set -euo pipefail
 TAG="$1"
 BODY="$(gh release view "$TAG" --json body -q .body)"
 
-printf '%s\n\n---\n\n📦 **[Install instructions](https://github.com/Cognigy/cognigy-mcp#installation)**\n' \
+printf '%s\n\n---\n\n📦 **[Install instructions](https://github.com/Cognigy/cognigy-plugin#installation)**\n' \
   "$BODY" | gh release edit "$TAG" -F -

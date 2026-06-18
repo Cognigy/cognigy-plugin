@@ -18,7 +18,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Cognigy/cognigy-mcp.git"
+    "url": "https://github.com/Cognigy/cognigy-plugin.git"
   },
   "homepage": "https://www.cognigy.com",
   "support": "https://docs.cognigy.com",

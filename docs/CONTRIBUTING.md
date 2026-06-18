@@ -5,8 +5,8 @@ Contributions are welcome!
 ## Development Setup
 
 ```bash
-git clone https://github.com/Cognigy/cognigy-mcp.git
-cd cognigy-mcp
+git clone https://github.com/Cognigy/cognigy-plugin.git
+cd cognigy-plugin
 npm install
 npm run build
 ```
@@ -110,4 +110,4 @@ so a separate global install is not required.
 
 ## Submitting Changes
 
-Open a pull request on [GitHub](https://github.com/Cognigy/cognigy-mcp). Issues and feature requests can be filed there too.
+Open a pull request on [GitHub](https://github.com/Cognigy/cognigy-plugin). Issues and feature requests can be filed there too.

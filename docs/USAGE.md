@@ -10,6 +10,7 @@ For installation and configuration, see the [README](../README.md).
 ```
 
 This triggers the following tool calls automatically:
+
 1. `setup_llm` — creates an LLM resource (e.g. GPT-4) in the project and validates the connection
 2. `create_ai_agent` — provisions the agent, flow, AI Agent Job Node, and REST endpoint
 
@@ -25,6 +26,7 @@ Talk to it again and compare.
 ```
 
 Tool sequence:
+
 1. `talk_to_agent` — sends message, returns `agentResponse`
 2. `update_ai_agent` — updates `jobDescription`, `jobInstructions`, or `description`
 3. `talk_to_agent` — re-tests with the same question
@@ -39,6 +41,7 @@ then attach it to my Support Bot.
 ```
 
 Tool sequence:
+
 1. `setup_llm` — creates an embedding model (e.g. `text-embedding-ada-002`) if not already present
 2. `manage_knowledge` with `operation: create_store` — creates the knowledge store
 3. `manage_knowledge` with `operation: create_source` and `type: url` — ingests the URL
@@ -52,6 +55,7 @@ so it can look up order status.
 ```
 
 Tool sequence:
+
 1. `create_tool` with `toolType: http`, providing `url`, `method`, and optional `headers`/`body`
 2. `talk_to_agent` — test that the agent can invoke the tool
 
@@ -63,6 +67,7 @@ Show me the details of agent <aiAgentId>.
 ```
 
 Tool sequence:
+
 1. `list_resources` with `resourceType: agent` and `projectId`
 2. `get_resource` with `resourceType: agent` and `id`
 
@@ -111,6 +116,6 @@ Cognigy uses two ID formats — see [ARCHITECTURE.md](ARCHITECTURE.md#id-formats
 
 ## Getting help
 
-- [GitHub Issues](https://github.com/Cognigy/cognigy-mcp/issues)
+- [GitHub Issues](https://github.com/Cognigy/cognigy-plugin/issues)
 - Cognigy support: support@cognigy.com
 - [API Reference](API_REFERENCE.md)

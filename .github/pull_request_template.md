@@ -28,6 +28,7 @@ Manual:
 
 ## Marketplace checklist
 
+- [ ] `plugin/.claude-plugin/plugin.json` version bumped if anything under `plugin/` changed (CI-enforced)
 - [ ] `manifest.json` updated if tool surface changed
 - [ ] `README.md` updated if user-facing behavior changed
 - [ ] Tool annotations/descriptions reviewed if tool behavior changed

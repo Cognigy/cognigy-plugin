@@ -1,5 +1,7 @@
 # NiCE Cognigy MCP Connector
 
+> **Migrated from [`Cognigy/cognigy-mcp`](https://github.com/Cognigy/cognigy-mcp).** This repository began as a fork of `cognigy-mcp` and is now a detached, standalone project. It focuses on the **Claude Code plugin** experience while still distributing the MCP server standalone for anyone who can't or doesn't want to use the plugin. **The plugin is the recommended path and where maintenance is focused.**
+
 A Model Context Protocol (MCP) server that connects your AI assistant to the [Cognigy.AI](https://www.cognigy.com) REST API. Create, test, and improve LLM-based AI Agents through a self-improvement loop — without leaving your AI assistant.
 
 ## Features
@@ -39,17 +41,15 @@ The server also includes built-in guides for detailed workflows, field reference
 
 ## Installation
 
-### Claude Desktop (one-click)
+**Recommended: the [Claude Code plugin](#claude-code-plugin-recommended).** It auto-installs and auto-updates the server and ships skills + agents. Standalone MCP installation is fully supported below — but the plugin is the primary-maintained path.
 
-Download the `.mcpb` file from the [latest release](https://github.com/Cognigy/cognigy-mcp/releases/latest) and double-click it. Claude Desktop opens an install dialog — enter your API URL and API key. No Node.js required.
-
-### Claude Code (plugin — auto-updating)
+### Claude Code plugin (recommended)
 
 Install the plugin from this repo's marketplace. The plugin always launches the latest published server, so you get server updates automatically with no manual reinstall.
 
 ```
-/plugin marketplace add Cognigy/cognigy-mcp
-/plugin install cognigy@cognigy-mcp
+/plugin marketplace add Cognigy/cognigy-plugin
+/plugin install cognigy@cognigy-plugin
 ```
 
 On enable, Claude Code prompts for your **Cognigy API base URL** (default `https://api-trial.cognigy.ai`) and **API key** (Cognigy.AI → User Menu → My Profile → API Keys). The key is stored in your system keychain. Requires [Node.js 20+](https://nodejs.org).
@@ -63,7 +63,11 @@ Beyond the MCP tools, the plugin ships **skills** and **agents** that make the w
 
 The `read_guide` tool and `cognigy://guide/<id>` resources are unchanged and remain the workflow path for every other MCP client (Cursor, Cline, Claude Desktop, the `.mcpb` bundle).
 
-### One-command setup (all MCP clients)
+### Standalone MCP server
+
+Prefer not to use the plugin, or running a client other than Claude Code? The server is published to npm as `@cognigy/mcp-server` and works with any MCP client.
+
+#### One-command setup (all MCP clients)
 
 Requires [Node.js 20+](https://nodejs.org).
 
@@ -77,7 +81,7 @@ Requires [Node.js 20+](https://nodejs.org).
 
 The command prompts for your Cognigy API URL and API key, then configures your client automatically. Restart the client after setup.
 
-### Manual config
+#### Manual config
 
 Add to your MCP client's config file.
 
@@ -128,6 +132,10 @@ For VS Code (Copilot), add this to `.vscode/mcp.json`:
 ```
 
 Get your API key: Cognigy.AI → User Menu → My Profile → API Keys → Create New.
+
+#### Claude Desktop one-click (.mcpb)
+
+Prefer a no-Node, double-click install — or just want a quick build to try? Download the `.mcpb` file from the [latest release](https://github.com/Cognigy/cognigy-plugin/releases/latest) and double-click it. Claude Desktop opens an install dialog — enter your API URL and API key. No Node.js required.
 
 ---
 
@@ -300,16 +308,16 @@ Full privacy policy: [https://www.cognigy.com/privacy-policy](https://www.cognig
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/Cognigy/cognigy-mcp/issues)
+- **Issues**: [GitHub Issues](https://github.com/Cognigy/cognigy-plugin/issues)
 - **Cognigy support**: support@cognigy.com
-- **Documentation**: see [`docs/`](https://github.com/Cognigy/cognigy-mcp/tree/main/docs) folder
+- **Documentation**: see [`docs/`](https://github.com/Cognigy/cognigy-plugin/tree/main/docs) folder
 
 ## Documentation
 
-- [docs/ARCHITECTURE.md](https://github.com/Cognigy/cognigy-mcp/blob/main/docs/ARCHITECTURE.md) — tool design, self-improvement loop, ID formats
-- [docs/USAGE.md](https://github.com/Cognigy/cognigy-mcp/blob/main/docs/USAGE.md) — detailed usage reference
-- [docs/TESTING.md](https://github.com/Cognigy/cognigy-mcp/blob/main/docs/TESTING.md) — ways to test local builds, CLI installation, and `.mcpb` distribution
-- [docs/CONTRIBUTING.md](https://github.com/Cognigy/cognigy-mcp/blob/main/docs/CONTRIBUTING.md) — development setup and contribution guide
+- [docs/ARCHITECTURE.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/ARCHITECTURE.md) — tool design, self-improvement loop, ID formats
+- [docs/USAGE.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/USAGE.md) — detailed usage reference
+- [docs/TESTING.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/TESTING.md) — ways to test local builds, CLI installation, and `.mcpb` distribution
+- [docs/CONTRIBUTING.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/CONTRIBUTING.md) — development setup and contribution guide
 
 ## License
 
