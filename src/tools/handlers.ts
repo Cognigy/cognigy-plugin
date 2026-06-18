@@ -4471,10 +4471,13 @@ export class ToolHandlers {
         });
         const models = res.items ?? res;
         if (Array.isArray(models) && models.length > 0) {
+          // llmProviderReferenceId may hold either a referenceId or an _id/id
+          // (create_ai_agent can set it to either), so match on all of them —
+          // otherwise the lookup misses and the advisory inspects the wrong model.
+          const matchesRef = (m: any) =>
+            m.referenceId === ref || m._id === ref || m.id === ref;
           llm =
-            (ref && ref !== "default"
-              ? models.find((m: any) => m.referenceId === ref)
-              : undefined) ??
+            (ref && ref !== "default" ? models.find(matchesRef) : undefined) ??
             models.find((m: any) => m.isDefault) ??
             null;
         }
