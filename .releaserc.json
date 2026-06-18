@@ -43,13 +43,13 @@
     [
       "@semantic-release/npm",
       {
-        "npmPublish": true
+        "npmPublish": false
       }
     ],
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "node scripts/sync-manifest-version.js ${nextRelease.version} && npm run mcpb:pack",
+        "prepareCmd": "node scripts/sync-manifest-version.js ${nextRelease.version} && npm run mcpb:pack && npm publish --access public --provenance",
         "successCmd": "bash scripts/append-release-install-link.sh ${nextRelease.gitTag}"
       }
     ],

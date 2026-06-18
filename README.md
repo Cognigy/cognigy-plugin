@@ -1,4 +1,4 @@
-# NiCE Cognigy MCP Connector
+# NiCE Cognigy MCP Plugin
 
 > **Migrated from [`Cognigy/cognigy-mcp`](https://github.com/Cognigy/cognigy-mcp).** This repository began as a fork of `cognigy-mcp` and is now a detached, standalone project. It focuses on the **Claude Code plugin** experience while still distributing the MCP server standalone for anyone who can't or doesn't want to use the plugin. **The plugin is the recommended path and where maintenance is focused.**
 
