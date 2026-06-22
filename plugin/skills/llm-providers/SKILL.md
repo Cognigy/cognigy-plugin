@@ -3,10 +3,6 @@ name: llm-providers
 description: "Use when configuring or choosing an LLM for a Cognigy agent — valid provider names (openAI, anthropic, azureOpenAI, google, mistral), model strings, connection types, and credential resolution."
 ---
 
-<!-- GENERATED from src/resources/llm-providers.md by scripts/generate-skills.mjs. Do not edit by hand — edit the guide and run `npm run generate:skills`. -->
-
-> The full **LLM Provider Reference** is included below — you already have it. Do NOT call `read_guide` for `llm-providers`; just follow the content here.
-
 # LLM Provider Reference
 
 ## setup_llm parameters

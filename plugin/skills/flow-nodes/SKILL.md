@@ -3,10 +3,6 @@ name: flow-nodes
 description: "Use when adding custom logic inside a Cognigy tool branch with manage_flow_nodes — supported node types, config schemas, placement rules, and the tool-first workflow."
 ---
 
-<!-- GENERATED from src/resources/flow-nodes.md by scripts/generate-skills.mjs. Do not edit by hand — edit the guide and run `npm run generate:skills`. -->
-
-> The full **Flow Node Reference** is included below — you already have it. Do NOT call `read_guide` for `flow-nodes`; just follow the content here.
-
 # Flow Node Reference
 
 Use `manage_flow_nodes` to add logic nodes **inside tool branches only**. Nodes are helpers for tools — they must ALWAYS be created under a tool, never as standalone pre-agent nodes.

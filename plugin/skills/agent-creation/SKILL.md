@@ -3,10 +3,6 @@ name: agent-creation
 description: "Use when the user wants to build, create, or set up a new Cognigy AI Agent from scratch — covers listing projects, ensuring an LLM exists, creating the agent, testing it, and refining persona/job fields."
 ---
 
-<!-- GENERATED from src/resources/agent-creation.md by scripts/generate-skills.mjs. Do not edit by hand — edit the guide and run `npm run generate:skills`. -->
-
-> The full **Agent Creation Guide** is included below — you already have it. Do NOT call `read_guide` for `agent-creation`; just follow the content here.
-
 # Building a Cognigy AI Agent
 
 ## Prerequisites

@@ -3,10 +3,6 @@ name: voice-gateway-setup
 description: "Use when the user wants to set up a voice agent or a Voice Gateway endpoint with WebRTC for browser-based voice interaction."
 ---
 
-<!-- GENERATED from src/resources/voice-gateway-setup.md by scripts/generate-skills.mjs. Do not edit by hand — edit the guide and run `npm run generate:skills`. -->
-
-> The full **Voice Gateway Setup Guide** is included below — you already have it. Do NOT call `read_guide` for `voice-gateway-setup`; just follow the content here.
-
 # Voice Gateway Setup Guide
 
 Deploy an AI Agent as a voice-enabled endpoint with WebRTC support. Users can talk to the agent directly in their browser.

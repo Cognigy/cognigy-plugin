@@ -14,8 +14,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\" && npx tsc && cp -r src/resources dist/resources && if [ -d assets ]; then cp -r assets dist/assets; fi && node scripts/generate-skills.mjs",
-    "generate:skills": "node scripts/generate-skills.mjs",
+    "build": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\" && npx tsc && if [ -d assets ]; then cp -r assets dist/assets; fi && node scripts/build-guides.mjs",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "start:local": "bash scripts/run-local-mcp.sh",

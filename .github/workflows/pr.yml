@@ -36,15 +36,11 @@ jobs:
       - name: Run tests
         run: npm test
 
-      # plugin/skills/**/SKILL.md is generated from the guides by scripts/generate-skills.mjs
-      # and committed. Rebuild and fail if the committed copy drifted from the guides.
-      - name: Verify generated skills are in sync
-        run: |
-          npm run build
-          if ! git diff --exit-code -- plugin/skills; then
-            echo "::error::plugin/skills is out of sync with the guides. Run 'npm run build' (or 'npm run generate:skills') and commit the result." >&2
-            exit 1
-          fi
+      # Compiles the server and extracts the guide markdown from plugin/skills/ into
+      # dist/resources (scripts/build-guides.mjs), which also asserts the skills and
+      # the GUIDE_IDS registry stay in lockstep.
+      - name: Build
+        run: npm run build
 
       # The plugin's own version (host/marketplace-agnostic) is what Claude Code uses
       # to detect an update. If this PR changes anything under plugin/, the version must

@@ -15,7 +15,7 @@ This is a TypeScript MCP server. Tools follow a strict pattern across these file
 | `src/schemas/tools.ts` | Zod validation schemas — one per tool or discriminated union per multi-op tool |
 | `src/tools/handlers.ts` | `ToolHandlers` class — one `handleXxx(args)` method per tool + a case in `handleToolCall()` |
 | `src/index.ts` | Resource map (`RESOURCE_MAP`) — register any new guide here |
-| `src/resources/<name>.md` | Markdown guide for the tool (referenced via `cognigy://guide/<name>`) |
+| `plugin/skills/<name>/SKILL.md` | Markdown guide for the tool (source of truth; built into `dist/resources` and referenced via `cognigy://guide/<name>`) |
 | `manifest.json` | Marketplace entry — add `{ name, description }` to the `tools` array |
 | `src/__tests__/schemas.test.ts` | Schema validation tests |
 | `src/__tests__/tools.test.ts` | Handler tests with mocked `CognigyApiClient` |
@@ -97,7 +97,7 @@ Key patterns:
 
 ### 5. Register resource guide (if needed)
 
-Create `src/resources/<tool-name>.md` with usage documentation.
+Create `plugin/skills/<tool-name>/SKILL.md` with `name`/`description` frontmatter (the `description` is the skill's auto-load trigger) followed by the guide body. Add the guide's id to `GUIDE_IDS` + a `GUIDE_DEFINITIONS` entry in `src/guides.ts`; `scripts/build-guides.mjs` extracts the body into `dist/resources` at build.
 
 Read `${CLAUDE_SKILL_DIR}/templates/resource-map-entry.ts` for the template. Add to `RESOURCE_MAP` in `src/index.ts`.
 

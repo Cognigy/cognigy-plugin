@@ -3,10 +3,6 @@ name: package-management
 description: "Use when exporting, importing, uploading, inspecting, or downloading Cognigy package zip files — including reusing an LLM plus its connection across projects."
 ---
 
-<!-- GENERATED from src/resources/package-management.md by scripts/generate-skills.mjs. Do not edit by hand — edit the guide and run `npm run generate:skills`. -->
-
-> The full **Package Management Guide** is included below — you already have it. Do NOT call `read_guide` for `package-management`; just follow the content here.
-
 # Package Management Guide
 
 Use `manage_packages` to import and export Cognigy package `.zip` files.

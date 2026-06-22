@@ -33,24 +33,21 @@ This repo (`cognigy-plugin`) is a detached fork of `cognigy-mcp`, repackaged **p
 
 Helpers: `withHints(result, {warning, action, resource})` attaches `_hints` guidance; `resolveFlowForAgent(apiClient, aiAgentId)` maps an agent → its flow.
 
-## Guides / resources
+## Guides / skills — one source, two consumers
 
-Markdown guides in `src/resources/*.md`, surfaced as MCP resources `cognigy://guide/<id>` and via the `read_guide` tool. Registered in `src/guides.ts` (`GUIDE_IDS`, `GUIDE_DEFINITIONS` with `{ guideId, uri, name, description, skillTrigger, file }`). Build copies `src/resources` → `dist/resources`.
+The canonical guide content is the **plugin skill** `plugin/skills/<id>/SKILL.md` (hand-authored: `name`/`description` frontmatter + markdown body). One source feeds two consumers: the skill auto-loads in Claude Code on intent (the frontmatter `description` is what Claude matches), and `scripts/build-guides.mjs` extracts the body (strips frontmatter) into `dist/resources/<id>.md` at build time, which the MCP server serves via the `read_guide` tool + `cognigy://guide/<id>` resources for every other MCP client. `src/instructions.ts` points at guides by id (no inlined steps).
 
-## Plugin skills & agents — one source, three consumers
+`src/guides.ts` is the metadata registry only — `GUIDE_IDS` + `GUIDE_DEFINITIONS` with `{ guideId, uri, name, description, file }` (no `skillTrigger`; the auto-load trigger lives in the SKILL.md frontmatter). `readGuideContent` reads `dist/resources/<file>` at runtime (`file` is `<guideId>.md`). The npm package ships `dist/` only (not `plugin/`), so the build-time extraction is what makes guides available to the standalone server.
 
-The repo ships a Claude Code plugin (`plugin/`). Each guide is **also** a plugin skill, so the same content feeds three consumers: the `read_guide` tool + `cognigy://guide/<id>` resources (all MCP clients), the generated skill `plugin/skills/<id>/SKILL.md` (Claude Code, auto-loads on intent), and `src/instructions.ts` (which points at guides by id instead of inlining steps).
+`dist/resources` is a **build artifact (gitignored), not committed** — there is no generated file to keep in sync, so no drift guard. To work with skills:
 
-**Skills are GENERATED — never edit `plugin/skills/` by hand.** `scripts/generate-skills.mjs` (run by `npm run build` / `npm run generate:skills`) writes `SKILL.md` from `GUIDE_DEFINITIONS` + `src/resources/<file>`; the `skillTrigger` field becomes the skill's `description` (what Claude matches to auto-load). The generated files are committed (marketplace ships repo files as-is). To work with skills:
-
-- **Edit content** → edit `src/resources/<id>.md`, regenerate, commit guide + regenerated `SKILL.md`.
-- **Change trigger** → edit that guide's `skillTrigger` in `src/guides.ts`, regenerate.
-- **Add** → new `src/resources/<id>.md` + add to `GUIDE_IDS` and `GUIDE_DEFINITIONS`, regenerate. (Now also a `read_guide` guide + resource for free.)
-- **Remove** → delete its `GUIDE_IDS` member + `GUIDE_DEFINITIONS` entry, regenerate (the script wipes/rebuilds `plugin/skills/`).
-- Before commit: `npm run build && git diff --exit-code plugin/skills` must be clean. Enforced two ways — a husky **pre-commit** hook (`.husky/pre-commit`) regenerates and blocks the commit on drift when a guide/skill path is staged, and CI re-checks it (`.github/workflows/pr.yml`). `plugin/skills/**` is also marked `linguist-generated` (`.gitattributes`).
+- **Edit content / trigger** → edit `plugin/skills/<id>/SKILL.md` directly (body = content; frontmatter `description` = trigger).
+- **Add** → new `plugin/skills/<id>/SKILL.md` + add `<id>` to `GUIDE_IDS` and a `GUIDE_DEFINITIONS` entry in `src/guides.ts`. It's now a skill + a `read_guide` guide + resource for free.
+- **Remove** → delete the `plugin/skills/<id>/` dir + its `GUIDE_IDS` member and `GUIDE_DEFINITIONS` entry.
+- `scripts/build-guides.mjs` (run by `npm run build`) asserts the skill dirs and `GUIDE_IDS` stay in lockstep — a missing pair on either side fails the build (and CI's "Build" step in `pr.yml`).
 - **Plugin version:** `version` in `plugin/.claude-plugin/plugin.json` is the plugin's own version (host/marketplace-agnostic — it's what Claude Code compares to detect an update; no marketplace-specific logic lives in this repo). Any PR that changes anything under `plugin/` must bump it, or CI fails (the "Require plugin version bump" step in `pr.yml`).
 
-**Agents** (`plugin/agents/*.md`) are hand-authored (NOT generated): `cognigy-agent-builder`, `cognigy-voice-go-live`. Edit/add/remove these files directly. See the header JSDoc in `scripts/generate-skills.mjs` for the full process.
+**Agents** (`plugin/agents/*.md`) are hand-authored too: `cognigy-agent-builder`, `cognigy-voice-go-live`. Edit/add/remove these files directly. See the header JSDoc in `scripts/build-guides.mjs` for the full process.
 
 ## API client & config
 

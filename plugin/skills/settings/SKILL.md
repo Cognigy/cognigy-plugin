@@ -3,10 +3,6 @@ name: settings
 description: "Use when configuring project-level Cognigy settings — voice preview / speech provider configuration and Knowledge AI settings."
 ---
 
-<!-- GENERATED from src/resources/settings.md by scripts/generate-skills.mjs. Do not edit by hand — edit the guide and run `npm run generate:skills`. -->
-
-> The full **Settings Guide** is included below — you already have it. Do NOT call `read_guide` for `settings`; just follow the content here.
-
 # Settings Guide
 
 Manage project-level settings in Cognigy via the `manage_settings` tool.

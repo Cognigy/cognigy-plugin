@@ -3,10 +3,6 @@ name: webchat-setup
 description: "Use when the user wants to deploy a Cognigy agent to Webchat v3 — creating or updating the endpoint, style presets, layout/behavior settings, and the embed snippet."
 ---
 
-<!-- GENERATED from src/resources/webchat-setup.md by scripts/generate-skills.mjs. Do not edit by hand — edit the guide and run `npm run generate:skills`. -->
-
-> The full **Webchat v3 Setup Guide** is included below — you already have it. Do NOT call `read_guide` for `webchat-setup`; just follow the content here.
-
 # Webchat v3 Setup Guide
 
 ## What is Webchat v3?

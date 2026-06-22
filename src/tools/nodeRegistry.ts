@@ -3,7 +3,7 @@
  *
  * To support a new node type:
  *   1. Add an entry here
- *   2. Document it in src/resources/flow-nodes.md
+ *   2. Document it in plugin/skills/flow-nodes/SKILL.md
  *
  * The registry is intentionally separate from tool definitions so new node
  * types never require schema or tool-definition changes.

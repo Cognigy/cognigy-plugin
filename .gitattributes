@@ -1,4 +1,0 @@
-# Generated from the guides by scripts/generate-skills.mjs — do not edit by hand.
-# linguist-generated collapses these in GitHub diffs and excludes them from
-# language stats, signalling reviewers that the source is the guide, not the skill.
-plugin/skills/** linguist-generated=true

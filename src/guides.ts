@@ -1,9 +1,23 @@
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const resourceDir = join(__dirname, "resources");
+// Source-of-truth skills, used as a dev/test fallback (see readGuideContent).
+const skillsDir = join(__dirname, "..", "plugin", "skills");
+
+/** Strip a leading YAML frontmatter block (--- … ---); return the body. */
+function stripFrontmatter(text: string): string {
+  const lines = text.split("\n");
+  if (lines[0] !== "---") return text.trim();
+  const end = lines.indexOf("---", 1);
+  if (end === -1) return text.trim();
+  return lines
+    .slice(end + 1)
+    .join("\n")
+    .trim();
+}
 
 export const GUIDE_IDS = [
   "agent-creation",
@@ -28,12 +42,11 @@ export interface GuideDefinition {
   /** Short blurb used for MCP resource listing and the read_guide tool. */
   description: string;
   /**
-   * Trigger-shaped sentence ("Use when the user wants to …") used as the
-   * `description` frontmatter of the generated Claude Code plugin skill. This
-   * is what Claude matches against to auto-load the skill, so it must read as a
-   * trigger, not as a passive blurb. Falls back to `description` if absent.
+   * Markdown body filename under `dist/resources/`, produced at build time from
+   * `plugin/skills/<guideId>/SKILL.md` by `scripts/build-guides.mjs`. The skill
+   * is the source of truth; the auto-load trigger lives in its `description`
+   * frontmatter, not here.
    */
-  skillTrigger: string;
   file: string;
 }
 
@@ -43,8 +56,6 @@ export const GUIDE_DEFINITIONS: readonly GuideDefinition[] = [
     uri: "cognigy://guide/agent-creation",
     name: "Agent Creation Guide",
     description: "Full workflow for building a Cognigy AI Agent",
-    skillTrigger:
-      "Use when the user wants to build, create, or set up a new Cognigy AI Agent from scratch — covers listing projects, ensuring an LLM exists, creating the agent, testing it, and refining persona/job fields.",
     file: "agent-creation.md",
   },
   {
@@ -52,8 +63,6 @@ export const GUIDE_DEFINITIONS: readonly GuideDefinition[] = [
     uri: "cognigy://guide/llm-providers",
     name: "LLM Provider Reference",
     description: "Valid provider names, model strings, and credential info",
-    skillTrigger:
-      "Use when configuring or choosing an LLM for a Cognigy agent — valid provider names (openAI, anthropic, azureOpenAI, google, mistral), model strings, connection types, and credential resolution.",
     file: "llm-providers.md",
   },
   {
@@ -61,8 +70,6 @@ export const GUIDE_DEFINITIONS: readonly GuideDefinition[] = [
     uri: "cognigy://guide/troubleshooting",
     name: "Troubleshooting Guide",
     description: "Common issues, diagnostic steps, and fixes",
-    skillTrigger:
-      "Use when a Cognigy agent returns empty responses, a tool call or create_ai_agent fails, a resource is not found, setup_llm fails, or you need to diagnose a Cognigy MCP problem.",
     file: "troubleshooting.md",
   },
   {
@@ -70,8 +77,6 @@ export const GUIDE_DEFINITIONS: readonly GuideDefinition[] = [
     uri: "cognigy://guide/knowledge-setup",
     name: "Knowledge Setup Guide",
     description: "How to add knowledge stores and sources for RAG",
-    skillTrigger:
-      "Use when the user wants to add knowledge, RAG, or a knowledge store/source to a Cognigy agent — covers embedding vs Knowledge Search models, Knowledge AI settings, ingesting sources, and attaching knowledge as a tool.",
     file: "knowledge-setup.md",
   },
   {
@@ -79,8 +84,6 @@ export const GUIDE_DEFINITIONS: readonly GuideDefinition[] = [
     uri: "cognigy://guide/tools-setup",
     name: "Tools Setup Guide",
     description: "Available tool types, configuration, and prerequisites",
-    skillTrigger:
-      "Use when creating or configuring Cognigy agent tools — choosing the tool type (tool, http, mcp, knowledge, send_email) and their configuration schemas.",
     file: "tools-setup.md",
   },
   {
@@ -89,8 +92,6 @@ export const GUIDE_DEFINITIONS: readonly GuideDefinition[] = [
     name: "Webchat v3 Setup Guide",
     description:
       "Full settings reference, style presets, common recipes, and embedding for Webchat v3 endpoints",
-    skillTrigger:
-      "Use when the user wants to deploy a Cognigy agent to Webchat v3 — creating or updating the endpoint, style presets, layout/behavior settings, and the embed snippet.",
     file: "webchat-setup.md",
   },
   {
@@ -99,8 +100,6 @@ export const GUIDE_DEFINITIONS: readonly GuideDefinition[] = [
     name: "Flow Node Reference",
     description:
       "Supported flow node types, config schemas, placement rules, and examples for manage_flow_nodes",
-    skillTrigger:
-      "Use when adding custom logic inside a Cognigy tool branch with manage_flow_nodes — supported node types, config schemas, placement rules, and the tool-first workflow.",
     file: "flow-nodes.md",
   },
   {
@@ -109,8 +108,6 @@ export const GUIDE_DEFINITIONS: readonly GuideDefinition[] = [
     name: "Package Management Guide",
     description:
       "How to upload, inspect, import, export, and download Cognigy package zip files",
-    skillTrigger:
-      "Use when exporting, importing, uploading, inspecting, or downloading Cognigy package zip files — including reusing an LLM plus its connection across projects.",
     file: "package-management.md",
   },
   {
@@ -119,8 +116,6 @@ export const GUIDE_DEFINITIONS: readonly GuideDefinition[] = [
     name: "Voice Gateway Setup Guide",
     description:
       "How to create a Voice Gateway endpoint with WebRTC for browser-based voice interaction",
-    skillTrigger:
-      "Use when the user wants to set up a voice agent or a Voice Gateway endpoint with WebRTC for browser-based voice interaction.",
     file: "voice-gateway-setup.md",
   },
   {
@@ -129,8 +124,6 @@ export const GUIDE_DEFINITIONS: readonly GuideDefinition[] = [
     name: "Voice Go-Live Checklist Guide",
     description:
       "How audit_voice_agent checks and fixes a voice AI agent against the Go-Live Checklist, which items are auto-fixable, and which are manual",
-    skillTrigger:
-      "Use when the user wants to audit, validate, or make a Cognigy voice agent production-ready against the Voice Go-Live Checklist, or asks what audit_voice_agent checks and which items are auto-fixable vs manual.",
     file: "voice-go-live-checklist.md",
   },
   {
@@ -139,8 +132,6 @@ export const GUIDE_DEFINITIONS: readonly GuideDefinition[] = [
     name: "Settings Guide",
     description:
       "How to configure project-level settings including voice preview and Knowledge AI settings",
-    skillTrigger:
-      "Use when configuring project-level Cognigy settings — voice preview / speech provider configuration and Knowledge AI settings.",
     file: "settings.md",
   },
 ] as const;
@@ -187,7 +178,13 @@ export function resolveGuide(input: {
 }
 
 export function readGuideContent(guide: GuideDefinition): string {
-  return readFileSync(join(resourceDir, guide.file), "utf-8");
+  // Production (npm/.mcpb): the build extracted the guide body to dist/resources.
+  const built = join(resourceDir, guide.file);
+  if (existsSync(built)) return readFileSync(built, "utf-8");
+  // Dev/test fallback: running from src (tsx/jest) has no built dist/resources,
+  // so read straight from the canonical skill and strip its frontmatter.
+  const skill = join(skillsDir, guide.guideId, "SKILL.md");
+  return `${stripFrontmatter(readFileSync(skill, "utf-8"))}\n`;
 }
 
 export function buildGuideToolHint(uri: string):

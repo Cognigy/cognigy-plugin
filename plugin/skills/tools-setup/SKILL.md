@@ -3,10 +3,6 @@ name: tools-setup
 description: "Use when creating or configuring Cognigy agent tools — choosing the tool type (tool, http, mcp, knowledge, send_email) and their configuration schemas."
 ---
 
-<!-- GENERATED from src/resources/tools-setup.md by scripts/generate-skills.mjs. Do not edit by hand — edit the guide and run `npm run generate:skills`. -->
-
-> The full **Tools Setup Guide** is included below — you already have it. Do NOT call `read_guide` for `tools-setup`; just follow the content here.
-
 # Adding Tools to an AI Agent
 
 ## What are tools?

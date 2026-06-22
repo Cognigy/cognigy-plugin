@@ -7,7 +7,7 @@
 - `src/api/` — API client and request handlers
 - `src/schemas/` — Zod schemas for input validation
 - `src/utils/` — Utilities (logging, rate limiting, etc.)
-- `src/resources/` — MCP resources (documentation, examples)
+- `plugin/skills/<id>/SKILL.md` — guide content (source of truth); `scripts/build-guides.mjs` extracts the body into `dist/resources/` for the `read_guide` tool and `cognigy://guide/<id>` resources
 
 ## Why 11 Tools Instead of 359?
 
@@ -26,19 +26,19 @@ The Cognigy API has ~359 endpoints across 50+ categories. Creating one tool per 
 
 ### Tool inventory
 
-| Tool | Operation type |
-|---|---|
-| `create_ai_agent` | Write |
-| `update_ai_agent` | Write |
-| `setup_llm` | Write |
-| `talk_to_agent` | Write |
-| `manage_knowledge` | Write |
-| `create_tool` | Write |
-| `update_tool` | Write |
-| `manage_webchat` | Write |
-| `list_resources` | Read |
-| `get_resource` | Read |
-| `delete_resource` | Write |
+| Tool               | Operation type |
+| ------------------ | -------------- |
+| `create_ai_agent`  | Write          |
+| `update_ai_agent`  | Write          |
+| `setup_llm`        | Write          |
+| `talk_to_agent`    | Write          |
+| `manage_knowledge` | Write          |
+| `create_tool`      | Write          |
+| `update_tool`      | Write          |
+| `manage_webchat`   | Write          |
+| `list_resources`   | Read           |
+| `get_resource`     | Read           |
+| `delete_resource`  | Write          |
 
 ## Modern AI Agent-Centric Approach
 

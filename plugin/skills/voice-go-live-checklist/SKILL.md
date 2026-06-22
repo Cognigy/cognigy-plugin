@@ -3,10 +3,6 @@ name: voice-go-live-checklist
 description: "Use when the user wants to audit, validate, or make a Cognigy voice agent production-ready against the Voice Go-Live Checklist, or asks what audit_voice_agent checks and which items are auto-fixable vs manual."
 ---
 
-<!-- GENERATED from src/resources/voice-go-live-checklist.md by scripts/generate-skills.mjs. Do not edit by hand — edit the guide and run `npm run generate:skills`. -->
-
-> The full **Voice Go-Live Checklist Guide** is included below — you already have it. Do NOT call `read_guide` for `voice-go-live-checklist`; just follow the content here.
-
 # Voice Go-Live Checklist Guide
 
 `audit_voice_agent` checks a voice AI agent against the deterministic subset of the Voice AI guidebook **Go-Live Checklist** (section 3) and can apply safe fixes. It reads the flow chart (and optionally the endpoint and LLM) over the Cognigy REST API, so it only covers what the API can both read and change. Speech-provider status, failover behaviour, and release-readiness items live in the external Voice Gateway app or are runtime/operational — those are **manual** and out of scope.

@@ -3,10 +3,6 @@ name: troubleshooting
 description: "Use when a Cognigy agent returns empty responses, a tool call or create_ai_agent fails, a resource is not found, setup_llm fails, or you need to diagnose a Cognigy MCP problem."
 ---
 
-<!-- GENERATED from src/resources/troubleshooting.md by scripts/generate-skills.mjs. Do not edit by hand — edit the guide and run `npm run generate:skills`. -->
-
-> The full **Troubleshooting Guide** is included below — you already have it. Do NOT call `read_guide` for `troubleshooting`; just follow the content here.
-
 # Troubleshooting
 
 ## Agent returns empty response

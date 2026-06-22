@@ -6,10 +6,13 @@ import { describe, expect, it } from "@jest/globals";
 import { SERVER_INSTRUCTIONS } from "../instructions.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const resourceDir = join(__dirname, "..", "resources");
+// Guides are sourced from the plugin skills (one source of truth); the read_guide
+// tool serves the same body with the frontmatter stripped at build time.
+const skillsDir = join(__dirname, "..", "..", "plugin", "skills");
 
 function readResource(name: string): string {
-  return readFileSync(join(resourceDir, name), "utf-8");
+  const id = name.replace(/\.md$/, "");
+  return readFileSync(join(skillsDir, id, "SKILL.md"), "utf-8");
 }
 
 describe("knowledge guidance", () => {

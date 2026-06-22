@@ -27,7 +27,7 @@ describe("manage_packages tool surface", () => {
     const guide = getGuideById("package-management");
     expect(guide?.uri).toBe("cognigy://guide/package-management");
     expect(
-      existsSync(join(repoRoot, "src/resources/package-management.md")),
+      existsSync(join(repoRoot, "plugin/skills/package-management/SKILL.md")),
     ).toBe(true);
   });
 });
