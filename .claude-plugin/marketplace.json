@@ -9,9 +9,9 @@
   },
   "plugins": [
     {
-      "name": "cognigy",
+      "name": "cognigy-mcp",
       "source": "./plugin",
-      "description": "NiCE Cognigy MCP — build, test, and deploy AI Agents on the NiCE Cognigy platform from Claude Code"
+      "description": "Cognigy Platform MCP — build, test, and deploy AI Agents on the NiCE Cognigy platform from Claude Code"
     }
   ]
 }

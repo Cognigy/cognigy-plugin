@@ -1,7 +1,7 @@
 {
-  "name": "cognigy",
+  "name": "cognigy-mcp",
   "version": "1.1.0",
-  "description": "Create, test, and manage AI Agents on the NiCE Cognigy platform",
+  "description": "Cognigy Platform MCP — create, test, and manage AI Agents on the NiCE Cognigy platform",
   "author": {
     "name": "Cognigy",
     "url": "https://www.cognigy.com"
@@ -27,7 +27,7 @@
     }
   },
   "mcpServers": {
-    "cognigy": {
+    "platform": {
       "command": "node",
       "args": [
         "${CLAUDE_PLUGIN_DATA}/node_modules/@cognigy/mcp-server/dist/index.js"
