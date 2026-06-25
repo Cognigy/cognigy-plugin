@@ -9,7 +9,7 @@ You have the Cognigy MCP tools available (`audit_voice_agent`, `list_resources`,
 
 ## Workflow
 
-1. **Identify the agent.** If you were given an `aiAgentId`, use it. Otherwise `list_resources { resourceType: "ai_agent" }` (and `project` if needed) and confirm the target with the caller. Do not guess.
+1. **Identify the agent.** If you were given an `aiAgentId`, use it. Otherwise `list_resources { resourceType: "agent" }` (and `project` if needed) and confirm the target with the caller. Do not guess.
 2. **Dry-run audit.** Call `audit_voice_agent { aiAgentId, apply: false }`. This mutates nothing.
 3. **Summarize.** Group the returned `checks` by status (fail / warn / pass / na). For each `fail`/`warn`, state the check id, what's wrong, and whether it is `autoFixable`. Call out advisory items (e.g. STT hints) that are never auto-fixed.
 4. **Apply (only the safe set).** For the `autoFixable` failures, call `audit_voice_agent { aiAgentId, apply: true }` — or `apply: true, only: [<ids>]` if the caller wants a subset. Never invent config values; the audit's proposed fixes are authoritative.

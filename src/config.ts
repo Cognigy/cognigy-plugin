@@ -1,5 +1,5 @@
 /**
- * Configuration for the NiCE Cognigy MCP Connector
+ * Configuration for Cognigy Platform MCP
  */
 import { readFileSync } from "fs";
 import { dirname, join } from "path";

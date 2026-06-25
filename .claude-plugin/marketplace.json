@@ -5,7 +5,7 @@
     "url": "https://www.cognigy.com"
   },
   "metadata": {
-    "description": "Official marketplace for the NiCE Cognigy MCP plugin — build, test, and deploy AI Agents on the NiCE Cognigy platform."
+    "description": "Official marketplace for Cognigy Platform MCP — build, test, and deploy AI Agents on the NiCE Cognigy platform."
   },
   "plugins": [
     {

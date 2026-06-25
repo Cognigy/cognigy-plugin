@@ -1,4 +1,4 @@
-# NiCE Cognigy MCP Plugin
+# Cognigy Platform MCP
 
 > **Migrated from [`Cognigy/cognigy-mcp`](https://github.com/Cognigy/cognigy-mcp).** This repository began as a fork of `cognigy-mcp` and is now a detached project distributed exclusively as a **plugin** — supported by **Claude Code** and **Codex** today, with more clients to come. The plugin auto-installs and auto-updates the MCP server engine and ships skills + agents.
 
