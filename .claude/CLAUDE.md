@@ -10,7 +10,7 @@ Format all code with Prettier (project default). Run `npx prettier --write <file
 
 MCP server that lets an LLM create, configure, test, and manage **AI Agents on the NiCE Cognigy platform** over the Cognigy REST API v2.0.
 
-Distributed **only as a plugin** (`plugin/` + `.claude-plugin/marketplace.json`) — a generic plugin supported by Claude Code and Codex today, more clients later. Detached fork of `cognigy-mcp`. The server is published to npm as **`@cognigy/plugin-engine`** (scoped, cognigy org) purely as the engine the plugin auto-installs via its SessionStart hook; users never install it directly. No standalone CLI / `.mcpb` / `manifest.json`.
+Distributed **only as a plugin** (`plugin/` + `.claude-plugin/marketplace.json`) — a generic plugin supported by Claude Code and Codex today, more clients later. Detached fork of `cognigy-mcp`. The server is published to npm as **`@cognigy/plugin-engine`** (scoped, cognigy org) purely as the engine the plugin auto-installs; users never install it directly. The plugin's MCP server command is a launcher (`plugin/bin/launch.mjs`) that installs the **pinned** engine version (`plugin/engine.json`) into `${CLAUDE_PLUGIN_DATA}` on first boot (guarded: only when the installed version differs), then hands off to it — no install hook, no `@latest` float, no first-run race. Bump the `engine.json` pin per-PR when shipping a new engine. No standalone CLI / `.mcpb` / `manifest.json`.
 
 ## Tech stack
 

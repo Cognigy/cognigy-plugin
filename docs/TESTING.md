@@ -46,7 +46,7 @@ Use this when you want to test changes to the engine before publishing, without 
    npm run build
    ```
 
-2. Temporarily point the plugin at your local build. Edit `plugin/.claude-plugin/plugin.json` so `mcpServers.platform.args` references your local `dist/index.js` instead of the engine under `${CLAUDE_PLUGIN_DATA}`.
+2. Temporarily point the plugin at your local build. Edit `plugin/.claude-plugin/plugin.json` so `mcpServers.platform.args` references your local `dist/index.js` directly, instead of the launcher (`${CLAUDE_PLUGIN_ROOT}/bin/launch.mjs`) that resolves the pinned engine from npm.
 
    **Revert this change before committing** — it is for local testing only.
 
