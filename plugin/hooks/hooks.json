@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "mkdir -p \"${CLAUDE_PLUGIN_DATA}\" && npm install --prefix \"${CLAUDE_PLUGIN_DATA}\" @cognigy/mcp-server@latest --no-fund --no-audit --loglevel=error || echo \"[cognigy] MCP server install/update failed — the server may not start. Check network/registry access, then reload the plugin or restart the session.\" 1>&2"
+            "command": "mkdir -p \"${CLAUDE_PLUGIN_DATA}\" && npm install --prefix \"${CLAUDE_PLUGIN_DATA}\" @cognigy/plugin-engine@latest --no-fund --no-audit --loglevel=error || echo \"[cognigy] MCP server install/update failed — the server may not start. Check network/registry access, then reload the plugin or restart the session.\" 1>&2"
           }
         ]
       }

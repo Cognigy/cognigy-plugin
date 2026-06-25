@@ -7,28 +7,15 @@ Contributions are welcome!
 ```bash
 git clone https://github.com/Cognigy/cognigy-plugin.git
 cd cognigy-plugin
-npm install
+npm ci
 npm run build
 ```
 
-Point your MCP client to the local build:
-
-```json
-{
-  "mcpServers": {
-    "cognigy": {
-      "command": "node",
-      "args": ["/absolute/path/to/cognigy-mcp/dist/index.js"],
-      "env": {
-        "COGNIGY_API_BASE_URL": "https://api-trial.cognigy.ai",
-        "COGNIGY_API_KEY": "your-api-key-here"
-      }
-    }
-  }
-}
-```
-
-Or use the interactive setup: `npm run setup`
+This repo is the source for the `@cognigy/plugin-engine` npm package, which the plugin
+auto-installs. To test a local engine build, temporarily point the plugin's
+`mcpServers.platform.args` in `plugin/.claude-plugin/plugin.json` at your local `dist/index.js`,
+run `/reload-plugins`, then revert before committing. See [`TESTING.md`](./TESTING.md) for the
+full local-engine and marketplace test paths.
 
 ## Commit Messages
 
@@ -101,12 +88,13 @@ so a separate global install is not required.
 
 | Command                                | Description                                       |
 | -------------------------------------- | ------------------------------------------------- |
-| `npm run build`                        | Compile TypeScript                                |
+| `npm run build`                        | Clean `dist` and compile TypeScript               |
+| `npm run dev`                          | Watch mode (tsx)                                  |
+| `npm start`                            | Run the built server (`node dist/index.js`)       |
 | `npm test`                             | Run test suite                                    |
 | `npm run lint`                         | Run ESLint                                        |
 | `npm run prettier:check -- <files...>` | Check formatting with Prettier for specific files |
-| `npm run dev`                          | Watch mode (tsx)                                  |
-| `npm run mcpb:pack`                    | Build `.mcpb` bundle                              |
+| `npm run prettier:write -- <files...>` | Format specific files with Prettier               |
 
 ## Submitting Changes
 

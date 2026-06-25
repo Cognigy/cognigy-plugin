@@ -13,11 +13,6 @@ import { randomUUID } from "crypto";
 import { pathToFileURL } from "url";
 import axios from "axios";
 import { CognigyApiClient } from "../api/client.js";
-import {
-  listGuideMetadata,
-  readGuideContent,
-  resolveGuide,
-} from "../guides.js";
 import { logger } from "../utils/logger.js";
 import { filterResponse, filterList, withHints } from "./filters.js";
 import { buildWebchatSettings, deepMerge } from "./webchatSettings.js";
@@ -1384,7 +1379,6 @@ export class ToolHandlers {
         return withHints(result, {
           warning:
             "Could not verify LLM resource in project. Agent may not generate responses.",
-          resource: "cognigy://guide/agent-creation",
           action: nextAction,
         });
       }
@@ -1446,7 +1440,6 @@ export class ToolHandlers {
         },
         {
           likely_cause: likelyCause,
-          resource: "cognigy://guide/troubleshooting",
           action,
         },
       );
@@ -1495,7 +1488,6 @@ export class ToolHandlers {
                 "Could not find a flow associated with this agent. Job config was not updated.",
             },
             {
-              resource: "cognigy://guide/agent-creation",
               action:
                 "Ensure the agent was created via create_ai_agent, which provisions the flow and Job Node.",
             },
@@ -1520,7 +1512,6 @@ export class ToolHandlers {
                   "No AI Agent Job Node found in the flow. Job config was not updated.",
               },
               {
-                resource: "cognigy://guide/agent-creation",
                 action: "Ensure the agent was created via create_ai_agent.",
               },
             );
@@ -1609,7 +1600,6 @@ export class ToolHandlers {
       return withHints(
         { error: "Either apiKey or connectionId must be provided." },
         {
-          resource: "cognigy://guide/llm-providers",
           action: "Read the provider guide for credential requirements.",
         },
       );
@@ -1642,7 +1632,6 @@ export class ToolHandlers {
               projectId: data.projectId,
             },
             {
-              resource: "cognigy://guide/package-management",
               action:
                 "Import the LLM and its connection into the target project with manage_packages, or provide an apiKey / same-project connectionId.",
             },
@@ -1659,7 +1648,6 @@ export class ToolHandlers {
             projectId: data.projectId,
           },
           {
-            resource: "cognigy://guide/package-management",
             action:
               "Verify the connection exists in the target project, or import it together with the LLM via manage_packages before retrying.",
           },
@@ -1683,7 +1671,6 @@ export class ToolHandlers {
         return withHints(
           { error: `Failed to create connection: ${connError.message}` },
           {
-            resource: "cognigy://guide/llm-providers",
             action: "Check API key and provider, then retry.",
           },
         );
@@ -1707,7 +1694,6 @@ export class ToolHandlers {
       return withHints(
         { error: error.message },
         {
-          resource: "cognigy://guide/llm-providers",
           action:
             "Read the provider guide for valid provider names and model strings.",
         },
@@ -1745,7 +1731,6 @@ export class ToolHandlers {
           modelType: data.modelType,
         },
         {
-          resource: "cognigy://guide/llm-providers",
           action:
             "Verify your provider setup and model configuration, then retry.",
         },
@@ -1795,7 +1780,6 @@ export class ToolHandlers {
             ...(cleanedUp ? {} : { modelId: llmId }),
           },
           {
-            resource: "cognigy://guide/llm-providers",
             action:
               "Verify your API key and model type are correct, then retry.",
           },
@@ -1827,7 +1811,6 @@ export class ToolHandlers {
           connectionTest: { skipped: true, reason: testError.message },
         },
         {
-          resource: "cognigy://guide/llm-providers",
           action:
             "Test the model manually or delete and recreate if credentials are wrong.",
         },
@@ -1866,7 +1849,6 @@ export class ToolHandlers {
           {
             likely_cause:
               "Agent may not have been created via create_ai_agent, or has no associated flow.",
-            resource: "cognigy://guide/agent-creation",
             action:
               "Create the agent with create_ai_agent, or provide endpointUrl directly.",
           },
@@ -2014,7 +1996,6 @@ export class ToolHandlers {
         return withHints(result, {
           likely_cause:
             "Agent returned no text. Possible causes: 1) no LLM configured, 2) empty agent description, 3) endpoint not connected to flow.",
-          resource: "cognigy://guide/troubleshooting",
           action: "Read the troubleshooting guide for diagnostic steps.",
         });
       }
@@ -2033,7 +2014,6 @@ export class ToolHandlers {
         },
         {
           likely_cause: "Endpoint URL invalid or expired.",
-          resource: "cognigy://guide/troubleshooting",
           action:
             "Verify endpoint with list_resources { resourceType: 'endpoint' }.",
         },
@@ -2169,7 +2149,6 @@ export class ToolHandlers {
             { error: "Could not find a flow associated with this agent." },
             {
               likely_cause: "Agent was not created via create_ai_agent.",
-              resource: "cognigy://guide/tools-setup",
               action: "Create the agent with create_ai_agent first.",
             },
           );
@@ -2216,7 +2195,6 @@ export class ToolHandlers {
     if (filtered.length === 0 && resourceType === "agent") {
       return withHints(result, {
         hint: "No agents found.",
-        resource: "cognigy://guide/agent-creation",
       });
     }
 
@@ -2282,7 +2260,6 @@ export class ToolHandlers {
         return withHints(
           { error: "Could not find a flow associated with this agent." },
           {
-            resource: "cognigy://guide/tools-setup",
             action: "Ensure agent was created via create_ai_agent.",
           },
         );
@@ -2525,7 +2502,6 @@ export class ToolHandlers {
             {
               warning:
                 "File ingestion is async — content will be processed and chunked automatically. This may take 10-60 seconds.",
-              resource: "cognigy://guide/knowledge-setup",
               action:
                 "Wait, then use list_chunks to verify the content was ingested.",
             },
@@ -2563,7 +2539,6 @@ export class ToolHandlers {
             {
               warning:
                 "URL ingestion is async — content may not be searchable for 10-60 seconds.",
-              resource: "cognigy://guide/knowledge-setup",
               action:
                 "Wait, then use list_chunks to verify the content was ingested.",
             },
@@ -2605,7 +2580,6 @@ export class ToolHandlers {
           {
             warning:
               "Chunk created. It may take a few seconds before it becomes searchable.",
-            resource: "cognigy://guide/knowledge-setup",
             action:
               "Wait, then use list_chunks to verify the content was ingested.",
           },
@@ -2634,7 +2608,6 @@ export class ToolHandlers {
               { chunks: [], sources: [] },
               {
                 likely_cause: "No sources found in this knowledge store.",
-                resource: "cognigy://guide/knowledge-setup",
                 action: "Add a source first with create_source.",
               },
             );
@@ -2708,7 +2681,6 @@ export class ToolHandlers {
         {
           likely_cause:
             "create_tool requires an agent created via create_ai_agent (which auto-provisions the flow).",
-          resource: "cognigy://guide/tools-setup",
           action:
             "Read the tools guide, ensure agent was created via create_ai_agent, then retry.",
         },
@@ -2735,7 +2707,6 @@ export class ToolHandlers {
             "No aiAgentJob node found in the flow. Tools must be children of an AI Agent Job node.",
         },
         {
-          resource: "cognigy://guide/tools-setup",
           action:
             "Ensure the agent was created via create_ai_agent (which provisions the aiAgentJob node).",
         },
@@ -2777,7 +2748,6 @@ export class ToolHandlers {
           },
           {
             warning: `A tool with toolId "${requestedToolId}" already exists in this agent flow, so the existing tool was reused instead of creating a duplicate.`,
-            resource: "cognigy://guide/tools-setup",
             action: `Continue by adding logic inside that tool with manage_flow_nodes using parentNodeId "${duplicateToolNodeId}", or modify it with update_tool { aiAgentId: "${data.aiAgentId}", toolNodeId: "${duplicateToolNodeId}", ... }.`,
           },
         );
@@ -2894,10 +2864,7 @@ export class ToolHandlers {
           rollbackFailed.length > 0
             ? `Rollback partially failed — orphaned node IDs: [${rollbackFailed.join(", ")}]. Delete them with delete_resource { resourceType: 'tool', id, aiAgentId }, then retry.`
             : "Check tool type and config, then retry.";
-        return withHints(
-          { error: error.message },
-          { resource: "cognigy://guide/tools-setup", action },
-        );
+        return withHints({ error: error.message }, { action });
       }
     }
 
@@ -2906,7 +2873,6 @@ export class ToolHandlers {
       return withHints(
         { error: "url is required in config for http tool type." },
         {
-          resource: "cognigy://guide/tools-setup",
           action: "Provide config.url and retry.",
         },
       );
@@ -3034,10 +3000,7 @@ export class ToolHandlers {
         rollbackFailed.length > 0
           ? `Rollback partially failed — orphaned node IDs: [${rollbackFailed.join(", ")}]. Delete them with delete_resource { resourceType: 'tool', id, aiAgentId }, then retry.`
           : "Check HTTP config and code snippets, then retry.";
-      return withHints(
-        { error: error.message },
-        { resource: "cognigy://guide/tools-setup", action },
-      );
+      return withHints({ error: error.message }, { action });
     }
   }
 
@@ -3054,7 +3017,6 @@ export class ToolHandlers {
         {
           likely_cause:
             "update_tool requires an agent created via create_ai_agent.",
-          resource: "cognigy://guide/tools-setup",
           action: "Ensure agent was created via create_ai_agent, then retry.",
         },
       );
@@ -3326,7 +3288,6 @@ export class ToolHandlers {
           return withHints(
             { error: "nodeType is required for create operation." },
             {
-              resource: "cognigy://guide/flow-nodes",
               action: "Read the flow-nodes guide for supported node types.",
             },
           );
@@ -3339,7 +3300,6 @@ export class ToolHandlers {
               error: `Unsupported nodeType: "${data.nodeType}". Supported types: ${supportedNodeTypes().join(", ")}`,
             },
             {
-              resource: "cognigy://guide/flow-nodes",
               action:
                 "Read the flow-nodes guide for the full list and config schemas.",
             },
@@ -3373,7 +3333,6 @@ export class ToolHandlers {
               error: `Missing required config keys for ${data.nodeType}: ${missingKeyLabels.join(", ")}`,
             },
             {
-              resource: "cognigy://guide/flow-nodes",
               action: `Provide the required config fields: ${missingKeyLabels.join(", ")}`,
             },
           );
@@ -3594,7 +3553,6 @@ export class ToolHandlers {
         return withHints(
           { error: "projectId is required to create a webchat endpoint." },
           {
-            resource: "cognigy://guide/webchat-setup",
             action:
               "Provide projectId. Use list_resources { resourceType: 'project' } to find one.",
           },
@@ -3607,7 +3565,6 @@ export class ToolHandlers {
               "flowId is required to create a webchat endpoint. To update an existing one, provide endpointId instead.",
           },
           {
-            resource: "cognigy://guide/webchat-setup",
             action:
               "Provide flowId. Use list_resources { resourceType: 'flow', projectId } to find one, or create an agent first with create_ai_agent.",
           },
@@ -3683,7 +3640,6 @@ export class ToolHandlers {
         return withHints(
           { error: `Failed to create webchat endpoint: ${error.message}` },
           {
-            resource: "cognigy://guide/webchat-setup",
             action: "Check projectId and flowId, then retry.",
           },
         );
@@ -3707,7 +3663,6 @@ export class ToolHandlers {
             "Nothing to update. Provide at least one setting group or name.",
         },
         {
-          resource: "cognigy://guide/webchat-setup",
           action:
             "Include layout, behavior, homeScreen, or other setting groups.",
         },
@@ -3744,7 +3699,6 @@ export class ToolHandlers {
       return withHints(
         { error: `Failed to update webchat endpoint: ${error.message}` },
         {
-          resource: "cognigy://guide/webchat-setup",
           action: "Verify endpointId and settings, then retry.",
         },
       );
@@ -3839,7 +3793,6 @@ export class ToolHandlers {
             error: "projectId is required to create a voice gateway endpoint.",
           },
           {
-            resource: "cognigy://guide/voice-gateway-setup",
             action:
               "Provide projectId. Use list_resources { resourceType: 'project' } to find one.",
           },
@@ -3852,7 +3805,6 @@ export class ToolHandlers {
               "flowId is required to create a voice gateway endpoint. To update an existing one, provide endpointId instead.",
           },
           {
-            resource: "cognigy://guide/voice-gateway-setup",
             action:
               "Provide flowId. Use list_resources { resourceType: 'flow', projectId } to find one, or create an agent first with create_ai_agent.",
           },
@@ -3911,7 +3863,6 @@ export class ToolHandlers {
             error: `Failed to create voice gateway endpoint: ${error.message}`,
           },
           {
-            resource: "cognigy://guide/voice-gateway-setup",
             action: "Check projectId and flowId, then retry.",
           },
         );
@@ -4053,7 +4004,6 @@ export class ToolHandlers {
       return withHints(
         { error: `Failed to update voice gateway endpoint: ${error.message}` },
         {
-          resource: "cognigy://guide/voice-gateway-setup",
           action: "Verify endpointId and settings, then retry.",
         },
       );
@@ -4111,7 +4061,6 @@ export class ToolHandlers {
               },
               {
                 action: `Upload a package containing a "${providerType}" speech connection using manage_packages { operation: "upload_and_inspect", projectId: "${projectId}", filePath: "<path>" }, import it, then retry this operation.`,
-                resource: "cognigy://guide/settings",
               },
             );
           }
@@ -4136,7 +4085,6 @@ export class ToolHandlers {
               error: `Failed to update voice preview settings: ${error.message}`,
             },
             {
-              resource: "cognigy://guide/settings",
               action: "Verify projectId and connectionId, then retry.",
             },
           );
@@ -4237,7 +4185,6 @@ export class ToolHandlers {
                 : {}),
             },
             {
-              resource: "cognigy://guide/settings",
               action: `Verify the projectId, same-project llm_model referenceIds, and content parser connection details, then retry. For Knowledge Search, call list_resources { resourceType: "llm_model", projectId: "${data.projectId}", useCase: "knowledgeSearch" } to match the Settings UI dropdown before choosing another model. If you are reusing another project's knowledge workflow, ensure the exact source-project Knowledge Search model has already been imported into this project before trying a different model.`,
             },
           );
@@ -4316,45 +4263,8 @@ export class ToolHandlers {
     return base.replace(/^http/, "ws");
   }
 
-  private async handleReadGuide(args: any): Promise<any> {
-    const data = schemas.readGuideSchema.parse(args);
-
-    if (!data.guideId && !data.uri) {
-      return {
-        guides: listGuideMetadata(),
-        _instruction:
-          "Call read_guide again with either guideId or uri to load the full markdown content of that guide.",
-      };
-    }
-
-    const guide = resolveGuide(data);
-    if (!guide) {
-      return withHints(
-        {
-          error: `Unknown guide: ${data.guideId ?? data.uri}`,
-          guides: listGuideMetadata(),
-        },
-        {
-          action:
-            "Call read_guide with one of the available guideId values or with a cognigy://guide/... uri from the list.",
-        },
-      );
-    }
-
-    return {
-      guideId: guide.guideId,
-      uri: guide.uri,
-      name: guide.name,
-      description: guide.description,
-      mimeType: "text/markdown",
-      content: readGuideContent(guide),
-      _instruction:
-        "Use the content field as the authoritative guide text for this workflow.",
-    };
-  }
-
   // =========================================================================
-  // Tool 17: audit_voice_agent
+  // Tool 16: audit_voice_agent
   // =========================================================================
   async handleAuditVoiceAgent(args: any): Promise<any> {
     const data = schemas.auditVoiceAgentSchema.parse(args);
@@ -4368,7 +4278,6 @@ export class ToolHandlers {
         return withHints(
           { error: "Could not resolve a flow for this agent." },
           {
-            resource: "cognigy://guide/voice-go-live-checklist",
             action:
               "Provide flowId directly, or ensure the agent was created via create_ai_agent.",
           },
@@ -4608,7 +4517,7 @@ export class ToolHandlers {
       summary: summarize(postChecks),
       checks: postChecks.map(formatCheck),
       _note:
-        "Applied auto-fixable fixes and re-audited. Verify the flow in the UI — especially node ordering when a Set Session Config node was created. Advisory checks (warn) and manual items are not auto-fixed; see cognigy://guide/voice-go-live-checklist.",
+        "Applied auto-fixable fixes and re-audited. Verify the flow in the UI — especially node ordering when a Set Session Config node was created. Advisory checks (warn) and manual items are not auto-fixed.",
     };
   }
 
@@ -4667,9 +4576,6 @@ export class ToolHandlers {
           break;
         case "manage_settings":
           result = await this.handleManageSettings(args);
-          break;
-        case "read_guide":
-          result = await this.handleReadGuide(args);
           break;
         case "audit_voice_agent":
           result = await this.handleAuditVoiceAgent(args);

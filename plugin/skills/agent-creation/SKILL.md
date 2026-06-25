@@ -31,7 +31,7 @@ description: "Use when the user wants to build, create, or set up a new Cognigy 
 6. Only if no reusable LLM with connectionId exists, or the package transfer failed: setup_llm { projectId, provider: "openAI", modelType: "gpt-4o", apiKey }
    - With isDefault: true (the default), agents auto-use this LLM — no extra step needed.
    - Save the `referenceId` from the response if you need to assign it explicitly later.
-     (See cognigy://guide/llm-providers for valid provider/modelType values)
+     (See the llm-providers skill for valid provider/modelType values)
 7. create_ai_agent { projectId, name, description }
    — Returns: agent, flow, endpoint, endpointUrl
    — The default LLM is automatically assigned to the agent's job node. If llmStatus is "configured", no extra step is needed.
@@ -44,7 +44,7 @@ description: "Use when the user wants to build, create, or set up a new Cognigy 
 ## Adding tools (optional)
 
 11. create_tool { aiAgentId, toolType, name, config }
-    (See cognigy://guide/tools-setup for tool types and config)
+    (See the tools-setup skill for tool types and config)
 12. talk_to_agent — test with tool-triggering messages
 13. Repeat 8-12 until satisfied
 

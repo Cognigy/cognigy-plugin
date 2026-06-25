@@ -1,19 +1,14 @@
 export const SERVER_INSTRUCTIONS = `Cognigy.AI MCP Server — builds and iteratively improves LLM-powered AI Agents.
 
-GUIDE ACCESS:
-- Use read_guide to load the full step-by-step contents of a Cognigy guide. Do NOT assume the client will automatically resolve a bare cognigy://guide/... URI.
-- When another tool returns _hints.guideToolCall, prefer using that exact read_guide call.
-- MCP resources are still exposed, but tool-based guide reads are the reliable cross-client path.
-- In Claude Code (plugin install) these same guides are also available as auto-loading skills, so the matching guidance may already be in context — read_guide remains the fallback and the primary path for every other MCP client.
+In clients that support plugin skills (e.g. Claude Code), detailed step-by-step workflow guidance auto-loads when your intent matches. The overview and hard rules below always apply.
 
-WORKFLOWS (load the guide for the full step-by-step BEFORE executing a multi-step task):
-- Build a new AI Agent → read_guide { guideId: "agent-creation" }: list projects → ENSURE an LLM exists (reuse via packages before setup_llm) → create_ai_agent → talk_to_agent → update_ai_agent. NEVER call talk_to_agent until a working LLM is confirmed in the project.
-- Add knowledge / RAG → read_guide { guideId: "knowledge-setup" }: embedding model vs project-level Knowledge Search model, set_knowledge_ai BEFORE creating the store, attach knowledge as a tool (not the persona) by default.
-- Reuse an LLM across projects → read_guide { guideId: "package-management" }: export each largeLanguageModel WITH its connection resource → upload_and_inspect → import → verify. An LLM without its connection is useless. Prefer this over setup_llm.
-- Add custom logic → read_guide { guideId: "flow-nodes" }: create a tool first (create_tool), then add nodes INSIDE the tool branch with manage_flow_nodes (parentNodeId = toolNodeId, mode = "appendChild"). NEVER add nodes before the AI Agent Job node.
-- Deploy to Webchat → read_guide { guideId: "webchat-setup" }: manage_webchat to create/update the endpoint. ALWAYS show the returned demoWebchatUrl as a clickable link.
-- Voice setup & go-live → read_guide { guideId: "voice-gateway-setup" } and { guideId: "voice-go-live-checklist" }: create the Voice Gateway endpoint, then audit_voice_agent (dry-run, then apply).
-- Other reference guides: llm-providers, tools-setup, settings, troubleshooting.
+WORKFLOWS:
+- Build a new AI Agent: list projects → ENSURE an LLM exists (reuse via packages before setup_llm) → create_ai_agent → talk_to_agent → update_ai_agent. NEVER call talk_to_agent until a working LLM is confirmed in the project.
+- Add knowledge / RAG: embedding model vs project-level Knowledge Search model, set_knowledge_ai BEFORE creating the store, attach knowledge as a tool (not the persona) by default.
+- Reuse an LLM across projects: export each largeLanguageModel WITH its connection resource → upload_and_inspect → import → verify. An LLM without its connection is useless. Prefer this over setup_llm.
+- Add custom logic: create a tool first (create_tool), then add nodes INSIDE the tool branch with manage_flow_nodes (parentNodeId = toolNodeId, mode = "appendChild"). NEVER add nodes before the AI Agent Job node.
+- Deploy to Webchat: manage_webchat to create/update the endpoint. ALWAYS show the returned demoWebchatUrl as a clickable link.
+- Voice setup & go-live: create the Voice Gateway endpoint, then audit_voice_agent (dry-run, then apply).
 
 TOOL TYPE SELECTION (create_tool):
 - Default to toolType "tool" for general requests (e.g., "unlock account", "check balance", "validate user"). This is the most common and versatile type.
@@ -35,7 +30,6 @@ RULES:
 - Never create two tools with the same \`toolId\`. Duplicate tool IDs can lead to failed tool execution or empty agent responses, and this is often a flow issue rather than an LLM or connection issue.
 - manage_flow_nodes is ONLY for building logic INSIDE tool branches. ALWAYS create a tool first (create_tool { toolType: "tool" }) then add nodes inside it using manage_flow_nodes with parentNodeId = toolNodeId and mode = "appendChild".
 - NEVER create standalone nodes before the AI Agent Job node. This is an anti-pattern that causes conversation loops and broken flows. ALL behavior — including authentication, data collection, greetings, and conditional logic — must be implemented as agent tools that the LLM decides when to invoke.
-- manage_flow_nodes only supports a curated set of node types. Use read_guide { guideId: "flow-nodes" } for the full list.
+- manage_flow_nodes only supports a curated set of node types: say, question, ifThenElse, lookup, setSessionContext, code, goTo, sleep, httpRequest.
 - manage_webchat creates a new endpoint when endpointId is omitted, and updates an existing endpoint only when endpointId is explicitly provided. To update an existing webchat, first use list_resources { resourceType: "endpoint", projectId } to find the endpointId.
-- manage_webchat ALWAYS returns demoWebchatUrl — present it to the user every time as a clickable link. Do NOT tell the user to find the URL in the Cognigy UI.
-- When errors occur, if _hints.guideToolCall is present, call that tool to load the referenced guide before retrying.`;
+- manage_webchat ALWAYS returns demoWebchatUrl — present it to the user every time as a clickable link. Do NOT tell the user to find the URL in the Cognigy UI.`;

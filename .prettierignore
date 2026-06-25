@@ -1,6 +1,5 @@
 dist
 node_modules
-*.mcpb
 .claude/skills/
-# Generated from src/resources by scripts/generate-skills.mjs — formatting follows the source guides.
+# Skill markdown is hand-authored content; keep it out of Prettier's reflow.
 plugin/skills/

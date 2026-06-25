@@ -7,9 +7,9 @@
 - `src/api/` — API client and request handlers
 - `src/schemas/` — Zod schemas for input validation
 - `src/utils/` — Utilities (logging, rate limiting, etc.)
-- `plugin/skills/<id>/SKILL.md` — guide content (source of truth); `scripts/build-guides.mjs` extracts the body into `dist/resources/` for the `read_guide` tool and `cognigy://guide/<id>` resources
+- `plugin/skills/<id>/SKILL.md` — workflow knowledge as plugin skills (hand-authored, auto-load on intent in clients that support skills, e.g. Claude Code). There is no `read_guide` tool or MCP guide resources; always-on guidance lives in `src/instructions.ts`
 
-## Why 11 Tools Instead of 359?
+## Why 16 Tools Instead of 359?
 
 The Cognigy API has ~359 endpoints across 50+ categories. Creating one tool per endpoint would overwhelm AI agents and make the system unusable. Our solution:
 
@@ -22,23 +22,28 @@ The Cognigy API has ~359 endpoints across 50+ categories. Creating one tool per 
 
 **Example**: Rather than separate tools for every CRUD operation on every resource type, `list_resources` and `get_resource` cover all read operations via a `resourceType` parameter, while `delete_resource` handles all deletions.
 
-**Result**: 11 tools covering ~115 API endpoints (97% reduction from 359 endpoints).
+**Result**: 16 tools covering ~115 API endpoints (97% reduction from 359 endpoints).
 
 ### Tool inventory
 
-| Tool               | Operation type |
-| ------------------ | -------------- |
-| `create_ai_agent`  | Write          |
-| `update_ai_agent`  | Write          |
-| `setup_llm`        | Write          |
-| `talk_to_agent`    | Write          |
-| `manage_knowledge` | Write          |
-| `create_tool`      | Write          |
-| `update_tool`      | Write          |
-| `manage_webchat`   | Write          |
-| `list_resources`   | Read           |
-| `get_resource`     | Read           |
-| `delete_resource`  | Write          |
+| Tool                   | Operation type |
+| ---------------------- | -------------- |
+| `create_ai_agent`      | Write          |
+| `update_ai_agent`      | Write          |
+| `setup_llm`            | Write          |
+| `talk_to_agent`        | Write          |
+| `manage_knowledge`     | Write          |
+| `create_tool`          | Write          |
+| `update_tool`          | Write          |
+| `manage_webchat`       | Write          |
+| `manage_voice_gateway` | Write          |
+| `manage_settings`      | Write          |
+| `manage_packages`      | Write          |
+| `manage_flow_nodes`    | Write          |
+| `list_resources`       | Read           |
+| `get_resource`         | Read           |
+| `delete_resource`      | Write          |
+| `audit_voice_agent`    | Read           |
 
 ## Modern AI Agent-Centric Approach
 

@@ -36,14 +36,12 @@ jobs:
       - name: Run tests
         run: npm test
 
-      # Compiles the server and extracts the guide markdown from plugin/skills/ into
-      # dist/resources (scripts/build-guides.mjs), which also asserts the skills and
-      # the GUIDE_IDS registry stay in lockstep.
+      # Compiles the server (tsc) — catches type errors and any broken build before merge.
       - name: Build
         run: npm run build
 
-      # The plugin's own version (host/marketplace-agnostic) is what Claude Code uses
-      # to detect an update. If this PR changes anything under plugin/, the version must
+      # The plugin's own version (host/marketplace-agnostic) is what plugin hosts (e.g.
+      # Claude Code) use to detect an update. If this PR changes anything under plugin/, the version must
       # change too — otherwise installs never refresh.
       - name: Require plugin version bump when plugin files change
         run: |

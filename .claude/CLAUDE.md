@@ -10,13 +10,13 @@ All code must be formatted with Prettier using the project's default configurati
 
 An MCP (Model Context Protocol) server that lets an LLM create, configure, test, and manage **AI Agents on the NiCE Cognigy platform** over the Cognigy REST API v2.0. Marketed as the "NiCE Cognigy MCP Connector".
 
-This repo (`cognigy-plugin`) is a detached fork of `cognigy-mcp`, repackaged **plugin-first**: the primary, recommended, and primary-maintained distribution is the **Claude Code plugin** (`plugin/` + `.claude-plugin/marketplace.json`). The same server is still distributed standalone — published to npm as `@cognigy/mcp-server` (the `npx`/CLI + manual-config path) and packaged as an `.mcpb` bundle (`manifest.json` is the marketplace entry) for a no-Node quick-install/test build. All three ship the identical server.
+This repo (`cognigy-plugin`) is a detached fork of `cognigy-mcp`, distributed **exclusively as a plugin** (the `plugin/` + `.claude-plugin/marketplace.json` format) — **not** a Claude-Code-specific product. The same plugin is supported by **Claude Code** and **Codex** today (the plugin format is compatible), with more clients to be added. The MCP server is published to npm as **`@cognigy/plugin-engine`** (scoped under the cognigy org) solely as the engine the plugin auto-installs via its SessionStart hook into `${CLAUDE_PLUGIN_DATA}` — users never install it directly. There is no standalone CLI, `.mcpb` bundle, `manifest.json`, or manual-config path anymore (all removed when the product went plugin-only).
 
 ## Tech stack
 
 - TypeScript, **ESM** (`"type": "module"` — import paths use `.js` extensions even for `.ts` sources).
 - `@modelcontextprotocol/sdk` (stdio transport), `axios`, `zod`, `form-data`. No other runtime deps.
-- Entry: `src/index.ts` — wires `Server` + `StdioServerTransport`, registers `ListTools`/`CallTool`/`ListResources`/`ReadResource` handlers, instantiates `CognigyApiClient` and `ToolHandlers`.
+- Entry: `src/index.ts` — wires `Server` + `StdioServerTransport`, registers `ListTools`/`CallTool` handlers, instantiates `CognigyApiClient` and `ToolHandlers`.
 
 ## Tool design — few tools, many operations
 
@@ -29,25 +29,23 @@ This repo (`cognigy-plugin`) is a detached fork of `cognigy-mcp`, repackaged **p
 | `src/tools/handlers.ts`     | `ToolHandlers` class — one `handleXxx(args)` per tool + a `case` in `handleToolCall()` (the dispatch switch). Large file.                                              |
 | `src/tools/nodeRegistry.ts` | Flow-node type registry (type, extension, category, placement `flow`/`child`, config keys). `supportedNodeTypes()` / `getNodeEntry()` gate `manage_flow_nodes create`. |
 | `src/tools/filters.ts`      | `filterResponse(kind, obj)` — strips internal fields from API responses before returning to the LLM.                                                                   |
-| `manifest.json`             | Marketplace `tools` array entry `{ name, description }`. Keep tool count in `README.md` in sync.                                                                       |
 
-Helpers: `withHints(result, {warning, action, resource})` attaches `_hints` guidance; `resolveFlowForAgent(apiClient, aiAgentId)` maps an agent → its flow.
+When the tool surface changes, keep the tool count + table in `README.md` in sync.
 
-## Guides / skills — one source, two consumers
+Helpers: `withHints(result, {warning, action})` attaches `_hints` guidance; `resolveFlowForAgent(apiClient, aiAgentId)` maps an agent → its flow.
 
-The canonical guide content is the **plugin skill** `plugin/skills/<id>/SKILL.md` (hand-authored: `name`/`description` frontmatter + markdown body). One source feeds two consumers: the skill auto-loads in Claude Code on intent (the frontmatter `description` is what Claude matches), and `scripts/build-guides.mjs` extracts the body (strips frontmatter) into `dist/resources/<id>.md` at build time, which the MCP server serves via the `read_guide` tool + `cognigy://guide/<id>` resources for every other MCP client. `src/instructions.ts` points at guides by id (no inlined steps).
+## Skills & agents — the only workflow-knowledge surface
 
-`src/guides.ts` is the metadata registry only — `GUIDE_IDS` + `GUIDE_DEFINITIONS` with `{ guideId, uri, name, description, file }` (no `skillTrigger`; the auto-load trigger lives in the SKILL.md frontmatter). `readGuideContent` reads `dist/resources/<file>` at runtime (`file` is `<guideId>.md`). The npm package ships `dist/` only (not `plugin/`), so the build-time extraction is what makes guides available to the standalone server.
+Workflow guidance lives **only** as plugin **skills** `plugin/skills/<id>/SKILL.md` (hand-authored: `name`/`description` frontmatter + markdown body). A skill auto-loads when the user's intent matches the frontmatter `description`, in clients that support skills (e.g. Claude Code). There is no `read_guide` tool, no `cognigy://guide/<id>` MCP resources, no `src/guides.ts` registry, no `dist/resources`, and no build-time guide extraction — all removed when the product went plugin-only. `src/instructions.ts` carries the always-on overview + hard rules (no per-guide pointers).
 
-`dist/resources` is a **build artifact (gitignored), not committed** — there is no generated file to keep in sync, so no drift guard. To work with skills:
+To work with skills:
 
 - **Edit content / trigger** → edit `plugin/skills/<id>/SKILL.md` directly (body = content; frontmatter `description` = trigger).
-- **Add** → new `plugin/skills/<id>/SKILL.md` + add `<id>` to `GUIDE_IDS` and a `GUIDE_DEFINITIONS` entry in `src/guides.ts`. It's now a skill + a `read_guide` guide + resource for free.
-- **Remove** → delete the `plugin/skills/<id>/` dir + its `GUIDE_IDS` member and `GUIDE_DEFINITIONS` entry.
-- `scripts/build-guides.mjs` (run by `npm run build`) asserts the skill dirs and `GUIDE_IDS` stay in lockstep — a missing pair on either side fails the build (and CI's "Build" step in `pr.yml`).
-- **Plugin version:** `version` in `plugin/.claude-plugin/plugin.json` is the plugin's own version (host/marketplace-agnostic — it's what Claude Code compares to detect an update; no marketplace-specific logic lives in this repo). Any PR that changes anything under `plugin/` must bump it, or CI fails (the "Require plugin version bump" step in `pr.yml`).
+- **Add** → create a new `plugin/skills/<id>/SKILL.md` with `name`/`description` frontmatter. No registry step — there is no `GUIDE_IDS`/`GUIDE_DEFINITIONS` anymore.
+- **Remove** → delete the `plugin/skills/<id>/` dir.
+- **Plugin version:** `version` in `plugin/.claude-plugin/plugin.json` is the plugin's own version (host/marketplace-agnostic — it's what plugin hosts like Claude Code compare to detect an update). Any PR that changes anything under `plugin/` must bump it, or CI fails (the "Require plugin version bump" step in `pr.yml`).
 
-**Agents** (`plugin/agents/*.md`) are hand-authored too: `cognigy-agent-builder`, `cognigy-voice-go-live`. Edit/add/remove these files directly. See the header JSDoc in `scripts/build-guides.mjs` for the full process.
+**Agents** (`plugin/agents/*.md`) are hand-authored too: `cognigy-agent-builder`, `cognigy-voice-go-live`. Edit/add/remove these files directly.
 
 ## API client & config
 

@@ -247,7 +247,7 @@ manage_flow_nodes {
 
 All node types supported by `manage_flow_nodes` can be used inside tool branches: `say`, `question`, `ifThenElse`, `lookup`, `setSessionContext`, `code`, `goTo`, `sleep`, `httpRequest`.
 
-Read cognigy://guide/flow-nodes for config schemas of each node type.
+See the flow-nodes skill for config schemas of each node type.
 
 ## Updating tools (update_tool)
 

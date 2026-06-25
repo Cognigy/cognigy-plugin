@@ -9,19 +9,15 @@ describe("withHints", () => {
     expect(result._hints).toEqual({ hint: "some hint" });
   });
 
-  it("adds a guide tool call when hints include a guide resource", () => {
+  it("passes warning and action hints through unchanged", () => {
     const result = withHints(
       { error: "Failed" },
-      { resource: "cognigy://guide/settings" },
+      { warning: "watch out", action: "do this next" },
     );
 
     expect(result._hints).toEqual({
-      resource: "cognigy://guide/settings",
-      guideId: "settings",
-      guideToolCall: {
-        name: "read_guide",
-        arguments: { uri: "cognigy://guide/settings" },
-      },
+      warning: "watch out",
+      action: "do this next",
     });
   });
 

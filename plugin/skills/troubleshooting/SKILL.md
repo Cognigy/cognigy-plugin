@@ -30,7 +30,7 @@ description: "Use when a Cognigy agent returns empty responses, a tool call or c
 
 ## setup_llm fails
 
-- See cognigy://guide/llm-providers for valid provider and model strings
+- See the llm-providers skill for valid provider and model strings
 - Verify API key has access to the specified model
 
 ## delete_resource fails

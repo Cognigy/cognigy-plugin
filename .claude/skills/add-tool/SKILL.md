@@ -14,15 +14,13 @@ This is a TypeScript MCP server. Tools follow a strict pattern across these file
 | `src/tools/definitions.ts` | Tool metadata: name, description, annotations, inputSchema (JSON Schema) |
 | `src/schemas/tools.ts` | Zod validation schemas — one per tool or discriminated union per multi-op tool |
 | `src/tools/handlers.ts` | `ToolHandlers` class — one `handleXxx(args)` method per tool + a case in `handleToolCall()` |
-| `src/index.ts` | Resource map (`RESOURCE_MAP`) — register any new guide here |
-| `plugin/skills/<name>/SKILL.md` | Markdown guide for the tool (source of truth; built into `dist/resources` and referenced via `cognigy://guide/<name>`) |
-| `manifest.json` | Marketplace entry — add `{ name, description }` to the `tools` array |
+| `plugin/skills/<name>/SKILL.md` | Hand-authored plugin skill for the tool (auto-loads on intent in supporting clients, e.g. Claude Code) |
 | `src/__tests__/schemas.test.ts` | Schema validation tests |
 | `src/__tests__/tools.test.ts` | Handler tests with mocked `CognigyApiClient` |
 
 ## Design philosophy: few tools, many operations
 
-This server deliberately uses few tools (~13) to cover many Cognigy API endpoints (~115). Each tool groups related endpoints under a single `operation` parameter that acts as a router.
+This server deliberately uses few tools (~16) to cover many Cognigy API endpoints (~115). Each tool groups related endpoints under a single `operation` parameter that acts as a router.
 
 **Example: `manage_knowledge`** — one tool covers ~8 endpoints:
 - `create_store` → `POST /v2.0/knowledgestores`
@@ -33,7 +31,7 @@ This server deliberately uses few tools (~13) to cover many Cognigy API endpoint
 - etc.
 
 **Why this pattern:**
-- **Fewer tools for the LLM to choose from** — 13 tools is much easier for Claude to reason about than 115 separate ones. Less confusion, better tool selection.
+- **Fewer tools for the LLM to choose from** — 16 tools is much easier for Claude to reason about than 115 separate ones. Less confusion, better tool selection.
 - **Grouped by domain** — each tool maps to a Cognigy domain concept (knowledge, packages, webchat, flow nodes), making it intuitive.
 - **Shared context** — operations within a tool share parameters (like `projectId`) and the description explains the full workflow across operations in one place.
 
@@ -49,8 +47,6 @@ Reference templates are bundled with this skill. Use them as starting points:
 - **`${CLAUDE_SKILL_DIR}/templates/definition.ts`** — Tool definition entry for `src/tools/definitions.ts`
 - **`${CLAUDE_SKILL_DIR}/templates/schema.ts`** — Zod schema for `src/schemas/tools.ts`
 - **`${CLAUDE_SKILL_DIR}/templates/handler.ts`** — Handler method for `src/tools/handlers.ts`
-- **`${CLAUDE_SKILL_DIR}/templates/manifest-entry.json`** — Manifest entry for `manifest.json`
-- **`${CLAUDE_SKILL_DIR}/templates/resource-map-entry.ts`** — Resource map entry for `src/index.ts`
 
 Read these templates before writing code to match the exact conventions.
 
@@ -62,7 +58,7 @@ Before writing code, confirm with the user:
 - Tool name (snake_case, e.g. `manage_packages`)
 - Operations (if multi-operation tool) and their required/optional params
 - Which Cognigy REST API endpoints each operation calls (method + path)
-- Whether a resource guide markdown is needed
+- Whether a plugin skill is needed for the tool's workflow
 - Read existing tools in `src/tools/definitions.ts` and `src/schemas/tools.ts` to match conventions
 
 ### 2. Add the tool definition (`src/tools/definitions.ts`)
@@ -70,7 +66,6 @@ Before writing code, confirm with the user:
 Read `${CLAUDE_SKILL_DIR}/templates/definition.ts` for the template.
 
 Add an entry to the `tools` array. Conventions:
-- Description should include `BEFORE USING: Read cognigy://guide/<name>` if a guide exists
 - Use 24-char hex IDs for all Cognigy resource IDs
 - Keep descriptions actionable — tell the AI what the tool does and when to use it
 
@@ -95,17 +90,11 @@ Key patterns:
 - Use `withHints(data, { action: "helpful suggestion" })` for actionable errors
 - Complex logic (preview generation, conflict resolution) goes in a separate file under `src/tools/` (e.g. `packageImport.ts`)
 
-### 5. Register resource guide (if needed)
+### 5. Add a plugin skill (if needed)
 
-Create `plugin/skills/<tool-name>/SKILL.md` with `name`/`description` frontmatter (the `description` is the skill's auto-load trigger) followed by the guide body. Add the guide's id to `GUIDE_IDS` + a `GUIDE_DEFINITIONS` entry in `src/guides.ts`; `scripts/build-guides.mjs` extracts the body into `dist/resources` at build.
+Create `plugin/skills/<tool-name>/SKILL.md` with `name`/`description` frontmatter (the `description` is the skill's auto-load trigger) followed by the workflow body. That's it — there is no registry step; the skill auto-loads on intent in supporting clients (e.g. Claude Code).
 
-Read `${CLAUDE_SKILL_DIR}/templates/resource-map-entry.ts` for the template. Add to `RESOURCE_MAP` in `src/index.ts`.
-
-### 6. Update manifest (`manifest.json`)
-
-Read `${CLAUDE_SKILL_DIR}/templates/manifest-entry.json` for the template. Add to the `tools` array.
-
-### 7. Add tests
+### 6. Add tests
 
 **Schema tests** in `src/__tests__/schemas.test.ts`:
 - Valid input passes parsing
@@ -119,7 +108,7 @@ Read `${CLAUDE_SKILL_DIR}/templates/manifest-entry.json` for the template. Add t
 - Test error cases and edge cases
 - Follow existing test structure with `describe`/`it` blocks
 
-### 8. Verify
+### 7. Verify
 
 Run in order:
 1. `npx tsc -p tsconfig.json --noEmit` — type check

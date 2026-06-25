@@ -1,18 +1,18 @@
 # NiCE Cognigy MCP Plugin
 
-> **Migrated from [`Cognigy/cognigy-mcp`](https://github.com/Cognigy/cognigy-mcp).** This repository began as a fork of `cognigy-mcp` and is now a detached, standalone project. It focuses on the **Claude Code plugin** experience while still distributing the MCP server standalone for anyone who can't or doesn't want to use the plugin. **The plugin is the recommended path and where maintenance is focused.**
+> **Migrated from [`Cognigy/cognigy-mcp`](https://github.com/Cognigy/cognigy-mcp).** This repository began as a fork of `cognigy-mcp` and is now a detached project distributed exclusively as a **plugin** — supported by **Claude Code** and **Codex** today, with more clients to come. The plugin auto-installs and auto-updates the MCP server engine and ships skills + agents.
 
-A Model Context Protocol (MCP) server that connects your AI assistant to the [Cognigy.AI](https://www.cognigy.com) REST API. Create, test, and improve LLM-based AI Agents through a self-improvement loop — without leaving your AI assistant.
+A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy.com) REST API. Create, test, and improve LLM-based AI Agents through a self-improvement loop — without leaving your client.
 
 ## Features
 
-- **17 workflow tools** for agent creation, deployment, packaging, voice setup, and guide access
+- **16 workflow tools** for agent creation, deployment, packaging, and voice setup
 - **One-call agent setup**: creates Agent + Flow + AI Agent Job Node + REST Endpoint automatically
 - **Self-improvement loop**: talk to your agent, evaluate responses, update the job description, repeat
 - **Knowledge store support**: attach RAG knowledge stores to agents as tools
 - **Browser voice deployment**: create Voice Gateway endpoints with WebRTC demo URLs
 - **Voice preview setup**: configure supported speech providers for voice experiences
-- **Built-in guides**: workflow guides are exposed both as MCP resources and through the `read_guide` tool
+- **Skills + agents**: workflow guidance auto-loads as skills in supporting clients; build/go-live loops run as subagents
 - Built-in rate limiting, Zod input validation, and RFC 7807 error responses
 
 ## Tools
@@ -34,18 +34,15 @@ A Model Context Protocol (MCP) server that connects your AI assistant to the [Co
 | `manage_packages`      | Write | List exportable resources, upload, inspect, import, export, and download Cognigy package zip files  |
 | `manage_voice_gateway` | Write | Create or configure a Voice Gateway endpoint with WebRTC for browser-based voice interaction        |
 | `manage_settings`      | Write | Manage project-level settings including voice preview and Knowledge AI configuration                |
-| `read_guide`           | Read  | Load the full markdown content of a built-in Cognigy workflow guide                                 |
 | `audit_voice_agent`    | Write | Audit a voice agent against the Go-Live Checklist; reports by default, applies safe fixes on demand |
 
-The server also includes built-in guides for detailed workflows, field references, and troubleshooting. They are exposed as MCP resources and through `read_guide`, which is the reliable cross-client path when an assistant needs the full content of a guide.
+Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, flow nodes, packages, settings, LLM providers, tools, troubleshooting) ships as **skills** that load automatically when your request matches, in clients that support them (e.g. Claude Code) — see below.
 
 ## Installation
 
-**Recommended: the [Claude Code plugin](#claude-code-plugin-recommended).** It auto-installs and auto-updates the server and ships skills + agents. Standalone MCP installation is fully supported below — but the plugin is the primary-maintained path.
+The plugin is supported by **Claude Code** and **Codex** today; more clients will be added. Install steps below cover Claude Code; the plugin always launches the latest published server engine, so you get updates automatically with no manual reinstall.
 
-### Claude Code plugin (recommended)
-
-Install the plugin from this repo's marketplace. The plugin always launches the latest published server, so you get server updates automatically with no manual reinstall.
+### Claude Code
 
 ```
 /plugin marketplace add Cognigy/cognigy-plugin
@@ -58,84 +55,8 @@ The first session downloads the server into the plugin's data directory, which t
 
 Beyond the MCP tools, the plugin ships **skills** and **agents** that make the workflows discoverable without you having to ask for a guide:
 
-- **Skills** (`/skills`) — one per Cognigy guide (agent creation, knowledge/RAG, voice gateway, voice go-live checklist, webchat, flow nodes, packages, settings, LLM providers, tools, troubleshooting). Claude loads the matching skill automatically when your request fits — no need to call `read_guide` yourself. The skills are the source of truth for the guides, so the `read_guide` content stays in sync.
+- **Skills** (`/skills`) — one per workflow (agent creation, knowledge/RAG, voice gateway, voice go-live checklist, webchat, flow nodes, packages, settings, LLM providers, tools, troubleshooting). Claude loads the matching skill automatically when your request fits — no need to ask for a guide.
 - **Agents** (`/agents`) — `cognigy-agent-builder` runs the full build-and-test loop for a new agent, and `cognigy-voice-go-live` audits a voice agent against the Go-Live Checklist and applies the safe fixes. Each runs in its own context and reports back a summary.
-
-The `read_guide` tool and `cognigy://guide/<id>` resources are unchanged and remain the workflow path for every other MCP client (Cursor, Cline, Claude Desktop, the `.mcpb` bundle).
-
-### Standalone MCP server
-
-Prefer not to use the plugin, or running a client other than Claude Code? The server is published to npm as `@cognigy/mcp-server` and works with any MCP client.
-
-#### One-command setup (all MCP clients)
-
-Requires [Node.js 20+](https://nodejs.org).
-
-| MCP Client        | Command                                             |
-| ----------------- | --------------------------------------------------- |
-| Claude Desktop    | `npx @cognigy/mcp-server init --client claude`      |
-| Claude Code       | `npx @cognigy/mcp-server init --client claude-code` |
-| Codex             | `npx @cognigy/mcp-server init --client codex`       |
-| Cursor            | `npx @cognigy/mcp-server init --client cursor`      |
-| VS Code (Copilot) | `npx @cognigy/mcp-server init --client vscode`      |
-
-The command prompts for your Cognigy API URL and API key, then configures your client automatically. Restart the client after setup.
-
-#### Manual config
-
-Add to your MCP client's config file.
-
-For Claude Desktop, Claude Code, and Cursor:
-
-```json
-{
-  "mcpServers": {
-    "cognigy": {
-      "command": "npx",
-      "args": ["-y", "@cognigy/mcp-server"],
-      "env": {
-        "COGNIGY_API_BASE_URL": "your-api-endpoint",
-        "COGNIGY_API_KEY": "your-api-key-here"
-      }
-    }
-  }
-}
-```
-
-For Codex, add this to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.cognigy]
-command = "npx"
-args = ["-y", "@cognigy/mcp-server"]
-
-[mcp_servers.cognigy.env]
-COGNIGY_API_BASE_URL = "your-api-endpoint"
-COGNIGY_API_KEY = "your-api-key-here"
-```
-
-For VS Code (Copilot), add this to `.vscode/mcp.json`:
-
-```json
-{
-  "servers": {
-    "cognigy": {
-      "command": "npx",
-      "args": ["-y", "@cognigy/mcp-server"],
-      "env": {
-        "COGNIGY_API_BASE_URL": "your-api-endpoint",
-        "COGNIGY_API_KEY": "your-api-key-here"
-      }
-    }
-  }
-}
-```
-
-Get your API key: Cognigy.AI → User Menu → My Profile → API Keys → Create New.
-
-#### Claude Desktop one-click (.mcpb)
-
-Prefer a no-Node, double-click install — or just want a quick build to try? Download the `.mcpb` file from the [latest release](https://github.com/Cognigy/cognigy-plugin/releases/latest) and double-click it. Claude Desktop opens an install dialog — enter your API URL and API key. No Node.js required.
 
 ---
 
@@ -151,7 +72,7 @@ Create a complete AI Agent in one tool call, then iterate and improve through co
 
 ## Configuration
 
-All configuration is passed via `env` in the MCP config. No `.env` file needed.
+The plugin collects your **Cognigy API base URL** and **API key** through Claude Code's install prompt (stored in the system keychain) and passes them to the server as environment variables. The optional variables below can be set in the plugin's MCP server `env` if you need to override defaults.
 
 | Variable                  | Required | Default | Description                      |
 | ------------------------- | -------- | ------- | -------------------------------- |
@@ -316,7 +237,7 @@ Full privacy policy: [https://www.cognigy.com/privacy-policy](https://www.cognig
 
 - [docs/ARCHITECTURE.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/ARCHITECTURE.md) — tool design, self-improvement loop, ID formats
 - [docs/USAGE.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/USAGE.md) — detailed usage reference
-- [docs/TESTING.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/TESTING.md) — ways to test local builds, CLI installation, and `.mcpb` distribution
+- [docs/TESTING.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/TESTING.md) — how to test the plugin and a local engine build
 - [docs/CONTRIBUTING.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/CONTRIBUTING.md) — development setup and contribution guide
 
 ## License

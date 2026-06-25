@@ -148,7 +148,6 @@ describe("ToolHandlers v2", () => {
       const result = await h.handleToolCall("create_ai_agent", baseArgs);
       expect(result.llmStatus).toBe("unknown");
       expect(result._hints).toBeDefined();
-      expect(result._hints.resource).toBe("cognigy://guide/agent-creation");
     });
 
     it("rolls back on flow creation failure", async () => {
@@ -161,7 +160,6 @@ describe("ToolHandlers v2", () => {
       const result = await h.handleToolCall("create_ai_agent", baseArgs);
       expect(result.failed).toBeDefined();
       expect(result.failed.step).toBe("flow");
-      expect(result._hints.resource).toBe("cognigy://guide/troubleshooting");
       expect(api.delete).toHaveBeenCalledWith(`/v2.0/aiagents/${ID.agent}`);
     });
 
@@ -453,7 +451,6 @@ describe("ToolHandlers v2", () => {
       });
 
       expect(result.error).toContain("apiKey or connectionId");
-      expect(result._hints.resource).toBe("cognigy://guide/llm-providers");
     });
 
     it("deletes model and returns error when connection test fails", async () => {
@@ -474,7 +471,6 @@ describe("ToolHandlers v2", () => {
 
       expect(result.error).toContain("connection test failed");
       expect(result.providerMessage).toBe("Invalid API key provided.");
-      expect(result._hints.resource).toBe("cognigy://guide/llm-providers");
       expect(api.delete).toHaveBeenCalledWith(
         `/v2.0/largelanguagemodels/${ID.llm}`,
       );
@@ -555,7 +551,6 @@ describe("ToolHandlers v2", () => {
       });
 
       expect(result.error).toContain("was not found in the target project");
-      expect(result._hints.resource).toBe("cognigy://guide/package-management");
       expect(api.post).not.toHaveBeenCalled();
     });
   });
@@ -572,7 +567,6 @@ describe("ToolHandlers v2", () => {
 
       expect(result.sessionId).toBeDefined();
       expect(result._hints).toBeDefined();
-      expect(result._hints.resource).toBe("cognigy://guide/troubleshooting");
     });
 
     it("resolves existing REST endpoint by aiAgentId", async () => {
@@ -714,7 +708,6 @@ describe("ToolHandlers v2", () => {
 
       expect(result.error).toContain("Could not find a flow");
       expect(result._hints).toBeDefined();
-      expect(result._hints.resource).toBe("cognigy://guide/agent-creation");
     });
 
     it("uses endpointUrl directly when both endpointUrl and aiAgentId are provided", async () => {
@@ -795,7 +788,6 @@ describe("ToolHandlers v2", () => {
 
       expect(result.items).toHaveLength(0);
       expect(result._hints).toBeDefined();
-      expect(result._hints.resource).toBe("cognigy://guide/agent-creation");
     });
 
     it("resolves tools via agent flow (only whitelisted types)", async () => {
@@ -1214,7 +1206,6 @@ describe("ToolHandlers v2", () => {
 
       const result = await h.handleToolCall("create_tool", baseArgs);
       expect(result.error).toContain("Could not find a flow");
-      expect(result._hints.resource).toBe("cognigy://guide/tools-setup");
     });
 
     it("returns error when flow has no aiAgentJob node", async () => {
@@ -1375,7 +1366,6 @@ describe("ToolHandlers v2", () => {
       expect(result.toolId).toBe(ID.tool);
       expect(result.toolNodeId).toBe(ID.tool);
       expect(result.requestedToolId).toBe("unlock_account");
-      expect(result._hints.resource).toBe("cognigy://guide/tools-setup");
       expect(result._hints.warning).toContain('"unlock_account"');
       expect(api.post).not.toHaveBeenCalled();
     });
@@ -1845,7 +1835,6 @@ describe("ToolHandlers v2", () => {
 
       expect(result.projectCreated).toBe(true);
       expect(result.llmStatus).toBe("unknown");
-      expect(result._hints.resource).toBe("cognigy://guide/agent-creation");
       expect(result._hints.action).toContain("A new project was auto-created");
       expect(result._hints.action).toContain("non-empty connectionId");
       expect(result._hints.action).toContain("manage_packages");
@@ -2698,7 +2687,6 @@ describe("ToolHandlers v2", () => {
       });
 
       expect(result.error).toContain("Failed to update Knowledge AI settings");
-      expect(result._hints.resource).toBe("cognigy://guide/settings");
       expect(result.allowedKnowledgeSearchModels).toEqual([
         expect.objectContaining({
           referenceId: "llm-ref-embed",

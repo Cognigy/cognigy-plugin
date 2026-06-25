@@ -233,7 +233,6 @@ describe("create_tool – HTTP tool path", () => {
     });
 
     expect(result.error).toBe("url is required in config for http tool type.");
-    expect(result._hints.resource).toBe("cognigy://guide/tools-setup");
     expect(api.post).not.toHaveBeenCalled();
   });
 

@@ -6,7 +6,6 @@
   name: "<tool_name>",
   description:
     "<One-line summary>.\n\n" +
-    "BEFORE USING THIS TOOL: Read cognigy://guide/<tool-name> for the full workflow.\n\n" +
     "<Detailed usage, prerequisites, parameter docs per operation.\n" +
     "Document each operation and its required/optional params.\n" +
     "Include examples of typical calls.>",

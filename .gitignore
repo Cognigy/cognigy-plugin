@@ -4,7 +4,6 @@ node_modules/
 # Build output
 dist/
 *.tsbuildinfo
-*.mcpb
 
 # Environment variables
 .env

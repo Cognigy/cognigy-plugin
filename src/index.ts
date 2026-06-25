@@ -4,18 +4,11 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
-  ListResourcesRequestSchema,
   ListToolsRequestSchema,
-  ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
 import { loadConfig } from "./config.js";
 import { CognigyApiClient } from "./api/client.js";
-import {
-  getGuideByUri,
-  listGuideMetadata,
-  readGuideContent,
-} from "./guides.js";
 import { ToolHandlers } from "./tools/handlers.js";
 import { tools } from "./tools/definitions.js";
 import { SERVER_INSTRUCTIONS } from "./instructions.js";
@@ -46,7 +39,7 @@ async function main() {
     const server = new Server(
       { name: config.serverName, version: config.serverVersion },
       {
-        capabilities: { tools: {}, resources: {} },
+        capabilities: { tools: {} },
         instructions: SERVER_INSTRUCTIONS,
       },
     );
@@ -96,32 +89,6 @@ async function main() {
       }
     });
 
-    server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-      resources: listGuideMetadata().map(
-        ({ uri, name, description, mimeType }) => ({
-          uri,
-          name,
-          description,
-          mimeType,
-        }),
-      ),
-    }));
-
-    server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-      const { uri } = request.params;
-      const guide = getGuideByUri(uri);
-      if (!guide) throw new Error(`Unknown resource: ${uri}`);
-      return {
-        contents: [
-          {
-            uri,
-            mimeType: "text/markdown",
-            text: readGuideContent(guide),
-          },
-        ],
-      };
-    });
-
     const transport = new StdioServerTransport();
     await server.connect(transport);
     logger.info("NiCE Cognigy MCP Connector started successfully");
@@ -143,14 +110,4 @@ async function main() {
   }
 }
 
-const subcommand = process.argv[2];
-if (subcommand === "init") {
-  import("./cli/init.js")
-    .then(({ runInit }) => runInit(process.argv.slice(2)))
-    .catch((error) => {
-      console.error(`Error: ${error.message || error}`);
-      process.exit(1);
-    });
-} else {
-  main();
-}
+main();

@@ -1,263 +1,68 @@
-# Testing Distribution Paths
+# Testing
 
-This guide covers the main ways to test how the MCP server is distributed to end users before publishing a release.
+This guide covers the two ways to test the Cognigy MCP plugin: installing it through the marketplace like an end user, and testing a local engine build during development.
 
 ## Prerequisites
-
-```bash
-npm install
-npm run build
-```
 
 You will need:
 
 - A Cognigy API base URL
 - A Cognigy API key
 - Node.js 20+
+- A supported client — Claude Code or Codex today (more to come). The steps below use Claude Code.
 
-## 1. Test the Local Build Directly
+## 1. Test via the Marketplace + Plugin (end-user path)
 
-Use this when you want to verify the built MCP server itself without any client installer flow.
+Use this to verify the plugin the way end users install it.
 
-```bash
-npm run start:local -- <base-api-url> <your-api-key>
-```
+1. Add the marketplace:
 
-Or:
+   ```
+   /plugin marketplace add Cognigy/cognigy-plugin
+   ```
 
-```bash
-bash scripts/run-local-mcp.sh <base-api-url> <your-api-key>
-```
+2. Install the plugin:
 
-Or with environment variables:
+   ```
+   /plugin install cognigy-mcp@cognigy-plugin
+   ```
 
-```bash
-COGNIGY_API_BASE_URL=<base-api-url> \
-COGNIGY_API_KEY=<your-api-key> \
-npm run start:local
-```
+3. On install, the plugin's `SessionStart` hook runs `npm install cognigy-plugin-engine@latest` into `${CLAUDE_PLUGIN_DATA}`, and `plugin.json` launches the engine from `${CLAUDE_PLUGIN_DATA}/node_modules/cognigy-plugin-engine/dist/index.js`.
 
-Or:
+4. Provide your `COGNIGY_API_BASE_URL` and `COGNIGY_API_KEY` when prompted.
 
-```bash
-COGNIGY_API_BASE_URL=<base-api-url> \
-COGNIGY_API_KEY=<your-api-key> \
-bash scripts/run-local-mcp.sh
-```
+5. Verify the tools are available under the `mcp__plugin_cognigy-mcp_platform__` prefix and that skills auto-load on intent.
 
-What this does:
+## 2. Test a Local Engine Build (dev-only)
 
-- Confirms `dist/index.js` exists
-- Exports the required env vars
-- Starts the local MCP server with `node dist/index.js`
+Use this when you want to test changes to the engine before publishing, without going through npm.
 
-## 2. Test the `init` Installer Locally
+1. Clone the repo and build:
 
-Use this when you want to verify the interactive installer flow for different MCP clients before the package is published to npm.
+   ```bash
+   git clone https://github.com/Cognigy/cognigy-plugin.git
+   cd cognigy-plugin
+   npm ci
+   npm run build
+   ```
 
-**IMPORTANT**: Make sure to build manually (`npm run build`) before running the script, in order to test the most recent changes in your local.
+2. Temporarily point the plugin at your local build. Edit `plugin/.claude-plugin/plugin.json` so `mcpServers.platform.args` references your local `dist/index.js` instead of the engine under `${CLAUDE_PLUGIN_DATA}`.
 
-### Using the helper script
+   **Revert this change before committing** — it is for local testing only.
 
-```bash
-npm run test:init-local -- codex
-npm run test:init-local -- cursor
-npm run test:init-local -- vscode
-npm run test:init-local -- <other-supported-client-names>
-```
+3. Reload the plugin in Claude Code:
 
-Or:
+   ```
+   /reload-plugins
+   ```
 
-```bash
-bash scripts/test-local-init.sh codex
-bash scripts/test-local-init.sh cursor
-bash scripts/test-local-init.sh vscode
-bash scripts/test-local-init.sh <other-supported-client-names>
-```
+4. Exercise the tools and skills against your local engine build.
 
-Currently we support following clients:
+There is no `init --client` installer, `.mcpb` bundle, or standalone-client config — the local-engine path above is the only local test path.
 
-- `claude`
-- `claude-code`
-- `codex`
-- `cursor`
-- `vscode`
+## 3. Run Automated Checks
 
-It runs:
-
-```bash
-node dist/index.js init --client <client>
-```
-
-but overrides the installed server command so the generated config points to the local launcher script instead of `npx @cognigy/mcp-server`.
-
-Important:
-
-- `test-local-init.sh` does not start the MCP server immediately
-- It only installs client config that points to `scripts/run-local-mcp.sh`
-- The MCP client will later run that launcher, and `run-local-mcp.sh` then starts your local `dist/index.js`
-- You only need to run `npm run start:local` manually when testing the server directly outside a client
-
-Without the override, the installed config points to the published package:
-
-```json
-{
-  "mcpServers": {
-    "cognigy": {
-      "command": "npx",
-      "args": ["-y", "@cognigy/mcp-server"],
-      "env": {
-        "COGNIGY_API_BASE_URL": "base-api-url",
-        "COGNIGY_API_KEY": "your-api-key-here"
-      }
-    }
-  }
-}
-```
-
-With `scripts/test-local-init.sh`, the installed config points to the local launcher instead:
-
-```json
-{
-  "mcpServers": {
-    "cognigy": {
-      "command": "bash",
-      "args": ["/absolute/path/to/cognigy-plugin/scripts/run-local-mcp.sh"],
-      "env": {
-        "COGNIGY_API_BASE_URL": "base-api-url",
-        "COGNIGY_API_KEY": "your-api-key-here"
-      }
-    }
-  }
-}
-```
-
-Why this matters:
-
-- The normal config tests the published distribution path through npm
-- The local override config tests the same client installation flow without requiring the package to be published first
-- `run-local-mcp.sh` then starts your local `dist/index.js`, so the client still launches the built MCP server through stdio
-
-For Codex specifically, the generated config is TOML instead of JSON. Without the override it looks like this:
-
-```toml
-[mcp_servers.cognigy]
-command = "npx"
-args = ["-y", "@cognigy/mcp-server"]
-
-[mcp_servers.cognigy.env]
-COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai"
-COGNIGY_API_KEY = "your-api-key-here"
-```
-
-With `scripts/test-local-init.sh codex`, it looks like this:
-
-```toml
-[mcp_servers.cognigy]
-command = "bash"
-args = ["/absolute/path/to/cognigy-plugin/scripts/run-local-mcp.sh"]
-
-[mcp_servers.cognigy.env]
-COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai"
-COGNIGY_API_KEY = "your-api-key-here"
-```
-
-To avoid modifying your real Codex config while testing:
-
-```bash
-HOME="$(mktemp -d /tmp/codex-test-home.XXXXXX)" \
-bash scripts/test-local-init.sh codex
-```
-
-Then inspect the generated file:
-
-```bash
-cat "$HOME/.codex/config.toml"
-```
-
-### Running the installer directly
-
-```bash
-node dist/index.js init --client claude
-node dist/index.js init --client claude-code
-node dist/index.js init --client cursor
-node dist/index.js init --client vscode
-```
-
-If you want those clients to install a local launcher instead of `npx @cognigy/mcp-server`, set these overrides first:
-
-```bash
-export COGNIGY_MCP_INIT_COMMAND="bash"
-export COGNIGY_MCP_INIT_ARGS='["/absolute/path/to/cognigy-plugin/scripts/run-local-mcp.sh"]'
-```
-
-Without those overrides, generated JSON client configs look like this:
-
-```json
-{
-  "mcpServers": {
-    "cognigy": {
-      "command": "npx",
-      "args": ["-y", "@cognigy/mcp-server"],
-      "env": {
-        "COGNIGY_API_BASE_URL": "base-api-url",
-        "COGNIGY_API_KEY": "your-api-key-here"
-      }
-    }
-  }
-}
-```
-
-With the local override variables set, they look like this instead:
-
-```json
-{
-  "mcpServers": {
-    "cognigy": {
-      "command": "bash",
-      "args": ["/absolute/path/to/cognigy-plugin/scripts/run-local-mcp.sh"],
-      "env": {
-        "COGNIGY_API_BASE_URL": "base-api-url",
-        "COGNIGY_API_KEY": "your-api-key-here"
-      }
-    }
-  }
-}
-```
-
-What this tests:
-
-- Prompting for API URL and API key
-- Client-specific config file generation
-- Local distribution wiring without needing a published npm package
-
-## 3. Test the `.mcpb` Bundle
-
-Use this when you want to verify the Claude Desktop bundle that is produced for release distribution.
-
-Build the bundle:
-
-```bash
-npm run mcpb:pack
-```
-
-This script:
-
-- Runs `npm run build`
-- Runs `npx @anthropic-ai/mcpb pack`
-- Produces a `.mcpb` bundle in the repository root
-
-Typical verification steps:
-
-1. Run `npm run mcpb:pack`
-2. Confirm the `.mcpb` file was created
-3. Open the `.mcpb` file with Claude Desktop
-4. Complete the install dialog with your API URL and API key
-5. Restart Claude Desktop and verify the `NiCE Cognigy MCP Connector` appears
-
-## 4. Run Automated Checks
-
-Before publishing, run the usual checks as well:
+Before opening a PR, run the usual checks:
 
 ```bash
 npm test
@@ -268,8 +73,6 @@ npx tsc --noEmit
 ## Recommended Workflow Before Release
 
 1. Run `npm run build`
-2. Run `npm test`
-3. Test the local MCP server with `scripts/run-local-mcp.sh`
-4. Test at least one `init --client ...` flow locally
-5. Run `npm run mcpb:pack`
-6. Verify the generated `.mcpb` bundle in Claude Desktop
+2. Run `npm test`, `npm run lint`, and `npx tsc --noEmit`
+3. Test the local engine build by pointing `plugin.json` at local `dist/index.js`, then revert the change
+4. Verify the marketplace + plugin install path end to end
