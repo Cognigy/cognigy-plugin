@@ -34,14 +34,16 @@ if (!dataDir) {
   );
 }
 
-// Single source of truth for the pinned engine version (shipped with the plugin).
+// The engine pin IS the plugin's own version: the plugin and the
+// @cognigy/plugin-engine npm package always carry the same number (kept in
+// lockstep by semantic-release). So there's one version to reason about.
 let target;
 try {
   target = JSON.parse(
-    readFileSync(join(pluginRoot, "engine.json"), "utf8"),
+    readFileSync(join(pluginRoot, ".claude-plugin", "plugin.json"), "utf8"),
   ).version;
 } catch (err) {
-  fail(`could not read engine.json (${err.message}).`);
+  fail(`could not read the plugin version (${err.message}).`);
 }
 
 const engineDir = join(dataDir, "node_modules", ...PKG.split("/"));

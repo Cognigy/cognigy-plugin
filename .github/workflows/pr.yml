@@ -40,26 +40,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      # The plugin's own version (host/marketplace-agnostic) is what plugin hosts (e.g.
-      # Claude Code) use to detect an update. If this PR changes anything under plugin/, the version must
-      # change too — otherwise installs never refresh.
-      - name: Require plugin version bump when plugin files change
-        run: |
-          base="${{ github.event.pull_request.base.sha }}"
-          head="${{ github.sha }}"
-          if git diff --name-only "$base...$head" | grep -q '^plugin/'; then
-            base_ver=$(git show "$base:plugin/.claude-plugin/plugin.json" 2>/dev/null \
-              | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).version' 2>/dev/null || echo "")
-            head_ver=$(node -pe 'require("./plugin/.claude-plugin/plugin.json").version')
-            if [ -n "$base_ver" ] && [ "$base_ver" = "$head_ver" ]; then
-              echo "::error::plugin/ changed but the plugin version is still $head_ver. Bump \"version\" in plugin/.claude-plugin/plugin.json." >&2
-              exit 1
-            fi
-            echo "plugin version: ${base_ver:-<new>} -> $head_ver"
-          else
-            echo "no plugin/ changes; version-bump check skipped"
-          fi
-
       - name: Collect changed files for Prettier
         id: prettier_files
         shell: bash

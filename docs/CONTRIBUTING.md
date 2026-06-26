@@ -12,10 +12,12 @@ npm run build
 ```
 
 This repo is the source for the `@cognigy/plugin-engine` npm package, which the plugin
-auto-installs. To test a local engine build, temporarily point the plugin's
-`mcpServers.platform.args` in `plugin/.claude-plugin/plugin.json` at your local `dist/index.js`,
-run `/reload-plugins`, then revert before committing. See [`TESTING.md`](./TESTING.md) for the
-full local-engine and marketplace test paths.
+auto-installs at runtime, pinned to the plugin's own version (the two share one number, kept in
+lockstep by semantic-release — see [Allowed types](#allowed-types)). To test a local
+engine build, temporarily point the plugin's `mcpServers.platform.args` in
+`plugin/.claude-plugin/plugin.json` at your local `dist/index.js`, run `/reload-plugins`, then
+revert before committing. See [`TESTING.md`](./TESTING.md) for the full local-engine and
+marketplace test paths.
 
 ## Commit Messages
 
@@ -29,7 +31,10 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/). 
 
 Releases are automated by [semantic-release](https://semantic-release.gitbook.io/) — the
 version bump, `CHANGELOG.md`, git tag, npm publish, and GitHub release are all derived from the
-commit types that land on `main`. There are no manual version bumps.
+commit types that land on `main`. There are no manual version bumps. The same release version is
+written into **both** `package.json` (the `@cognigy/plugin-engine` engine) and
+`plugin/.claude-plugin/plugin.json` (the plugin), so they always carry one identical number — do
+not edit either `version` by hand.
 
 | Type       | When to use                              | Version bump | Shows in changelog? |
 | ---------- | ---------------------------------------- | ------------ | ------------------- |

@@ -40,7 +40,7 @@ Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, flow 
 
 ## Installation
 
-The plugin is supported by **Claude Code** and **Codex** today; more clients will be added. Install steps below cover Claude Code; the plugin always launches the latest published server engine, so you get updates automatically with no manual reinstall.
+The plugin is supported by **Claude Code** and **Codex** today; more clients will be added. Install steps below cover Claude Code. The plugin installs a server engine pinned to its own version, so the engine updates in lockstep whenever you update the plugin — nothing to reinstall by hand.
 
 ### Claude Code
 

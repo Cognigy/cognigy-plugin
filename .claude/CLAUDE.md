@@ -10,7 +10,7 @@ Format all code with Prettier (project default). Run `npx prettier --write <file
 
 MCP server that lets an LLM create, configure, test, and manage **AI Agents on the NiCE Cognigy platform** over the Cognigy REST API v2.0.
 
-Distributed **only as a plugin** (`plugin/` + `.claude-plugin/marketplace.json`) — a generic plugin supported by Claude Code and Codex today, more clients later. Detached fork of `cognigy-mcp`. The server is published to npm as **`@cognigy/plugin-engine`** (scoped, cognigy org) purely as the engine the plugin auto-installs; users never install it directly. The plugin's MCP server command is a launcher (`plugin/bin/launch.mjs`) that installs the **pinned** engine version (`plugin/engine.json`) into `${CLAUDE_PLUGIN_DATA}` on first boot (guarded: only when the installed version differs), then hands off to it — no install hook, no `@latest` float, no first-run race. Bump the `engine.json` pin per-PR when shipping a new engine. No standalone CLI / `.mcpb` / `manifest.json`.
+Distributed **only as a plugin** (`plugin/` + `.claude-plugin/marketplace.json`) — a generic plugin supported by Claude Code and Codex today, more clients later. Detached fork of `cognigy-mcp`. The server is published to npm as **`@cognigy/plugin-engine`** (scoped, cognigy org) purely as the engine the plugin auto-installs; users never install it directly. The plugin's MCP server command is a launcher (`plugin/bin/launch.mjs`) that installs the engine **pinned to the plugin's own version** into `${CLAUDE_PLUGIN_DATA}` on first boot (guarded: only when the installed version differs), then hands off to it — no install hook, no `@latest` float, no first-run race. **The plugin version and the engine npm version are the same number**, kept in lockstep by semantic-release, so there's one version to reason about. No standalone CLI / `.mcpb` / `manifest.json`.
 
 ## Tech stack
 
@@ -38,8 +38,7 @@ Workflow guidance lives only as plugin skills `plugin/skills/<id>/SKILL.md` (han
 
 ## Versions
 
-- **Engine** (`package.json`, `@cognigy/plugin-engine`): bumped automatically by semantic-release on merge to `main`. Never hand-bump.
-- **Plugin** (`plugin/.claude-plugin/plugin.json` `version`): bump per-PR whenever anything under `plugin/` changes (CI enforces). Not for `src/`-only changes — those ship via the auto-published engine.
+**One version.** semantic-release (on merge to `main`) decides the bump from conventional commits, sets that version in **both** `package.json` (`@cognigy/plugin-engine`) and `plugin/.claude-plugin/plugin.json` (via `scripts/sync-plugin-version.mjs`), publishes the engine, and commits both back. **Never hand-bump either** — no per-PR plugin bump, no CI version gate. The launcher pins the engine to the plugin version, so the two are always equal. Use release-triggering commit types (`feat`/`fix`/`docs`/…) for changes that must reach users; `chore`/`ci`/`test` cut no release.
 
 ## API client & config
 
