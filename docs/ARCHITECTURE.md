@@ -43,7 +43,7 @@ The Cognigy API has ~359 endpoints across 50+ categories. Creating one tool per 
 | `list_resources`       | Read           |
 | `get_resource`         | Read           |
 | `delete_resource`      | Write          |
-| `audit_voice_agent`    | Read           |
+| `audit_voice_agent`    | Write          |
 
 ## Modern AI Agent-Centric Approach
 

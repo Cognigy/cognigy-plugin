@@ -28,7 +28,7 @@ Manual:
 
 ## Marketplace checklist
 
-- [ ] `plugin/.claude-plugin/plugin.json` version bumped if anything under `plugin/` changed (CI-enforced)
+- [ ] Versions left untouched — `package.json` and `plugin/.claude-plugin/plugin.json` are synced automatically by semantic-release on merge (`scripts/sync-plugin-version.mjs`); do not hand-edit either `version`
 - [ ] Tool count in `README.md` updated if the tool surface changed
 - [ ] `README.md` updated if user-facing behavior changed
 - [ ] Tool annotations/descriptions reviewed if tool behavior changed

@@ -625,7 +625,7 @@ export const manageSettingsSchema = z.union([
   manageKnowledgeAiSettingsSchema,
 ]);
 
-// Tool 17: audit_voice_agent
+// Tool 16: audit_voice_agent
 export const auditVoiceAgentSchema = z
   .object({
     aiAgentId: idSchema.optional(),
