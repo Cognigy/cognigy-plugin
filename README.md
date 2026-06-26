@@ -46,7 +46,7 @@ The plugin is supported by **Claude Code** and **Codex** today; more clients wil
 
 ```
 /plugin marketplace add Cognigy/cognigy-plugin
-/plugin install cognigy-mcp@cognigy-plugin
+/plugin install cognigy@cognigy-plugin
 ```
 
 On enable, Claude Code prompts for your **Cognigy API base URL** (default `https://api-trial.cognigy.ai`) and **API key** (Cognigy.AI → User Menu → My Profile → API Keys). The key is stored in your system keychain. Requires [Node.js 20+](https://nodejs.org).

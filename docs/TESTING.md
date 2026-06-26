@@ -20,7 +20,7 @@ Use this to verify the plugin the way end users install it.
 
 ```
 /plugin marketplace add Cognigy/cognigy-plugin
-/plugin install cognigy-mcp@cognigy-plugin
+/plugin install cognigy@cognigy-plugin
 ```
 
 **Local checkout (test your branch as a plugin):** add the marketplace from your repo directory
@@ -28,7 +28,7 @@ instead — it reads `.claude-plugin/marketplace.json` at the path you give:
 
 ```
 /plugin marketplace add /absolute/path/to/cognigy-plugin
-/plugin install cognigy-mcp@cognigy-plugin
+/plugin install cognigy@cognigy-plugin
 ```
 
 Then:
@@ -37,7 +37,7 @@ Then:
    pinned to the plugin's own version into `${CLAUDE_PLUGIN_DATA}` (only when the installed version
    differs), then launches it. No `@latest` float, no install hook.
 2. Provide your `COGNIGY_API_BASE_URL` and `COGNIGY_API_KEY` when prompted.
-3. Verify the tools are available under the `mcp__plugin_cognigy-mcp_platform__` prefix and that
+3. Verify the tools are available under the `mcp__plugin_cognigy_platform__` prefix and that
    skills auto-load on intent.
 
 **Picking up changes:**
@@ -48,7 +48,7 @@ Then:
   ```
   /plugin marketplace remove cognigy-plugin
   /plugin marketplace add /absolute/path/to/cognigy-plugin
-  /plugin install cognigy-mcp@cognigy-plugin
+  /plugin install cognigy@cognigy-plugin
   ```
 
 > **Heads-up:** the launcher fetches `@cognigy/plugin-engine@<plugin version>` from npm, so the

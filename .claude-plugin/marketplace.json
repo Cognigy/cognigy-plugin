@@ -9,7 +9,7 @@
   },
   "plugins": [
     {
-      "name": "cognigy-mcp",
+      "name": "cognigy",
       "source": "./plugin",
       "description": "Cognigy.AI Plugin — build, test, and deploy AI Agents on the NiCE Cognigy platform"
     }
