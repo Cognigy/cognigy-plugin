@@ -170,7 +170,7 @@ The `toolResponseValue` field controls what the Resolve Tool Action node returns
 
 Defaults (if omitted):
 
-- **http tools**: `{{JSON.stringify(input.httprequest)}}` — returns the wrapped response object (`{ result, statusCode, length }`). The LLM sees the wrapper, not just the parsed body. For most tools you will want to override this with a trimmed payload from your `postProcessCode`.
+- **http tools**: `{{JSON.stringify(input.httprequest)}}` — returns the full wrapper described in _HTTP response shape_ above, not just the parsed body. For most tools you will want to override this with a trimmed payload from your `postProcessCode`.
 - **general-purpose tools**: `{{JSON.stringify(input.result)}}` — returns the `input.result` field
 
 IMPORTANT: The Resolve Tool Action node MUST have an `answer` value, otherwise nothing is returned to the LLM and the tool appears to produce no output. If your code stores results in a custom field, set toolResponseValue to match.

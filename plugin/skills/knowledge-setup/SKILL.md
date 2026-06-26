@@ -65,15 +65,8 @@ description: "Use when the user wants to add knowledge, RAG, or a knowledge stor
 - For URLs, ensure the page is publicly accessible
 - Text sources are best for structured FAQ content
 - File sources are best for existing documents (PDFs, Word docs, etc.)
-- Cache `list_resources { resourceType: "llm_model", projectId }` results while you are working in the same project. Only refresh after imports, `setup_llm`, or other changes.
-- The use-case-filtered `llm_model` list is a better source of truth for `knowledgeSearchModelId` than the unfiltered project-wide list.
-- Treat `manage_settings` validation as authoritative for which project model works for Knowledge Search on that instance.
-- If all same-project candidates fail for `knowledgeSearchModelId`, stop and report the exact rejected model IDs and messages.
-- If the source project's exact Knowledge Search model is not yet in the target project, import it before trying a different model.
-- Do not infer that an untried candidate is rejected or unsupported. Only report actual API results.
-- If the user is creating a new project and another project already has a working knowledge setup, reproduce that exact Knowledge Search model and Content Parser choice before inventing a new combination.
-- DEFAULT: Knowledge stores are attached as tools — this gives the agent a dedicated search capability it can invoke during conversations. Use create_tool { toolType: "knowledge" } or knowledgeStoreReferenceId on create_ai_agent.
-- EXCEPTION: Only attach knowledge to the agent persona (via update_ai_agent) if the user explicitly requests persona-level knowledge attachment.
+
+> Model selection, reuse, caching, and reporting rules live in **Workflow Policy** below — the single source of truth. Tool-vs-persona attachment is covered in step 6 of **Steps**.
 
 ## Workflow Policy (source of truth for model selection & reporting)
 
