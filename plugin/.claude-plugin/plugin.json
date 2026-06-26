@@ -1,0 +1,39 @@
+{
+  "name": "cognigy",
+  "version": "1.0.0",
+  "description": "NiCE Cognigy Plugin — create, test, and manage AI Agents on the NiCE Cognigy platform",
+  "author": {
+    "name": "Cognigy",
+    "url": "https://www.cognigy.com"
+  },
+  "homepage": "https://www.cognigy.com",
+  "repository": "https://github.com/Cognigy/cognigy-plugin",
+  "license": "MIT",
+  "keywords": ["cognigy", "ai-agents", "conversational-ai", "mcp", "llm"],
+  "userConfig": {
+    "cognigy_api_base_url": {
+      "type": "string",
+      "title": "Cognigy API base URL",
+      "description": "Your Cognigy instance API URL. Use https://api-trial.cognigy.ai if you are on the trial.",
+      "default": "https://api-trial.cognigy.ai",
+      "required": true
+    },
+    "cognigy_api_key": {
+      "type": "string",
+      "title": "Cognigy API key",
+      "description": "Find it in Cognigy.AI → User Menu → My Profile → API Keys.",
+      "sensitive": true,
+      "required": true
+    }
+  },
+  "mcpServers": {
+    "platform": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/launch.mjs"],
+      "env": {
+        "COGNIGY_API_BASE_URL": "${user_config.cognigy_api_base_url}",
+        "COGNIGY_API_KEY": "${user_config.cognigy_api_key}"
+      }
+    }
+  }
+}

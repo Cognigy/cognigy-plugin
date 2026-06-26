@@ -160,7 +160,6 @@ describe("update_tool", () => {
     });
 
     expect(result.error).toContain("Could not find a flow");
-    expect(result._hints.resource).toBe("cognigy://guide/tools-setup");
   });
 
   it("returns error when nothing to update", async () => {

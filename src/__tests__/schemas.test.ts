@@ -714,30 +714,40 @@ describe("manageSettingsSchema", () => {
   });
 });
 
-describe("readGuideSchema", () => {
-  it("accepts guideId", () => {
-    const result = schemas.readGuideSchema.parse({ guideId: "settings" });
-    expect(result.guideId).toBe("settings");
-  });
-
-  it("accepts uri", () => {
-    const result = schemas.readGuideSchema.parse({
-      uri: "cognigy://guide/settings",
-    });
-    expect(result.uri).toBe("cognigy://guide/settings");
-  });
-
-  it("accepts empty input for guide listing", () => {
-    const result = schemas.readGuideSchema.parse({});
-    expect(result).toEqual({});
-  });
-
-  it("rejects guideId and uri together", () => {
+describe("auditVoiceAgentSchema", () => {
+  it("accepts aiAgentId alone", () => {
     expect(() =>
-      schemas.readGuideSchema.parse({
-        guideId: "settings",
-        uri: "cognigy://guide/settings",
+      schemas.auditVoiceAgentSchema.parse({ aiAgentId: VALID_ID }),
+    ).not.toThrow();
+  });
+
+  it("accepts flowId alone", () => {
+    expect(() =>
+      schemas.auditVoiceAgentSchema.parse({ flowId: VALID_ID }),
+    ).not.toThrow();
+  });
+
+  it("accepts apply, only, endpointId, projectId", () => {
+    expect(() =>
+      schemas.auditVoiceAgentSchema.parse({
+        aiAgentId: VALID_ID,
+        endpointId: VALID_ID,
+        projectId: VALID_ID,
+        apply: true,
+        only: ["vg.barge-in-off"],
       }),
+    ).not.toThrow();
+  });
+
+  it("rejects when neither aiAgentId nor flowId is provided", () => {
+    expect(() =>
+      schemas.auditVoiceAgentSchema.parse({ apply: true }),
+    ).toThrow();
+  });
+
+  it("rejects an invalid id", () => {
+    expect(() =>
+      schemas.auditVoiceAgentSchema.parse({ aiAgentId: "nope" }),
     ).toThrow();
   });
 });

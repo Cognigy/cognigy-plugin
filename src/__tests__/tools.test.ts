@@ -107,77 +107,16 @@ describe("ToolHandlers v2", () => {
           imageOptimizedFormat: true,
         }),
       );
-      expect(api.post).toHaveBeenNthCalledWith(
-        3,
-        `/v2.0/flows/${ID.flow}/chart/nodes`,
-        expect.objectContaining({
-          preview: {
-            keyValue: "Test Agent",
-            aiAgentName: "Test Agent",
-            aiAgentImage: "default-avatar:4",
-            aiAgentImageOptimizedFormat: true,
-          },
-        }),
+      // The job node references the agent via config.aiAgent. The avatar
+      // preview is computed server-side from that reference, so the MCP must
+      // NOT hand-craft a `preview` (it lands in the wrong storage path and is
+      // ignored by the flow editor).
+      const nodeCreateCall = api.post.mock.calls.find(
+        (c: any[]) => c[0] === `/v2.0/flows/${ID.flow}/chart/nodes`,
       );
-    });
-
-    it("falls back to the default preview avatar when the created agent returns a blank image", async () => {
-      const mockAgent = {
-        _id: ID.agent,
-        referenceId: "ref-uuid",
-        name: "Test Agent",
-        image: "   ",
-      };
-      const mockFlow = {
-        _id: ID.flow,
-        referenceId: "flow-uuid",
-        name: "Test Agent Flow",
-      };
-      const mockEndpoint = {
-        _id: ID.endpoint,
-        URLToken: "abc123",
-        channel: "rest",
-      };
-
-      api.post
-        .mockResolvedValueOnce(mockAgent)
-        .mockResolvedValueOnce(mockFlow)
-        .mockResolvedValueOnce({ _id: ID.node })
-        .mockResolvedValueOnce(mockEndpoint);
-      api.get
-        .mockResolvedValueOnce({
-          items: [{ _id: ID.entry, isEntryPoint: true }],
-        })
-        .mockResolvedValueOnce({ items: [{ _id: ID.llm }] })
-        .mockResolvedValueOnce({ nodes: [] })
-        .mockResolvedValueOnce({ items: [] });
-      api.patch.mockResolvedValue({});
-
-      await h.handleToolCall("create_ai_agent", baseArgs);
-
-      expect(api.post).toHaveBeenNthCalledWith(
-        3,
-        `/v2.0/flows/${ID.flow}/chart/nodes`,
-        expect.objectContaining({
-          preview: {
-            keyValue: "Test Agent",
-            aiAgentName: "Test Agent",
-            aiAgentImage: "default-avatar:1",
-            aiAgentImageOptimizedFormat: true,
-          },
-        }),
-      );
-      expect(api.patch).toHaveBeenCalledWith(
-        `/v2.0/flows/${ID.flow}/chart/nodes/${ID.node}`,
-        expect.objectContaining({
-          preview: {
-            keyValue: "Test Agent",
-            aiAgentName: "Test Agent",
-            aiAgentImage: "default-avatar:1",
-            aiAgentImageOptimizedFormat: true,
-          },
-        }),
-      );
+      expect(nodeCreateCall).toBeDefined();
+      expect(nodeCreateCall![1].config.aiAgent).toBe("ref-uuid");
+      expect(nodeCreateCall![1]).not.toHaveProperty("preview");
     });
 
     it("returns llmStatus unknown with hints when no LLM", async () => {
@@ -209,7 +148,6 @@ describe("ToolHandlers v2", () => {
       const result = await h.handleToolCall("create_ai_agent", baseArgs);
       expect(result.llmStatus).toBe("unknown");
       expect(result._hints).toBeDefined();
-      expect(result._hints.resource).toBe("cognigy://guide/agent-creation");
     });
 
     it("rolls back on flow creation failure", async () => {
@@ -222,7 +160,6 @@ describe("ToolHandlers v2", () => {
       const result = await h.handleToolCall("create_ai_agent", baseArgs);
       expect(result.failed).toBeDefined();
       expect(result.failed.step).toBe("flow");
-      expect(result._hints.resource).toBe("cognigy://guide/troubleshooting");
       expect(api.delete).toHaveBeenCalledWith(`/v2.0/aiagents/${ID.agent}`);
     });
 
@@ -341,6 +278,7 @@ describe("ToolHandlers v2", () => {
       const mockJobNode = {
         _id: "job-node-id-000000000001",
         type: "aiAgentJob",
+        config: { aiAgent: "ref-uuid" },
       };
 
       api.get
@@ -354,11 +292,51 @@ describe("ToolHandlers v2", () => {
       });
 
       expect(result.updated).toContain("jobNode");
+      // aiAgent must be re-sent so the backend regenerates the avatar preview
+      // object rather than overwriting it with the bare job-name string.
       expect(api.patch).toHaveBeenCalledWith(
         `/v2.0/flows/${ID.flow}/chart/nodes/job-node-id-000000000001`,
         {
-          config: { llmProviderReferenceId: "llm-ref-uuid", temperature: 0.5 },
+          config: {
+            aiAgent: "ref-uuid",
+            llmProviderReferenceId: "llm-ref-uuid",
+            temperature: 0.5,
+          },
         },
+      );
+    });
+
+    it("re-sends aiAgent on a name-only update so the avatar preview is regenerated", async () => {
+      const mockAgent = {
+        _id: ID.agent,
+        referenceId: "ref-uuid",
+        name: "Renamed Agent",
+        flowId: ID.flow,
+      };
+      const mockJobNode = {
+        _id: "job-node-id-000000000001",
+        type: "aiAgentJob",
+        config: { aiAgent: "ref-uuid" },
+      };
+
+      // PATCH agent (name) first, then GET agent + nodes for the preview refresh.
+      api.patch.mockResolvedValue(mockAgent);
+      api.get
+        .mockResolvedValueOnce(mockAgent)
+        .mockResolvedValueOnce({ items: [mockJobNode] });
+
+      const result = await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        name: "Renamed Agent",
+      });
+
+      expect(result.updated).toContain("agent");
+      // Even with no jobConfig, the node config patch must carry aiAgent to
+      // force the backend to recompute the avatar preview (otherwise it would
+      // overwrite the preview object with the bare name string).
+      expect(api.patch).toHaveBeenCalledWith(
+        `/v2.0/flows/${ID.flow}/chart/nodes/job-node-id-000000000001`,
+        { config: { aiAgent: "ref-uuid" } },
       );
     });
 
@@ -473,7 +451,6 @@ describe("ToolHandlers v2", () => {
       });
 
       expect(result.error).toContain("apiKey or connectionId");
-      expect(result._hints.resource).toBe("cognigy://guide/llm-providers");
     });
 
     it("deletes model and returns error when connection test fails", async () => {
@@ -494,7 +471,6 @@ describe("ToolHandlers v2", () => {
 
       expect(result.error).toContain("connection test failed");
       expect(result.providerMessage).toBe("Invalid API key provided.");
-      expect(result._hints.resource).toBe("cognigy://guide/llm-providers");
       expect(api.delete).toHaveBeenCalledWith(
         `/v2.0/largelanguagemodels/${ID.llm}`,
       );
@@ -575,7 +551,6 @@ describe("ToolHandlers v2", () => {
       });
 
       expect(result.error).toContain("was not found in the target project");
-      expect(result._hints.resource).toBe("cognigy://guide/package-management");
       expect(api.post).not.toHaveBeenCalled();
     });
   });
@@ -592,7 +567,6 @@ describe("ToolHandlers v2", () => {
 
       expect(result.sessionId).toBeDefined();
       expect(result._hints).toBeDefined();
-      expect(result._hints.resource).toBe("cognigy://guide/troubleshooting");
     });
 
     it("resolves existing REST endpoint by aiAgentId", async () => {
@@ -734,7 +708,6 @@ describe("ToolHandlers v2", () => {
 
       expect(result.error).toContain("Could not find a flow");
       expect(result._hints).toBeDefined();
-      expect(result._hints.resource).toBe("cognigy://guide/agent-creation");
     });
 
     it("uses endpointUrl directly when both endpointUrl and aiAgentId are provided", async () => {
@@ -815,7 +788,6 @@ describe("ToolHandlers v2", () => {
 
       expect(result.items).toHaveLength(0);
       expect(result._hints).toBeDefined();
-      expect(result._hints.resource).toBe("cognigy://guide/agent-creation");
     });
 
     it("resolves tools via agent flow (only whitelisted types)", async () => {
@@ -1234,7 +1206,6 @@ describe("ToolHandlers v2", () => {
 
       const result = await h.handleToolCall("create_tool", baseArgs);
       expect(result.error).toContain("Could not find a flow");
-      expect(result._hints.resource).toBe("cognigy://guide/tools-setup");
     });
 
     it("returns error when flow has no aiAgentJob node", async () => {
@@ -1395,7 +1366,6 @@ describe("ToolHandlers v2", () => {
       expect(result.toolId).toBe(ID.tool);
       expect(result.toolNodeId).toBe(ID.tool);
       expect(result.requestedToolId).toBe("unlock_account");
-      expect(result._hints.resource).toBe("cognigy://guide/tools-setup");
       expect(result._hints.warning).toContain('"unlock_account"');
       expect(api.post).not.toHaveBeenCalled();
     });
@@ -1783,9 +1753,16 @@ describe("ToolHandlers v2", () => {
       });
 
       expect(result.llmStatus).toBe("configured");
+      // The config patch must re-send aiAgent so the backend regenerates the
+      // avatar preview object instead of clobbering it with a bare string.
       expect(api.patch).toHaveBeenCalledWith(
         `/v2.0/flows/${ID.flow}/chart/nodes/${ID.node}`,
-        { config: { llmProviderReferenceId: "llm-ref-uuid" } },
+        {
+          config: {
+            aiAgent: "ref-uuid",
+            llmProviderReferenceId: "llm-ref-uuid",
+          },
+        },
       );
     });
 
@@ -1858,7 +1835,6 @@ describe("ToolHandlers v2", () => {
 
       expect(result.projectCreated).toBe(true);
       expect(result.llmStatus).toBe("unknown");
-      expect(result._hints.resource).toBe("cognigy://guide/agent-creation");
       expect(result._hints.action).toContain("A new project was auto-created");
       expect(result._hints.action).toContain("non-empty connectionId");
       expect(result._hints.action).toContain("manage_packages");
@@ -2711,7 +2687,6 @@ describe("ToolHandlers v2", () => {
       });
 
       expect(result.error).toContain("Failed to update Knowledge AI settings");
-      expect(result._hints.resource).toBe("cognigy://guide/settings");
       expect(result.allowedKnowledgeSearchModels).toEqual([
         expect.objectContaining({
           referenceId: "llm-ref-embed",
@@ -2731,6 +2706,306 @@ describe("ToolHandlers v2", () => {
         "Unknown tool",
       );
     });
+  });
+});
+
+// =========================================================================
+// audit_voice_agent
+// =========================================================================
+describe("audit_voice_agent", () => {
+  let api: jest.Mocked<CognigyApiClient>;
+  let h: ToolHandlers;
+
+  beforeEach(() => {
+    api = {
+      get: jest.fn(),
+      post: jest.fn(),
+      patch: jest.fn(),
+      delete: jest.fn(),
+      put: jest.fn(),
+      uploadFile: jest.fn(),
+    } as any;
+    h = new ToolHandlers(api, "https://endpoint-trial.cognigy.ai");
+  });
+
+  const START_ID = "60d5ec49f1a2c8b1a4e0f0aa";
+
+  const badAgent = {
+    _id: ID.entry,
+    type: "aiAgentJob",
+    // Per-descriptor flag: aiAgentJob reports true regardless of run order.
+    isEntryPoint: true,
+    config: {
+      storeLocation: "input",
+      errorHandling: "stop",
+      errorMessage: "",
+      debugLogLLMLatency: false,
+    },
+  };
+
+  const goodSsc = {
+    _id: ID.node,
+    type: "setSessionConfig",
+    isEntryPoint: false,
+    config: {
+      bargeInOnSpeech: false,
+      bargeInOnDtmf: false,
+      asrEnabled: false,
+      userNoInputTimeoutEnable: true,
+      userNoInputTimeout: 6000,
+      userNoInputRetries: 5,
+      flowNoInputTimeoutEnable: true,
+      flowNoInputTimeout: 1500,
+      flowNoInputSpeech: "One moment please.",
+      flowNoInputFail: false,
+      sttHints: ["Acme"],
+    },
+  };
+
+  const goodAgent = {
+    _id: ID.entry,
+    type: "aiAgentJob",
+    isEntryPoint: true,
+    config: {
+      storeLocation: "stream",
+      errorHandling: "continue",
+      errorMessage: "Sorry.",
+      debugLogLLMLatency: true,
+    },
+  };
+
+  /**
+   * Wire api.get to the REAL chart projections so the handler must do the right
+   * reads:
+   *   - GET /chart/nodes (index): id/type/isEntryPoint only — NO config, NO order
+   *   - GET /chart/nodes/{id}:    full node incl. config (the only config source)
+   *   - GET /new/.../chart:       { nodes:[start,…], relations:[{node,next}] }
+   * `state` is mutable so the apply path can flip it to the post-fix flow before
+   * the handler re-audits.
+   */
+  function setupFlow(initial: { nodes: any[]; firstNodeId: string }) {
+    const state = { nodes: initial.nodes, firstNodeId: initial.firstNodeId };
+    const indexUrl = `/v2.0/flows/${ID.flow}/chart/nodes`;
+    const perNodePrefix = `${indexUrl}/`;
+    const chartUrl = `/new/v2.0/flows/${ID.flow}/chart`;
+    api.get.mockImplementation(async (url: string) => {
+      if (url === chartUrl) {
+        return {
+          nodes: [
+            { _id: START_ID, type: "start" },
+            ...state.nodes.map((n) => ({ _id: n._id, type: n.type })),
+          ],
+          relations: [{ node: START_ID, next: [state.firstNodeId] }],
+        };
+      }
+      if (url.startsWith(perNodePrefix)) {
+        const id = url.slice(perNodePrefix.length);
+        const n = state.nodes.find((x) => x._id === id);
+        return n ? { ...n } : {};
+      }
+      if (url === indexUrl) {
+        // Strip config + ordering to mirror the real lightweight index view.
+        return {
+          items: state.nodes.map(({ config, ...rest }) => rest),
+        };
+      }
+      return {};
+    });
+    return state;
+  }
+
+  it("dry-run reports failures and proposes fixes without mutating", async () => {
+    setupFlow({ nodes: [badAgent], firstNodeId: ID.entry });
+
+    const result = await h.handleToolCall("audit_voice_agent", {
+      flowId: ID.flow,
+    });
+
+    expect(result.mode).toBe("dry-run");
+    expect(result.summary.fail).toBeGreaterThan(0);
+    const first = result.checks.find(
+      (c: any) => c.id === "vg.session-config-first",
+    );
+    expect(first.status).toBe("fail");
+    expect(first.proposedFix.kind).toBe("createSessionConfig");
+    expect(api.post).not.toHaveBeenCalled();
+    expect(api.patch).not.toHaveBeenCalled();
+  });
+
+  it("evaluates config read from the per-node GET, not the bare index", async () => {
+    // A fully compliant flow must report zero failures only if the handler reads
+    // each node's config via the per-node GET — the index carries none.
+    setupFlow({ nodes: [goodSsc, goodAgent], firstNodeId: ID.node });
+
+    const result = await h.handleToolCall("audit_voice_agent", {
+      flowId: ID.flow,
+    });
+
+    expect(result.summary.fail).toBe(0);
+    expect(
+      result.checks.find((c: any) => c.id === "vg.session-config-first").status,
+    ).toBe("pass");
+    // Proof it fetched full config per node rather than trusting the index.
+    expect(api.get).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes/${ID.node}`,
+    );
+  });
+
+  it("apply creates the Set Session Config node via prepend and patches the agent", async () => {
+    const state = setupFlow({ nodes: [badAgent], firstNodeId: ID.entry });
+    // Creating the SSC flips the flow to its post-fix state for the re-audit.
+    api.post.mockImplementation(async (_url: string, body: any) => {
+      if (body?.type === "setSessionConfig") {
+        state.nodes = [goodSsc, goodAgent];
+        state.firstNodeId = ID.node;
+        return { _id: ID.node };
+      }
+      return {};
+    });
+    api.patch.mockResolvedValue({});
+
+    const result = await h.handleToolCall("audit_voice_agent", {
+      flowId: ID.flow,
+      apply: true,
+    });
+
+    expect(result.mode).toBe("apply");
+    const createCall = api.post.mock.calls.find(
+      (c: any[]) => c[1]?.type === "setSessionConfig",
+    );
+    expect(createCall).toBeDefined();
+    expect(createCall![1].mode).toBe("prepend");
+    expect(createCall![1].extension).toBe("@cognigy/voicegateway2");
+    expect(createCall![1].target).toBe(ID.entry);
+    expect(api.patch).toHaveBeenCalled();
+    expect(result.appliedFixes.some((f: any) => f.applied)).toBe(true);
+    expect(result.summary.fail).toBe(0);
+  });
+
+  it("patchNode fix merges onto existing config (never clobbers)", async () => {
+    // Agent config has a non-target field (temperature) that the stream-output
+    // fix must preserve — only possible if the handler read the real config.
+    const agentWithExtras = {
+      ...badAgent,
+      config: { ...badAgent.config, temperature: 0.7 },
+    };
+    setupFlow({ nodes: [agentWithExtras], firstNodeId: ID.entry });
+    api.post.mockResolvedValue({ _id: ID.node });
+    api.patch.mockResolvedValue({});
+
+    await h.handleToolCall("audit_voice_agent", {
+      flowId: ID.flow,
+      apply: true,
+      only: ["agent.stream-output"],
+    });
+
+    const patchCall = api.patch.mock.calls.find((c: any[]) =>
+      c[0].endsWith(`/chart/nodes/${ID.entry}`),
+    );
+    expect(patchCall).toBeDefined();
+    expect(patchCall![1].config.storeLocation).toBe("stream");
+    // Pre-existing field survives the merge.
+    expect(patchCall![1].config.temperature).toBe(0.7);
+  });
+
+  it("accumulates multiple fixes on the same node across patches", async () => {
+    // A Set Session Config node with several failing checks — all patchNode
+    // fixes target the SAME node. Each successive patch must build on the prior
+    // merge, not revert it to the original config.
+    const badSsc = {
+      _id: ID.node,
+      type: "setSessionConfig",
+      isEntryPoint: false,
+      config: {
+        bargeInOnSpeech: true,
+        bargeInOnDtmf: true,
+        asrEnabled: true,
+        flowNoInputFail: true,
+      },
+    };
+    setupFlow({ nodes: [badSsc, goodAgent], firstNodeId: ID.node });
+    api.patch.mockResolvedValue({});
+
+    await h.handleToolCall("audit_voice_agent", {
+      flowId: ID.flow,
+      apply: true,
+    });
+
+    const sscPatches = api.patch.mock.calls.filter((c: any[]) =>
+      c[0].endsWith(`/chart/nodes/${ID.node}`),
+    );
+    expect(sscPatches.length).toBeGreaterThan(1);
+    // The final patch carries every earlier fix, not just its own field.
+    const finalConfig = sscPatches[sscPatches.length - 1][1].config;
+    expect(finalConfig.bargeInOnSpeech).toBe(false);
+    expect(finalConfig.asrEnabled).toBe(false);
+    expect(finalConfig.flowNoInputFail).toBe(false);
+  });
+
+  it("re-fetches a node's config before patching when enrichment missed it", async () => {
+    // If enrichment transiently fails, the cached snapshot has no config. The
+    // apply path must re-fetch the full node before patching rather than
+    // PATCHing a partial config that clobbers existing fields.
+    const indexUrl = `/v2.0/flows/${ID.flow}/chart/nodes`;
+    const perNodeUrl = `${indexUrl}/${ID.entry}`;
+    let perNodeCalls = 0;
+    api.get.mockImplementation(async (url: string) => {
+      if (url === `/new/v2.0/flows/${ID.flow}/chart`) {
+        return {
+          nodes: [
+            { _id: START_ID, type: "start" },
+            { _id: ID.entry, type: "aiAgentJob" },
+          ],
+          relations: [{ node: START_ID, next: [ID.entry] }],
+        };
+      }
+      if (url === perNodeUrl) {
+        perNodeCalls += 1;
+        if (perNodeCalls === 1) throw new Error("transient enrichment failure");
+        return {
+          _id: ID.entry,
+          type: "aiAgentJob",
+          config: { temperature: 0.7, storeLocation: "input" },
+        };
+      }
+      if (url === indexUrl) {
+        return { items: [{ _id: ID.entry, type: "aiAgentJob" }] };
+      }
+      return {};
+    });
+    api.patch.mockResolvedValue({});
+
+    await h.handleToolCall("audit_voice_agent", {
+      flowId: ID.flow,
+      apply: true,
+      only: ["agent.stream-output"],
+    });
+
+    // First per-node GET (enrichment) threw; the apply path re-fetched.
+    expect(perNodeCalls).toBeGreaterThanOrEqual(2);
+    const patchCall = api.patch.mock.calls.find((c: any[]) =>
+      c[0].endsWith(`/chart/nodes/${ID.entry}`),
+    );
+    expect(patchCall![1].config.storeLocation).toBe("stream");
+    // The unrelated field from the re-fetched config is preserved.
+    expect(patchCall![1].config.temperature).toBe(0.7);
+  });
+
+  it("only: limits applied fixes to the listed check ids", async () => {
+    setupFlow({ nodes: [badAgent], firstNodeId: ID.entry });
+    api.patch.mockResolvedValue({});
+
+    const result = await h.handleToolCall("audit_voice_agent", {
+      flowId: ID.flow,
+      apply: true,
+      only: ["agent.stream-output"],
+    });
+
+    const applied = result.appliedFixes.map((f: any) => f.id);
+    expect(applied).toEqual(["agent.stream-output"]);
+    expect(
+      api.post.mock.calls.some((c: any[]) => c[1]?.type === "setSessionConfig"),
+    ).toBe(false);
   });
 });
 

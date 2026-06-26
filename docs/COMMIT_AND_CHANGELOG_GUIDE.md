@@ -24,11 +24,11 @@ PR is squash-merged to main → the PR title becomes the single commit subject
 release.yml runs semantic-release on the push to main:
   1. Analyzes commits since the last tag → decides major / minor / patch (or no release)
   2. Generates release notes + updates CHANGELOG.md
-  3. Bumps version in package.json, syncs manifest.json, builds the .mcpb bundle
+  3. Bumps version in package.json
   4. Commits "chore(release): x.y.z [skip ci]" and the tag, pushing to main
      (as the "Cognigy bypass branch protection" App, which bypasses branch protection)
-  5. Publishes to npm
-  6. Creates the GitHub release (notes + .mcpb asset + link to the README install section)
+  5. Publishes @cognigy/plugin-engine to npm via OIDC trusted publishing
+  6. Creates the GitHub release (notes only — no .mcpb asset)
 ```
 
 Because PRs are **squash-merged**, the **PR title is the commit subject** semantic-release reads.
@@ -127,8 +127,7 @@ before styles were ready. Added a loading gate to prevent FOUC."
 - **llm:** prevent crash when provider metadata is missing (def5678)
 ```
 
-Each entry links to the commit. The GitHub release body carries the same notes plus a link to
-the README install section.
+Each entry links to the commit. The GitHub release body carries the same notes.
 
 ---
 

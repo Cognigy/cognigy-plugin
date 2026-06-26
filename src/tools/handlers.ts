@@ -13,15 +13,17 @@ import { randomUUID } from "crypto";
 import { pathToFileURL } from "url";
 import axios from "axios";
 import { CognigyApiClient } from "../api/client.js";
-import {
-  listGuideMetadata,
-  readGuideContent,
-  resolveGuide,
-} from "../guides.js";
 import { logger } from "../utils/logger.js";
 import { filterResponse, filterList, withHints } from "./filters.js";
 import { buildWebchatSettings, deepMerge } from "./webchatSettings.js";
 import { getNodeEntry, supportedNodeTypes } from "./nodeRegistry.js";
+import {
+  evaluateChecks,
+  summarize,
+  nodeId as voiceNodeId,
+  type VoiceCheck,
+  type VoiceFix,
+} from "./voiceChecklist.js";
 import * as schemas from "../schemas/tools.js";
 import {
   buildPackageExportablePreview,
@@ -162,30 +164,6 @@ function buildRichSayObject(
     text: textArr,
     _cognigy: { _default: channelData },
     _data: { _cognigy: { _default: channelData } },
-  };
-}
-
-function buildAiAgentNodePreview(
-  agent: {
-    name?: string;
-    image?: string;
-    imageOptimizedFormat?: boolean;
-  } | null,
-  fallbackName: string,
-  jobName?: string,
-): Record<string, any> {
-  const previewImage =
-    typeof agent?.image === "string" && agent.image.trim().length > 0
-      ? agent.image
-      : DEFAULT_AGENT_IMAGE;
-  return {
-    keyValue: jobName ?? fallbackName,
-    aiAgentName: agent?.name ?? fallbackName,
-    aiAgentImage: previewImage,
-    aiAgentImageOptimizedFormat:
-      typeof agent?.imageOptimizedFormat === "boolean"
-        ? agent.imageOptimizedFormat
-        : true,
   };
 }
 
@@ -1214,13 +1192,18 @@ export class ToolHandlers {
             aiAgent: agent.referenceId,
             outputImmediately: true,
           },
-          preview: buildAiAgentNodePreview(agent, data.name),
         },
       );
       const jobNodeId = jobNode._id || jobNode.id;
 
       // Step 4a: Auto-assign default LLM to the job node so talk_to_agent works
       // immediately without a separate update_ai_agent call.
+      //
+      // The node preview (agent avatar + name) is computed server-side from
+      // `config.aiAgent`. A config PATCH that omits `aiAgent` makes the backend
+      // recompute the preview as a bare string (the job name), wiping the
+      // avatar. So we always re-send `aiAgent` alongside any config change to
+      // force the backend to regenerate the proper avatar preview object.
       let llmAutoAssigned = false;
       try {
         const llmList: any = await this.apiClient.get(
@@ -1237,7 +1220,12 @@ export class ToolHandlers {
           if (llmRefId) {
             await this.apiClient.patch(
               `/v2.0/flows/${flowId}/chart/nodes/${jobNodeId}`,
-              { config: { llmProviderReferenceId: llmRefId } },
+              {
+                config: {
+                  aiAgent: agent.referenceId,
+                  llmProviderReferenceId: llmRefId,
+                },
+              },
             );
             llmAutoAssigned = true;
           }
@@ -1246,21 +1234,6 @@ export class ToolHandlers {
         logger.warn(
           "Failed to auto-assign LLM to job node — agent may need manual LLM assignment",
           { error: llmErr.message },
-        );
-      }
-
-      // Step 4c: Patch the node preview so the flow editor displays the agent image
-      try {
-        await this.apiClient.patch(
-          `/v2.0/flows/${flowId}/chart/nodes/${jobNodeId}`,
-          {
-            preview: buildAiAgentNodePreview(agent, data.name),
-          },
-        );
-      } catch (previewError: any) {
-        logger.warn(
-          "Failed to set job node preview — agent image may not appear in the flow editor",
-          { error: previewError.message },
         );
       }
 
@@ -1406,7 +1379,6 @@ export class ToolHandlers {
         return withHints(result, {
           warning:
             "Could not verify LLM resource in project. Agent may not generate responses.",
-          resource: "cognigy://guide/agent-creation",
           action: nextAction,
         });
       }
@@ -1468,7 +1440,6 @@ export class ToolHandlers {
         },
         {
           likely_cause: likelyCause,
-          resource: "cognigy://guide/troubleshooting",
           action,
         },
       );
@@ -1517,7 +1488,6 @@ export class ToolHandlers {
                 "Could not find a flow associated with this agent. Job config was not updated.",
             },
             {
-              resource: "cognigy://guide/agent-creation",
               action:
                 "Ensure the agent was created via create_ai_agent, which provisions the flow and Job Node.",
             },
@@ -1542,7 +1512,6 @@ export class ToolHandlers {
                   "No AI Agent Job Node found in the flow. Job config was not updated.",
               },
               {
-                resource: "cognigy://guide/agent-creation",
                 action: "Ensure the agent was created via create_ai_agent.",
               },
             );
@@ -1551,36 +1520,37 @@ export class ToolHandlers {
           const jobNodeId = jobNode._id || jobNode.id;
           const nodePatch: Record<string, any> = {};
 
-          if (needsJobPatch) {
-            const nodeConfigPatch: Record<string, any> = {};
-            if (jobConfig!.llmProviderReferenceId !== undefined)
-              nodeConfigPatch.llmProviderReferenceId =
-                jobConfig!.llmProviderReferenceId;
-            if (jobConfig!.jobName !== undefined)
-              nodeConfigPatch.name = jobConfig!.jobName;
-            if (jobConfig!.jobDescription !== undefined)
-              nodeConfigPatch.description = jobConfig!.jobDescription;
-            if (jobConfig!.jobInstructions !== undefined)
-              nodeConfigPatch.instructions = jobConfig!.jobInstructions;
-            if (jobConfig!.temperature !== undefined)
-              nodeConfigPatch.temperature = jobConfig!.temperature;
-            if (jobConfig!.maxTokens !== undefined)
-              nodeConfigPatch.maxTokens = jobConfig!.maxTokens;
+          // The node's avatar preview is computed server-side from
+          // `config.aiAgent`. Any config PATCH that omits it makes the backend
+          // recompute the preview as a bare string (the job name), which wipes
+          // the avatar image in the flow editor. So we always include the
+          // existing `aiAgent` reference in the config patch — both when
+          // changing job fields and when only the agent name/avatar changed —
+          // to force the backend to regenerate the proper avatar preview.
+          if (needsJobPatch || needsPreviewPatch) {
+            // The avatar preview is recomputed server-side from `config.aiAgent`;
+            // omitting it wipes the avatar. The `/chart/nodes` index may not
+            // carry `config`, so prefer the authoritative agent reference from
+            // the resolved agent record, falling back to the node's config.
+            const nodeConfigPatch: Record<string, any> = {
+              aiAgent: resolved.agent?.referenceId ?? jobNode.config?.aiAgent,
+            };
+            if (needsJobPatch) {
+              if (jobConfig!.llmProviderReferenceId !== undefined)
+                nodeConfigPatch.llmProviderReferenceId =
+                  jobConfig!.llmProviderReferenceId;
+              if (jobConfig!.jobName !== undefined)
+                nodeConfigPatch.name = jobConfig!.jobName;
+              if (jobConfig!.jobDescription !== undefined)
+                nodeConfigPatch.description = jobConfig!.jobDescription;
+              if (jobConfig!.jobInstructions !== undefined)
+                nodeConfigPatch.instructions = jobConfig!.jobInstructions;
+              if (jobConfig!.temperature !== undefined)
+                nodeConfigPatch.temperature = jobConfig!.temperature;
+              if (jobConfig!.maxTokens !== undefined)
+                nodeConfigPatch.maxTokens = jobConfig!.maxTokens;
+            }
             nodePatch.config = nodeConfigPatch;
-          }
-
-          if (needsPreviewPatch) {
-            const currentAgent = agentResult ?? resolved.agent;
-            const previewName =
-              jobConfig?.jobName ??
-              jobNode.config?.name ??
-              currentAgent?.name ??
-              rest.name;
-            nodePatch.preview = buildAiAgentNodePreview(
-              currentAgent,
-              rest.name ?? previewName ?? "AI Agent",
-              previewName,
-            );
           }
 
           jobNodeResult = await this.apiClient.patch(
@@ -1630,7 +1600,6 @@ export class ToolHandlers {
       return withHints(
         { error: "Either apiKey or connectionId must be provided." },
         {
-          resource: "cognigy://guide/llm-providers",
           action: "Read the provider guide for credential requirements.",
         },
       );
@@ -1663,7 +1632,6 @@ export class ToolHandlers {
               projectId: data.projectId,
             },
             {
-              resource: "cognigy://guide/package-management",
               action:
                 "Import the LLM and its connection into the target project with manage_packages, or provide an apiKey / same-project connectionId.",
             },
@@ -1680,7 +1648,6 @@ export class ToolHandlers {
             projectId: data.projectId,
           },
           {
-            resource: "cognigy://guide/package-management",
             action:
               "Verify the connection exists in the target project, or import it together with the LLM via manage_packages before retrying.",
           },
@@ -1704,7 +1671,6 @@ export class ToolHandlers {
         return withHints(
           { error: `Failed to create connection: ${connError.message}` },
           {
-            resource: "cognigy://guide/llm-providers",
             action: "Check API key and provider, then retry.",
           },
         );
@@ -1728,7 +1694,6 @@ export class ToolHandlers {
       return withHints(
         { error: error.message },
         {
-          resource: "cognigy://guide/llm-providers",
           action:
             "Read the provider guide for valid provider names and model strings.",
         },
@@ -1766,7 +1731,6 @@ export class ToolHandlers {
           modelType: data.modelType,
         },
         {
-          resource: "cognigy://guide/llm-providers",
           action:
             "Verify your provider setup and model configuration, then retry.",
         },
@@ -1816,7 +1780,6 @@ export class ToolHandlers {
             ...(cleanedUp ? {} : { modelId: llmId }),
           },
           {
-            resource: "cognigy://guide/llm-providers",
             action:
               "Verify your API key and model type are correct, then retry.",
           },
@@ -1848,7 +1811,6 @@ export class ToolHandlers {
           connectionTest: { skipped: true, reason: testError.message },
         },
         {
-          resource: "cognigy://guide/llm-providers",
           action:
             "Test the model manually or delete and recreate if credentials are wrong.",
         },
@@ -1887,7 +1849,6 @@ export class ToolHandlers {
           {
             likely_cause:
               "Agent may not have been created via create_ai_agent, or has no associated flow.",
-            resource: "cognigy://guide/agent-creation",
             action:
               "Create the agent with create_ai_agent, or provide endpointUrl directly.",
           },
@@ -2035,7 +1996,6 @@ export class ToolHandlers {
         return withHints(result, {
           likely_cause:
             "Agent returned no text. Possible causes: 1) no LLM configured, 2) empty agent description, 3) endpoint not connected to flow.",
-          resource: "cognigy://guide/troubleshooting",
           action: "Read the troubleshooting guide for diagnostic steps.",
         });
       }
@@ -2054,7 +2014,6 @@ export class ToolHandlers {
         },
         {
           likely_cause: "Endpoint URL invalid or expired.",
-          resource: "cognigy://guide/troubleshooting",
           action:
             "Verify endpoint with list_resources { resourceType: 'endpoint' }.",
         },
@@ -2190,7 +2149,6 @@ export class ToolHandlers {
             { error: "Could not find a flow associated with this agent." },
             {
               likely_cause: "Agent was not created via create_ai_agent.",
-              resource: "cognigy://guide/tools-setup",
               action: "Create the agent with create_ai_agent first.",
             },
           );
@@ -2237,7 +2195,6 @@ export class ToolHandlers {
     if (filtered.length === 0 && resourceType === "agent") {
       return withHints(result, {
         hint: "No agents found.",
-        resource: "cognigy://guide/agent-creation",
       });
     }
 
@@ -2303,7 +2260,6 @@ export class ToolHandlers {
         return withHints(
           { error: "Could not find a flow associated with this agent." },
           {
-            resource: "cognigy://guide/tools-setup",
             action: "Ensure agent was created via create_ai_agent.",
           },
         );
@@ -2546,7 +2502,6 @@ export class ToolHandlers {
             {
               warning:
                 "File ingestion is async — content will be processed and chunked automatically. This may take 10-60 seconds.",
-              resource: "cognigy://guide/knowledge-setup",
               action:
                 "Wait, then use list_chunks to verify the content was ingested.",
             },
@@ -2584,7 +2539,6 @@ export class ToolHandlers {
             {
               warning:
                 "URL ingestion is async — content may not be searchable for 10-60 seconds.",
-              resource: "cognigy://guide/knowledge-setup",
               action:
                 "Wait, then use list_chunks to verify the content was ingested.",
             },
@@ -2626,7 +2580,6 @@ export class ToolHandlers {
           {
             warning:
               "Chunk created. It may take a few seconds before it becomes searchable.",
-            resource: "cognigy://guide/knowledge-setup",
             action:
               "Wait, then use list_chunks to verify the content was ingested.",
           },
@@ -2655,7 +2608,6 @@ export class ToolHandlers {
               { chunks: [], sources: [] },
               {
                 likely_cause: "No sources found in this knowledge store.",
-                resource: "cognigy://guide/knowledge-setup",
                 action: "Add a source first with create_source.",
               },
             );
@@ -2729,7 +2681,6 @@ export class ToolHandlers {
         {
           likely_cause:
             "create_tool requires an agent created via create_ai_agent (which auto-provisions the flow).",
-          resource: "cognigy://guide/tools-setup",
           action:
             "Read the tools guide, ensure agent was created via create_ai_agent, then retry.",
         },
@@ -2756,7 +2707,6 @@ export class ToolHandlers {
             "No aiAgentJob node found in the flow. Tools must be children of an AI Agent Job node.",
         },
         {
-          resource: "cognigy://guide/tools-setup",
           action:
             "Ensure the agent was created via create_ai_agent (which provisions the aiAgentJob node).",
         },
@@ -2798,7 +2748,6 @@ export class ToolHandlers {
           },
           {
             warning: `A tool with toolId "${requestedToolId}" already exists in this agent flow, so the existing tool was reused instead of creating a duplicate.`,
-            resource: "cognigy://guide/tools-setup",
             action: `Continue by adding logic inside that tool with manage_flow_nodes using parentNodeId "${duplicateToolNodeId}", or modify it with update_tool { aiAgentId: "${data.aiAgentId}", toolNodeId: "${duplicateToolNodeId}", ... }.`,
           },
         );
@@ -2915,10 +2864,7 @@ export class ToolHandlers {
           rollbackFailed.length > 0
             ? `Rollback partially failed — orphaned node IDs: [${rollbackFailed.join(", ")}]. Delete them with delete_resource { resourceType: 'tool', id, aiAgentId }, then retry.`
             : "Check tool type and config, then retry.";
-        return withHints(
-          { error: error.message },
-          { resource: "cognigy://guide/tools-setup", action },
-        );
+        return withHints({ error: error.message }, { action });
       }
     }
 
@@ -2927,7 +2873,6 @@ export class ToolHandlers {
       return withHints(
         { error: "url is required in config for http tool type." },
         {
-          resource: "cognigy://guide/tools-setup",
           action: "Provide config.url and retry.",
         },
       );
@@ -3055,10 +3000,7 @@ export class ToolHandlers {
         rollbackFailed.length > 0
           ? `Rollback partially failed — orphaned node IDs: [${rollbackFailed.join(", ")}]. Delete them with delete_resource { resourceType: 'tool', id, aiAgentId }, then retry.`
           : "Check HTTP config and code snippets, then retry.";
-      return withHints(
-        { error: error.message },
-        { resource: "cognigy://guide/tools-setup", action },
-      );
+      return withHints({ error: error.message }, { action });
     }
   }
 
@@ -3075,7 +3017,6 @@ export class ToolHandlers {
         {
           likely_cause:
             "update_tool requires an agent created via create_ai_agent.",
-          resource: "cognigy://guide/tools-setup",
           action: "Ensure agent was created via create_ai_agent, then retry.",
         },
       );
@@ -3347,7 +3288,6 @@ export class ToolHandlers {
           return withHints(
             { error: "nodeType is required for create operation." },
             {
-              resource: "cognigy://guide/flow-nodes",
               action: "Read the flow-nodes guide for supported node types.",
             },
           );
@@ -3360,7 +3300,6 @@ export class ToolHandlers {
               error: `Unsupported nodeType: "${data.nodeType}". Supported types: ${supportedNodeTypes().join(", ")}`,
             },
             {
-              resource: "cognigy://guide/flow-nodes",
               action:
                 "Read the flow-nodes guide for the full list and config schemas.",
             },
@@ -3394,7 +3333,6 @@ export class ToolHandlers {
               error: `Missing required config keys for ${data.nodeType}: ${missingKeyLabels.join(", ")}`,
             },
             {
-              resource: "cognigy://guide/flow-nodes",
               action: `Provide the required config fields: ${missingKeyLabels.join(", ")}`,
             },
           );
@@ -3615,7 +3553,6 @@ export class ToolHandlers {
         return withHints(
           { error: "projectId is required to create a webchat endpoint." },
           {
-            resource: "cognigy://guide/webchat-setup",
             action:
               "Provide projectId. Use list_resources { resourceType: 'project' } to find one.",
           },
@@ -3628,7 +3565,6 @@ export class ToolHandlers {
               "flowId is required to create a webchat endpoint. To update an existing one, provide endpointId instead.",
           },
           {
-            resource: "cognigy://guide/webchat-setup",
             action:
               "Provide flowId. Use list_resources { resourceType: 'flow', projectId } to find one, or create an agent first with create_ai_agent.",
           },
@@ -3704,7 +3640,6 @@ export class ToolHandlers {
         return withHints(
           { error: `Failed to create webchat endpoint: ${error.message}` },
           {
-            resource: "cognigy://guide/webchat-setup",
             action: "Check projectId and flowId, then retry.",
           },
         );
@@ -3728,7 +3663,6 @@ export class ToolHandlers {
             "Nothing to update. Provide at least one setting group or name.",
         },
         {
-          resource: "cognigy://guide/webchat-setup",
           action:
             "Include layout, behavior, homeScreen, or other setting groups.",
         },
@@ -3765,7 +3699,6 @@ export class ToolHandlers {
       return withHints(
         { error: `Failed to update webchat endpoint: ${error.message}` },
         {
-          resource: "cognigy://guide/webchat-setup",
           action: "Verify endpointId and settings, then retry.",
         },
       );
@@ -3860,7 +3793,6 @@ export class ToolHandlers {
             error: "projectId is required to create a voice gateway endpoint.",
           },
           {
-            resource: "cognigy://guide/voice-gateway-setup",
             action:
               "Provide projectId. Use list_resources { resourceType: 'project' } to find one.",
           },
@@ -3873,7 +3805,6 @@ export class ToolHandlers {
               "flowId is required to create a voice gateway endpoint. To update an existing one, provide endpointId instead.",
           },
           {
-            resource: "cognigy://guide/voice-gateway-setup",
             action:
               "Provide flowId. Use list_resources { resourceType: 'flow', projectId } to find one, or create an agent first with create_ai_agent.",
           },
@@ -3932,7 +3863,6 @@ export class ToolHandlers {
             error: `Failed to create voice gateway endpoint: ${error.message}`,
           },
           {
-            resource: "cognigy://guide/voice-gateway-setup",
             action: "Check projectId and flowId, then retry.",
           },
         );
@@ -4074,7 +4004,6 @@ export class ToolHandlers {
       return withHints(
         { error: `Failed to update voice gateway endpoint: ${error.message}` },
         {
-          resource: "cognigy://guide/voice-gateway-setup",
           action: "Verify endpointId and settings, then retry.",
         },
       );
@@ -4132,7 +4061,6 @@ export class ToolHandlers {
               },
               {
                 action: `Upload a package containing a "${providerType}" speech connection using manage_packages { operation: "upload_and_inspect", projectId: "${projectId}", filePath: "<path>" }, import it, then retry this operation.`,
-                resource: "cognigy://guide/settings",
               },
             );
           }
@@ -4157,7 +4085,6 @@ export class ToolHandlers {
               error: `Failed to update voice preview settings: ${error.message}`,
             },
             {
-              resource: "cognigy://guide/settings",
               action: "Verify projectId and connectionId, then retry.",
             },
           );
@@ -4258,7 +4185,6 @@ export class ToolHandlers {
                 : {}),
             },
             {
-              resource: "cognigy://guide/settings",
               action: `Verify the projectId, same-project llm_model referenceIds, and content parser connection details, then retry. For Knowledge Search, call list_resources { resourceType: "llm_model", projectId: "${data.projectId}", useCase: "knowledgeSearch" } to match the Settings UI dropdown before choosing another model. If you are reusing another project's knowledge workflow, ensure the exact source-project Knowledge Search model has already been imported into this project before trying a different model.`,
             },
           );
@@ -4337,40 +4263,261 @@ export class ToolHandlers {
     return base.replace(/^http/, "ws");
   }
 
-  private async handleReadGuide(args: any): Promise<any> {
-    const data = schemas.readGuideSchema.parse(args);
+  // =========================================================================
+  // Tool 16: audit_voice_agent
+  // =========================================================================
+  async handleAuditVoiceAgent(args: any): Promise<any> {
+    const data = schemas.auditVoiceAgentSchema.parse(args);
+    const { aiAgentId, endpointId, projectId, apply, only } = data;
 
-    if (!data.guideId && !data.uri) {
+    // Resolve the flow to audit.
+    let flowId = data.flowId;
+    if (!flowId) {
+      const resolved = await resolveFlowForAgent(this.apiClient, aiAgentId!);
+      if (!resolved) {
+        return withHints(
+          { error: "Could not resolve a flow for this agent." },
+          {
+            action:
+              "Provide flowId directly, or ensure the agent was created via create_ai_agent.",
+          },
+        );
+      }
+      flowId = resolved.flowId;
+    }
+
+    // The `/chart/nodes` index returns NO `config` and NO ordering — only
+    // id/type/label/preview/isEntryPoint/parentId. The checklist reads
+    // `node.config.*` and the auto-fix PATCH merges against existing config, so
+    // we must (a) enrich the inspected nodes with their per-node `config` and
+    // (b) derive the true first node from the chart `next` chain. Using the bare
+    // index would yield false failures and let the fix PATCH clobber config.
+    const CONFIG_RELEVANT_TYPES = new Set(["setSessionConfig", "aiAgentJob"]);
+
+    const fetchNodeIndex = async (): Promise<any[]> => {
+      const res: any = await this.apiClient.get(
+        `/v2.0/flows/${flowId}/chart/nodes`,
+        { params: { limit: 200 } },
+      );
+      const items = res.items ?? res;
+      return Array.isArray(items) ? items : [];
+    };
+
+    // Full `config` only comes from the per-node read. Enrich the node types the
+    // checklist actually inspects; leave the rest as cheap index entries.
+    const enrichConfig = async (index: any[]): Promise<any[]> =>
+      Promise.all(
+        index.map(async (n: any) => {
+          if (!CONFIG_RELEVANT_TYPES.has(n?.type)) return n;
+          try {
+            const full: any = await this.apiClient.get(
+              `/v2.0/flows/${flowId}/chart/nodes/${voiceNodeId(n)}`,
+            );
+            return { ...n, config: full?.config ?? n.config ?? {} };
+          } catch {
+            return n;
+          }
+        }),
+      );
+
+    // The true first node is the one the `start` node points at in the chart
+    // `next` chain — NOT whatever reports isEntryPoint. Returns undefined if it
+    // cannot be derived (the evaluator then warns instead of guessing).
+    const fetchFirstNodeId = async (): Promise<string | undefined> => {
+      try {
+        const chart: any = await this.apiClient.get(
+          `/new/v2.0/flows/${flowId}/chart`,
+        );
+        const rels = Array.isArray(chart?.relations) ? chart.relations : [];
+        const chartNodes = Array.isArray(chart?.nodes) ? chart.nodes : [];
+        const startNode = chartNodes.find((n: any) => n?.type === "start");
+        const startId = startNode ? voiceNodeId(startNode) : undefined;
+        if (!startId) return undefined;
+        const startRel = rels.find((r: any) => r?.node === startId);
+        const next = startRel?.next;
+        const firstRef = Array.isArray(next) ? next[0] : next;
+        if (!firstRef) return undefined;
+        return typeof firstRef === "string" ? firstRef : voiceNodeId(firstRef);
+      } catch {
+        return undefined;
+      }
+    };
+
+    const loadFlowState = async (): Promise<{
+      nodes: any[];
+      firstNodeId: string | undefined;
+    }> => {
+      const [nodes, firstNodeId] = await Promise.all([
+        fetchNodeIndex().then(enrichConfig),
+        fetchFirstNodeId(),
+      ]);
+      return { nodes, firstNodeId };
+    };
+
+    // Tri-state: undefined = not requested, null = fetch failed, object = resolved.
+    const fetchEndpoint = async (): Promise<any | null | undefined> => {
+      if (!endpointId) return undefined;
+      try {
+        return await this.apiClient.get(`/v2.0/endpoints/${endpointId}`);
+      } catch {
+        return null;
+      }
+    };
+
+    let { nodes, firstNodeId } = await loadFlowState();
+    let endpoint = await fetchEndpoint();
+
+    // Best-effort LLM resolution for the fallback check (advisory only).
+    // Tri-state: undefined = not requested, null = could not resolve, object = resolved.
+    let llm: any = undefined;
+    if (projectId) {
+      llm = null;
+      try {
+        const agentNode = nodes.find((n: any) => n.type === "aiAgentJob");
+        const ref = agentNode?.config?.llmProviderReferenceId;
+        const res: any = await this.apiClient.get("/v2.0/largelanguagemodels", {
+          params: { projectId, limit: 100 },
+        });
+        const models = res.items ?? res;
+        if (Array.isArray(models) && models.length > 0) {
+          // llmProviderReferenceId may hold either a referenceId or an _id/id
+          // (create_ai_agent can set it to either), so match on all of them —
+          // otherwise the lookup misses and the advisory inspects the wrong model.
+          const matchesRef = (m: any) =>
+            m.referenceId === ref || m._id === ref || m.id === ref;
+          llm =
+            (ref && ref !== "default" ? models.find(matchesRef) : undefined) ??
+            models.find((m: any) => m.isDefault) ??
+            null;
+        }
+      } catch {
+        llm = null;
+      }
+    }
+
+    const describeFix = (fix: VoiceFix): Record<string, any> =>
+      fix.kind === "patchNode"
+        ? { kind: "patchNode", nodeId: fix.nodeId, config: fix.config }
+        : {
+            kind: "createSessionConfig",
+            beforeNodeId: fix.targetNodeId,
+            label: fix.label,
+            config: fix.config,
+          };
+
+    const formatCheck = (c: VoiceCheck): Record<string, any> => {
+      const out: Record<string, any> = {
+        id: c.id,
+        section: c.section,
+        title: c.title,
+        status: c.status,
+        detail: c.detail,
+        autoFixable: c.autoFixable,
+      };
+      if (c.fix) out.proposedFix = describeFix(c.fix);
+      return out;
+    };
+
+    const checks = evaluateChecks({ nodes, firstNodeId, endpoint, llm });
+
+    if (!apply) {
       return {
-        guides: listGuideMetadata(),
-        _instruction:
-          "Call read_guide again with either guideId or uri to load the full markdown content of that guide.",
+        flowId,
+        mode: "dry-run",
+        summary: summarize(checks),
+        checks: checks.map(formatCheck),
+        _note:
+          "Dry-run: no changes made. Re-run with apply: true to apply the auto-fixable fixes (the checks with a proposedFix). Use only: [ids] to apply a subset.",
       };
     }
 
-    const guide = resolveGuide(data);
-    if (!guide) {
-      return withHints(
-        {
-          error: `Unknown guide: ${data.guideId ?? data.uri}`,
-          guides: listGuideMetadata(),
-        },
-        {
-          action:
-            "Call read_guide with one of the available guideId values or with a cognigy://guide/... uri from the list.",
-        },
-      );
+    // Apply the auto-fixable fixes.
+    //
+    // The cache maps nodeId → its current config snapshot. `undefined` means the
+    // config was never captured (enrichment missed/failed) — distinct from an
+    // empty config — so the apply path re-fetches before patching rather than
+    // PATCHing a partial config that would clobber unrelated fields.
+    const nodeConfigById = new Map<string, Record<string, any> | undefined>(
+      nodes.map((n: any) => [voiceNodeId(n), n.config]),
+    );
+    const toApply = checks.filter(
+      (c) => c.autoFixable && c.fix && (!only || only.includes(c.id)),
+    );
+    const appliedFixes: any[] = [];
+
+    for (const c of toApply) {
+      const fix = c.fix!;
+      try {
+        if (fix.kind === "patchNode") {
+          // Resolve the current config. If it was never captured, re-fetch the
+          // full node so the merge below preserves existing fields.
+          let existing = nodeConfigById.get(fix.nodeId);
+          if (existing === undefined) {
+            try {
+              const full: any = await this.apiClient.get(
+                `/v2.0/flows/${flowId}/chart/nodes/${fix.nodeId}`,
+              );
+              existing = full?.config ?? {};
+            } catch {
+              existing = {};
+            }
+          }
+          const merged = { ...existing, ...fix.config };
+          await this.apiClient.patch(
+            `/v2.0/flows/${flowId}/chart/nodes/${fix.nodeId}`,
+            { config: merged },
+          );
+          // Update the snapshot so a later fix on the SAME node builds on this
+          // merge instead of reverting it to the original config.
+          nodeConfigById.set(fix.nodeId, merged);
+          appliedFixes.push({
+            id: c.id,
+            applied: true,
+            nodeId: fix.nodeId,
+            fields: Object.keys(fix.config),
+          });
+        } else {
+          // `prepend` (not `insertBefore`): a top-level node lives on the chart's
+          // `next` chain (start → agent → …), not in any node's `children`.
+          // insertBefore searches `children` and throws "Error while reading
+          // ChartData" on a top-level target. prepend rewires the next chain so
+          // the new node lands immediately before the AI Agent node.
+          const created: any = await this.apiClient.post(
+            `/v2.0/flows/${flowId}/chart/nodes`,
+            {
+              type: "setSessionConfig",
+              extension: "@cognigy/voicegateway2",
+              mode: "prepend",
+              target: fix.targetNodeId,
+              label: fix.label,
+              config: fix.config,
+            },
+          );
+          appliedFixes.push({
+            id: c.id,
+            applied: true,
+            createdNodeId: created._id || created.id,
+          });
+        }
+      } catch (err: any) {
+        appliedFixes.push({ id: c.id, applied: false, error: err.message });
+      }
     }
 
+    // Re-audit so the response reflects the post-fix state. Re-derive ordering
+    // too — a created Set Session Config node changes the first node.
+    ({ nodes, firstNodeId } = await loadFlowState());
+    endpoint = await fetchEndpoint();
+    const postChecks = evaluateChecks({ nodes, firstNodeId, endpoint, llm });
+
     return {
-      guideId: guide.guideId,
-      uri: guide.uri,
-      name: guide.name,
-      description: guide.description,
-      mimeType: "text/markdown",
-      content: readGuideContent(guide),
-      _instruction:
-        "Use the content field as the authoritative guide text for this workflow.",
+      flowId,
+      mode: "apply",
+      appliedFixes,
+      summary: summarize(postChecks),
+      checks: postChecks.map(formatCheck),
+      _note:
+        "Applied auto-fixable fixes and re-audited. Verify the flow in the UI — especially node ordering when a Set Session Config node was created. Advisory checks (warn) and manual items are not auto-fixed.",
     };
   }
 
@@ -4430,8 +4577,8 @@ export class ToolHandlers {
         case "manage_settings":
           result = await this.handleManageSettings(args);
           break;
-        case "read_guide":
-          result = await this.handleReadGuide(args);
+        case "audit_voice_agent":
+          result = await this.handleAuditVoiceAgent(args);
           break;
         default:
           throw new Error(`Unknown tool: ${toolName}`);

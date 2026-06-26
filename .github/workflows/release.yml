@@ -32,11 +32,13 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
+      # Node 24 ships npm 11.x — npm OIDC trusted publishing requires npm >= 11.5.1.
+      # No registry-url: it writes an _authToken placeholder into .npmrc that would
+      # shadow OIDC; the npm CLI resolves the registry + mints the OIDC token itself.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
+          node-version: 24
 
       - name: Install dependencies
         run: npm ci
@@ -44,9 +46,10 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # npm auth comes from OIDC trusted publishing (id-token: write above +
+      # a Trusted Publisher configured on npmjs for this repo + release.yml).
+      # No NPM_TOKEN: the npm CLI mints a short-lived OIDC token at publish time.
       - name: Release
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npx semantic-release

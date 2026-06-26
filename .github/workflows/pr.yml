@@ -36,6 +36,10 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # Compiles the server (tsc) — catches type errors and any broken build before merge.
+      - name: Build
+        run: npm run build
+
       - name: Collect changed files for Prettier
         id: prettier_files
         shell: bash

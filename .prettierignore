@@ -1,4 +1,5 @@
 dist
 node_modules
-*.mcpb
 .claude/skills/
+# Skill markdown is hand-authored content; keep it out of Prettier's reflow.
+plugin/skills/

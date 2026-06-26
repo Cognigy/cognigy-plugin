@@ -5,30 +5,19 @@ Contributions are welcome!
 ## Development Setup
 
 ```bash
-git clone https://github.com/Cognigy/cognigy-mcp.git
-cd cognigy-mcp
-npm install
+git clone https://github.com/Cognigy/cognigy-plugin.git
+cd cognigy-plugin
+npm ci
 npm run build
 ```
 
-Point your MCP client to the local build:
-
-```json
-{
-  "mcpServers": {
-    "cognigy": {
-      "command": "node",
-      "args": ["/absolute/path/to/cognigy-mcp/dist/index.js"],
-      "env": {
-        "COGNIGY_API_BASE_URL": "https://api-trial.cognigy.ai",
-        "COGNIGY_API_KEY": "your-api-key-here"
-      }
-    }
-  }
-}
-```
-
-Or use the interactive setup: `npm run setup`
+This repo is the source for the `@cognigy/plugin-engine` npm package, which the plugin
+auto-installs at runtime, pinned to the plugin's own version (the two share one number, kept in
+lockstep by semantic-release — see [Allowed types](#allowed-types)). To test a local
+engine build, temporarily point the plugin's `mcpServers.platform.args` in
+`plugin/.claude-plugin/plugin.json` at your local `dist/index.js`, run `/reload-plugins`, then
+revert before committing. See [`TESTING.md`](./TESTING.md) for the full local-engine and
+marketplace test paths.
 
 ## Commit Messages
 
@@ -42,7 +31,10 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/). 
 
 Releases are automated by [semantic-release](https://semantic-release.gitbook.io/) — the
 version bump, `CHANGELOG.md`, git tag, npm publish, and GitHub release are all derived from the
-commit types that land on `main`. There are no manual version bumps.
+commit types that land on `main`. There are no manual version bumps. The same release version is
+written into **both** `package.json` (the `@cognigy/plugin-engine` engine) and
+`plugin/.claude-plugin/plugin.json` (the plugin), so they always carry one identical number — do
+not edit either `version` by hand.
 
 | Type       | When to use                              | Version bump | Shows in changelog? |
 | ---------- | ---------------------------------------- | ------------ | ------------------- |
@@ -101,13 +93,14 @@ so a separate global install is not required.
 
 | Command                                | Description                                       |
 | -------------------------------------- | ------------------------------------------------- |
-| `npm run build`                        | Compile TypeScript                                |
+| `npm run build`                        | Clean `dist` and compile TypeScript               |
+| `npm run dev`                          | Watch mode (tsx)                                  |
+| `npm start`                            | Run the built server (`node dist/index.js`)       |
 | `npm test`                             | Run test suite                                    |
 | `npm run lint`                         | Run ESLint                                        |
 | `npm run prettier:check -- <files...>` | Check formatting with Prettier for specific files |
-| `npm run dev`                          | Watch mode (tsx)                                  |
-| `npm run mcpb:pack`                    | Build `.mcpb` bundle                              |
+| `npm run prettier:write -- <files...>` | Format specific files with Prettier               |
 
 ## Submitting Changes
 
-Open a pull request on [GitHub](https://github.com/Cognigy/cognigy-mcp). Issues and feature requests can be filed there too.
+Open a pull request on [GitHub](https://github.com/Cognigy/cognigy-plugin). Issues and feature requests can be filed there too.

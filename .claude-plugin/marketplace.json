@@ -1,0 +1,17 @@
+{
+  "name": "cognigy-plugin",
+  "owner": {
+    "name": "Cognigy",
+    "url": "https://www.cognigy.com"
+  },
+  "metadata": {
+    "description": "Official marketplace for the NiCE Cognigy Plugin — build, test, and deploy AI Agents on the NiCE Cognigy platform."
+  },
+  "plugins": [
+    {
+      "name": "cognigy",
+      "source": "./plugin",
+      "description": "NiCE Cognigy Plugin — build, test, and deploy AI Agents on the NiCE Cognigy platform"
+    }
+  ]
+}
