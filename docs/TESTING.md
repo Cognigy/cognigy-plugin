@@ -1,6 +1,6 @@
 # Testing
 
-This guide covers the two ways to test Cognigy Platform MCP: installing it through a marketplace
+This guide covers the two ways to test the Cognigy.AI Plugin: installing it through a marketplace
 like an end user, and the fast local-engine loop you use during development.
 
 ## Prerequisites

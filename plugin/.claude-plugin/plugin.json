@@ -1,7 +1,7 @@
 {
   "name": "cognigy-mcp",
   "version": "1.0.0",
-  "description": "Cognigy Platform MCP — create, test, and manage AI Agents on the NiCE Cognigy platform",
+  "description": "Cognigy.AI Plugin — create, test, and manage AI Agents on the NiCE Cognigy platform",
   "author": {
     "name": "Cognigy",
     "url": "https://www.cognigy.com"

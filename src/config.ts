@@ -1,5 +1,5 @@
 /**
- * Configuration for Cognigy Platform MCP
+ * Configuration for Cognigy.AI Plugin
  */
 import { readFileSync } from "fs";
 import { dirname, join } from "path";

@@ -7,7 +7,7 @@
 - `src/api/` — API client and request handlers
 - `src/schemas/` — Zod schemas for input validation
 - `src/utils/` — Utilities (logging, rate limiting, etc.)
-- `plugin/skills/<id>/SKILL.md` — workflow knowledge as plugin skills (hand-authored, auto-load on intent in clients that support skills, e.g. Claude Code). There is no `read_guide` tool or MCP guide resources; always-on guidance lives in `src/instructions.ts`
+- `plugin/skills/<id>/SKILL.md` — workflow knowledge as plugin skills (hand-authored, auto-load on intent in clients that support skills, e.g. Claude Code). Always-on guidance lives in `src/instructions.ts`
 
 ## Why 16 Tools Instead of 359?
 
