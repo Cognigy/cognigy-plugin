@@ -1,3 +1,13 @@
+## [1.1.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.0.2...v1.1.0) (2026-06-26)
+
+### Features
+
+* add Claude Code plugin/marketplace + voice go-live checklist ([#1](https://github.com/Cognigy/cognigy-plugin/issues/1)) ([72ea654](https://github.com/Cognigy/cognigy-plugin/commit/72ea6542e220780dd1ba175b46a72cc905537c64))
+
+### Bug Fixes
+
+* **build:** add repository field for npm provenance ([#2](https://github.com/Cognigy/cognigy-plugin/issues/2)) ([f2a2e0b](https://github.com/Cognigy/cognigy-plugin/commit/f2a2e0bdfdab215e8804dbfed00fca4abdced75f))
+
 ## [1.0.3](https://github.com/Cognigy/cognigy-mcp/compare/v1.0.2...v1.0.3) (2026-06-03)
 
 ### Miscellaneous

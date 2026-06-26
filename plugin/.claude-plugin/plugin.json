@@ -1,6 +1,6 @@
 {
   "name": "cognigy",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "NiCE Cognigy Plugin — create, test, and manage AI Agents on the NiCE Cognigy platform",
   "author": {
     "name": "Cognigy",
