@@ -128,7 +128,11 @@ export function evaluateChecks(ctx: AuditContext): VoiceCheck[] {
   const checks: VoiceCheck[] = [];
 
   const sscNodes = findAllByType(nodes, SESSION_CONFIG_TYPE);
-  const ssc = sscNodes[0];
+  // Prefer the Set Session Config node that actually runs first (the chart
+  // `next` chain via ctx.firstNodeId); the `nodes` array order is not run
+  // order, so picking [0] can inspect/patch the wrong node when several exist.
+  const ssc =
+    sscNodes.find((n) => nodeId(n) === ctx.firstNodeId) ?? sscNodes[0];
   const sscConfig: Record<string, any> = ssc?.config ?? {};
   const agent = findByType(nodes, AI_AGENT_JOB_TYPE);
   const agentConfig: Record<string, any> = agent?.config ?? {};
