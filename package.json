@@ -1,9 +1,13 @@
 {
   "name": "@cognigy/plugin-engine",
   "version": "1.0.0",
-  "description": "MCP server engine for the Cognigy Platform plugin (Claude Code, Codex, and more)",
+  "description": "MCP server engine for the NiCE Cognigy Plugin (Claude Code, Codex, and more)",
   "main": "dist/index.js",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Cognigy/cognigy-plugin"
+  },
   "files": [
     "dist",
     "README.md"
