@@ -1,4 +1,4 @@
-export const SERVER_INSTRUCTIONS = `Cognigy.AI Plugin — builds and iteratively improves LLM-powered AI Agents.
+export const SERVER_INSTRUCTIONS = `NiCE Cognigy Plugin — builds and iteratively improves LLM-powered AI Agents.
 
 In clients that support plugin skills (e.g. Claude Code), detailed step-by-step workflow guidance auto-loads when your intent matches. This overview and the hard rules below always apply.
 

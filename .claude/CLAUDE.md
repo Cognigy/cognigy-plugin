@@ -8,7 +8,7 @@ Format all code with Prettier (project default). Run `npx prettier --write <file
 
 ## What this is
 
-The **Cognigy.AI Plugin** lets an LLM create, configure, test, and manage **AI Agents on the NiCE Cognigy platform** over the Cognigy REST API v2.0.
+The **NiCE Cognigy Plugin** lets an LLM create, configure, test, and manage **AI Agents on the NiCE Cognigy platform** over the Cognigy REST API v2.0.
 
 Distributed **only as a plugin** (`plugin/` + `.claude-plugin/marketplace.json`) — a generic plugin supported by Claude Code and Codex today, more clients later. The MCP server is published to npm as **`@cognigy/plugin-engine`** (scoped, cognigy org) purely as the engine the plugin auto-installs; users never install it directly. The plugin's MCP server command is a launcher (`plugin/bin/launch.mjs`) that installs the engine **pinned to the plugin's own version** into `${CLAUDE_PLUGIN_DATA}` on first boot (guarded: only when the installed version differs), then hands off to it — no install hook, no `@latest` float, no first-run race. **The plugin version and the engine npm version are the same number**, kept in lockstep by semantic-release, so there's one version to reason about. No standalone CLI / `.mcpb` / `manifest.json`.
 

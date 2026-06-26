@@ -1,5 +1,5 @@
 /**
- * Configuration for Cognigy.AI Plugin
+ * Configuration for NiCE Cognigy Plugin
  */
 import { readFileSync } from "fs";
 import { dirname, join } from "path";

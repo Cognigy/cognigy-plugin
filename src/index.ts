@@ -19,7 +19,7 @@ async function main() {
   try {
     const config = loadConfig();
     logger.setLevel(config.logLevel);
-    logger.info("Starting Cognigy.AI Plugin", {
+    logger.info("Starting NiCE Cognigy Plugin", {
       name: config.serverName,
       version: config.serverVersion,
     });
@@ -91,10 +91,10 @@ async function main() {
 
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    logger.info("Cognigy.AI Plugin started successfully");
+    logger.info("NiCE Cognigy Plugin started successfully");
 
     const shutdown = async () => {
-      logger.info("Shutting down Cognigy.AI Plugin");
+      logger.info("Shutting down NiCE Cognigy Plugin");
       rateLimiter.destroy();
       await server.close();
       process.exit(0);

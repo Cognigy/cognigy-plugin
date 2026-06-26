@@ -1,4 +1,4 @@
-# Cognigy.AI Plugin
+# NiCE Cognigy Plugin
 
 > Distributed exclusively as a **plugin** — supported by **Claude Code** and **Codex** today, with more clients to come. The plugin installs its server engine (pinned to the plugin version) and ships skills + agents.
 

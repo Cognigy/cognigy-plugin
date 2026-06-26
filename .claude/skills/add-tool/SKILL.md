@@ -1,9 +1,9 @@
 ---
 name: add-tool
-description: Add a new MCP tool (or extend an existing one) in the Cognigy.AI Plugin's MCP server
+description: Add a new MCP tool (or extend an existing one) in the NiCE Cognigy Plugin's MCP server
 ---
 
-Add a new MCP tool (or extend an existing one) in the Cognigy.AI Plugin's MCP server. The user will describe the tool's purpose, operations, and Cognigy API endpoints it should call.
+Add a new MCP tool (or extend an existing one) in the NiCE Cognigy Plugin's MCP server. The user will describe the tool's purpose, operations, and Cognigy API endpoints it should call.
 
 **Skills come first.** The plugin's user-facing surface is its skills — each describes a workflow and auto-loads on intent. Tools are the execution primitives a skill orchestrates. Work skill-first: figure out which workflow the capability belongs to, then add or extend a tool only where that workflow needs it. There is no one-skill-per-tool rule — many tools can serve a single workflow, and a new tool usually just slots into an existing skill.
 
