@@ -1,9 +1,11 @@
 ---
 name: add-tool
-description: Add a new MCP tool (or extend an existing one) in the cognigy-mcp server
+description: Add a new MCP tool (or extend an existing one) in the Cognigy.AI Plugin's MCP server
 ---
 
-Add a new MCP tool (or extend an existing one) in the cognigy-mcp server. The user will describe the tool's purpose, operations, and Cognigy API endpoints it should call.
+Add a new MCP tool (or extend an existing one) in the Cognigy.AI Plugin's MCP server. The user will describe the tool's purpose, operations, and Cognigy API endpoints it should call.
+
+**Skills come first.** The plugin's user-facing surface is its skills — each describes a workflow and auto-loads on intent. Tools are the execution primitives a skill orchestrates. Work skill-first: figure out which workflow the capability belongs to, then add or extend a tool only where that workflow needs it. There is no one-skill-per-tool rule — many tools can serve a single workflow, and a new tool usually just slots into an existing skill.
 
 ## Context
 
@@ -90,9 +92,12 @@ Key patterns:
 - Use `withHints(data, { action: "helpful suggestion" })` for actionable errors
 - Complex logic (preview generation, conflict resolution) goes in a separate file under `src/tools/` (e.g. `packageImport.ts`)
 
-### 5. Add a plugin skill (if needed)
+### 5. Wire the tool into a skill
 
-Create `plugin/skills/<tool-name>/SKILL.md` with `name`/`description` frontmatter (the `description` is the skill's auto-load trigger) followed by the workflow body. That's it — there is no registry step; the skill auto-loads on intent in supporting clients (e.g. Claude Code).
+Skills — not tools — are how users reach this capability, so connect the new tool to a workflow:
+
+- **Existing workflow (most common)** — extend the relevant `plugin/skills/<id>/SKILL.md` so its steps use the new tool. Do NOT create a new skill just because you added a tool.
+- **New workflow / intent** — only then create `plugin/skills/<id>/SKILL.md` with `name`/`description` frontmatter (the `description` is the auto-load trigger) followed by the workflow body. There is no registry step; it auto-loads on intent in supporting clients (e.g. Claude Code).
 
 ### 6. Add tests
 

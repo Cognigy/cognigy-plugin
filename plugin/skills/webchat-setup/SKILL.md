@@ -1,6 +1,6 @@
 ---
 name: webchat-setup
-description: "Use when the user wants to deploy a Cognigy agent to Webchat v3 — creating or updating the endpoint, style presets, layout/behavior settings, and the embed snippet."
+description: "Use when the user wants to deploy a Cognigy agent to a Webchat endpoint — creating or updating the endpoint, style presets, layout/behavior settings, and the embed snippet."
 ---
 
 # Webchat v3 Setup Guide

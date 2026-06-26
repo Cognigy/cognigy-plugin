@@ -8,9 +8,9 @@ Format all code with Prettier (project default). Run `npx prettier --write <file
 
 ## What this is
 
-MCP server that lets an LLM create, configure, test, and manage **AI Agents on the NiCE Cognigy platform** over the Cognigy REST API v2.0.
+The **Cognigy.AI Plugin** lets an LLM create, configure, test, and manage **AI Agents on the NiCE Cognigy platform** over the Cognigy REST API v2.0.
 
-Distributed **only as a plugin** (`plugin/` + `.claude-plugin/marketplace.json`) — a generic plugin supported by Claude Code and Codex today, more clients later. Detached fork of `cognigy-mcp`. The server is published to npm as **`@cognigy/plugin-engine`** (scoped, cognigy org) purely as the engine the plugin auto-installs; users never install it directly. The plugin's MCP server command is a launcher (`plugin/bin/launch.mjs`) that installs the engine **pinned to the plugin's own version** into `${CLAUDE_PLUGIN_DATA}` on first boot (guarded: only when the installed version differs), then hands off to it — no install hook, no `@latest` float, no first-run race. **The plugin version and the engine npm version are the same number**, kept in lockstep by semantic-release, so there's one version to reason about. No standalone CLI / `.mcpb` / `manifest.json`.
+Distributed **only as a plugin** (`plugin/` + `.claude-plugin/marketplace.json`) — a generic plugin supported by Claude Code and Codex today, more clients later. The MCP server is published to npm as **`@cognigy/plugin-engine`** (scoped, cognigy org) purely as the engine the plugin auto-installs; users never install it directly. The plugin's MCP server command is a launcher (`plugin/bin/launch.mjs`) that installs the engine **pinned to the plugin's own version** into `${CLAUDE_PLUGIN_DATA}` on first boot (guarded: only when the installed version differs), then hands off to it — no install hook, no `@latest` float, no first-run race. **The plugin version and the engine npm version are the same number**, kept in lockstep by semantic-release, so there's one version to reason about. No standalone CLI / `.mcpb` / `manifest.json`.
 
 ## Tech stack
 
@@ -34,7 +34,7 @@ Helpers: `withHints(result, { warning, action })` attaches `_hints`; `resolveFlo
 
 ## Skills
 
-Workflow guidance lives only as plugin skills `plugin/skills/<id>/SKILL.md` (hand-authored: `name`/`description` frontmatter + body), which auto-load on intent in clients that support skills (e.g. Claude Code). No `read_guide` tool, no `cognigy://guide` resources, no guides registry. `src/instructions.ts` holds the always-on overview + hard rules. Agents are `plugin/agents/*.md`.
+Workflow guidance lives only as plugin skills `plugin/skills/<id>/SKILL.md` (hand-authored: `name`/`description` frontmatter + body), which auto-load on intent in clients that support skills (e.g. Claude Code). `src/instructions.ts` is the always-on baseline — an overview plus genuinely cross-tool hard rules, injected every session — and matters most for clients that don't load skills (e.g. Codex); keep it terse and let the skills own the step-by-step workflow detail. Agents are `plugin/agents/*.md`.
 
 ## Versions
 
