@@ -1,4 +1,4 @@
-// Engine launcher for the Cognigy Platform MCP plugin.
+// Engine launcher for the Cognigy.AI Plugin.
 //
 // This file IS the MCP server command (see plugin.json `mcpServers.platform`).
 // It guarantees the pinned engine is installed, then hands off to it — so the
