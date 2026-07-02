@@ -111,7 +111,7 @@ export const NODE_REGISTRY: Record<string, NodeRegistryEntry> = {
     extension: "@cognigy/basic-nodes",
     category: "data",
     summary:
-      "Execute custom JavaScript with access to input, context, actions, and profile objects",
+      "Execute custom TypeScript (transpiled server-side) with access to input, context, actions, and profile objects",
     placement: "flow",
     configKeys: ["code"],
     requiredConfigKeys: ["code"],

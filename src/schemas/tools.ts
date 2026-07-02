@@ -203,7 +203,7 @@ export const updateToolSchema = z.object({
 
 // Tool 12: manage_flow_nodes
 export const manageFlowNodesSchema = z.object({
-  operation: z.enum(["list", "create", "update", "delete"]),
+  operation: z.enum(["list", "get", "create", "update", "delete"]),
   flowId: idSchema,
   nodeId: idSchema.optional(),
   nodeType: z.string().optional(),

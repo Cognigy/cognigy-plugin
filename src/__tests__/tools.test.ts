@@ -1635,6 +1635,125 @@ describe("ToolHandlers v2", () => {
   });
 
   // =========================================================================
+  // manage_flow_nodes — get operation
+  // =========================================================================
+  describe("manage_flow_nodes — get", () => {
+    const codeNodeId = "60d5ec49f1a2c8b1a4e0f011";
+
+    it("returns full config for a code node and strips transpiled", async () => {
+      api.get.mockResolvedValueOnce({
+        _id: codeNodeId,
+        type: "code",
+        label: "Format Response",
+        parentId: null,
+        config: {
+          code: "input.foo = 1;",
+          transpiled: "input.foo = 1;",
+          hasError: false,
+        },
+      });
+
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "get",
+        flowId: ID.flow,
+        nodeId: codeNodeId,
+      });
+
+      expect(api.get).toHaveBeenCalledWith(
+        `/v2.0/flows/${ID.flow}/chart/nodes/${codeNodeId}`,
+      );
+      expect(result.id).toBe(codeNodeId);
+      expect(result.type).toBe("code");
+      expect(result.config.code).toBe("input.foo = 1;");
+      expect(result.config).not.toHaveProperty("transpiled");
+      expect(result._hints).toBeUndefined();
+    });
+
+    it("warns via _hints when a code node has hasError", async () => {
+      api.get.mockResolvedValueOnce({
+        _id: codeNodeId,
+        type: "code",
+        label: "Broken",
+        config: { code: "const x: =", hasError: true, transpiled: "" },
+      });
+
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "get",
+        flowId: ID.flow,
+        nodeId: codeNodeId,
+      });
+
+      expect(result.config.hasError).toBe(true);
+      expect(result._hints?.warning).toContain("hasError");
+    });
+
+    it("errors when nodeId is missing", async () => {
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "get",
+        flowId: ID.flow,
+      });
+
+      expect(result.error).toContain("nodeId is required");
+      expect(api.get).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("manage_flow_nodes — update surfaces transpile errors", () => {
+    const codeNodeId = "60d5ec49f1a2c8b1a4e0f012";
+
+    it("adds a hasError warning when the saved code fails to transpile", async () => {
+      // 1st get: existing node (merge). 2nd get: read-back after PATCH.
+      api.get
+        .mockResolvedValueOnce({
+          _id: codeNodeId,
+          type: "code",
+          config: { code: "old" },
+        })
+        .mockResolvedValueOnce({
+          _id: codeNodeId,
+          type: "code",
+          config: { code: "const x: =", hasError: true },
+        });
+      api.patch.mockResolvedValueOnce({ _id: codeNodeId });
+
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "update",
+        flowId: ID.flow,
+        nodeId: codeNodeId,
+        config: { code: "const x: =" },
+      });
+
+      expect(result.updated).toBe(true);
+      expect(result._hints?.warning).toContain("hasError");
+    });
+
+    it("does not warn when the updated code transpiles cleanly", async () => {
+      api.get
+        .mockResolvedValueOnce({
+          _id: codeNodeId,
+          type: "code",
+          config: { code: "old" },
+        })
+        .mockResolvedValueOnce({
+          _id: codeNodeId,
+          type: "code",
+          config: { code: "input.ok = 1;", hasError: false },
+        });
+      api.patch.mockResolvedValueOnce({ _id: codeNodeId });
+
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "update",
+        flowId: ID.flow,
+        nodeId: codeNodeId,
+        config: { code: "input.ok = 1;" },
+      });
+
+      expect(result.updated).toBe(true);
+      expect(result._hints).toBeUndefined();
+    });
+  });
+
+  // =========================================================================
   // manage_flow_nodes — branch child auto-rewrite
   // =========================================================================
   describe("manage_flow_nodes — branch child auto-rewrite", () => {
