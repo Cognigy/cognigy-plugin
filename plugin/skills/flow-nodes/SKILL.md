@@ -215,7 +215,7 @@ Run custom **TypeScript** (a single source string — not multiple files, not HT
 **Config:**
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| code | string | Yes | TypeScript source to execute (max 200000 chars) |
+| code | string | Yes | TypeScript source to execute (the backend enforces a large upper size limit) |
 
 Server-computed, read-only (do NOT send these): `transpiled` (compiled JS output) and `hasError` (`true` if the code failed to transpile). `get` omits `transpiled` and surfaces `hasError`.
 

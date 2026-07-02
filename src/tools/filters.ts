@@ -121,7 +121,7 @@ export function filterFlowNodeDetail(raw: any): any {
     delete config.mock.transpiled;
   }
   return {
-    id: raw._id || raw.id,
+    id: rid(raw),
     type: raw.type,
     label: raw.label,
     parentId: raw.parentId ?? null,

@@ -3472,6 +3472,18 @@ export class ToolHandlers {
           );
           const nodeType = existingNode?.type ?? "";
 
+          // Strip server-computed, read-only fields before merging them back
+          // into the PATCH. `transpiled` (a code node's compiled JS) can be
+          // ~200k chars, and echoing `hasError` back is meaningless.
+          const existingConfig = { ...(existingNode?.config ?? {}) };
+          delete existingConfig.transpiled;
+          delete existingConfig.hasError;
+          if (existingConfig.mock && typeof existingConfig.mock === "object") {
+            existingConfig.mock = { ...existingConfig.mock };
+            delete existingConfig.mock.transpiled;
+            delete existingConfig.mock.hasError;
+          }
+
           // Handle case node updates — the Cognigy API expects exactly
           // { config: { case: { value: "..." } } } with no extra fields merged in.
           if (nodeType === "case") {
@@ -3505,7 +3517,6 @@ export class ToolHandlers {
             const { cases: _cases, ...switchConfig } = data.config;
             if (Object.keys(switchConfig).length > 0) {
               const transformed = transformConfigForApi(nodeType, switchConfig);
-              const existingConfig = existingNode?.config ?? {};
               patchPayload.config = deepMerge(existingConfig, transformed);
             }
             if (Object.keys(patchPayload).length > 0) {
@@ -3525,7 +3536,6 @@ export class ToolHandlers {
             };
           } else {
             const transformed = transformConfigForApi(nodeType, data.config);
-            const existingConfig = existingNode?.config ?? {};
             patchPayload.config = deepMerge(existingConfig, transformed);
           }
         }

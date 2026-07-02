@@ -1751,6 +1751,37 @@ describe("ToolHandlers v2", () => {
       expect(result.updated).toBe(true);
       expect(result._hints).toBeUndefined();
     });
+
+    it("does not echo server-computed transpiled/hasError back in the PATCH", async () => {
+      api.get
+        .mockResolvedValueOnce({
+          _id: codeNodeId,
+          type: "code",
+          config: {
+            code: "old",
+            transpiled: "OLD_COMPILED_JS",
+            hasError: false,
+          },
+        })
+        .mockResolvedValueOnce({
+          _id: codeNodeId,
+          type: "code",
+          config: { code: "input.ok = 1;", hasError: false },
+        });
+      api.patch.mockResolvedValueOnce({ _id: codeNodeId });
+
+      await h.handleToolCall("manage_flow_nodes", {
+        operation: "update",
+        flowId: ID.flow,
+        nodeId: codeNodeId,
+        config: { code: "input.ok = 1;" },
+      });
+
+      const patchBody = api.patch.mock.calls[0][1];
+      expect(patchBody.config).not.toHaveProperty("transpiled");
+      expect(patchBody.config).not.toHaveProperty("hasError");
+      expect(patchBody.config.code).toBe("input.ok = 1;");
+    });
   });
 
   // =========================================================================
