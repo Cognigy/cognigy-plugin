@@ -14,7 +14,12 @@ import { pathToFileURL } from "url";
 import axios from "axios";
 import { CognigyApiClient } from "../api/client.js";
 import { logger } from "../utils/logger.js";
-import { filterResponse, filterList, withHints } from "./filters.js";
+import {
+  filterResponse,
+  filterList,
+  filterFlowNodeDetail,
+  withHints,
+} from "./filters.js";
 import { buildWebchatSettings, deepMerge } from "./webchatSettings.js";
 import { getNodeEntry, supportedNodeTypes } from "./nodeRegistry.js";
 import {
@@ -3282,6 +3287,35 @@ export class ToolHandlers {
         };
       }
 
+      // ----- GET -----
+      case "get": {
+        if (!data.nodeId) {
+          return withHints(
+            { error: "nodeId is required for get operation." },
+            {
+              action:
+                'Use manage_flow_nodes { operation: "list", flowId } to find node IDs.',
+            },
+          );
+        }
+
+        const node: any = await this.apiClient.get(
+          `/v2.0/flows/${flowId}/chart/nodes/${data.nodeId}`,
+        );
+        const detail = filterFlowNodeDetail(node);
+
+        // Code nodes are TypeScript, transpiled server-side at save time.
+        // hasError = true means the last saved code did not compile.
+        if (detail.config?.hasError) {
+          return withHints(detail, {
+            warning:
+              "config.hasError is true — the last saved code failed to transpile (TypeScript/syntax error).",
+            action: "Fix the code and update the node.",
+          });
+        }
+        return detail;
+      }
+
       // ----- CREATE -----
       case "create": {
         if (!data.nodeType) {
@@ -3438,6 +3472,18 @@ export class ToolHandlers {
           );
           const nodeType = existingNode?.type ?? "";
 
+          // Strip server-computed, read-only fields before merging them back
+          // into the PATCH. `transpiled` (a code node's compiled JS) can be
+          // ~200k chars, and echoing `hasError` back is meaningless.
+          const existingConfig = { ...(existingNode?.config ?? {}) };
+          delete existingConfig.transpiled;
+          delete existingConfig.hasError;
+          if (existingConfig.mock && typeof existingConfig.mock === "object") {
+            existingConfig.mock = { ...existingConfig.mock };
+            delete existingConfig.mock.transpiled;
+            delete existingConfig.mock.hasError;
+          }
+
           // Handle case node updates — the Cognigy API expects exactly
           // { config: { case: { value: "..." } } } with no extra fields merged in.
           if (nodeType === "case") {
@@ -3471,7 +3517,6 @@ export class ToolHandlers {
             const { cases: _cases, ...switchConfig } = data.config;
             if (Object.keys(switchConfig).length > 0) {
               const transformed = transformConfigForApi(nodeType, switchConfig);
-              const existingConfig = existingNode?.config ?? {};
               patchPayload.config = deepMerge(existingConfig, transformed);
             }
             if (Object.keys(patchPayload).length > 0) {
@@ -3491,7 +3536,6 @@ export class ToolHandlers {
             };
           } else {
             const transformed = transformConfigForApi(nodeType, data.config);
-            const existingConfig = existingNode?.config ?? {};
             patchPayload.config = deepMerge(existingConfig, transformed);
           }
         }
@@ -3501,12 +3545,33 @@ export class ToolHandlers {
           patchPayload,
         );
 
-        return {
+        const result = {
           updated: true,
           nodeId: data.nodeId,
           ...(data.label ? { label: data.label } : {}),
           ...(data.config ? { configUpdated: Object.keys(data.config) } : {}),
         };
+
+        // The PATCH response echoes the input config without the server-computed
+        // `hasError` (transpilation runs after the write). When code was edited,
+        // read the node back to detect a transpile failure and surface it.
+        if (data.config?.code !== undefined) {
+          try {
+            const saved: any = await this.apiClient.get(
+              `/v2.0/flows/${flowId}/chart/nodes/${data.nodeId}`,
+            );
+            if (saved?.config?.hasError) {
+              return withHints(result, {
+                warning:
+                  "Node saved, but config.hasError is true — the code failed to transpile (TypeScript/syntax error).",
+                action: "Fix the code and update again.",
+              });
+            }
+          } catch {
+            // Non-fatal — the update itself succeeded.
+          }
+        }
+        return result;
       }
 
       // ----- DELETE -----

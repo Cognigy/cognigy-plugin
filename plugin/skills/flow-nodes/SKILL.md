@@ -201,14 +201,33 @@ Store a key-value pair in the persistent session context. Each node stores **one
 
 Category: data
 
-Run custom JavaScript. Has access to `input`, `context`, `actions`, and `profile`.
+Run custom **TypeScript** (a single source string — not multiple files, not HTML). The Cognigy backend transpiles it to JavaScript at save time.
+
+**Runtime objects available inside the code:**
+
+| Object    | What it is                                                             |
+| --------- | ---------------------------------------------------------------------- |
+| `input`   | The current input — read/write. `input.text`, `input.data`, etc.       |
+| `context` | Session-persistent store. Read/write values that survive across turns. |
+| `profile` | The contact profile.                                                   |
+| `actions` | Helper actions, e.g. `actions.output(text, data)`, `actions.log(...)`. |
 
 **Config:**
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| code | string | Yes | JavaScript code to execute |
+| code | string | Yes | TypeScript source to execute (the backend enforces a large upper size limit) |
 
-**Example:**
+Server-computed, read-only (do NOT send these): `transpiled` (compiled JS output) and `hasError` (`true` if the code failed to transpile). `get` omits `transpiled` and surfaces `hasError`.
+
+**Read before you edit.** `list` returns no config. To see a node's current code, use `get`:
+
+```json
+{ "operation": "get", "flowId": "<flowId>", "nodeId": "<nodeId>" }
+```
+
+Then send the full new `code` string on `update` (config is merged; `code` is replaced wholesale). After a write, a `_hints.warning` with `hasError` means the code did not compile — `get`, fix, and update again.
+
+**Create example:**
 
 ```json
 {
@@ -217,7 +236,7 @@ Run custom JavaScript. Has access to `input`, `context`, `actions`, and `profile
   "nodeType": "code",
   "label": "Format Response",
   "config": {
-    "code": "const items = context.cartItems || [];\ninput.cartSummary = items.map(i => `${i.name}: $${i.price}`).join('\\n');"
+    "code": "const items = context.cartItems || [];\ninput.cartSummary = items.map((i: { name: string; price: number }) => `${i.name}: $${i.price}`).join('\\n');"
   }
 }
 ```

@@ -107,6 +107,31 @@ export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
   }),
 };
 
+/**
+ * Shape a single flow-chart node (from GET /chart/nodes/{id}) for the LLM.
+ * Keeps the editable config but drops server-computed noise: `transpiled` is
+ * the code node's compiled JS output (can be ~200k chars) and is read-only.
+ * `hasError` is kept so callers can tell a code node failed to transpile.
+ */
+export function filterFlowNodeDetail(raw: any): any {
+  const config = { ...(raw?.config ?? {}) };
+  delete config.transpiled;
+  if (config.mock && typeof config.mock === "object") {
+    config.mock = { ...config.mock };
+    delete config.mock.transpiled;
+  }
+  return {
+    id: rid(raw),
+    type: raw.type,
+    label: raw.label,
+    parentId: raw.parentId ?? null,
+    isEntryPoint: raw.isEntryPoint ?? false,
+    ...(raw.isDisabled ? { isDisabled: true } : {}),
+    ...(raw.comment ? { comment: raw.comment } : {}),
+    config,
+  };
+}
+
 export function filterResponse(resourceType: string, raw: any): any {
   const filter = RESOURCE_FILTERS[resourceType];
   return filter ? filter(raw) : raw;
