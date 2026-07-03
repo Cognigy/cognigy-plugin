@@ -4,6 +4,9 @@
   "description": "MCP server engine for the NiCE Cognigy Plugin (Claude Code, Codex, and more)",
   "main": "dist/index.js",
   "type": "module",
+  "bin": {
+    "cognigy-setup": "dist/setup.js"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/Cognigy/cognigy-plugin"
