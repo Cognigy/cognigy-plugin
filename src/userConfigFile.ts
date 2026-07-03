@@ -49,9 +49,12 @@ export function writeUserConfigFile(
   dir: string = USER_CONFIG_DIR,
 ): string {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
+  // mkdirSync's mode is ignored when the directory already exists, so
+  // re-tighten it in case a pre-existing dir had broader permissions.
+  chmodSync(dir, 0o700);
   const file = join(dir, "config.json");
   writeFileSync(file, `${JSON.stringify(values, null, 2)}\n`, { mode: 0o600 });
-  // writeFileSync's mode is ignored when the file already exists, so enforce it.
+  // writeFileSync's mode is likewise ignored when the file already exists.
   chmodSync(file, 0o600);
   return file;
 }

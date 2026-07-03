@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * `cognigy-plugin setup` — interactive credential setup for clients whose plugin
+ * `cognigy-setup` — interactive credential setup for clients whose plugin
  * installer does not prompt for `userConfig` (e.g. the Claude Code GUI today).
+ * Exposed as the `cognigy-setup` bin: `npx @cognigy/plugin-engine cognigy-setup`.
  *
  * Collects the Cognigy API base URL and API key and writes them to
  * ~/.cognigy-plugin/config.json (owner-only, 0600). The engine's loadConfig()

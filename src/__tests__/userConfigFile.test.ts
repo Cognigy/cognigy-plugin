@@ -1,5 +1,12 @@
 import { describe, it, expect, afterEach } from "@jest/globals";
-import { mkdtempSync, rmSync, statSync, writeFileSync } from "fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { readUserConfigFile, writeUserConfigFile } from "../userConfigFile.js";
@@ -47,6 +54,15 @@ describe("writeUserConfigFile", () => {
     writeFileSync(file, "{}", { mode: 0o644 });
     writeUserConfigFile({ COGNIGY_API_KEY: "secret" }, dir);
     expect(statSync(file).mode & 0o777).toBe(0o600);
+  });
+
+  it("re-tightens a pre-existing directory to 0700", () => {
+    const parent = freshDir();
+    const dir = join(parent, "cfg");
+    mkdirSync(dir, { mode: 0o755 });
+    chmodSync(dir, 0o755); // umask can loosen mkdir's mode; force it broad
+    writeUserConfigFile({ COGNIGY_API_KEY: "secret" }, dir);
+    expect(statSync(dir).mode & 0o777).toBe(0o700);
   });
 });
 
