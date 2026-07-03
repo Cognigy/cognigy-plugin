@@ -4,6 +4,7 @@
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
+import { readUserConfigFile, USER_CONFIG_FILE } from "./userConfigFile.js";
 
 export interface Config {
   apiBaseUrl: string;
@@ -129,15 +130,31 @@ function parseIntWithDefault(
  * Load configuration from environment variables
  */
 export function loadConfig(): Config {
-  const apiBaseUrl = process.env.COGNIGY_API_BASE_URL;
-  const apiKey = process.env.COGNIGY_API_KEY;
+  // Environment variables win (terminal install stores them via userConfig /
+  // keychain). Only when one is missing do we consult the on-disk fallback
+  // written by the `cognigy-setup` CLI — this is the path GUI users take
+  // when their installer never prompted for credentials.
+  const fileConfig =
+    process.env.COGNIGY_API_BASE_URL && process.env.COGNIGY_API_KEY
+      ? {}
+      : readUserConfigFile();
+
+  const apiBaseUrl =
+    process.env.COGNIGY_API_BASE_URL || fileConfig.COGNIGY_API_BASE_URL;
+  const apiKey = process.env.COGNIGY_API_KEY || fileConfig.COGNIGY_API_KEY;
 
   if (!apiBaseUrl) {
-    throw new Error("COGNIGY_API_BASE_URL environment variable is required");
+    throw new Error(
+      `COGNIGY_API_BASE_URL is not set. Provide it via the plugin install prompt, ` +
+        `or run "npx @cognigy/plugin-engine cognigy-setup" to write ${USER_CONFIG_FILE}.`,
+    );
   }
 
   if (!apiKey) {
-    throw new Error("COGNIGY_API_KEY environment variable is required");
+    throw new Error(
+      `COGNIGY_API_KEY is not set. Provide it via the plugin install prompt, ` +
+        `or run "npx @cognigy/plugin-engine cognigy-setup" to write ${USER_CONFIG_FILE}.`,
+    );
   }
 
   const normalizedApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);

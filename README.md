@@ -51,6 +51,16 @@ The plugin is supported by **Claude Code** and **Codex** today; more clients wil
 
 On enable, Claude Code prompts for your **Cognigy API base URL** (default `https://api-trial.cognigy.ai`) and **API key** (Cognigy.AI → User Menu → My Profile → API Keys). The key is stored in your system keychain. Requires [Node.js 20+](https://nodejs.org).
 
+#### If you install from the GUI and aren't prompted for credentials
+
+The desktop/web app installs the plugin cleanly but does not always show the credential prompt. If the Cognigy tools report a missing API key, run the setup command once in any terminal:
+
+```
+npx @cognigy/plugin-engine cognigy-setup
+```
+
+It asks for your API base URL (press Enter for the trial default) and API key (masked — never echoed), then writes them to `~/.cognigy-plugin/config.json` with owner-only permissions (`chmod 600`). Restart Claude Code afterwards. The engine reads this file only when the environment variables are absent, so the terminal/keychain flow above is unaffected. For scripted setup, pass `--api-base-url` and `--api-key` instead of answering prompts.
+
 The first session downloads the server into the plugin's data directory, which takes a moment. If the Cognigy tools don't appear right away on that first launch, run `/mcp`, reconnect the Cognigy server (or restart Claude Code) — later sessions connect instantly, and the engine updates in lockstep when you update the plugin.
 
 Beyond the MCP tools, the plugin ships **skills** and **agents** that surface the workflows automatically:
@@ -72,7 +82,7 @@ Create a complete AI Agent in one tool call, then iterate and improve through co
 
 ## Configuration
 
-The plugin collects your **Cognigy API base URL** and **API key** through Claude Code's install prompt (stored in the system keychain) and passes them to the server as environment variables. The optional variables below can be set in the plugin's MCP server `env` if you need to override defaults.
+The plugin collects your **Cognigy API base URL** and **API key** through Claude Code's install prompt (stored in the system keychain) and passes them to the server as environment variables. When the installer does not prompt (see the GUI note under [Installation](#claude-code)), `npx @cognigy/plugin-engine cognigy-setup` writes the same two values to `~/.cognigy-plugin/config.json` (`chmod 600`); the engine reads that file only when the matching environment variable is unset. The optional variables below can be set in the plugin's MCP server `env` if you need to override defaults.
 
 | Variable                  | Required | Default | Description                      |
 | ------------------------- | -------- | ------- | -------------------------------- |
