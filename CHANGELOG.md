@@ -1,3 +1,10 @@
+## [1.2.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.1.0...v1.2.0) (2026-07-03)
+
+### Features
+
+* **flow-nodes:** add get operation for reading node config ([#3](https://github.com/Cognigy/cognigy-plugin/issues/3)) ([bf68cae](https://github.com/Cognigy/cognigy-plugin/commit/bf68cae1f5fc15843d31d67eda29f84d2dbc346f))
+* **setup:** cognigy-setup CLI for GUI credential config ([#4](https://github.com/Cognigy/cognigy-plugin/issues/4)) [skip ci] ([cc66424](https://github.com/Cognigy/cognigy-plugin/commit/cc66424a0d1d9526a18310dfb3ee815536b08b05))
+
 ## [1.1.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.0.2...v1.1.0) (2026-06-26)
 
 ### Features
