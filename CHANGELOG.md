@@ -1,3 +1,9 @@
+## [1.3.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.2.1...v1.3.0) (2026-07-04)
+
+### Features
+
+* one-command installer for Claude Code + Claude Desktop ([#6](https://github.com/Cognigy/cognigy-plugin/issues/6)) ([e90e2dd](https://github.com/Cognigy/cognigy-plugin/commit/e90e2dd658350bb2996448bc69f6017f0c7c2bf1)), closes [#claude-code](https://github.com/Cognigy/cognigy-plugin/issues/claude-code)
+
 ## [1.2.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.2.0...v1.2.1) (2026-07-04)
 
 ### Bug Fixes
