@@ -4,6 +4,8 @@
 
 A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy.com) REST API. Create, test, and improve LLM-based AI Agents through a self-improvement loop — without leaving your client.
 
+**Quick links:** [Installation](#installation) · [Staying up to date](#staying-up-to-date)
+
 ## Features
 
 - **16 workflow tools** for agent creation, deployment, packaging, and voice setup
@@ -73,7 +75,7 @@ The plugin ships its own connector (`platform`), but on **Claude Desktop chat** 
 </details>
 
 <details>
-<summary>Scripting / CI, manual install, staying up to date</summary>
+<summary>Scripting / CI, and manual install</summary>
 
 **Scripting / CI** — skip the prompts with flags:
 
@@ -92,9 +94,11 @@ npx @cognigy/plugin-engine@latest cognigy-setup \
 
 then `npx @cognigy/plugin-engine@latest cognigy-setup --client claude-code` to wire credentials.
 
-**Staying up to date** — Claude Desktop auto-updates the engine on every launch. Claude Code updates only when marketplace auto-update is enabled (third-party marketplaces default **off**): turn it on under `/plugin → Marketplaces → cognigy-plugin`, or run `/plugin update cognigy@cognigy-plugin`. The first Claude Code session downloads the engine — if tools don't appear, run `/mcp` and reconnect (or restart); later sessions are instant.
-
 </details>
+
+## Staying up to date
+
+Claude Desktop auto-updates the engine on every launch. Claude Code updates only when marketplace auto-update is enabled (third-party marketplaces default **off**): turn it on under `/plugin → Marketplaces → cognigy-plugin`, or run `/plugin update cognigy@cognigy-plugin`. The first Claude Code session downloads the engine — if tools don't appear, run `/mcp` and reconnect (or restart); later sessions are instant.
 
 Beyond the MCP tools, the plugin ships **skills** and **agents** that surface the workflows automatically:
 
@@ -115,7 +119,7 @@ Create a complete AI Agent in one tool call, then iterate and improve through co
 
 ## Configuration
 
-The plugin collects your **Cognigy API base URL** and **API key** through Claude Code's install prompt (stored in the system keychain) and passes them to the server as environment variables. When the installer does not prompt (see the GUI note under [Installation](#claude-code)), `npx @cognigy/plugin-engine cognigy-setup` writes the same two values to `~/.cognigy-plugin/config.json` (`chmod 600`); the engine reads that file only when the matching environment variable is unset. The optional variables below can be set in the plugin's MCP server `env` if you need to override defaults.
+The [installer](#installation) collects your **Cognigy API base URL** and **API key** and wires them per client: on Claude Code into the system **keychain**, on Claude Desktop into `claude_desktop_config.json` (`chmod 600`). The engine receives them as environment variables. If neither is set for a given launch, the engine falls back to `~/.cognigy-plugin/config.json` (`chmod 600`), which the installer also writes — so credentials resolve from the environment first, then that file. The optional variables below can be set in the MCP server `env` if you need to override defaults.
 
 | Variable                  | Required | Default | Description                      |
 | ------------------------- | -------- | ------- | -------------------------------- |
