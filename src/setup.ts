@@ -313,7 +313,7 @@ function runInstall(client: Client, creds: UserConfigFile): void {
         cyan(bold("  Windows — make the connector appear:\n")) +
         `    ${cyan("•")} If this run hit a permissions error, re-run it in a terminal opened ${bold("as Administrator")}.\n` +
         `    ${cyan("•")} ${bold("Fully quit")} Claude Desktop from the system tray (closing the window leaves it running), then reopen it.\n` +
-        `    ${cyan("•")} Confirm the ${bold("cognigy")} connector shows under Settings → Connectors.\n` +
+        `    ${cyan("•")} Confirm the ${bold("Cognigy")} connector shows under Settings → Connectors.\n` +
         `    ${cyan("•")} Then ${bold("disable it and re-enable it once")} to force a tool refresh.\n`,
     );
   }
