@@ -20,7 +20,7 @@ import {
   writeFileSync,
 } from "fs";
 import { homedir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
 import type { UserConfigFile } from "../userConfigFile.js";
 import { runNpm } from "./npmRunner.js";
 import {
@@ -151,7 +151,7 @@ export function installClaudeDesktop(
   const launcherPath = writeDesktopLauncher();
 
   // 3. Merge the server entry into the Desktop config (backup existing first).
-  const dir = join(configPath, "..");
+  const dir = dirname(configPath);
   mkdirSync(dir, { recursive: true });
   let backupPath: string | undefined;
   let existingText: string | null = null;
