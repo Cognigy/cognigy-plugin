@@ -46,6 +46,8 @@ Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, flow 
 
 In any terminal (requires [Node.js 20+](https://nodejs.org)):
 
+> **On Windows:** open the terminal **as Administrator** before running the command below.
+
 ```
 npx @cognigy/plugin-engine@latest cognigy-setup
 ```
@@ -53,6 +55,12 @@ npx @cognigy/plugin-engine@latest cognigy-setup
 Pick your client(s), enter your Cognigy API base URL (press Enter for the trial default) and API key (masked as you type), then restart the client.
 
 ✅ **Claude Code users — you're done.** You get the tools, skills, and agents.
+
+> **On Windows, after installing for Claude Desktop:** to make the connector appear:
+>
+> 1. **Fully restart** Claude Desktop — closing the window leaves it running in the system tray; quit it from there (or via Task Manager) so it actually relaunches.
+> 2. Check that the **Cognigy** connector now shows up under Settings → Connectors.
+> 3. If it does, **disable it and re-enable it once** — this forces a tool refresh so the Cognigy tools load.
 
 ### Step 2 — Claude Desktop chat only: finish in the app
 
@@ -65,12 +73,12 @@ Step 1 already wired the working connector, so **the tools work now**. To also g
 5. Install the **Cognigy** plugin by clicking **+**.
 6. On the warning about a local MCP, click **Continue**.
 
-Leave the plugin's own `platform` connector **unconnected** — the `cognigy` connector from Step 1 already serves the tools.
+Leave the plugin's own `platform` connector **unconnected** — the `Cognigy` connector from Step 1 already serves the tools.
 
 <details>
 <summary>Why the extra step on Claude Desktop? (for the technically curious)</summary>
 
-The plugin ships its own connector (`platform`), but on **Claude Desktop chat** it can't be given credentials — Desktop stores plugin config in your claude.ai account rather than a local file, and offers no field to enter the API key, so that connector stays a no-op. To make the tools work regardless, the Step 1 installer wires a **standalone `cognigy` connector** directly into `claude_desktop_config.json` (credentials stored there, `chmod 600`) behind an auto-updating, offline-safe launcher. The plugin install in Step 2 then adds only the parts Desktop _can_ deliver — the skills and agents. Claude Code has none of these limitations, which is why it's a single step.
+The plugin ships its own connector (`platform`), but on **Claude Desktop chat** it can't be given credentials — Desktop stores plugin config in your claude.ai account rather than a local file, and offers no field to enter the API key, so that connector stays a no-op. To make the tools work regardless, the Step 1 installer wires a **standalone `Cognigy` connector** directly into `claude_desktop_config.json` (credentials stored there, `chmod 600`) behind an auto-updating, offline-safe launcher. The plugin install in Step 2 then adds only the parts Desktop _can_ deliver — the skills and agents. Claude Code has none of these limitations, which is why it's a single step.
 
 </details>
 

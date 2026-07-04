@@ -99,7 +99,7 @@ describe("mergeDesktopConfig", () => {
 
   it("creates mcpServers when the file is absent", () => {
     const out = JSON.parse(mergeDesktopConfig(null, entry));
-    expect(out.mcpServers.cognigy).toEqual(entry);
+    expect(out.mcpServers.Cognigy).toEqual(entry);
   });
 
   it("preserves other servers and top-level keys", () => {
@@ -110,27 +110,27 @@ describe("mergeDesktopConfig", () => {
     const out = JSON.parse(mergeDesktopConfig(existing, entry));
     expect(out.globalShortcut).toBe("Cmd+Space");
     expect(out.mcpServers.other).toEqual({ command: "x", args: [] });
-    expect(out.mcpServers.cognigy).toEqual(entry);
+    expect(out.mcpServers.Cognigy).toEqual(entry);
   });
 
-  it("overwrites a stale cognigy entry in place", () => {
+  it("overwrites a stale Cognigy entry in place", () => {
     const existing = JSON.stringify({
-      mcpServers: { cognigy: { command: "old", args: ["old"], env: {} } },
+      mcpServers: { Cognigy: { command: "old", args: ["old"], env: {} } },
     });
     const out = JSON.parse(mergeDesktopConfig(existing, entry));
-    expect(out.mcpServers.cognigy).toEqual(entry);
+    expect(out.mcpServers.Cognigy).toEqual(entry);
   });
 
   it("treats malformed JSON as empty (caller backs up first)", () => {
     const out = JSON.parse(mergeDesktopConfig("{ not json", entry));
-    expect(out.mcpServers.cognigy).toEqual(entry);
+    expect(out.mcpServers.Cognigy).toEqual(entry);
   });
 
   it("ignores a non-object mcpServers", () => {
     const out = JSON.parse(
       mergeDesktopConfig(JSON.stringify({ mcpServers: ["x"] }), entry),
     );
-    expect(out.mcpServers.cognigy).toEqual(entry);
+    expect(out.mcpServers.Cognigy).toEqual(entry);
   });
 });
 
@@ -244,6 +244,19 @@ describe("isMainModule", () => {
     const moduleUrl = pathToFileURL(real).href;
     expect(isMainModule(moduleUrl, join(dir, "nonexistent"))).toBe(false);
     expect(isMainModule(moduleUrl, undefined)).toBe(false);
+  });
+});
+
+describe("package.json bin", () => {
+  it("declares exactly one bin so `npx <pkg> cognigy-setup` resolves", () => {
+    // npx treats a positional after the package as an ARG to the default bin,
+    // not a bin selector. With one bin npx runs it; a second bin makes npx
+    // need a default named after the (scope-stripped) package, which we don't
+    // have, so `npx @cognigy/plugin-engine@latest cognigy-setup` throws
+    // "could not determine executable to run". Keep it to one bin.
+    const pkgPath = join(process.cwd(), "package.json");
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    expect(Object.keys(pkg.bin)).toEqual(["cognigy-setup"]);
   });
 });
 

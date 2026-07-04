@@ -31,6 +31,8 @@ import {
 
 const PKG = "@cognigy/plugin-engine";
 export const ENGINE_PREFIX = join(USER_HOME_DIR, "engine");
+/** mcpServers key for our entry. Capitalized so Desktop shows "Cognigy". */
+export const SERVER_KEY = "Cognigy";
 
 export interface DesktopServerEntry {
   command: string;
@@ -108,7 +110,7 @@ export function mergeDesktopConfig(
     !Array.isArray(existingServers)
       ? (existingServers as Record<string, unknown>)
       : {};
-  root.mcpServers = { ...servers, cognigy: entry };
+  root.mcpServers = { ...servers, [SERVER_KEY]: entry };
   return `${JSON.stringify(root, null, 2)}\n`;
 }
 
