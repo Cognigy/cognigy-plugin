@@ -60,21 +60,34 @@ function installedVersion() {
 
 const current = installedVersion();
 if (current !== target) {
-  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-  const res = spawnSync(
-    npm,
-    [
-      "install",
-      `${PKG}@${target}`,
-      "--prefix",
-      dataDir,
-      "--no-fund",
-      "--no-audit",
-      "--loglevel=error",
-    ],
+  const isWin = process.platform === "win32";
+  const npm = isWin ? "npm.cmd" : "npm";
+  const rawArgs = [
+    "install",
+    `${PKG}@${target}`,
+    "--prefix",
+    dataDir,
+    "--no-fund",
+    "--no-audit",
+    "--loglevel=error",
+  ];
+  // On Windows npm is a .cmd shim, and since Node's CVE-2024-27980 fix
+  // (18.20.2 / 20.12.2+) child_process refuses to spawn .cmd/.bat without
+  // `shell: true` — it fails with EINVAL. With a shell, args are not
+  // auto-quoted, so quote any that contain spaces (e.g. a profile path).
+  const args = isWin
+    ? rawArgs.map((a) => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a))
+    : rawArgs;
+  const res = spawnSync(npm, args, {
     // stdout -> ignore (must stay clean for MCP); stderr -> inherit (show errors).
-    { stdio: ["ignore", "ignore", "inherit"] },
-  );
+    stdio: ["ignore", "ignore", "inherit"],
+    shell: isWin,
+  });
+  // spawnSync reports a spawn failure (e.g. EINVAL) via res.error, not stderr,
+  // so surface it explicitly — otherwise the only symptom is a silent -32000.
+  if (res.error) {
+    note(`npm install could not be spawned: ${res.error.message}`);
+  }
   if (res.status !== 0) {
     if (existsSync(engineEntry)) {
       note(
