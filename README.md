@@ -4,6 +4,8 @@
 
 A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy.com) REST API. Create, test, and improve LLM-based AI Agents through a self-improvement loop — without leaving your client.
 
+**Quick links:** [Installation](#installation) · [Staying up to date](#staying-up-to-date)
+
 ## Features
 
 - **16 workflow tools** for agent creation, deployment, packaging, and voice setup
@@ -40,28 +42,63 @@ Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, flow 
 
 ## Installation
 
-The plugin is supported by **Claude Code** and **Codex** today; more clients will be added. Install steps below cover Claude Code. The plugin installs a server engine pinned to its own version, so the engine updates in lockstep whenever you update the plugin — nothing to reinstall by hand.
+### Step 1 — Run the installer
 
-### Claude Code
+In any terminal (requires [Node.js 20+](https://nodejs.org)):
+
+```
+npx @cognigy/plugin-engine@latest cognigy-setup
+```
+
+Pick your client(s), enter your Cognigy API base URL (press Enter for the trial default) and API key (masked as you type), then restart the client.
+
+✅ **Claude Code users — you're done.** You get the tools, skills, and agents.
+
+### Step 2 — Claude Desktop chat only: finish in the app
+
+Step 1 already wired the working connector, so **the tools work now**. To also get the **skills and agents**, install the plugin from inside Claude Desktop:
+
+1. Click **Customize** in the left sidebar.
+2. Next to **Personal plugins**, click **+**, hover **Add**, and click **Add marketplace**.
+3. In the URL field enter `Cognigy/cognigy-plugin`, select the found result, and click **Sync**.
+4. The `cognigy-plugin` marketplace is now added.
+5. Install the **Cognigy** plugin by clicking **+**.
+6. On the warning about a local MCP, click **Continue**.
+
+Leave the plugin's own `platform` connector **unconnected** — the `cognigy` connector from Step 1 already serves the tools.
+
+<details>
+<summary>Why the extra step on Claude Desktop? (for the technically curious)</summary>
+
+The plugin ships its own connector (`platform`), but on **Claude Desktop chat** it can't be given credentials — Desktop stores plugin config in your claude.ai account rather than a local file, and offers no field to enter the API key, so that connector stays a no-op. To make the tools work regardless, the Step 1 installer wires a **standalone `cognigy` connector** directly into `claude_desktop_config.json` (credentials stored there, `chmod 600`) behind an auto-updating, offline-safe launcher. The plugin install in Step 2 then adds only the parts Desktop _can_ deliver — the skills and agents. Claude Code has none of these limitations, which is why it's a single step.
+
+</details>
+
+<details>
+<summary>Scripting / CI, and manual install</summary>
+
+**Scripting / CI** — skip the prompts with flags:
+
+```
+npx @cognigy/plugin-engine@latest cognigy-setup \
+  --client claude-code --client claude-desktop \
+  --api-base-url https://api-trial.cognigy.ai --api-key <key>
+```
+
+**Manual install (Claude Code)** — instead of the installer:
 
 ```
 /plugin marketplace add Cognigy/cognigy-plugin
 /plugin install cognigy@cognigy-plugin
 ```
 
-On enable, Claude Code prompts for your **Cognigy API base URL** (default `https://api-trial.cognigy.ai`) and **API key** (Cognigy.AI → User Menu → My Profile → API Keys). The key is stored in your system keychain. Requires [Node.js 20+](https://nodejs.org).
+then `npx @cognigy/plugin-engine@latest cognigy-setup --client claude-code` to wire credentials.
 
-#### If you install from the GUI and aren't prompted for credentials
+</details>
 
-The desktop/web app installs the plugin cleanly but does not always show the credential prompt. If the Cognigy tools report a missing API key, run the setup command once in any terminal:
+## Staying up to date
 
-```
-npx @cognigy/plugin-engine cognigy-setup
-```
-
-It asks for your API base URL (press Enter for the trial default) and API key (masked — never echoed), then writes them to `~/.cognigy-plugin/config.json` with owner-only permissions (`chmod 600`). Restart Claude Code afterwards. The engine reads this file only when the environment variables are absent, so the terminal/keychain flow above is unaffected. For scripted setup, pass `--api-base-url` and `--api-key` instead of answering prompts.
-
-The first session downloads the server into the plugin's data directory, which takes a moment. If the Cognigy tools don't appear right away on that first launch, run `/mcp`, reconnect the Cognigy server (or restart Claude Code) — later sessions connect instantly, and the engine updates in lockstep when you update the plugin.
+Claude Desktop auto-updates the engine on every launch. Claude Code updates only when marketplace auto-update is enabled (third-party marketplaces default **off**): turn it on under `/plugin → Marketplaces → cognigy-plugin`, or run `/plugin update cognigy@cognigy-plugin`. The first Claude Code session downloads the engine — if tools don't appear, run `/mcp` and reconnect (or restart); later sessions are instant.
 
 Beyond the MCP tools, the plugin ships **skills** and **agents** that surface the workflows automatically:
 
@@ -82,7 +119,7 @@ Create a complete AI Agent in one tool call, then iterate and improve through co
 
 ## Configuration
 
-The plugin collects your **Cognigy API base URL** and **API key** through Claude Code's install prompt (stored in the system keychain) and passes them to the server as environment variables. When the installer does not prompt (see the GUI note under [Installation](#claude-code)), `npx @cognigy/plugin-engine cognigy-setup` writes the same two values to `~/.cognigy-plugin/config.json` (`chmod 600`); the engine reads that file only when the matching environment variable is unset. The optional variables below can be set in the plugin's MCP server `env` if you need to override defaults.
+The [installer](#installation) collects your **Cognigy API base URL** and **API key** and wires them per client: on Claude Code into the system **keychain**, on Claude Desktop into `claude_desktop_config.json` (`chmod 600`). The engine receives them as environment variables. If neither is set for a given launch, the engine falls back to `~/.cognigy-plugin/config.json` (`chmod 600`), which the installer also writes — so credentials resolve from the environment first, then that file. The optional variables below can be set in the MCP server `env` if you need to override defaults.
 
 | Variable                  | Required | Default | Description                      |
 | ------------------------- | -------- | ------- | -------------------------------- |
