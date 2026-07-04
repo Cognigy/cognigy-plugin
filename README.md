@@ -40,21 +40,15 @@ Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, flow 
 
 ## Installation
 
-One command sets everything up. In any terminal, run:
+One command, in any terminal:
 
 ```
 npx @cognigy/plugin-engine@latest cognigy-setup
 ```
 
-It asks:
+Pick your client(s) — **Claude Code** and/or the **Claude Desktop** app — enter your Cognigy API base URL (Enter for the trial default) and API key (masked), then restart the client. Requires [Node.js 20+](https://nodejs.org).
 
-1. **Where to install** — Claude Code (terminal + desktop app) and/or the standalone Claude Desktop app. Detected clients are pre-selected.
-2. **Cognigy API base URL** — press Enter for the trial default `https://api-trial.cognigy.ai`.
-3. **Cognigy API key** — masked as you type, never echoed or written to shell history (Cognigy.AI → User Menu → My Profile → API Keys).
-
-Then it performs the full install and credential wiring for each client you picked. Restart the client(s) afterwards. Requires [Node.js 20+](https://nodejs.org).
-
-For scripted/CI setup, pass flags instead of answering prompts:
+Scripting / CI (skip the prompts):
 
 ```
 npx @cognigy/plugin-engine@latest cognigy-setup \
@@ -62,29 +56,25 @@ npx @cognigy/plugin-engine@latest cognigy-setup \
   --api-base-url https://api-trial.cognigy.ai --api-key <key>
 ```
 
-### What each client gets
+<details>
+<summary>Manual install, staying up to date, skills on Desktop, and how it works</summary>
 
-- **Claude Code** (terminal + desktop/GUI, one mechanism): full plugin — **tools + skills + agents**. The installer drives the `claude` plugin CLI when it's on your `PATH`, so your API key lands in the OS **keychain**. If the CLI isn't found, it falls back to writing `~/.cognigy-plugin/config.json` (owner-only, `chmod 600`) and prints the two `/plugin` commands to paste in-app.
-- **Claude Desktop** (standalone chat app): the installer merges a **`cognigy` connector** into `claude_desktop_config.json` (existing servers preserved; a `.bak` is written first) pointing at an auto-updating launcher. This gives you the **tools** (plus the built-in usage guidance). Desktop has no keychain, so credentials are stored in that file in plaintext — it's tightened to `chmod 600`. The launcher checks the npm registry on every Desktop start and pulls the latest engine before the server boots, so fixes land on the next relaunch (offline-safe: it boots the installed engine if the registry is unreachable).
-
-  **Want skills/agents on Desktop too?** Optionally install the plugin from Desktop's **Customize → Plugins** (marketplace `cognigy-plugin`) — that adds the skills (agents run only in Cowork). That plugin bundles its own `platform` connector, but **Desktop can't supply its credentials**, so leave `platform` **unconnected** — the `cognigy` connector the installer added serves the tools. (This is why the one-command installer wires the connector directly instead of relying on the plugin's.)
-
-### Manual install (Claude Code fallback)
-
-If you'd rather not run the installer, add the plugin by hand in Claude Code:
+**Manual install (Claude Code)** — if you'd rather not run the installer:
 
 ```
 /plugin marketplace add Cognigy/cognigy-plugin
 /plugin install cognigy@cognigy-plugin
 ```
 
-then run `npx @cognigy/plugin-engine@latest cognigy-setup --client claude-code` (or paste your key when prompted) to wire credentials.
+then `npx @cognigy/plugin-engine@latest cognigy-setup --client claude-code` to wire credentials.
 
-### Keeping Claude Code up to date
+**Skills / agents on Claude Desktop** — the one-command install gives Desktop the **tools**. For skills too, also install the plugin from Desktop's **Customize → Plugins** (marketplace `cognigy-plugin`), and leave its bundled `platform` connector **unconnected** — the `cognigy` connector the installer added serves the tools.
 
-Claude Code plugins auto-update on launch **only when auto-update is enabled for the marketplace**, and third-party marketplaces default to **off**. To get engine fixes automatically, enable it: `/plugin` → Marketplaces → `cognigy-plugin` → turn on auto-update. Otherwise run `/plugin update cognigy@cognigy-plugin` when a new version ships. (Claude Desktop, above, always auto-updates.)
+**Staying up to date** — Claude Desktop auto-updates the engine on every launch. Claude Code updates only when marketplace auto-update is enabled (third-party marketplaces default **off**): turn it on under `/plugin → Marketplaces → cognigy-plugin`, or run `/plugin update cognigy@cognigy-plugin`. First Claude Code session downloads the engine — if tools don't appear, run `/mcp` and reconnect (or restart); later sessions are instant.
 
-The first Claude Code session downloads the server into the plugin's data directory, which takes a moment. If the Cognigy tools don't appear right away, run `/mcp` and reconnect the Cognigy server (or restart Claude Code) — later sessions connect instantly.
+**How it works** — Claude Code gets the full plugin (tools + skills + agents; API key in the OS keychain). Claude Desktop's plugin config lives in your claude.ai account, not a local file, and its bundled connector can't be given credentials there — so the installer instead wires a standalone `cognigy` MCP connector into `claude_desktop_config.json` (credentials stored there in plaintext, tightened to `chmod 600`) behind an auto-updating, offline-safe launcher. That's why Desktop tools work without depending on the plugin.
+
+</details>
 
 Beyond the MCP tools, the plugin ships **skills** and **agents** that surface the workflows automatically:
 
