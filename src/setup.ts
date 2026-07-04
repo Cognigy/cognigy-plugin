@@ -26,6 +26,20 @@ import { dirname } from "path";
 
 const DEFAULT_BASE_URL = "https://api-trial.cognigy.ai";
 
+// ANSI styling — auto-disabled when stdout is not a TTY or NO_COLOR is set, so
+// piped/CI output stays plain text.
+const useColor = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
+const wrap =
+  (open: string, close: string) =>
+  (t: string): string =>
+    useColor ? `\x1b[${open}m${t}\x1b[${close}m` : t;
+const bold = wrap("1", "22");
+const dim = wrap("2", "22");
+const green = wrap("32", "39");
+const cyan = wrap("36", "39");
+const yellow = wrap("33", "39");
+const RULE = "═".repeat(60);
+
 // Control codes handled during masked input.
 const CTRL_C = 3;
 const CTRL_D = 4;
@@ -144,27 +158,116 @@ export function parseClientSelection(answer: string, menu: Client[]): Client[] {
   return picked;
 }
 
+/**
+ * Interactive checkbox list: ↑/↓ (or j/k) move, Space toggles, Enter confirms
+ * (requires at least one selection), Ctrl-C cancels. Redraws in place via ANSI
+ * cursor moves. Requires a raw-mode TTY — callers fall back otherwise.
+ */
+function checkboxSelect(
+  items: { label: string; checked: boolean }[],
+): Promise<number[]> {
+  return new Promise((resolve, reject) => {
+    const stdin = process.stdin;
+    const state = items.map((it) => it.checked);
+    let cursor = 0;
+    // Lines we own and redraw: one per item + one help line.
+    const rows = items.length + 1;
+
+    const render = (first: boolean) => {
+      if (!first) process.stdout.write(`\x1b[${rows}A`);
+      items.forEach((it, i) => {
+        const pointer = i === cursor ? cyan("❯") : " ";
+        const box = state[i] ? green("[x]") : "[ ]";
+        process.stdout.write(`\x1b[2K\r ${pointer} ${box} ${it.label}\n`);
+      });
+      process.stdout.write(
+        `\x1b[2K\r${dim("   ↑/↓ move · Space check/uncheck · Enter confirm")}\n`,
+      );
+    };
+
+    const cleanup = () => {
+      if (stdin.isTTY) stdin.setRawMode(false);
+      stdin.pause();
+      stdin.removeListener("data", onData);
+    };
+
+    const onData = (chunk: string) => {
+      if (chunk === "\x03") {
+        cleanup();
+        reject(new Error("cancelled"));
+        return;
+      }
+      if (chunk === "\r" || chunk === "\n") {
+        const picked = state
+          .map((on, i) => (on ? i : -1))
+          .filter((i) => i >= 0);
+        if (picked.length === 0) return; // require at least one
+        cleanup();
+        process.stdout.write("\n");
+        resolve(picked);
+        return;
+      }
+      if (chunk === " ") {
+        state[cursor] = !state[cursor];
+        render(false);
+        return;
+      }
+      if (chunk === "\x1b[A" || chunk === "\x1bOA" || chunk === "k") {
+        cursor = (cursor - 1 + items.length) % items.length;
+        render(false);
+        return;
+      }
+      if (chunk === "\x1b[B" || chunk === "\x1bOB" || chunk === "j") {
+        cursor = (cursor + 1) % items.length;
+        render(false);
+        return;
+      }
+    };
+
+    if (stdin.isTTY) stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding("utf8");
+    render(true);
+    stdin.on("data", onData);
+  });
+}
+
 async function chooseClients(): Promise<Client[]> {
   const detected = detectClients();
   const menu = ALL_CLIENTS;
-  process.stdout.write("Where should the Cognigy plugin be installed?\n");
-  menu.forEach((c, i) => {
-    const mark = detected[c] ? " (detected)" : "";
-    process.stdout.write(`  ${i + 1}) ${CLIENT_LABELS[c]}${mark}\n`);
-  });
-  const defaults = menu.filter((c) => detected[c]);
-  const defaultLabel = defaults.length
-    ? defaults.map((c) => menu.indexOf(c) + 1).join(",")
-    : "1";
-  const answer = await ask(
-    `Select (comma-separated numbers) [${defaultLabel}]: `,
+  process.stdout.write(
+    bold("Where should the NiCE Cognigy plugin be installed?\n"),
   );
-  const chosen = answer
-    ? parseClientSelection(answer, menu)
-    : defaults.length
-      ? defaults
-      : [menu[0]];
-  return chosen.length ? chosen : [menu[0]];
+
+  // Non-TTY (rare in interactive mode): fall back to a numbered text prompt.
+  if (!process.stdin.isTTY) {
+    menu.forEach((c, i) => {
+      const mark = detected[c] ? green(" (detected)") : "";
+      process.stdout.write(
+        `  ${cyan(String(i + 1))}) ${CLIENT_LABELS[c]}${mark}\n`,
+      );
+    });
+    const defaults = menu.filter((c) => detected[c]);
+    const defaultLabel = defaults.length
+      ? defaults.map((c) => menu.indexOf(c) + 1).join(",")
+      : "1";
+    const answer = await ask(
+      `Select (comma-separated numbers) [${defaultLabel}]: `,
+    );
+    const chosen = answer
+      ? parseClientSelection(answer, menu)
+      : defaults.length
+        ? defaults
+        : [menu[0]];
+    return chosen.length ? chosen : [menu[0]];
+  }
+
+  const items = menu.map((c) => ({
+    label: `${CLIENT_LABELS[c]}${detected[c] ? green(" (detected)") : ""}`,
+    checked: detected[c],
+  }));
+  const picked = await checkboxSelect(items);
+  return picked.map((i) => menu[i]);
 }
 
 function runInstall(client: Client, creds: UserConfigFile): void {
@@ -172,14 +275,19 @@ function runInstall(client: Client, creds: UserConfigFile): void {
     const res = installClaudeCode(creds);
     if (res.method === "cli") {
       process.stdout.write(
-        "\n✓ Claude Code: plugin installed via the claude CLI (key stored in keychain).\n" +
-          "  Restart Claude Code (or /reload-plugins) to apply.\n",
+        green("\n✓ Claude Code") +
+          ": plugin installed via the claude CLI " +
+          dim("(key stored in keychain)") +
+          ".\n  Restart Claude Code (or /reload-plugins) to apply. " +
+          green("You get tools, skills, and agents.") +
+          "\n",
       );
     } else {
       process.stdout.write(
-        `\n✓ Claude Code: 'claude' CLI not found — wrote creds to ${res.configFile}.\n` +
+        green("\n✓ Claude Code") +
+          `: 'claude' CLI not found — wrote creds to ${res.configFile}.\n` +
           "  Paste these in Claude Code to finish:\n" +
-          (res.commands ?? []).map((c) => `    ${c}`).join("\n") +
+          (res.commands ?? []).map((c) => cyan(`    ${c}`)).join("\n") +
           "\n",
       );
     }
@@ -188,21 +296,42 @@ function runInstall(client: Client, creds: UserConfigFile): void {
   // claude-desktop
   const res = installClaudeDesktop(creds);
   process.stdout.write(
-    `\n✓ Claude Desktop: 'cognigy' connector added to ${res.configPath}\n` +
+    green("\n✓ Claude Desktop") +
+      `: 'cognigy' connector added to ${res.configPath}\n` +
       (res.backupPath
-        ? `  (backed up existing config to ${res.backupPath})\n`
+        ? dim(`  (backed up existing config to ${res.backupPath})\n`)
         : "") +
-      "  Restart Claude Desktop — the 'cognigy' connector gives you the tools.\n" +
+      "  Restart Claude Desktop — the 'cognigy' connector gives you the " +
+      bold("tools") +
+      ".\n",
+  );
+  // A loud, unmissable block: on Desktop chat, skills + agents come ONLY from
+  // these manual in-app steps. Without them the user has tools and nothing else.
+  process.stdout.write(
+    "\n" +
+      yellow(RULE) +
       "\n" +
-      "  To also get skills + agents, install the plugin in the app:\n" +
-      "    1. Click 'Customize' in the left sidebar.\n" +
-      "    2. Next to 'Personal plugins' click '+', hover 'Add', click 'Add marketplace'.\n" +
-      "    3. In the URL field enter 'Cognigy/cognigy-plugin', select the result, click 'Sync'.\n" +
-      "    4. The 'cognigy-plugin' marketplace is now added.\n" +
-      "    5. Install the 'Cognigy' plugin by clicking '+'.\n" +
-      "    6. On the local-MCP warning, click 'Continue'.\n" +
-      "  Leave the plugin's own 'platform' connector unconnected — the 'cognigy'\n" +
-      "  connector already serves the tools.\n",
+      yellow(bold("  ⚠️  ONE MORE STEP — CLAUDE DESKTOP CHAT ONLY  ⚠️")) +
+      "\n" +
+      yellow(RULE) +
+      "\n" +
+      bold("  You are NOT done yet.") +
+      " The connector gives you tools only.\n" +
+      "  " +
+      bold(yellow("SKILLS & AGENTS install ONLY via these in-app steps")) +
+      " —\n  do them now, in Claude Desktop:\n\n" +
+      `    ${cyan("1.")} Click ${bold("Customize")} in the left sidebar.\n` +
+      `    ${cyan("2.")} Next to ${bold("Personal plugins")} click ${bold("+")}, hover ${bold("Add")}, click ${bold("Add marketplace")}.\n` +
+      `    ${cyan("3.")} In the URL field enter ${bold("Cognigy/cognigy-plugin")}, select the result, click ${bold("Sync")}.\n` +
+      `    ${cyan("4.")} The ${bold("cognigy-plugin")} marketplace is now added.\n` +
+      `    ${cyan("5.")} Install the ${bold("Cognigy")} plugin by clicking ${bold("+")}.\n` +
+      `    ${cyan("6.")} On the local-MCP warning, click ${bold("Continue")}.\n\n` +
+      dim(
+        "  Leave the plugin's own 'platform' connector unconnected — the\n" +
+          "  'cognigy' connector already serves the tools.\n",
+      ) +
+      yellow(RULE) +
+      "\n",
   );
 }
 
@@ -216,7 +345,7 @@ async function main(): Promise<void> {
   let clients = flags.clients;
 
   if (interactive) {
-    process.stdout.write("Cognigy Plugin setup\n\n");
+    process.stdout.write(bold(cyan("\n🚀 NiCE Cognigy Plugin Setup\n\n")));
     clients = await chooseClients();
     process.stdout.write("\n");
     const urlAnswer = await ask(`Cognigy API base URL [${DEFAULT_BASE_URL}]: `);
@@ -248,7 +377,7 @@ async function main(): Promise<void> {
     runInstall(client, creds);
   }
 
-  process.stdout.write("\nDone.\n");
+  process.stdout.write(green(bold("\n✓ Done.\n")));
 }
 
 function runCli(): void {
