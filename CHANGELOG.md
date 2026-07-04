@@ -1,3 +1,9 @@
+## [1.3.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.3.0...v1.3.1) (2026-07-04)
+
+### Bug Fixes
+
+* **installer:** fix npx command, capitalize Desktop connector, add Windows guidance ([#7](https://github.com/Cognigy/cognigy-plugin/issues/7)) ([878ad97](https://github.com/Cognigy/cognigy-plugin/commit/878ad97b9bef6b7f114c61a67c6130c888dee2a9))
+
 ## [1.3.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.2.1...v1.3.0) (2026-07-04)
 
 ### Features
