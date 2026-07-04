@@ -297,14 +297,26 @@ function runInstall(client: Client, creds: UserConfigFile): void {
   const res = installClaudeDesktop(creds);
   process.stdout.write(
     green("\n✓ Claude Desktop") +
-      `: 'cognigy' connector added to ${res.configPath}\n` +
+      `: 'Cognigy' connector added to ${res.configPath}\n` +
       (res.backupPath
         ? dim(`  (backed up existing config to ${res.backupPath})\n`)
         : "") +
-      "  Restart Claude Desktop — the 'cognigy' connector gives you the " +
+      "  Restart Claude Desktop — the 'Cognigy' connector gives you the " +
       bold("tools") +
       ".\n",
   );
+  // Windows Desktop needs a firmer restart + a tool-refresh nudge, else the
+  // connector either doesn't appear or appears with no tools loaded.
+  if (process.platform === "win32") {
+    process.stdout.write(
+      "\n" +
+        cyan(bold("  Windows — make the connector appear:\n")) +
+        `    ${cyan("•")} If this run hit a permissions error, re-run it in a terminal opened ${bold("as Administrator")}.\n` +
+        `    ${cyan("•")} ${bold("Fully quit")} Claude Desktop from the system tray (closing the window leaves it running), then reopen it.\n` +
+        `    ${cyan("•")} Confirm the ${bold("Cognigy")} connector shows under Settings → Connectors.\n` +
+        `    ${cyan("•")} Then ${bold("disable it and re-enable it once")} to force a tool refresh.\n`,
+    );
+  }
   // A loud, unmissable block: on Desktop chat, skills + agents come ONLY from
   // these manual in-app steps. Without them the user has tools and nothing else.
   process.stdout.write(
@@ -328,7 +340,7 @@ function runInstall(client: Client, creds: UserConfigFile): void {
       `    ${cyan("6.")} On the local-MCP warning, click ${bold("Continue")}.\n\n` +
       dim(
         "  Leave the plugin's own 'platform' connector unconnected — the\n" +
-          "  'cognigy' connector already serves the tools.\n",
+          "  'Cognigy' connector already serves the tools.\n",
       ) +
       yellow(RULE) +
       "\n",

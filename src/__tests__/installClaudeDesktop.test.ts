@@ -61,10 +61,10 @@ describe("installClaudeDesktop", () => {
 
     // Config written with our server entry, owner-only.
     const cfg = JSON.parse(readFileSync(configPath, "utf8"));
-    expect(cfg.mcpServers.cognigy.args).toEqual([
+    expect(cfg.mcpServers.Cognigy.args).toEqual([
       join(FAKE_HOME, "desktop-launch.mjs"),
     ]);
-    expect(cfg.mcpServers.cognigy.env.COGNIGY_API_KEY).toBe("secret-key");
+    expect(cfg.mcpServers.Cognigy.env.COGNIGY_API_KEY).toBe("secret-key");
     expect(statSync(configPath).mode & 0o777).toBe(0o600);
     expect(result.backupPath).toBeUndefined();
   });
@@ -82,7 +82,7 @@ describe("installClaudeDesktop", () => {
     expect(existsSync(result.backupPath as string)).toBe(true);
     const cfg = JSON.parse(readFileSync(configPath, "utf8"));
     expect(cfg.mcpServers.other).toEqual({ command: "x", args: [] });
-    expect(cfg.mcpServers.cognigy).toBeDefined();
+    expect(cfg.mcpServers.Cognigy).toBeDefined();
   });
 
   it("keeps the first pristine backup across re-runs", () => {
@@ -96,7 +96,7 @@ describe("installClaudeDesktop", () => {
     installClaudeDesktop(CREDS, configPath); // must NOT clobber the .bak
 
     const backup = JSON.parse(readFileSync(`${configPath}.bak`, "utf8"));
-    expect(backup.mcpServers.cognigy).toBeUndefined(); // still the pristine file
+    expect(backup.mcpServers.Cognigy).toBeUndefined(); // still the pristine file
     expect(backup.mcpServers.other).toEqual({ command: "x" });
   });
 
