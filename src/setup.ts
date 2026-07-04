@@ -192,11 +192,17 @@ function runInstall(client: Client, creds: UserConfigFile): void {
       (res.backupPath
         ? `  (backed up existing config to ${res.backupPath})\n`
         : "") +
-      "  Restart Claude Desktop to apply — the 'cognigy' connector gives you the tools.\n" +
-      "  Want skills/agents too? Optionally install the plugin from Desktop's\n" +
-      "  Customize > Plugins (marketplace 'cognigy-plugin'). Leave that plugin's own\n" +
-      "  'platform' connector unconnected — it can't be configured on Desktop; the\n" +
-      "  'cognigy' connector above serves the tools.\n",
+      "  Restart Claude Desktop — the 'cognigy' connector gives you the tools.\n" +
+      "\n" +
+      "  To also get skills + agents, install the plugin in the app:\n" +
+      "    1. Click 'Customize' in the left sidebar.\n" +
+      "    2. Next to 'Personal plugins' click '+', hover 'Add', click 'Add marketplace'.\n" +
+      "    3. In the URL field enter 'Cognigy/cognigy-plugin', select the result, click 'Sync'.\n" +
+      "    4. The 'cognigy-plugin' marketplace is now added.\n" +
+      "    5. Install the 'Cognigy' plugin by clicking '+'.\n" +
+      "    6. On the local-MCP warning, click 'Continue'.\n" +
+      "  Leave the plugin's own 'platform' connector unconnected — the 'cognigy'\n" +
+      "  connector already serves the tools.\n",
   );
 }
 
