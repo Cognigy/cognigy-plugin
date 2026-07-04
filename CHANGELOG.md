@@ -1,3 +1,9 @@
+## [1.2.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.2.0...v1.2.1) (2026-07-04)
+
+### Bug Fixes
+
+* **launcher:** spawn npm with a shell on Windows to avoid EINVAL ([#5](https://github.com/Cognigy/cognigy-plugin/issues/5)) ([87f9999](https://github.com/Cognigy/cognigy-plugin/commit/87f99994b5f7d58cea19527e238f2bb7a9f8ea4e))
+
 ## [1.2.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.1.0...v1.2.0) (2026-07-03)
 
 ### Features
