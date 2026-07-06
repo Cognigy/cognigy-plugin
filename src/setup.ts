@@ -291,6 +291,17 @@ function runInstall(client: Client, creds: UserConfigFile): void {
           "\n",
       );
     }
+    // Windows: a normal Claude Code restart often isn't enough — the old
+    // process lingers and the plugin won't load. Users must fully kill it or
+    // reboot before the tools/skills/agents appear.
+    if (process.platform === "win32") {
+      process.stdout.write(
+        "\n" +
+          cyan(bold("  Windows — finish applying the plugin:\n")) +
+          `    ${cyan("•")} ${bold("Fully quit")} Claude Code — end every ${bold("Claude")} process in ${bold("Task Manager")} (a normal close can leave it running), then reopen it.\n` +
+          `    ${cyan("•")} If the tools/skills/agents still don't appear, ${bold("restart your machine")}.\n`,
+      );
+    }
     return;
   }
   // claude-desktop
