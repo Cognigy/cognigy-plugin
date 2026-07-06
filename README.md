@@ -56,6 +56,8 @@ Pick your client(s), enter your Cognigy API base URL (press Enter for the trial 
 
 ✅ **Claude Code users — you're done.** You get the tools, skills, and agents.
 
+> **On Windows, after installing for Claude Code:** a normal restart may not be enough to load the plugin. **Fully quit** Claude Code — end every **Claude** process in **Task Manager** (a normal close can leave it running in the background), then reopen it. If the tools, skills, and agents still don't appear, **restart your machine**.
+
 > **On Windows, after installing for Claude Desktop:** to make the connector appear:
 >
 > 1. **Fully restart** Claude Desktop — closing the window leaves it running in the system tray; quit it from there (or via Task Manager) so it actually relaunches.
@@ -285,7 +287,6 @@ Full privacy policy: [https://www.cognigy.com/privacy-policy](https://www.cognig
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/Cognigy/cognigy-plugin/issues)
-- **Cognigy support**: support@cognigy.com
 - **Documentation**: see [`docs/`](https://github.com/Cognigy/cognigy-plugin/tree/main/docs) folder
 
 ## Documentation
