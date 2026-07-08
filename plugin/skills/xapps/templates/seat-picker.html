@@ -1,0 +1,76 @@
+<!--
+  xApp template: Seat picker
+  Node:        showXAppHtml  (config.mode = "full")
+  Context in:  context.seatMap — { rows: number, cols: number, unavailable: ["R2C3", ...], maxSelect?: number }
+               Injected below via CognigyScript. If absent, falls back to a 5x8 grid.
+  Result out:  input.data._cognigy._app.payload = { seats: ["R1C4","R1C5"] }
+               with waitForInput + storeResultInContext → context.<contextKey>
+  Prereqs:     none. Seat ids are "R<row>C<col>" (1-indexed).
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="/sdk/app-page-sdk.js"></script>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; }
+      #screen { text-align: center; background: #cbd5e0; border-radius: 4px; padding: 4px; margin-bottom: 16px; font-size: 12px; color: #4a5568; }
+      #grid { display: grid; gap: 6px; justify-content: center; }
+      .seat { width: 30px; height: 30px; border-radius: 6px 6px 3px 3px; border: 0; cursor: pointer; font-size: 10px; background: #a0aec0; color: #fff; }
+      .seat.available { background: #48bb78; }
+      .seat.selected { background: #2b6cb0; }
+      .seat.unavailable { background: #e2e8f0; cursor: not-allowed; }
+      #submit { margin-top: 16px; width: 100%; padding: 12px; border: 0; border-radius: 8px; background: #2b6cb0; color: #fff; font-size: 16px; cursor: pointer; }
+      #submit:disabled { opacity: .5; cursor: default; }
+    </style>
+  </head>
+  <body>
+    <div id="screen">SCREEN / FRONT</div>
+    <div id="grid"></div>
+    <button id="submit" type="button" disabled>Confirm selection</button>
+    <script>
+      // CognigyScript interpolation: resolves to context.seatMap JSON, or "" if unset.
+      const injected = `{{ context.seatMap ? JSON.stringify(context.seatMap) : "" }}`;
+      const map = (() => { try { return JSON.parse(injected); } catch (e) { return {}; } })();
+      const rows = map.rows || 5;
+      const cols = map.cols || 8;
+      const unavailable = new Set(map.unavailable || []);
+      const maxSelect = map.maxSelect || Infinity;
+
+      const grid = document.getElementById("grid");
+      grid.style.gridTemplateColumns = `repeat(${cols}, 30px)`;
+      const selected = new Set();
+      const submitBtn = document.getElementById("submit");
+
+      for (let r = 1; r <= rows; r++) {
+        for (let c = 1; c <= cols; c++) {
+          const id = `R${r}C${c}`;
+          const b = document.createElement("button");
+          b.type = "button";
+          b.textContent = id;
+          if (unavailable.has(id)) {
+            b.className = "seat unavailable";
+            b.disabled = true;
+          } else {
+            b.className = "seat available";
+            b.addEventListener("click", () => {
+              if (selected.has(id)) { selected.delete(id); b.classList.remove("selected"); }
+              else {
+                if (selected.size >= maxSelect) return;
+                selected.add(id); b.classList.add("selected");
+              }
+              submitBtn.disabled = selected.size === 0;
+            });
+          }
+          grid.appendChild(b);
+        }
+      }
+
+      submitBtn.addEventListener("click", () => {
+        if (selected.size === 0) return;
+        SDK.submit({ seats: [...selected] });
+      });
+    </script>
+  </body>
+</html>

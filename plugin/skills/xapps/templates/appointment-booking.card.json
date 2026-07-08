@@ -1,0 +1,52 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "Book an appointment",
+      "weight": "Bolder",
+      "size": "Medium",
+      "wrap": true
+    },
+    {
+      "type": "Input.Date",
+      "id": "appointmentDate",
+      "label": "Date",
+      "isRequired": true,
+      "errorMessage": "Please pick a date"
+    },
+    {
+      "type": "Input.Time",
+      "id": "appointmentTime",
+      "label": "Time",
+      "isRequired": true,
+      "errorMessage": "Please pick a time"
+    },
+    {
+      "type": "Input.ChoiceSet",
+      "id": "service",
+      "label": "Service",
+      "style": "compact",
+      "choices": [
+        { "title": "Consultation", "value": "consultation" },
+        { "title": "Follow-up", "value": "follow_up" },
+        { "title": "Support", "value": "support" }
+      ]
+    },
+    {
+      "type": "Input.Text",
+      "id": "notes",
+      "label": "Notes (optional)",
+      "isMultiline": true
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.Submit",
+      "title": "Book",
+      "data": { "action": "book" }
+    }
+  ]
+}

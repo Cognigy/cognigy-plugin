@@ -1,0 +1,91 @@
+<!--
+  xApp template: Document upload
+  Node:        showXAppHtml  (config.mode = "full")
+  Context in:  context.uploadConfig — { accept?: string, maxFiles?: number, maxSizeMB?: number } (optional)
+  Result out:  input.data._cognigy._app.payload = { files: [{ name, type, size, dataUrl }] }
+               dataUrl is a base64 data: URI. With waitForInput + storeResultInContext → context.<contextKey>.
+  Prereqs:     Base64 inflates payload ~33%. Keep files small (maxSizeMB default 5).
+               For LARGE files: instead of submitting base64, POST each file to a storage/upload
+               endpoint (use an httpRequest tool BEFORE this node to mint an upload URL, or a
+               tool AFTER to persist), then submit only the returned link. See catalog notes.
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="/sdk/app-page-sdk.js"></script>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; }
+      #drop { border: 2px dashed #a0aec0; border-radius: 10px; padding: 28px; text-align: center; color: #4a5568; cursor: pointer; }
+      #drop.over { border-color: #2b6cb0; background: #ebf8ff; }
+      ul { list-style: none; padding: 0; }
+      li { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #edf2f7; font-size: 14px; }
+      #submit { margin-top: 16px; width: 100%; padding: 12px; border: 0; border-radius: 8px; background: #2b6cb0; color: #fff; font-size: 16px; cursor: pointer; }
+      #submit:disabled { opacity: .5; cursor: default; }
+      .err { color: #c53030; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <div id="drop">Tap to choose files, or drop them here</div>
+    <input id="file" type="file" hidden multiple />
+    <p id="err" class="err"></p>
+    <ul id="list"></ul>
+    <button id="submit" type="button" disabled>Upload</button>
+    <script>
+      const injected = `{{ context.uploadConfig ? JSON.stringify(context.uploadConfig) : "" }}`;
+      const cfg = (() => { try { return JSON.parse(injected); } catch (e) { return {}; } })();
+      const maxFiles = cfg.maxFiles || 5;
+      const maxSize = (cfg.maxSizeMB || 5) * 1024 * 1024;
+      if (cfg.accept) document.getElementById("file").accept = cfg.accept;
+
+      const input = document.getElementById("file");
+      const drop = document.getElementById("drop");
+      const list = document.getElementById("list");
+      const err = document.getElementById("err");
+      const submitBtn = document.getElementById("submit");
+      const files = [];
+
+      function readFile(f) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve({ name: f.name, type: f.type, size: f.size, dataUrl: reader.result });
+          reader.onerror = reject;
+          reader.readAsDataURL(f);
+        });
+      }
+
+      async function add(fileList) {
+        err.textContent = "";
+        for (const f of fileList) {
+          if (files.length >= maxFiles) { err.textContent = `Max ${maxFiles} files.`; break; }
+          if (f.size > maxSize) { err.textContent = `${f.name} exceeds ${cfg.maxSizeMB || 5} MB.`; continue; }
+          files.push(await readFile(f));
+        }
+        render();
+      }
+      function render() {
+        list.innerHTML = "";
+        files.forEach((f, i) => {
+          const li = document.createElement("li");
+          li.innerHTML = `<span>${f.name}</span><button type="button" data-i="${i}">✕</button>`;
+          list.appendChild(li);
+        });
+        list.querySelectorAll("button").forEach((b) =>
+          b.addEventListener("click", () => { files.splice(+b.dataset.i, 1); render(); }));
+        submitBtn.disabled = files.length === 0;
+      }
+
+      drop.addEventListener("click", () => input.click());
+      input.addEventListener("change", (e) => add(e.target.files));
+      ["dragover", "dragenter"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+      ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+      drop.addEventListener("drop", (e) => add(e.dataTransfer.files));
+
+      submitBtn.addEventListener("click", () => {
+        if (files.length === 0) return;
+        SDK.submit({ files });
+      });
+    </script>
+  </body>
+</html>

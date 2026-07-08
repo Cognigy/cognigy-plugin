@@ -1,0 +1,63 @@
+<!--
+  xApp template: Google Maps location picker
+  Node:        showXAppHtml  (config.mode = "full")
+  Context in:  context.mapConfig — { center?: { lat, lng }, zoom?: number } (optional)
+  Result out:  input.data._cognigy._app.payload = { lat, lng, address }
+               with waitForInput + storeResultInContext → context.<contextKey>
+  Prereqs:     REQUIRED — replace __MAPS_API_KEY__ with a Google Maps JS API key that has
+               "Maps JavaScript API" + "Geocoding API" enabled. The key is embedded client-side;
+               restrict it by HTTP referrer to your xApp domain. Loads an external Google script.
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="/sdk/app-page-sdk.js"></script>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; }
+      #map { width: 100%; height: 300px; border-radius: 8px; }
+      #addr { margin: 12px 0; font-size: 14px; color: #4a5568; min-height: 20px; }
+      #submit { width: 100%; padding: 12px; border: 0; border-radius: 8px; background: #2b6cb0; color: #fff; font-size: 16px; cursor: pointer; }
+      #submit:disabled { opacity: .5; cursor: default; }
+    </style>
+  </head>
+  <body>
+    <p>Tap the map to choose a location.</p>
+    <div id="map"></div>
+    <div id="addr">No location selected.</div>
+    <button id="submit" type="button" disabled>Confirm location</button>
+    <script>
+      const injected = `{{ context.mapConfig ? JSON.stringify(context.mapConfig) : "" }}`;
+      const mapCfg = (() => { try { return JSON.parse(injected); } catch (e) { return {}; } })();
+      const center = mapCfg.center || { lat: 52.52, lng: 13.405 };
+      const zoom = mapCfg.zoom || 12;
+      let picked = null;
+
+      window.initMap = function () {
+        const map = new google.maps.Map(document.getElementById("map"), { center, zoom });
+        const geocoder = new google.maps.Geocoder();
+        let marker = null;
+        const addr = document.getElementById("addr");
+        const submitBtn = document.getElementById("submit");
+
+        map.addListener("click", (e) => {
+          const loc = e.latLng;
+          if (marker) marker.setMap(null);
+          marker = new google.maps.Marker({ position: loc, map });
+          picked = { lat: loc.lat(), lng: loc.lng(), address: "" };
+          submitBtn.disabled = false;
+          addr.textContent = "Resolving address…";
+          geocoder.geocode({ location: loc }, (res, status) => {
+            picked.address = status === "OK" && res[0] ? res[0].formatted_address : "";
+            addr.textContent = picked.address || `${picked.lat.toFixed(5)}, ${picked.lng.toFixed(5)}`;
+          });
+        });
+
+        submitBtn.addEventListener("click", () => { if (picked) SDK.submit(picked); });
+      };
+    </script>
+    <!-- Google Maps JS API — replace __MAPS_API_KEY__ -->
+    <script async src="https://maps.googleapis.com/maps/api/js?key=__MAPS_API_KEY__&callback=initMap"></script>
+  </body>
+</html>

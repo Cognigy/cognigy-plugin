@@ -144,6 +144,42 @@ so the user can open the xApp on another device via a PIN.
   `waitForInput` + `storeResultInContext`, it's also written to `context.<contextKey>`
   (default `context.result`).
 
+## Use-case templates
+
+Ready-made starting points live in `templates/` next to this file. For a matching request,
+**read the template file, then pass its contents into the node config** — HTML into
+`config.body` (with `mode: "body"`) or `config.html` (with `mode: "full"` — all HTML templates
+here are full documents that include the SDK, so use `mode: "full"`); AdaptiveCard JSON into
+`config.card`. Adapt the file to the user's specifics before sending; treat it as a scaffold,
+not a fixed asset.
+
+| Use-case | Template | Node | Data in (context) | Result payload |
+|----------|----------|------|-------------------|----------------|
+| Signature | `templates/signature.html` | `showXAppHtml` (`mode: "full"`) | — | `{ signature: "<PNG dataURL>", signed: true }` |
+| Seat picker | `templates/seat-picker.html` | `showXAppHtml` (`mode: "full"`) | `context.seatMap = { rows, cols, unavailable[], maxSelect? }` | `{ seats: ["R1C4", …] }` |
+| Document upload | `templates/document-upload.html` | `showXAppHtml` (`mode: "full"`) | `context.uploadConfig = { accept?, maxFiles?, maxSizeMB? }` | `{ files: [{ name, type, size, dataUrl }] }` |
+| Google Maps | `templates/google-maps.html` | `showXAppHtml` (`mode: "full"`) | `context.mapConfig = { center?, zoom? }` | `{ lat, lng, address }` |
+| Appointment booking | `templates/appointment-booking.card.json` | `showXAppAdaptiveCard` | — (inputs are user-entered) | `{ appointmentDate, appointmentTime, service, notes, action: "book" }` |
+| Order summary | `templates/order-summary.card.json` | `showXAppAdaptiveCard` | items rendered into the card (see note) | `{ confirmed: true \| false }` |
+
+Every use-case follows the same chain: `initAppSession → show node (waitForInput: true, storeResultInContext: true, contextKey) → code/say reading the result`. Pass "data in" by
+setting the named context key **before** the show node (e.g. a `setSessionContext` or `code`
+node populating `context.seatMap`); the template reads it via CognigyScript.
+
+Per-template notes:
+- **Google Maps** — replace `__MAPS_API_KEY__` in the HTML with the user's Google Maps JS API
+  key (needs Maps JavaScript API + Geocoding API; restrict by HTTP referrer). No key → the map
+  won't load. Ask the user for the key.
+- **Document upload** — the template submits files as base64 `dataUrl`s (payload grows ~33%;
+  default cap 5 MB/file). For large files, don't submit base64: add an `httpRequest` tool to
+  push each file to storage and submit only the returned URL.
+- **Order summary** — the card ships with one placeholder item row and `$0.00` totals. Populate
+  real rows before showing it: either build the `card` object in a `code` node from
+  `context.order` and pass that as `config.card`, or interpolate values with CognigyScript.
+  Adaptive Cards have no loop, so dynamic item lists must be assembled in code.
+- **Signature / Seat picker** — self-contained, no data-in required (seat picker falls back to a
+  5×8 grid if `context.seatMap` is unset).
+
 ## Prerequisite
 
 Rendering requires an xApp-capable endpoint (Cognigy App Session Manager / Webchat v3). Node
