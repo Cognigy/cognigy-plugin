@@ -3409,6 +3409,31 @@ export class ToolHandlers {
           }
         }
 
+        // xApp guardrail: every xApp node except initAppSession needs a
+        // preceding initAppSession node — it creates the session and populates
+        // input.apps.url. If none exists in the flow yet, warn (non-blocking).
+        const XAPP_DEPENDENT_TYPES = new Set([
+          "setHTMLAppState",
+          "setAdaptiveCardAppState",
+          "setAppState",
+          "getAppSessionPin",
+        ]);
+        let missingInitAppSession = false;
+        if (XAPP_DEPENDENT_TYPES.has(entry.type)) {
+          try {
+            const existing: any = await this.apiClient.get(
+              `/v2.0/flows/${flowId}/chart/nodes`,
+              { params: { limit: 200 } },
+            );
+            const nodes: any[] = existing?.items ?? existing ?? [];
+            missingInitAppSession =
+              Array.isArray(nodes) &&
+              !nodes.some((n: any) => n?.type === "initAppSession");
+          } catch {
+            // If the check fails, skip the warning and proceed.
+          }
+        }
+
         const apiConfig = data.config
           ? transformConfigForApi(entry.type, data.config)
           : undefined;
@@ -3434,7 +3459,7 @@ export class ToolHandlers {
           (createdNode.parent &&
             (createdNode.parent._id || createdNode.parent.id));
 
-        return {
+        const result = {
           nodeId,
           type: entry.type,
           label: data.label,
@@ -3443,6 +3468,17 @@ export class ToolHandlers {
           mode,
           configApplied: data.config ? Object.keys(data.config) : [],
         };
+
+        if (missingInitAppSession) {
+          return withHints(result, {
+            warning:
+              "This xApp node has no preceding xApp: Init Session (initAppSession) node in the flow. Init Session must run first — it creates the session and populates input.apps.url.",
+            action:
+              "Create an initAppSession node earlier in this tool branch, before this xApp node.",
+          });
+        }
+
+        return result;
       }
 
       // ----- UPDATE -----

@@ -32,6 +32,8 @@ Nodes MUST be placed inside tool branches using `parentNodeId` and `mode`.
 
 ## Supported Node Types
 
+> **xApp nodes** (`initAppSession`, `showXAppAdaptiveCard`, `showXAppHtml`, `setXAppState`, `getXAppSessionPin`) are also available via `manage_flow_nodes`. They build interactive HTML / Adaptive Card mini-apps. `initAppSession` must precede any other xApp node. See the `xapps` guide for details.
+
 ### say — Send Message
 
 Category: message

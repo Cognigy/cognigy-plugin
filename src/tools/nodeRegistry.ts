@@ -166,6 +166,107 @@ export const NODE_REGISTRY: Record<string, NodeRegistryEntry> = {
     requiredConfigKeys: ["url"],
   },
 
+  initAppSession: {
+    type: "initAppSession",
+    extension: "@cognigy/basic-nodes",
+    category: "message",
+    summary:
+      "xApp: Init Session — creates an xApp session and populates input.apps.url / input.apps.baseUrl. MUST run before any other xApp node (setHTMLAppState, setAdaptiveCardAppState, setAppState, getAppSessionPin).",
+    placement: "flow",
+    configKeys: [
+      "backgroundColor",
+      "textColor",
+      "logo",
+      "logoUrl",
+      "faviconUrl",
+      "pageTitle",
+      "appLoadingText",
+      "appLaunchErrorText",
+      "appErrorText",
+      "intermediateScreenCustomizationType",
+      "intermediateScreenOverrideText",
+      "intermediateScreenAppTemplateId",
+      "intermediateScreenAppTemplateData",
+      "connectionScreenCustomizationType",
+      "connectionScreenOverrideConnectingText",
+      "connectionScreenOverrideInvalidText",
+      "connectionScreenOverrideUnavailableText",
+      "connectionScreenAppTemplateId",
+      "connectionScreenAppTemplateData",
+    ],
+    requiredConfigKeys: [],
+  },
+
+  showXAppHtml: {
+    type: "setHTMLAppState",
+    extension: "@cognigy/basic-nodes",
+    category: "message",
+    summary:
+      "xApp: Show HTML — render custom HTML in the xApp. Optionally wait for the user's SDK.submit() result. Requires a preceding initAppSession node.",
+    placement: "flow",
+    configKeys: [
+      "mode",
+      "html",
+      "body",
+      "waitForInput",
+      "storeResultInContext",
+      "contextKey",
+      "autoOpen",
+      "closeOnSubmit",
+      "feedbackMessage",
+      "screenTitle",
+      "sendEventOnCloseIconClick",
+      "showCloseIcon",
+    ],
+    requiredConfigKeys: [],
+  },
+
+  showXAppAdaptiveCard: {
+    type: "setAdaptiveCardAppState",
+    extension: "@cognigy/basic-nodes",
+    category: "message",
+    summary:
+      "xApp: Show Adaptive Card — render an Adaptive Card in the xApp. Optionally wait for the user's submit result. Requires a preceding initAppSession node.",
+    placement: "flow",
+    configKeys: [
+      "card",
+      "primaryColor",
+      "primaryContrastColor",
+      "waitForInput",
+      "storeResultInContext",
+      "contextKey",
+      "autoOpen",
+      "closeOnSubmit",
+      "feedbackMessage",
+      "screenTitle",
+      "sendEventOnCloseIconClick",
+      "showCloseIcon",
+    ],
+    requiredConfigKeys: ["card"],
+  },
+
+  setXAppState: {
+    type: "setAppState",
+    extension: "@cognigy/basic-nodes",
+    category: "message",
+    summary:
+      "xApp: Set State — render a Cognigy App Template by id with data. Requires a preceding initAppSession node.",
+    placement: "flow",
+    configKeys: ["appTemplateId", "appTemplateData"],
+    requiredConfigKeys: ["appTemplateId"],
+  },
+
+  getXAppSessionPin: {
+    type: "getAppSessionPin",
+    extension: "@cognigy/basic-nodes",
+    category: "service",
+    summary:
+      "xApp: Get Session PIN — retrieve a short-lived session PIN into input.apps.session.pin (and PIN page URL into input.apps.baseUrl). Requires a preceding initAppSession node.",
+    placement: "flow",
+    configKeys: [],
+    requiredConfigKeys: [],
+  },
+
   setSessionConfig: {
     type: "setSessionConfig",
     extension: "@cognigy/voicegateway2",

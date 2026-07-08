@@ -1859,6 +1859,145 @@ describe("ToolHandlers v2", () => {
   });
 
   // =========================================================================
+  // manage_flow_nodes — xApp nodes
+  // =========================================================================
+  describe("manage_flow_nodes — xApp nodes", () => {
+    const newNode = "60d5ec49f1a2c8b1a4e0f0aa";
+
+    it("creates an initAppSession node on @cognigy/basic-nodes with config passthrough", async () => {
+      api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
+
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "initAppSession",
+        label: "xApp: Init Session",
+        config: { pageTitle: "Booking", logo: "default" },
+      });
+
+      expect(result.type).toBe("initAppSession");
+      expect(result._hints).toBeUndefined();
+      // initAppSession is not xApp-dependent → no node-list lookup
+      expect(api.get).not.toHaveBeenCalled();
+      expect(api.post).toHaveBeenCalledWith(
+        expect.stringContaining("/chart/nodes"),
+        expect.objectContaining({
+          type: "initAppSession",
+          extension: "@cognigy/basic-nodes",
+          config: { pageTitle: "Booking", logo: "default" },
+        }),
+      );
+    });
+
+    it("creates a showXAppAdaptiveCard preserving the card object, no warning when init session exists", async () => {
+      api.get.mockResolvedValueOnce({ items: [{ type: "initAppSession" }] });
+      api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
+
+      const card = {
+        type: "AdaptiveCard",
+        body: [{ type: "Input.Text", id: "nickname" }],
+      };
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "showXAppAdaptiveCard",
+        label: "xApp: Show Card",
+        config: { card, waitForInput: true, contextKey: "result" },
+      });
+
+      expect(result.type).toBe("setAdaptiveCardAppState");
+      expect(result._hints).toBeUndefined();
+      expect(api.post).toHaveBeenCalledWith(
+        expect.stringContaining("/chart/nodes"),
+        expect.objectContaining({
+          type: "setAdaptiveCardAppState",
+          extension: "@cognigy/basic-nodes",
+          config: expect.objectContaining({ card, waitForInput: true }),
+        }),
+      );
+    });
+
+    it("warns when creating an xApp node with no initAppSession in the flow", async () => {
+      api.get.mockResolvedValueOnce({ items: [{ type: "say" }] });
+      api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
+
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "showXAppHtml",
+        label: "xApp: Show HTML",
+        config: { mode: "body", body: "<p>hi</p>" },
+      });
+
+      expect(result.type).toBe("setHTMLAppState");
+      expect(result._hints?.warning).toMatch(/Init Session/i);
+    });
+
+    it("requires the card config for showXAppAdaptiveCard", async () => {
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "showXAppAdaptiveCard",
+        label: "xApp: Show Card",
+        config: {},
+      });
+
+      expect(result.error).toMatch(/card/);
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it("creates a setXAppState preserving the appTemplateData object", async () => {
+      api.get.mockResolvedValueOnce({ items: [{ type: "initAppSession" }] });
+      api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
+
+      const appTemplateData = { customerId: "42", nested: { a: 1 } };
+      await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "setXAppState",
+        label: "xApp: Set State",
+        config: { appTemplateId: "tmpl-1", appTemplateData },
+      });
+
+      expect(api.post).toHaveBeenCalledWith(
+        expect.stringContaining("/chart/nodes"),
+        expect.objectContaining({
+          type: "setAppState",
+          config: { appTemplateId: "tmpl-1", appTemplateData },
+        }),
+      );
+    });
+
+    it("creates a getXAppSessionPin node with no config", async () => {
+      api.get.mockResolvedValueOnce({ items: [{ type: "initAppSession" }] });
+      api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
+
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "getXAppSessionPin",
+        label: "xApp: Get Session PIN",
+      });
+
+      expect(result.type).toBe("getAppSessionPin");
+      const postBody = api.post.mock.calls[0][1] as any;
+      expect(postBody.config).toBeUndefined();
+    });
+  });
+
+  // =========================================================================
   // create_ai_agent — LLM auto-assignment
   // =========================================================================
   describe("create_ai_agent — LLM auto-assignment", () => {
