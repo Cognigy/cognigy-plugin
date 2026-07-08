@@ -3472,9 +3472,9 @@ export class ToolHandlers {
         if (missingInitAppSession) {
           return withHints(result, {
             warning:
-              "This xApp node has no preceding xApp: Init Session (initAppSession) node in the flow. Init Session must run first — it creates the session and populates input.apps.url.",
+              "No xApp: Init Session (initAppSession) node exists in this flow. Every xApp node needs one, and it must run before this node — it creates the session and populates input.apps.url. (This check only verifies presence, not execution order.)",
             action:
-              "Create an initAppSession node earlier in this tool branch, before this xApp node.",
+              "Add an initAppSession node and ensure it runs before this xApp node (earlier in the same tool branch).",
           });
         }
 

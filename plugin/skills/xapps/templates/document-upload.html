@@ -33,8 +33,10 @@
     <ul id="list"></ul>
     <button id="submit" type="button" disabled>Upload</button>
     <script>
-      const injected = `{{ context.uploadConfig ? JSON.stringify(context.uploadConfig) : "" }}`;
-      const cfg = (() => { try { return JSON.parse(injected); } catch (e) { return {}; } })();
+      // context.uploadConfig is URL-encoded on the server side so no raw quote/backtick/
+      // `</script>` can break out of this literal, then decoded here.
+      const injected = `{{ context.uploadConfig ? encodeURIComponent(JSON.stringify(context.uploadConfig)) : "" }}`;
+      const cfg = (() => { try { return JSON.parse(decodeURIComponent(injected)); } catch (e) { return {}; } })();
       const maxFiles = cfg.maxFiles || 5;
       const maxSize = (cfg.maxSizeMB || 5) * 1024 * 1024;
       if (cfg.accept) document.getElementById("file").accept = cfg.accept;

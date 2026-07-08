@@ -30,9 +30,10 @@
     <div id="grid"></div>
     <button id="submit" type="button" disabled>Confirm selection</button>
     <script>
-      // CognigyScript interpolation: resolves to context.seatMap JSON, or "" if unset.
-      const injected = `{{ context.seatMap ? JSON.stringify(context.seatMap) : "" }}`;
-      const map = (() => { try { return JSON.parse(injected); } catch (e) { return {}; } })();
+      // CognigyScript interpolation: context.seatMap is URL-encoded on the server side
+      // so no raw quote/backtick/`</script>` can break out of this literal, then decoded here.
+      const injected = `{{ context.seatMap ? encodeURIComponent(JSON.stringify(context.seatMap)) : "" }}`;
+      const map = (() => { try { return JSON.parse(decodeURIComponent(injected)); } catch (e) { return {}; } })();
       const rows = map.rows || 5;
       const cols = map.cols || 8;
       const unavailable = new Set(map.unavailable || []);

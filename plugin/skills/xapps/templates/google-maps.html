@@ -28,8 +28,10 @@
     <div id="addr">No location selected.</div>
     <button id="submit" type="button" disabled>Confirm location</button>
     <script>
-      const injected = `{{ context.mapConfig ? JSON.stringify(context.mapConfig) : "" }}`;
-      const mapCfg = (() => { try { return JSON.parse(injected); } catch (e) { return {}; } })();
+      // context.mapConfig is URL-encoded on the server side so no raw quote/backtick/
+      // `</script>` can break out of this literal, then decoded here.
+      const injected = `{{ context.mapConfig ? encodeURIComponent(JSON.stringify(context.mapConfig)) : "" }}`;
+      const mapCfg = (() => { try { return JSON.parse(decodeURIComponent(injected)); } catch (e) { return {}; } })();
       const center = mapCfg.center || { lat: 52.52, lng: 13.405 };
       const zoom = mapCfg.zoom || 12;
       let picked = null;
