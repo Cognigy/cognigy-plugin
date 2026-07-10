@@ -43,6 +43,9 @@ tool node ──appendChild──▶ initAppSession
 5. List nodes — manage_flow_nodes { operation: 'list', flowId }
 ```
 
+To let the user **open the xApp from a button** (rather than an inline overlay), add a `say`
+node with a `web_url` button after step 2 — see "Rendering an Open-xApp button" below.
+
 ## Node types
 
 ### initAppSession — xApp: Init Session
@@ -136,13 +139,43 @@ so the user can open the xApp on another device via a PIN.
 
 ## Accessing xApp data
 
-- **Session URL** — `input.apps.url`. Use it as a Say-node button/quick-reply payload of type
-  `openXApp` with value `{{input.apps.url}}` to give the user a link into the xApp.
+- **Session URL** — `input.apps.url`. Render it as a **button** so the user opens the xApp
+  with a tap instead of a bare link — see "Rendering an Open-xApp button" below.
 - **Session PIN** — `input.apps.session.pin` (after `getXAppSessionPin`); PIN page at
   `input.apps.baseUrl`.
 - **Submitted data** — `input.data._cognigy._app.payload`. When the show node has
   `waitForInput` + `storeResultInContext`, it's also written to `context.<contextKey>`
   (default `context.result`).
+
+## Rendering an Open-xApp button
+
+To give the user a tappable **button** into the xApp (instead of a plain link), add a `say`
+node with buttons **after** `initAppSession` — the button carries `{{input.apps.url}}`.
+
+**Use a `web_url` button, not an `openXApp` button.** The dedicated "Open xApp" button type is
+unreliable in practice; a plain URL button pointing at `{{input.apps.url}}` renders as a button
+and opens the xApp as expected. Set the button `title` to something relevant to the app
+("Open booking", "Pick your seats", "Upload document", …) — not a generic "Open".
+
+```
+manage_flow_nodes {
+  operation: 'create',
+  flowId,
+  parentNodeId: '<initSessionNodeId>',
+  mode: 'append',
+  nodeType: 'say',
+  label: 'Open xApp button',
+  config: {
+    text: 'Tap below to get started.',
+    buttons: [
+      { title: 'Pick your seats', type: 'web_url', url: '{{input.apps.url}}' }
+    ]
+  }
+}
+```
+
+Button config keys: `title` (label), `type: 'web_url'`, `url: '{{input.apps.url}}'`. Order
+this node after `initAppSession` so `input.apps.url` is populated by the time it runs.
 
 ## Use-case templates
 
