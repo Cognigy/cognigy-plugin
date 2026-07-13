@@ -1,3 +1,9 @@
+## [1.4.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.3.1...v1.4.0) (2026-07-13)
+
+### Features
+
+* add xApps support (flow nodes + use-case templates) ([#9](https://github.com/Cognigy/cognigy-plugin/issues/9)) ([fdb6fde](https://github.com/Cognigy/cognigy-plugin/commit/fdb6fdee6c4331a9dcdd06eabee57cfc03985785))
+
 ## [1.3.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.3.0...v1.3.1) (2026-07-04)
 
 ### Bug Fixes
