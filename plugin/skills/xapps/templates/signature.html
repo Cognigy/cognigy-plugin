@@ -1,0 +1,80 @@
+<!--
+  xApp template: Signature capture
+  Node:        showXAppHtml  (config.mode = "full")
+  Context in:  (none required)
+  Result out:  input.data._cognigy._app.payload = { signature: "<PNG data URL>", signed: true }
+               with waitForInput + storeResultInContext → context.<contextKey>
+  Prereqs:     none. Draw on the canvas (mouse or touch), then Submit.
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <!-- Cognigy xApp Page SDK — exposes the global `SDK` -->
+    <script src="/sdk/app-page-sdk.js"></script>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; }
+      #pad { border: 1px solid #999; border-radius: 8px; touch-action: none; width: 100%; height: 220px; background: #fff; }
+      .row { display: flex; gap: 8px; margin-top: 12px; }
+      button { flex: 1; padding: 12px; border: 0; border-radius: 8px; font-size: 16px; cursor: pointer; }
+      #submit { background: #2b6cb0; color: #fff; }
+      #clear { background: #e2e8f0; }
+      #submit:disabled { opacity: .5; cursor: default; }
+    </style>
+  </head>
+  <body>
+    <p>Please sign below.</p>
+    <canvas id="pad"></canvas>
+    <div class="row">
+      <button id="clear" type="button">Clear</button>
+      <button id="submit" type="button" disabled>Submit</button>
+    </div>
+    <script>
+      const canvas = document.getElementById("pad");
+      const ctx = canvas.getContext("2d");
+      const submitBtn = document.getElementById("submit");
+      let drawing = false;
+      let dirty = false;
+
+      function resize() {
+        const ratio = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width * ratio;
+        canvas.height = rect.height * ratio;
+        ctx.scale(ratio, ratio);
+        ctx.lineWidth = 2;
+        ctx.lineCap = "round";
+        ctx.strokeStyle = "#111";
+      }
+      resize();
+
+      function pos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const p = e.touches ? e.touches[0] : e;
+        return { x: p.clientX - rect.left, y: p.clientY - rect.top };
+      }
+      function start(e) { drawing = true; const { x, y } = pos(e); ctx.beginPath(); ctx.moveTo(x, y); e.preventDefault(); }
+      function move(e) { if (!drawing) return; const { x, y } = pos(e); ctx.lineTo(x, y); ctx.stroke(); dirty = true; submitBtn.disabled = false; e.preventDefault(); }
+      function end() { drawing = false; }
+
+      canvas.addEventListener("mousedown", start);
+      canvas.addEventListener("mousemove", move);
+      window.addEventListener("mouseup", end);
+      canvas.addEventListener("touchstart", start, { passive: false });
+      canvas.addEventListener("touchmove", move, { passive: false });
+      canvas.addEventListener("touchend", end);
+
+      document.getElementById("clear").addEventListener("click", () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        dirty = false;
+        submitBtn.disabled = true;
+      });
+
+      submitBtn.addEventListener("click", () => {
+        if (!dirty) return;
+        SDK.submit({ signature: canvas.toDataURL("image/png"), signed: true });
+      });
+    </script>
+  </body>
+</html>
