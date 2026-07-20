@@ -1,8 +1,11 @@
 /**
  * The Claude Desktop launcher. Claude Desktop has no plugin marketplace and no
- * `${user_config}` interpolation, so — unlike Claude Code, which gets updates
- * from `plugin/bin/launch.mjs` keyed off the plugin.json pin — Desktop needs a
- * launcher that decides on its own when to pull a new engine.
+ * `${user_config}` interpolation, so — unlike Claude Code, whose plugin runs
+ * the engine via a pinned `npx @cognigy/plugin-engine@<version> cognigy-mcp`
+ * command — Desktop needs a launcher that decides on its own when to pull a new
+ * engine. This launcher is a LOCAL file written to ~/.cognigy-plugin/ (not a
+ * marketplace-distributed plugin file), so it is not subject to Desktop's
+ * server-side plugin scan and may safely npm-install + spawn at boot.
  *
  * This module owns the launcher's SOURCE (written verbatim to
  * ~/.cognigy-plugin/desktop-launch.mjs by the installer) and a writer for it.
@@ -128,7 +131,7 @@ if (latest && latest !== current) {
 
 if (!existsSync(engineEntry)) {
   note(\`no engine present at \${engineEntry} and the registry is unreachable.\`);
-  note(\`connect to a network and restart Claude Desktop, or re-run: npx \${PKG}@latest cognigy-setup\`);
+  note(\`connect to a network and restart Claude Desktop, or re-run: npx -y -p \${PKG}@latest cognigy-setup\`);
   process.exit(1);
 }
 
