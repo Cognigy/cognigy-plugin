@@ -1,3 +1,9 @@
+## [1.4.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.4.0...v1.4.1) (2026-07-20)
+
+### Bug Fixes
+
+* **plugin:** launch engine via npx so Desktop marketplace sync works ([#10](https://github.com/Cognigy/cognigy-plugin/issues/10)) ([4ca7fa4](https://github.com/Cognigy/cognigy-plugin/commit/4ca7fa412fa64ca31cd8044b7d6e3cd99cad7bee)), closes [#7](https://github.com/Cognigy/cognigy-plugin/issues/7)
+
 ## [1.4.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.3.1...v1.4.0) (2026-07-13)
 
 ### Features
