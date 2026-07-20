@@ -33,9 +33,9 @@ instead — it reads `.claude-plugin/marketplace.json` at the path you give:
 
 Then:
 
-1. On first boot, the plugin's launcher (`plugin/bin/launch.mjs`) installs `@cognigy/plugin-engine`
-   pinned to the plugin's own version into `${CLAUDE_PLUGIN_DATA}` (only when the installed version
-   differs), then launches it. No `@latest` float, no install hook.
+1. On first boot, the plugin's `mcpServers` command runs `npx -y -p @cognigy/plugin-engine@<version> cognigy-mcp`,
+   which fetches the engine pinned to the plugin's own version (kept in lockstep by semantic-release)
+   and launches it. npx caches by version, so repeat boots are fast/offline once fetched. No `@latest` float.
 2. Provide your `COGNIGY_API_BASE_URL` and `COGNIGY_API_KEY` when prompted.
 3. Verify the tools are available under the `mcp__plugin_cognigy_platform__` prefix and that
    skills auto-load on intent.

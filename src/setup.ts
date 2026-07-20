@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * `cognigy-setup` — one-command installer for the NiCE Cognigy Plugin.
- * Run: `npx @cognigy/plugin-engine@latest cognigy-setup`.
+ * Run: `npx -y -p @cognigy/plugin-engine@latest cognigy-setup`.
  *
  * Collects the Cognigy API base URL + key (key masked, never echoed or written
  * to shell history), asks which client(s) to set up, and performs the full

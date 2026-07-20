@@ -49,7 +49,7 @@ In any terminal (requires [Node.js 20+](https://nodejs.org)):
 > **On Windows:** open the terminal **as Administrator** before running the command below.
 
 ```
-npx @cognigy/plugin-engine@latest cognigy-setup
+npx -y -p @cognigy/plugin-engine@latest cognigy-setup
 ```
 
 Pick your client(s), enter your Cognigy API base URL (press Enter for the trial default) and API key (masked as you type), then restart the client.
@@ -90,7 +90,7 @@ The plugin ships its own connector (`platform`), but on **Claude Desktop chat** 
 **Scripting / CI** — skip the prompts with flags:
 
 ```
-npx @cognigy/plugin-engine@latest cognigy-setup \
+npx -y -p @cognigy/plugin-engine@latest cognigy-setup \
   --client claude-code --client claude-desktop \
   --api-base-url https://api-trial.cognigy.ai --api-key <key>
 ```
@@ -102,7 +102,7 @@ npx @cognigy/plugin-engine@latest cognigy-setup \
 /plugin install cognigy@cognigy-plugin
 ```
 
-then `npx @cognigy/plugin-engine@latest cognigy-setup --client claude-code` to wire credentials.
+then `npx -y -p @cognigy/plugin-engine@latest cognigy-setup --client claude-code` to wire credentials.
 
 </details>
 

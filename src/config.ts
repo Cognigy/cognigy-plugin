@@ -146,14 +146,14 @@ export function loadConfig(): Config {
   if (!apiBaseUrl) {
     throw new Error(
       `COGNIGY_API_BASE_URL is not set. Provide it via the plugin install prompt, ` +
-        `or run "npx @cognigy/plugin-engine cognigy-setup" to write ${USER_CONFIG_FILE}.`,
+        `or run "npx -y -p @cognigy/plugin-engine cognigy-setup" to write ${USER_CONFIG_FILE}.`,
     );
   }
 
   if (!apiKey) {
     throw new Error(
       `COGNIGY_API_KEY is not set. Provide it via the plugin install prompt, ` +
-        `or run "npx @cognigy/plugin-engine cognigy-setup" to write ${USER_CONFIG_FILE}.`,
+        `or run "npx -y -p @cognigy/plugin-engine cognigy-setup" to write ${USER_CONFIG_FILE}.`,
     );
   }
 

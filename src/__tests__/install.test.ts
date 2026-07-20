@@ -248,15 +248,19 @@ describe("isMainModule", () => {
 });
 
 describe("package.json bin", () => {
-  it("declares exactly one bin so `npx <pkg> cognigy-setup` resolves", () => {
-    // npx treats a positional after the package as an ARG to the default bin,
-    // not a bin selector. With one bin npx runs it; a second bin makes npx
-    // need a default named after the (scope-stripped) package, which we don't
-    // have, so `npx @cognigy/plugin-engine@latest cognigy-setup` throws
-    // "could not determine executable to run". Keep it to one bin.
+  it("declares both bins; all invocations must use the `npx -p` form", () => {
+    // Two bins (cognigy-setup, cognigy-mcp) mean npx cannot pick a default —
+    // a bare `npx @cognigy/plugin-engine cognigy-setup` treats the positional
+    // as an ARG, not a bin selector, and throws "could not determine
+    // executable to run". Every invocation MUST name the command explicitly
+    // via `npx -y -p @cognigy/plugin-engine[@ver] <bin>` (the plugin's
+    // mcpServers command and every documented `cognigy-setup` command do).
     const pkgPath = join(process.cwd(), "package.json");
     const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
-    expect(Object.keys(pkg.bin)).toEqual(["cognigy-setup"]);
+    expect(Object.keys(pkg.bin).sort()).toEqual([
+      "cognigy-mcp",
+      "cognigy-setup",
+    ]);
   });
 });
 
