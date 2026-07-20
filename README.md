@@ -44,9 +44,21 @@ Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, flow 
 
 ### Step 1 — Run the installer
 
-In any terminal (requires [Node.js 20+](https://nodejs.org)):
+**macOS / Linux** — one line (checks for Node.js, then runs the installer):
 
-> **On Windows:** open the terminal **as Administrator** before running the command below.
+```
+bash <(curl -fsSL https://raw.githubusercontent.com/Cognigy/cognigy-plugin/main/install.sh)
+```
+
+**Windows (PowerShell)** — open as **Administrator**, then:
+
+```
+irm https://raw.githubusercontent.com/Cognigy/cognigy-plugin/main/install.ps1 | iex
+```
+
+> The bootstrap only checks that Node.js 20+ is present (it tells you how to install it if not — it never installs it for you), then hands off to the real installer.
+
+Already have [Node.js 20+](https://nodejs.org)? You can skip the bootstrap and run the installer directly:
 
 ```
 npx -y -p @cognigy/plugin-engine@latest cognigy-setup
@@ -54,7 +66,9 @@ npx -y -p @cognigy/plugin-engine@latest cognigy-setup
 
 Pick your client(s), enter your Cognigy API base URL (press Enter for the trial default) and API key (masked as you type), then restart the client.
 
-✅ **Claude Code users — you're done.** You get the tools, skills, and agents.
+✅ **Claude Code users — you're done.** You get the tools, skills, and agents. (The standalone CLI and the Claude Desktop **"Code"** tab share the same install.)
+
+> **Only have Claude Desktop, no `claude` CLI?** The installer wires the chat connector (tools) and prints how to add the plugin in the Desktop **Code** tab's plugin browser (`+` → Plugins → Add plugin → `Cognigy/cognigy-plugin`) for skills + agents.
 
 > **On Windows, after installing for Claude Code:** a normal restart may not be enough to load the plugin. **Fully quit** Claude Code — end every **Claude** process in **Task Manager** (a normal close can leave it running in the background), then reopen it. If the tools, skills, and agents still don't appear, **restart your machine**.
 
@@ -109,6 +123,14 @@ then `npx -y -p @cognigy/plugin-engine@latest cognigy-setup --client claude-code
 ## Staying up to date
 
 Claude Desktop auto-updates the engine on every launch. Claude Code updates only when marketplace auto-update is enabled (third-party marketplaces default **off**): turn it on under `/plugin → Marketplaces → cognigy-plugin`, or run `/plugin update cognigy@cognigy-plugin`. The first Claude Code session downloads the engine — if tools don't appear, run `/mcp` and reconnect (or restart); later sessions are instant.
+
+The installer also doubles as a manager (run the same `cognigy-setup` with a subcommand):
+
+```
+npx -y -p @cognigy/plugin-engine@latest cognigy-setup status      # what's installed + latest available
+npx -y -p @cognigy/plugin-engine@latest cognigy-setup update      # pull the latest (Claude Code)
+npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall   # remove plugin + connector (--purge also clears ~/.cognigy-plugin)
+```
 
 Beyond the MCP tools, the plugin ships **skills** and **agents** that surface the workflows automatically:
 
