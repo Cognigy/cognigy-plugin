@@ -32,7 +32,12 @@ import {
   DESKTOP_LAUNCHER_SOURCE,
   writeDesktopLauncher,
 } from "../install/desktopLauncher.js";
-import { isMainModule, parseClientSelection, parseFlags } from "../setup.js";
+import {
+  isMainModule,
+  parseClientSelection,
+  parseFlags,
+  parseSubcommand,
+} from "../setup.js";
 
 const tmpDirs: string[] = [];
 function freshDir(): string {
@@ -363,5 +368,39 @@ describe("parseClientSelection", () => {
 
   it("dedupes and drops out-of-range/garbage", () => {
     expect(parseClientSelection("1 1 9 x", [...menu])).toEqual(["claude-code"]);
+  });
+});
+
+describe("parseSubcommand", () => {
+  it("defaults to install with no args", () => {
+    expect(parseSubcommand([])).toEqual({ sub: "install", rest: [] });
+  });
+
+  it("keeps the historical `--client …` (leading flag) form as install", () => {
+    expect(
+      parseSubcommand(["--client", "claude-code", "--api-key", "k"]),
+    ).toEqual({
+      sub: "install",
+      rest: ["--client", "claude-code", "--api-key", "k"],
+    });
+  });
+
+  it("recognises an explicit subcommand and strips it", () => {
+    expect(parseSubcommand(["status"])).toEqual({ sub: "status", rest: [] });
+    expect(parseSubcommand(["uninstall", "--purge", "-y"])).toEqual({
+      sub: "uninstall",
+      rest: ["--purge", "-y"],
+    });
+  });
+
+  it("handles `install` with trailing flags", () => {
+    expect(parseSubcommand(["install", "--client", "claude-desktop"])).toEqual({
+      sub: "install",
+      rest: ["--client", "claude-desktop"],
+    });
+  });
+
+  it("returns an unknown non-flag word verbatim (so main can reject it)", () => {
+    expect(parseSubcommand(["bogus"])).toEqual({ sub: "bogus", rest: [] });
   });
 });

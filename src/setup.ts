@@ -463,7 +463,15 @@ async function runUninstall(argv: string[]): Promise<void> {
   const purge = argv.includes("--purge");
   const assumeYes = argv.includes("--yes") || argv.includes("-y");
   process.stdout.write(bold(cyan("\nUninstalling NiCE Cognigy Plugin\n\n")));
-  if (process.stdin.isTTY && !assumeYes) {
+  if (!assumeYes) {
+    // Never delete without an explicit yes. Non-interactive (piped/CI) has no
+    // way to answer the prompt, so require --yes there rather than proceeding.
+    if (!process.stdin.isTTY) {
+      process.stderr.write(
+        "Refusing to uninstall non-interactively. Re-run with --yes (add --purge to also delete ~/.cognigy-plugin).\n",
+      );
+      process.exit(1);
+    }
     const ans = await ask(
       `Remove the Cognigy plugin (Claude Code) and connector (Desktop)${purge ? " and delete ~/.cognigy-plugin" : ""}? [y/N]: `,
     );
@@ -475,8 +483,15 @@ async function runUninstall(argv: string[]): Promise<void> {
 
   const code = uninstallClaudeCode();
   if (code.method === "cli") {
+    const parts = [
+      code.removedPlugin ? "plugin" : null,
+      code.removedMarketplace ? "marketplace" : null,
+    ].filter(Boolean);
     process.stdout.write(
-      green("✓ Claude Code") + ": plugin + marketplace removed.\n",
+      parts.length
+        ? green("✓ Claude Code") + `: removed ${parts.join(" + ")}.\n`
+        : dim("• Claude Code") +
+            ": nothing to remove (plugin/marketplace not installed via the CLI).\n",
     );
   } else {
     process.stdout.write(
@@ -498,12 +513,26 @@ async function runUninstall(argv: string[]): Promise<void> {
   );
 }
 
+/**
+ * Split argv into a subcommand + the remaining args. The first token is the
+ * subcommand only when it's a non-flag positional; a leading flag (e.g.
+ * `--client`) keeps the historical `cognigy-setup --client …` form by defaulting
+ * to `install`. An unknown non-flag word is returned verbatim so main() can
+ * reject it (rather than silently treating a typo as `install`).
+ */
+export function parseSubcommand(raw: string[]): {
+  sub: string;
+  rest: string[];
+} {
+  const first = raw[0];
+  if (first && !first.startsWith("-"))
+    return { sub: first, rest: raw.slice(1) };
+  return { sub: "install", rest: raw };
+}
+
 async function main(): Promise<void> {
   const raw = process.argv.slice(2).filter((a) => a !== "setup");
-  // First non-flag positional is the subcommand; default to install. A leading
-  // flag (e.g. --client) keeps the historical `cognigy-setup --client …` form.
-  const sub = raw[0] && !raw[0].startsWith("-") ? raw[0] : "install";
-  const rest = sub === raw[0] ? raw.slice(1) : raw;
+  const { sub, rest } = parseSubcommand(raw);
   switch (sub) {
     case "install":
       break;

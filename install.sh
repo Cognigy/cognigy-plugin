@@ -5,8 +5,8 @@
 #   bash <(curl -fsSL https://raw.githubusercontent.com/Cognigy/cognigy-plugin/main/install.sh)
 #
 # This is a THIN bootstrap: it only ensures Node.js is present, then hands off to
-# the real installer (`cognigy-setup`, fetched from npm at the pinned version).
-# It never installs Node for you — if Node is missing it tells you how to get it
+# the real installer (`cognigy-setup`, fetched from npm — the latest published
+# version). It never installs Node for you — if Node is missing it tells you how to get it
 # and exits, so nothing on your machine is changed behind your back.
 #
 # NOTE: do NOT pipe this via `curl ... | bash` — a pipe steals stdin, so the
