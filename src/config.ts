@@ -59,20 +59,30 @@ function normalizeApiBaseUrl(raw: string): string {
 }
 
 /**
- * Derive the endpoint base URL from the API base URL.
- * Pattern: https://api-{env}.cognigy.ai -> https://endpoint-{env}.cognigy.ai
+ * Derive a sibling base URL from the API base URL by swapping the "api-"
+ * segment of the hostname for another one (e.g. "endpoint-", "static-").
+ * Handles both bare hosts (api-dev.cognigy.ai) and prefixed tenant hosts
+ * (cognigy-api-na1.nicecxone.com -> cognigy-endpoint-na1.nicecxone.com).
  */
-function deriveEndpointBaseUrl(apiBaseUrl: string): string {
+function deriveHostBaseUrl(apiBaseUrl: string, replacement: string): string {
   try {
     const url = new URL(apiBaseUrl);
-    const match = url.hostname.match(/^api-(.+)$/);
+    const match = url.hostname.match(/^(.*?)api-(.+)$/);
     if (match) {
-      return `${url.protocol}//endpoint-${match[1]}`;
+      return `${url.protocol}//${match[1]}${replacement}-${match[2]}`;
     }
   } catch {
     // fall through
   }
-  return apiBaseUrl.replace(/\/api-/, "/endpoint-");
+  return apiBaseUrl.replace(/api-/, `${replacement}-`);
+}
+
+/**
+ * Derive the endpoint base URL from the API base URL.
+ * Pattern: https://api-{env}.cognigy.ai -> https://endpoint-{env}.cognigy.ai
+ */
+function deriveEndpointBaseUrl(apiBaseUrl: string): string {
+  return deriveHostBaseUrl(apiBaseUrl, "endpoint");
 }
 
 /**
@@ -80,16 +90,7 @@ function deriveEndpointBaseUrl(apiBaseUrl: string): string {
  * Pattern: https://api-{env}.cognigy.ai -> https://static-{env}.cognigy.ai
  */
 function deriveStaticFilesBaseUrl(apiBaseUrl: string): string {
-  try {
-    const url = new URL(apiBaseUrl);
-    const match = url.hostname.match(/^api-(.+)$/);
-    if (match) {
-      return `${url.protocol}//static-${match[1]}`;
-    }
-  } catch {
-    // fall through
-  }
-  return apiBaseUrl.replace(/\/api-/, "/static-");
+  return deriveHostBaseUrl(apiBaseUrl, "static");
 }
 
 /**
@@ -97,16 +98,7 @@ function deriveStaticFilesBaseUrl(apiBaseUrl: string): string {
  * Pattern: https://api-{env}.cognigy.ai -> https://webchat-{env}.cognigy.ai
  */
 function deriveWebchatBaseUrl(apiBaseUrl: string): string {
-  try {
-    const url = new URL(apiBaseUrl);
-    const match = url.hostname.match(/^api-(.+)$/);
-    if (match) {
-      return `${url.protocol}//webchat-${match[1]}`;
-    }
-  } catch {
-    // fall through
-  }
-  return apiBaseUrl.replace(/\/api-/, "/webchat-");
+  return deriveHostBaseUrl(apiBaseUrl, "webchat");
 }
 
 const VALID_LOG_LEVELS = new Set<string>(["debug", "info", "warn", "error"]);
