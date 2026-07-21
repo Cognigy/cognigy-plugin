@@ -79,6 +79,22 @@ describe("loadConfig", () => {
     expect(config.webchatBaseUrl).toBe("https://webchat-trial.cognigy.ai");
   });
 
+  it("derives endpoint/static/webchat URLs from a tenant host with a prefixed api- segment", () => {
+    process.env.COGNIGY_API_BASE_URL = "https://cognigy-api-na1.nicecxone.com";
+    process.env.COGNIGY_API_KEY = "test-key";
+    const config = loadConfig();
+    expect(config.apiBaseUrl).toBe("https://cognigy-api-na1.nicecxone.com");
+    expect(config.endpointBaseUrl).toBe(
+      "https://cognigy-endpoint-na1.nicecxone.com",
+    );
+    expect(config.webchatBaseUrl).toBe(
+      "https://cognigy-webchat-na1.nicecxone.com",
+    );
+    expect(config.staticFilesBaseUrl).toBe(
+      "https://cognigy-static-na1.nicecxone.com",
+    );
+  });
+
   it("uses explicit COGNIGY_ENDPOINT_BASE_URL if provided", () => {
     process.env.COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai";
     process.env.COGNIGY_API_KEY = "test-key";
