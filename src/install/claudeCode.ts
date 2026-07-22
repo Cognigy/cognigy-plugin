@@ -22,6 +22,21 @@ export function buildMarketplaceAddArgs(): string[] {
   return ["plugin", "marketplace", "add", MARKETPLACE];
 }
 
+/** `claude plugin update <id>` — pull the latest plugin version. */
+export function buildPluginUpdateArgs(): string[] {
+  return ["plugin", "update", PLUGIN_ID];
+}
+
+/** `claude plugin uninstall <id>`. */
+export function buildPluginUninstallArgs(): string[] {
+  return ["plugin", "uninstall", PLUGIN_ID];
+}
+
+/** `claude plugin marketplace remove <name>`. */
+export function buildMarketplaceRemoveArgs(): string[] {
+  return ["plugin", "marketplace", "remove", MARKETPLACE_NAME];
+}
+
 /** `claude plugin install <id> --scope user --config k=v ...`. */
 export function buildPluginInstallArgs(creds: UserConfigFile): string[] {
   return [
@@ -114,4 +129,68 @@ export function installClaudeCode(creds: UserConfigFile): ClaudeCodeResult {
   }
 
   return { method: "cli" };
+}
+
+/** `/plugin` commands to update / uninstall by hand when the CLI isn't present. */
+export function updateFallbackCommands(): string[] {
+  return [`/plugin update ${PLUGIN_ID}`];
+}
+export function uninstallFallbackCommands(): string[] {
+  return [
+    `/plugin uninstall ${PLUGIN_ID}`,
+    `/plugin marketplace remove ${MARKETPLACE_NAME}`,
+  ];
+}
+
+/** The one-time toggle that opts a third-party marketplace into auto-update. */
+export function autoUpdateHint(): string {
+  return `/plugin → Marketplaces → ${MARKETPLACE_NAME} → enable auto-update`;
+}
+
+export interface ClaudeCodeActionResult {
+  method: ClaudeCodeMethod;
+  commands?: string[];
+}
+
+/** Update the plugin via the CLI when present; else return the manual command. */
+export function updateClaudeCode(): ClaudeCodeActionResult {
+  const claudePath = detectClaudePath();
+  if (!claudePath)
+    return { method: "fallback", commands: updateFallbackCommands() };
+  const res = runClaude(claudePath, buildPluginUpdateArgs());
+  if (res.status !== 0 || res.error) {
+    const reason = res.error ? res.error.message : `exit ${res.status}`;
+    throw new Error(`'claude plugin update' failed (${reason}).`);
+  }
+  return { method: "cli" };
+}
+
+export interface ClaudeCodeUninstallResult {
+  method: ClaudeCodeMethod;
+  /** CLI only: whether each step actually removed something (exit 0). */
+  removedPlugin?: boolean;
+  removedMarketplace?: boolean;
+  /** Fallback only: the manual `/plugin` commands. */
+  commands?: string[];
+}
+
+/**
+ * Uninstall the plugin + remove the marketplace via the CLI; else manual.
+ * Reports per-step success so callers don't claim a removal that didn't happen
+ * (a "not installed" state exits non-zero — we log-and-continue, not fail).
+ */
+export function uninstallClaudeCode(): ClaudeCodeUninstallResult {
+  const claudePath = detectClaudePath();
+  if (!claudePath)
+    return { method: "fallback", commands: uninstallFallbackCommands() };
+  const un = runClaude(claudePath, buildPluginUninstallArgs());
+  const removedPlugin = un.status === 0 && !un.error;
+  if (!removedPlugin) {
+    process.stderr.write(
+      `[cognigy] 'plugin uninstall ${PLUGIN_ID}' did not remove anything (exit ${un.status}); continuing.\n`,
+    );
+  }
+  const mp = runClaude(claudePath, buildMarketplaceRemoveArgs());
+  const removedMarketplace = mp.status === 0 && !mp.error;
+  return { method: "cli", removedPlugin, removedMarketplace };
 }

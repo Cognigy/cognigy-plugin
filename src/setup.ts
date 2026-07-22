@@ -16,13 +16,25 @@
 import { createInterface } from "readline";
 import { pathToFileURL } from "url";
 import type { UserConfigFile } from "./userConfigFile.js";
-import { detectClaudePath, installClaudeCode } from "./install/claudeCode.js";
 import {
+  autoUpdateHint,
+  detectClaudePath,
+  installClaudeCode,
+  uninstallClaudeCode,
+  updateClaudeCode,
+} from "./install/claudeCode.js";
+import {
+  desktopHasCognigyEntry,
   installClaudeDesktop,
+  installedDesktopEngineVersion,
   resolveDesktopConfigPath,
+  uninstallClaudeDesktop,
 } from "./install/claudeDesktop.js";
 import { existsSync, realpathSync } from "fs";
 import { dirname } from "path";
+import { runNpm } from "./install/npmRunner.js";
+
+const PKG = "@cognigy/plugin-engine";
 
 const DEFAULT_BASE_URL = "https://api-trial.cognigy.ai";
 
@@ -49,8 +61,11 @@ const DELETE = 127;
 type Client = "claude-code" | "claude-desktop";
 const ALL_CLIENTS: Client[] = ["claude-code", "claude-desktop"];
 const CLIENT_LABELS: Record<Client, string> = {
-  "claude-code": "Claude Code (terminal + desktop app)",
-  "claude-desktop": "Claude Desktop (standalone app)",
+  // Post-Apr-2026 Desktop redesign: the standalone CLI and Desktop's "Code" tab
+  // share ~/.claude, so one Claude-Code install serves both. "Claude Desktop"
+  // here means the separate Chat connector wired into claude_desktop_config.json.
+  "claude-code": "Claude Code (CLI + Desktop 'Code' tab)",
+  "claude-desktop": "Claude Desktop chat (standalone connector)",
 };
 
 interface Flags {
@@ -280,15 +295,26 @@ function runInstall(client: Client, creds: UserConfigFile): void {
           dim("(key stored in keychain)") +
           ".\n  Restart Claude Code (or /reload-plugins) to apply. " +
           green("You get tools, skills, and agents.") +
-          "\n",
+          "\n" +
+          dim(
+            "  This install is shared with the Claude Desktop 'Code' tab.\n" +
+              `  To get future fixes automatically, enable auto-update once:\n    ${autoUpdateHint()}\n`,
+          ),
       );
     } else {
+      // No `claude` CLI on PATH. This is the Desktop-only case: `/plugin`
+      // commands only work inside a *terminal* Claude Code session, NOT the
+      // Desktop "Code" tab — there, plugins install via the GUI plugin browser.
       process.stdout.write(
         green("\n✓ Claude Code") +
           `: 'claude' CLI not found — wrote creds to ${res.configFile}.\n` +
-          "  Paste these in Claude Code to finish:\n" +
-          (res.commands ?? []).map((c) => cyan(`    ${c}`)).join("\n") +
-          "\n",
+          "  Finish in whichever Claude Code you use:\n\n" +
+          `  ${bold("• Terminal Claude Code")} — paste these in a session:\n` +
+          (res.commands ?? []).map((c) => cyan(`      ${c}`)).join("\n") +
+          "\n\n" +
+          `  ${bold("• Claude Desktop → 'Code' tab")} — use the plugin browser:\n` +
+          `      ${cyan("1.")} Click ${bold("+")} near the prompt → ${bold("Plugins")} → ${bold("Add plugin")}.\n` +
+          `      ${cyan("2.")} Add the marketplace ${bold("Cognigy/cognigy-plugin")}, then install the ${bold("Cognigy")} plugin.\n`,
       );
     }
     // Windows: a normal Claude Code restart often isn't enough — the old
@@ -358,8 +384,172 @@ function runInstall(client: Client, creds: UserConfigFile): void {
   );
 }
 
+/** Latest published engine version from npm, or null (offline / npm missing). */
+function npmLatestVersion(): string | null {
+  try {
+    const res = runNpm(["view", `${PKG}@latest`, "version"], {
+      capture: true,
+      timeout: 15000,
+    });
+    if (res.status !== 0 || !res.stdout) return null;
+    return res.stdout.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** `status` — report what's installed on each surface + the latest available. */
+function runStatus(): void {
+  const latest = npmLatestVersion();
+  const cliPath = detectClaudePath();
+  const desktopEngine = installedDesktopEngineVersion();
+  const desktopWired = desktopHasCognigyEntry();
+
+  process.stdout.write(bold(cyan("\nNiCE Cognigy Plugin — status\n\n")));
+  process.stdout.write(
+    `  Latest engine on npm: ${latest ? green(latest) : yellow("unknown (offline?)")}\n`,
+  );
+  process.stdout.write(
+    `  Claude Code CLI:      ${cliPath ? green("found") + dim(` (${cliPath})`) : yellow("not on PATH")}\n`,
+  );
+  if (cliPath) {
+    process.stdout.write(
+      dim(
+        "    Plugin version is managed by Claude Code — see `/plugin` → cognigy-plugin.\n",
+      ),
+    );
+  }
+  process.stdout.write(
+    `  Claude Desktop chat:  ${desktopWired ? green("connector wired") : dim("not wired")}` +
+      (desktopEngine ? dim(` · engine ${desktopEngine}`) : "") +
+      "\n",
+  );
+  if (desktopEngine && latest && desktopEngine !== latest) {
+    process.stdout.write(
+      yellow(
+        `    Desktop engine ${desktopEngine} < ${latest} — it auto-updates on the next Desktop restart.\n`,
+      ),
+    );
+  }
+  process.stdout.write("\n");
+}
+
+/** `update` — pull the latest plugin (Claude Code); Desktop auto-updates. */
+function runUpdate(): void {
+  process.stdout.write(bold(cyan("\nUpdating NiCE Cognigy Plugin\n\n")));
+  const res = updateClaudeCode();
+  if (res.method === "cli") {
+    process.stdout.write(
+      green("✓ Claude Code") +
+        ": plugin updated. Restart Claude Code (or /reload-plugins) to apply.\n",
+    );
+  } else {
+    process.stdout.write(
+      yellow("• Claude Code") +
+        ": 'claude' CLI not found. To update, run in a session:\n" +
+        (res.commands ?? []).map((c) => cyan(`    ${c}`)).join("\n") +
+        "\n",
+    );
+  }
+  process.stdout.write(
+    dim(
+      "• Claude Desktop chat connector auto-updates its engine on every restart — nothing to do.\n\n",
+    ),
+  );
+}
+
+/** `uninstall` — remove the plugin + connector. `--purge` also drops ~/.cognigy-plugin. */
+async function runUninstall(argv: string[]): Promise<void> {
+  const purge = argv.includes("--purge");
+  const assumeYes = argv.includes("--yes") || argv.includes("-y");
+  process.stdout.write(bold(cyan("\nUninstalling NiCE Cognigy Plugin\n\n")));
+  if (!assumeYes) {
+    // Never delete without an explicit yes. Non-interactive (piped/CI) has no
+    // way to answer the prompt, so require --yes there rather than proceeding.
+    if (!process.stdin.isTTY) {
+      process.stderr.write(
+        "Refusing to uninstall non-interactively. Re-run with --yes (add --purge to also delete ~/.cognigy-plugin).\n",
+      );
+      process.exit(1);
+    }
+    const ans = await ask(
+      `Remove the Cognigy plugin (Claude Code) and connector (Desktop)${purge ? " and delete ~/.cognigy-plugin" : ""}? [y/N]: `,
+    );
+    if (!/^y(es)?$/i.test(ans)) {
+      process.stdout.write("Aborted.\n");
+      return;
+    }
+  }
+
+  const code = uninstallClaudeCode();
+  if (code.method === "cli") {
+    const parts = [
+      code.removedPlugin ? "plugin" : null,
+      code.removedMarketplace ? "marketplace" : null,
+    ].filter(Boolean);
+    process.stdout.write(
+      parts.length
+        ? green("✓ Claude Code") + `: removed ${parts.join(" + ")}.\n`
+        : dim("• Claude Code") +
+            ": nothing to remove (plugin/marketplace not installed via the CLI).\n",
+    );
+  } else {
+    process.stdout.write(
+      yellow("• Claude Code") +
+        ": 'claude' CLI not found. Remove by hand in a session:\n" +
+        (code.commands ?? []).map((c) => cyan(`    ${c}`)).join("\n") +
+        "\n",
+    );
+  }
+
+  const desk = uninstallClaudeDesktop(resolveDesktopConfigPath(), purge);
+  process.stdout.write(
+    (desk.removedEntry ? green("✓ Claude Desktop") : dim("• Claude Desktop")) +
+      `: ${desk.removedEntry ? "connector removed from" : "no connector found in"} ${desk.configPath}\n` +
+      (desk.removedEngine ? dim("  removed ~/.cognigy-plugin\n") : ""),
+  );
+  process.stdout.write(
+    dim("\nRestart your client(s) to finish removing the plugin.\n\n"),
+  );
+}
+
+/**
+ * Split argv into a subcommand + the remaining args. The first token is the
+ * subcommand only when it's a non-flag positional; a leading flag (e.g.
+ * `--client`) keeps the historical `cognigy-setup --client …` form by defaulting
+ * to `install`. An unknown non-flag word is returned verbatim so main() can
+ * reject it (rather than silently treating a typo as `install`).
+ */
+export function parseSubcommand(raw: string[]): {
+  sub: string;
+  rest: string[];
+} {
+  const first = raw[0];
+  if (first && !first.startsWith("-"))
+    return { sub: first, rest: raw.slice(1) };
+  return { sub: "install", rest: raw };
+}
+
 async function main(): Promise<void> {
-  const argv = process.argv.slice(2).filter((a) => a !== "setup");
+  const raw = process.argv.slice(2).filter((a) => a !== "setup");
+  const { sub, rest } = parseSubcommand(raw);
+  switch (sub) {
+    case "install":
+      break;
+    case "status":
+      return runStatus();
+    case "update":
+      return runUpdate();
+    case "uninstall":
+      return runUninstall(rest);
+    default:
+      process.stderr.write(
+        `Unknown command '${sub}'. Use: install | status | update | uninstall.\n`,
+      );
+      process.exit(1);
+  }
+
+  const argv = rest;
   const flags = parseFlags(argv);
   const interactive = process.stdin.isTTY && flags.apiKey === undefined;
 

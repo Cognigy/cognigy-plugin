@@ -17,6 +17,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "fs";
 import { homedir } from "os";
@@ -173,4 +174,110 @@ export function installClaudeDesktop(
   chmodSync(configPath, 0o600);
 
   return { configPath, backupPath, launcherPath, enginePrefix: ENGINE_PREFIX };
+}
+
+/** Path to the engine package.json inside the per-user Desktop prefix. */
+const ENGINE_PKG_JSON = join(
+  ENGINE_PREFIX,
+  "node_modules",
+  ...PKG.split("/"),
+  "package.json",
+);
+
+/** Version of the engine installed for Desktop, or null if none present. */
+export function installedDesktopEngineVersion(): string | null {
+  try {
+    return (
+      (
+        JSON.parse(readFileSync(ENGINE_PKG_JSON, "utf-8")) as {
+          version?: string;
+        }
+      ).version ?? null
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** True when claude_desktop_config.json currently carries our server entry. */
+export function desktopHasCognigyEntry(
+  configPath: string = resolveDesktopConfigPath(),
+): boolean {
+  try {
+    const root = JSON.parse(readFileSync(configPath, "utf-8")) as {
+      mcpServers?: Record<string, unknown>;
+    };
+    return Boolean(root.mcpServers && SERVER_KEY in root.mcpServers);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Remove our server entry from existing config text, preserving everything
+ * else. Returns the new JSON text and whether an entry was actually removed.
+ * A malformed/absent file yields no change.
+ */
+export function removeDesktopServerEntry(existingText: string | null): {
+  text: string | null;
+  removed: boolean;
+} {
+  if (!existingText || !existingText.trim())
+    return { text: null, removed: false };
+  let root: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(existingText);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return { text: existingText, removed: false };
+    root = parsed as Record<string, unknown>;
+  } catch {
+    return { text: existingText, removed: false };
+  }
+  const servers = root.mcpServers;
+  if (
+    !servers ||
+    typeof servers !== "object" ||
+    Array.isArray(servers) ||
+    !(SERVER_KEY in (servers as Record<string, unknown>))
+  ) {
+    return { text: existingText, removed: false };
+  }
+  delete (servers as Record<string, unknown>)[SERVER_KEY];
+  return { text: `${JSON.stringify(root, null, 2)}\n`, removed: true };
+}
+
+export interface DesktopUninstallResult {
+  configPath: string;
+  removedEntry: boolean;
+  removedEngine: boolean;
+}
+
+/**
+ * Remove the Cognigy connector from claude_desktop_config.json (leaving every
+ * other server intact) and, when `purgeEngine` is set, delete the per-user
+ * engine prefix + launcher under ~/.cognigy-plugin. Does not touch the app.
+ */
+export function uninstallClaudeDesktop(
+  configPath: string = resolveDesktopConfigPath(),
+  purgeEngine = false,
+): DesktopUninstallResult {
+  let removedEntry = false;
+  if (existsSync(configPath)) {
+    const { text, removed } = removeDesktopServerEntry(
+      readFileSync(configPath, "utf-8"),
+    );
+    if (removed && text) {
+      writeFileSync(configPath, text, { mode: 0o600 });
+      chmodSync(configPath, 0o600);
+    }
+    removedEntry = removed;
+  }
+
+  let removedEngine = false;
+  if (purgeEngine && existsSync(USER_HOME_DIR)) {
+    rmSync(USER_HOME_DIR, { recursive: true, force: true });
+    removedEngine = true;
+  }
+
+  return { configPath, removedEntry, removedEngine };
 }

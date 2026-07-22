@@ -16,11 +16,15 @@ import { pathToFileURL } from "url";
 import {
   buildDesktopServerEntry,
   mergeDesktopConfig,
+  removeDesktopServerEntry,
   resolveDesktopConfigPath,
 } from "../install/claudeDesktop.js";
 import {
   buildMarketplaceAddArgs,
+  buildMarketplaceRemoveArgs,
   buildPluginInstallArgs,
+  buildPluginUninstallArgs,
+  buildPluginUpdateArgs,
   fallbackCommands,
 } from "../install/claudeCode.js";
 import { quoteWinArgs, resolveNpmCli } from "../install/npmRunner.js";
@@ -28,7 +32,12 @@ import {
   DESKTOP_LAUNCHER_SOURCE,
   writeDesktopLauncher,
 } from "../install/desktopLauncher.js";
-import { isMainModule, parseClientSelection, parseFlags } from "../setup.js";
+import {
+  isMainModule,
+  parseClientSelection,
+  parseFlags,
+  parseSubcommand,
+} from "../setup.js";
 
 const tmpDirs: string[] = [];
 function freshDir(): string {
@@ -163,6 +172,63 @@ describe("claudeCode arg building", () => {
       "/plugin marketplace add Cognigy/cognigy-plugin",
       "/plugin install cognigy@cognigy-plugin",
     ]);
+  });
+
+  it("builds update / uninstall / marketplace-remove args", () => {
+    expect(buildPluginUpdateArgs()).toEqual([
+      "plugin",
+      "update",
+      "cognigy@cognigy-plugin",
+    ]);
+    expect(buildPluginUninstallArgs()).toEqual([
+      "plugin",
+      "uninstall",
+      "cognigy@cognigy-plugin",
+    ]);
+    expect(buildMarketplaceRemoveArgs()).toEqual([
+      "plugin",
+      "marketplace",
+      "remove",
+      "cognigy-plugin",
+    ]);
+  });
+});
+
+describe("removeDesktopServerEntry", () => {
+  const entry = buildDesktopServerEntry(CREDS, "/node", "/launch.mjs");
+
+  it("removes only the Cognigy entry, preserving other servers + keys", () => {
+    const existing = JSON.stringify({
+      globalShortcut: "Cmd+Space",
+      mcpServers: { other: { command: "x", args: [] }, Cognigy: entry },
+    });
+    const { text, removed } = removeDesktopServerEntry(existing);
+    expect(removed).toBe(true);
+    const out = JSON.parse(text as string);
+    expect(out.globalShortcut).toBe("Cmd+Space");
+    expect(out.mcpServers.other).toEqual({ command: "x", args: [] });
+    expect(out.mcpServers.Cognigy).toBeUndefined();
+  });
+
+  it("is a no-op when no Cognigy entry is present", () => {
+    const existing = JSON.stringify({
+      mcpServers: { other: { command: "x", args: [] } },
+    });
+    expect(removeDesktopServerEntry(existing)).toEqual({
+      text: existing,
+      removed: false,
+    });
+  });
+
+  it("is a no-op on absent or malformed config", () => {
+    expect(removeDesktopServerEntry(null)).toEqual({
+      text: null,
+      removed: false,
+    });
+    expect(removeDesktopServerEntry("{ not json")).toEqual({
+      text: "{ not json",
+      removed: false,
+    });
   });
 });
 
@@ -302,5 +368,39 @@ describe("parseClientSelection", () => {
 
   it("dedupes and drops out-of-range/garbage", () => {
     expect(parseClientSelection("1 1 9 x", [...menu])).toEqual(["claude-code"]);
+  });
+});
+
+describe("parseSubcommand", () => {
+  it("defaults to install with no args", () => {
+    expect(parseSubcommand([])).toEqual({ sub: "install", rest: [] });
+  });
+
+  it("keeps the historical `--client …` (leading flag) form as install", () => {
+    expect(
+      parseSubcommand(["--client", "claude-code", "--api-key", "k"]),
+    ).toEqual({
+      sub: "install",
+      rest: ["--client", "claude-code", "--api-key", "k"],
+    });
+  });
+
+  it("recognises an explicit subcommand and strips it", () => {
+    expect(parseSubcommand(["status"])).toEqual({ sub: "status", rest: [] });
+    expect(parseSubcommand(["uninstall", "--purge", "-y"])).toEqual({
+      sub: "uninstall",
+      rest: ["--purge", "-y"],
+    });
+  });
+
+  it("handles `install` with trailing flags", () => {
+    expect(parseSubcommand(["install", "--client", "claude-desktop"])).toEqual({
+      sub: "install",
+      rest: ["--client", "claude-desktop"],
+    });
+  });
+
+  it("returns an unknown non-flag word verbatim (so main can reject it)", () => {
+    expect(parseSubcommand(["bogus"])).toEqual({ sub: "bogus", rest: [] });
   });
 });
