@@ -1,3 +1,9 @@
+## [1.5.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.4.1...v1.5.0) (2026-07-22)
+
+### Features
+
+* **installer:** node-check bootstrap, desktop-only path, lifecycle subcommands ([#11](https://github.com/Cognigy/cognigy-plugin/issues/11)) ([b678243](https://github.com/Cognigy/cognigy-plugin/commit/b6782438e67e4b676d373f08050b29623626492e))
+
 ## [1.4.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.4.0...v1.4.1) (2026-07-20)
 
 ### Bug Fixes
