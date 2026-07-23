@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readFileSync,
   statSync,
+  writeFileSync,
 } from "fs";
 import { tmpdir } from "os";
 import { pipeline } from "stream/promises";
@@ -30,6 +31,11 @@ import {
   type VoiceFix,
 } from "./voiceChecklist.js";
 import * as schemas from "../schemas/tools.js";
+import {
+  chartToAscii,
+  chartToMermaid,
+  chartToHtml,
+} from "../render/flowRender.js";
 import {
   buildPackageExportablePreview,
   buildPackageExportPlan,
@@ -3627,6 +3633,69 @@ export class ToolHandlers {
         );
 
         return { deleted: true, nodeId: data.nodeId };
+      }
+
+      // ----- RENDER -----
+      case "render": {
+        // Topology (start→next chain + children) comes from the chart endpoint;
+        // node labels come from the node-list endpoint. Merge the two.
+        let chart: any;
+        try {
+          chart = await this.apiClient.get(`/new/v2.0/flows/${flowId}/chart`);
+        } catch {
+          return withHints(
+            { error: "Could not load flow chart." },
+            {
+              action:
+                "Verify flowId. Use list_resources { resourceType: 'flow', projectId }.",
+            },
+          );
+        }
+
+        try {
+          const list: any = await this.apiClient.get(
+            `/v2.0/flows/${flowId}/chart/nodes`,
+            { params: { limit: 200 } },
+          );
+          const items = list.items ?? list;
+          if (Array.isArray(items)) {
+            const labelById = new Map<string, string>(
+              items.map((n: any) => [n._id || n.id, n.label]),
+            );
+            for (const n of chart.nodes ?? []) {
+              const id = n._id || n.id;
+              const lbl = labelById.get(id);
+              if (!n.label && lbl) n.label = lbl;
+            }
+          }
+        } catch {
+          // Labels are optional — the serializer falls back to preview/type.
+        }
+
+        const format = data.format ?? "both";
+        const result: any = {};
+        if (format === "ascii" || format === "both") {
+          result.ascii = chartToAscii(chart, data.focus);
+        }
+        if (format === "mermaid" || format === "both") {
+          result.mermaid = chartToMermaid(chart, data.focus);
+        }
+
+        if (data.writeHtml) {
+          const html = chartToHtml(chart, {
+            title: `Flow ${flowId}`,
+            focusId: data.focus,
+          });
+          const file = join(tmpdir(), `cognigy-flow-${flowId}.html`);
+          writeFileSync(file, html, "utf8");
+          result.htmlPath = file;
+          result.htmlUrl = pathToFileURL(file).href;
+        }
+
+        return withHints(result, {
+          action:
+            "Display the `ascii` tree inline (works in every client, incl. terminal). In Desktop/web clients, also emit the `mermaid` string inside a ```mermaid fenced block so it renders as a graph. If `htmlUrl` is present, share it as a clickable link so the user can open the rich graph in a browser.",
+        });
       }
 
       default:
