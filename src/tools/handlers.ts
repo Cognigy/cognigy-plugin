@@ -3760,9 +3760,11 @@ export class ToolHandlers {
           result.htmlPath = file;
           result.htmlUrl = pathToFileURL(file).href;
 
-          // Opt-in: open the file in the user's default browser. Safe because
-          // the MCP server runs on the user's own machine.
-          if (data.openInBrowser) {
+          // Open the file in the user's default browser by default whenever an
+          // HTML view is written — the whole point of writeHtml is to look at
+          // it. Safe: the MCP server runs on the user's own machine. Pass
+          // openInBrowser:false to only get the path back without opening.
+          if (data.openInBrowser !== false) {
             try {
               const opener =
                 process.platform === "darwin"
@@ -3791,7 +3793,7 @@ export class ToolHandlers {
                 ? " It was opened in the user's default browser automatically; also give them the `htmlUrl`/`htmlPath` in case it did not."
                 : ' Simply tell the user to open it in a browser, giving them the `htmlUrl` (a file:// link) and the plain `htmlPath`, e.g. "Open this in your browser: <htmlUrl>".'
             }`
-          : ` Then, on its own line, proactively offer the rich view — e.g. "Want a rich, zoomable HTML diagram you can open in a browser? (yes)". If the user agrees, re-call this operation with writeHtml:true (and openInBrowser:true to open it for them automatically), same flowId/focus. The file is written to the user's own machine; just hand them the returned htmlUrl/htmlPath — do not try to access it yourself.`;
+          : ` Then, on its own line, proactively offer the rich view — e.g. "Want a rich, zoomable HTML diagram you can open in a browser? (yes)". If the user agrees, re-call this operation with writeHtml:true (it opens in the browser automatically), same flowId/focus. The file is written to the user's own machine; just hand them the returned htmlUrl/htmlPath — do not try to access it yourself.`;
 
         return withHints(result, { action: baseAction + htmlAction });
       }
