@@ -63,6 +63,25 @@ function loadMermaidJs(): string | undefined {
   mermaidJsCache = null;
   return undefined;
 }
+
+// Attach a minimal, one-time render suggestion to a flow-mutation result so the
+// model briefly offers to visualize the change — without rendering unprompted
+// or nagging. Merged into _hints so it never clobbers an existing warning.
+function withRenderSuggestion<T extends object>(
+  result: T,
+  flowId: string,
+  focusNodeId?: string,
+): T {
+  const call = `manage_flow_nodes { operation: "render", flowId: "${flowId}"${
+    focusNodeId ? `, focus: "${focusNodeId}"` : ""
+  } }`;
+  const existing = (result as any)._hints ?? {};
+  (result as any)._hints = {
+    ...existing,
+    renderSuggestion: `Flow changed. Offer once, in one short line (do not render unprompted, do not repeat the offer): ask if the user wants to see the updated flow — if yes, call ${call}.`,
+  };
+  return result;
+}
 import {
   buildPackageExportablePreview,
   buildPackageExportPlan,
@@ -3503,15 +3522,19 @@ export class ToolHandlers {
         };
 
         if (missingInitAppSession) {
-          return withHints(result, {
-            warning:
-              "No xApp: Init Session (initAppSession) node exists in this flow. Every xApp node needs one, and it must run before this node — it creates the session and populates input.apps.url. (This check only verifies presence, not execution order.)",
-            action:
-              "Add an initAppSession node and ensure it runs before this xApp node (earlier in the same tool branch).",
-          });
+          return withRenderSuggestion(
+            withHints(result, {
+              warning:
+                "No xApp: Init Session (initAppSession) node exists in this flow. Every xApp node needs one, and it must run before this node — it creates the session and populates input.apps.url. (This check only verifies presence, not execution order.)",
+              action:
+                "Add an initAppSession node and ensure it runs before this xApp node (earlier in the same tool branch).",
+            }),
+            flowId,
+            nodeId,
+          );
         }
 
-        return result;
+        return withRenderSuggestion(result, flowId, nodeId);
       }
 
       // ----- UPDATE -----
@@ -3594,15 +3617,19 @@ export class ToolHandlers {
                 patchPayload,
               );
             }
-            return {
-              updated: true,
-              nodeId: data.nodeId,
-              ...(data.label ? { label: data.label } : {}),
-              ...(data.config
-                ? { configUpdated: Object.keys(data.config) }
-                : {}),
-              casesUpdated: caseResults,
-            };
+            return withRenderSuggestion(
+              {
+                updated: true,
+                nodeId: data.nodeId,
+                ...(data.label ? { label: data.label } : {}),
+                ...(data.config
+                  ? { configUpdated: Object.keys(data.config) }
+                  : {}),
+                casesUpdated: caseResults,
+              },
+              flowId,
+              data.nodeId,
+            );
           } else {
             const transformed = transformConfigForApi(nodeType, data.config);
             patchPayload.config = deepMerge(existingConfig, transformed);
@@ -3630,17 +3657,21 @@ export class ToolHandlers {
               `/v2.0/flows/${flowId}/chart/nodes/${data.nodeId}`,
             );
             if (saved?.config?.hasError) {
-              return withHints(result, {
-                warning:
-                  "Node saved, but config.hasError is true — the code failed to transpile (TypeScript/syntax error).",
-                action: "Fix the code and update again.",
-              });
+              return withRenderSuggestion(
+                withHints(result, {
+                  warning:
+                    "Node saved, but config.hasError is true — the code failed to transpile (TypeScript/syntax error).",
+                  action: "Fix the code and update again.",
+                }),
+                flowId,
+                data.nodeId,
+              );
             }
           } catch {
             // Non-fatal — the update itself succeeded.
           }
         }
-        return result;
+        return withRenderSuggestion(result, flowId, data.nodeId);
       }
 
       // ----- DELETE -----
@@ -3659,7 +3690,11 @@ export class ToolHandlers {
           `/v2.0/flows/${flowId}/chart/nodes/${data.nodeId}`,
         );
 
-        return { deleted: true, nodeId: data.nodeId };
+        // No focus on delete — the node is gone; just suggest a fresh render.
+        return withRenderSuggestion(
+          { deleted: true, nodeId: data.nodeId },
+          flowId,
+        );
       }
 
       // ----- RENDER -----
