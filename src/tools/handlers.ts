@@ -36,6 +36,31 @@ import {
   chartToMermaid,
   chartToHtml,
 } from "../render/flowRender.js";
+
+// The self-contained mermaid UMD build, inlined into rich flow-viz HTML so it
+// renders offline. Copied to dist/assets at build time (scripts/copy-assets.mjs);
+// falls back to node_modules in dev. Read once, then cached (null = not found →
+// the HTML uses a CDN loader instead).
+let mermaidJsCache: string | null | undefined;
+function loadMermaidJs(): string | undefined {
+  if (mermaidJsCache !== undefined) return mermaidJsCache ?? undefined;
+  const candidates = [
+    new URL("../assets/mermaid.min.js", import.meta.url), // published: dist/assets
+    new URL("../../node_modules/mermaid/dist/mermaid.min.js", import.meta.url), // dev
+  ];
+  for (const url of candidates) {
+    try {
+      if (existsSync(url)) {
+        mermaidJsCache = readFileSync(url, "utf8");
+        return mermaidJsCache;
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+  mermaidJsCache = null;
+  return undefined;
+}
 import {
   buildPackageExportablePreview,
   buildPackageExportPlan,
@@ -3685,6 +3710,7 @@ export class ToolHandlers {
           const html = chartToHtml(chart, {
             title: `Flow ${flowId}`,
             focusId: data.focus,
+            mermaidJs: loadMermaidJs(), // inline for offline; undefined → CDN
           });
           const file = join(tmpdir(), `cognigy-flow-${flowId}.html`);
           writeFileSync(file, html, "utf8");

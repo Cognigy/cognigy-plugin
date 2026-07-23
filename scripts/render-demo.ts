@@ -1,7 +1,7 @@
 /* Prototype demo: feed a sample chart, print ASCII + mermaid. Run:
  *   npx tsx scripts/render-demo.ts
  */
-import { writeFileSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -48,11 +48,17 @@ console.log(chartToAscii(chart, "branch"));
 console.log(bar("MERMAID  (rich render in artifacts / claude.ai)"));
 console.log(chartToMermaid(chart, "branch"));
 
-console.log(bar("RICH HTML  (tmp file — open in browser)"));
+console.log(bar("RICH HTML  (tmp file — open in browser, offline)"));
+// Inline mermaid from node_modules so the file renders with no network.
+const mermaidPath = "node_modules/mermaid/dist/mermaid.min.js";
+const mermaidJs = existsSync(mermaidPath)
+  ? readFileSync(mermaidPath, "utf8")
+  : undefined;
 const file = join(tmpdir(), "cognigy-flow-demo.html");
 writeFileSync(
   file,
-  chartToHtml(chart, { title: "Support Agent", focusId: "branch" }),
+  chartToHtml(chart, { title: "Support Agent", focusId: "branch", mermaidJs }),
   "utf8",
 );
 console.log(pathToFileURL(file).href);
+console.log(mermaidJs ? "(mermaid inlined — offline)" : "(mermaid via CDN)");

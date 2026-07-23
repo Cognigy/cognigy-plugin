@@ -117,4 +117,20 @@ describe("chartToHtml", () => {
     // loads mermaid for rendering
     expect(html).toContain("mermaid.initialize");
   });
+
+  it("uses the CDN loader when no mermaidJs is supplied", () => {
+    const html = chartToHtml(chart);
+    expect(html).toContain("cdn.jsdelivr.net");
+  });
+
+  it("inlines mermaidJs and drops the CDN when supplied (offline)", () => {
+    const fakeLib =
+      'globalThis.mermaid={initialize(){},run(){}}; "</script> guard";';
+    const html = chartToHtml(chart, { mermaidJs: fakeLib });
+    expect(html).not.toContain("cdn.jsdelivr.net");
+    expect(html).toContain("globalThis.mermaid");
+    // the </script guard neutralizes an early tag close
+    expect(html).toContain("<\\/script");
+    expect(html).toContain("mermaid.run()");
+  });
 });

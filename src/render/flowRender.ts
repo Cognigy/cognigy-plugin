@@ -230,16 +230,41 @@ function esc(s: string): string {
  * page out. Intended to be written to a tmp file and opened in a browser —
  * for clients (terminal, IDE panels) that can't render mermaid inline.
  *
- * Mermaid loads from a CDN (a local file in a browser has no CSP restriction);
- * if offline, the page shows the ASCII fallback instead.
+ * Pass `mermaidJs` (the mermaid UMD source) to inline the renderer so the
+ * page works fully offline. Without it, the page loads mermaid from a CDN and
+ * shows the ASCII fallback when offline.
  */
 export function chartToHtml(
   chart: Chart,
-  opts: { title?: string; focusId?: string } = {},
+  opts: { title?: string; focusId?: string; mermaidJs?: string } = {},
 ): string {
   const title = opts.title ?? "Cognigy Flow";
   const mermaid = chartToMermaid(chart, opts.focusId);
   const ascii = chartToAscii(chart, opts.focusId);
+
+  // When the mermaid UMD source is supplied, inline it so the page renders
+  // fully offline (no CDN). Otherwise fall back to a CDN import. The
+  // `</script` guard prevents the inlined source from closing the tag early.
+  const loader = opts.mermaidJs
+    ? `<script>${opts.mermaidJs.replace(/<\/script/gi, "<\\/script")}</script>
+<script>
+  try {
+    mermaid.initialize({ startOnLoad: false, theme: "neutral" });
+    mermaid.run();
+  } catch (e) {
+    document.querySelector(".diagram").innerHTML =
+      '<p class="err">Mermaid failed to render. See the ASCII tree below.</p>';
+  }
+</script>`
+    : `<script type="module">
+  try {
+    const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
+    mermaid.initialize({ startOnLoad: true, theme: "neutral" });
+  } catch (e) {
+    document.querySelector(".diagram").innerHTML =
+      '<p class="err">Mermaid could not load (offline?). See the ASCII tree below.</p>';
+  }
+</script>`;
 
   return `<!doctype html>
 <html lang="en">
@@ -286,15 +311,7 @@ export function chartToHtml(
     <pre class="ascii">${esc(ascii)}</pre>
   </details>
 </div>
-<script type="module">
-  try {
-    const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
-    mermaid.initialize({ startOnLoad: true, theme: "neutral" });
-  } catch (e) {
-    document.querySelector(".diagram").innerHTML =
-      '<p class="err">Mermaid could not load (offline?). See the ASCII tree below.</p>';
-  }
-</script>
+${loader}
 </body>
 </html>
 `;
