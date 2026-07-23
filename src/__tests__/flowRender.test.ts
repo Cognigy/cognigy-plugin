@@ -207,12 +207,21 @@ describe("chartLegend", () => {
     expect(means).toContain("Flow sequence (next)");
   });
 
-  it("embeds a Legend subgraph in mermaid only when requested", () => {
-    expect(chartToMermaid(chart, undefined, true)).toContain("subgraph Legend");
-    expect(chartToMermaid(chart, undefined, false)).not.toContain(
-      "subgraph Legend",
-    );
+  it("does not embed a legend subgraph in the mermaid (keeps it clean)", () => {
     expect(chartToMermaid(chart)).not.toContain("subgraph Legend");
+  });
+
+  it("tags each row with a kind for the drawn HTML legend", () => {
+    const kinds = chartLegend(chart).map((r) => r.kind);
+    expect(kinds).toContain("start");
+    expect(kinds).toContain("seq");
+  });
+
+  it("draws SVG shapes (not shape names) in the HTML legend", () => {
+    const html = chartToHtml(chart);
+    expect(html).toContain('<svg class="lg-svg"');
+    expect(html).toContain("<polygon"); // diamond for the branch
+    expect(html).not.toContain(">Circle<"); // no shape-name text
   });
 });
 

@@ -231,7 +231,23 @@ function mmShape(type: string | undefined, id: string, label: string): string {
   }
 }
 
-// A shape/edge key for exactly the elements present in THIS chart.
+// A shape/edge key for exactly the elements present in THIS chart. `kind`
+// drives the drawn SVG in the HTML legend; `shape`/`meaning` are the text form
+// used in the returned `legend` rows and for terminal/inline display.
+export type LegendKind =
+  | "start"
+  | "agent"
+  | "branch"
+  | "step"
+  | "end"
+  | "seq"
+  | "contains";
+export interface LegendRow {
+  kind: LegendKind;
+  shape: string;
+  meaning: string;
+}
+
 const SHAPE_MEANING: Record<ShapeCat, { shape: string; meaning: string }> = {
   start: { shape: "Circle", meaning: "Start" },
   agent: { shape: "Double-outlined box", meaning: "AI Agent" },
@@ -245,53 +261,62 @@ const SHAPE_MEANING: Record<ShapeCat, { shape: string; meaning: string }> = {
 // Stable display order.
 const SHAPE_ORDER: ShapeCat[] = ["start", "agent", "branch", "step", "end"];
 
-export function chartLegend(
-  chart: Chart,
-): { shape: string; meaning: string }[] {
+export function chartLegend(chart: Chart): LegendRow[] {
   const cats = new Set<ShapeCat>();
   for (const n of chart.nodes ?? []) cats.add(shapeCat(n.type));
 
-  const rows = SHAPE_ORDER.filter((c) => cats.has(c)).map(
-    (c) => SHAPE_MEANING[c],
-  );
+  const rows: LegendRow[] = SHAPE_ORDER.filter((c) => cats.has(c)).map((c) => ({
+    kind: c,
+    ...SHAPE_MEANING[c],
+  }));
 
   const rels = chart.relations ?? [];
   if (rels.some((r) => nextIds(r).length))
-    rows.push({ shape: "Solid arrow →", meaning: "Flow sequence (next)" });
+    rows.push({
+      kind: "seq",
+      shape: "Solid arrow →",
+      meaning: "Flow sequence (next)",
+    });
   if (rels.some((r) => (r.children ?? []).length))
     rows.push({
+      kind: "contains",
       shape: "Dotted arrow (contains)",
       meaning: "Nested branch / tool body",
     });
   return rows;
 }
 
-// A mermaid `Legend` subgraph with one sample node per shape present, so the
-// key renders inside the diagram image itself. Isolated (lg_* ids, no edges to
-// the flow) so it does not affect the main layout.
-function mermaidLegend(chart: Chart): string[] {
-  const cats = new Set<ShapeCat>();
-  for (const n of chart.nodes ?? []) cats.add(shapeCat(n.type));
-  const present = SHAPE_ORDER.filter((c) => cats.has(c));
-  if (!present.length) return [];
-
-  const lines = ["  subgraph Legend", "    direction LR"];
-  present.forEach((c, i) => {
-    lines.push(
-      "    " + mmShape(catToType(c), `lg_${i}`, SHAPE_MEANING[c].meaning),
-    );
-  });
-  lines.push("  end");
-  return lines;
-}
-function catToType(c: ShapeCat): string {
-  return c === "agent" ? "aiAgentJob" : c === "branch" ? "ifElse" : c;
+// A small inline SVG that draws each legend shape/edge, so the HTML key shows
+// the actual shape rather than its name. stroke/fill use currentColor so it
+// adapts to the page theme.
+function legendSvg(kind: LegendKind): string {
+  const S = 'stroke="currentColor" fill="none" stroke-width="1.5"';
+  const arrowHead = (x: number) =>
+    `<path d="M${x},13 l-6,-3.5 l0,7 z" fill="currentColor" stroke="none"/>`;
+  const body = (() => {
+    switch (kind) {
+      case "start":
+        return `<circle cx="23" cy="13" r="9" ${S}/>`;
+      case "end":
+        return `<rect x="7" y="4" width="32" height="18" rx="9" ${S}/>`;
+      case "step":
+        return `<rect x="6" y="5" width="34" height="16" ${S}/>`;
+      case "agent":
+        return `<rect x="6" y="5" width="34" height="16" ${S}/><line x1="10" y1="5" x2="10" y2="21" ${S}/><line x1="36" y1="5" x2="36" y2="21" ${S}/>`;
+      case "branch":
+        return `<polygon points="23,3 41,13 23,23 5,13" ${S}/>`;
+      case "seq":
+        return `<line x1="4" y1="13" x2="34" y2="13" ${S}/>${arrowHead(40)}`;
+      case "contains":
+        return `<line x1="4" y1="13" x2="34" y2="13" ${S} stroke-dasharray="3 3"/>${arrowHead(40)}`;
+    }
+  })();
+  return `<svg class="lg-svg" viewBox="0 0 46 26" width="46" height="26" aria-hidden="true">${body}</svg>`;
 }
 
 export function chartToMermaid(
   chart: Chart,
   focus?: string | string[],
-  legend = false,
 ): string {
   const { byId, rel, startId } = index(chart);
   const lines: string[] = ["flowchart TD"];
@@ -342,8 +367,6 @@ export function chartToMermaid(
     lines.push(`  class ${focused.map(mmId).join(",")} focus;`);
   }
 
-  if (legend) lines.push(...mermaidLegend(chart));
-
   return lines.join("\n");
 }
 
@@ -377,7 +400,7 @@ export function chartToHtml(
   const legend = chartLegend(chart)
     .map(
       (r) =>
-        `<div class="lg-row"><span class="lg-shape">${esc(r.shape)}</span><span class="lg-mean">${esc(r.meaning)}</span></div>`,
+        `<div class="lg-row">${legendSvg(r.kind)}<span class="lg-mean">${esc(r.meaning)}</span></div>`,
     )
     .join("");
 
@@ -441,8 +464,8 @@ export function chartToHtml(
   .legend h2 { font-size:12px; text-transform:uppercase; letter-spacing:0.06em;
     color:var(--muted); margin:0 0 12px; font-weight:600; }
   .lg-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:8px 20px; }
-  .lg-row { display:flex; gap:10px; font-size:13px; align-items:baseline; }
-  .lg-shape { color:var(--ink); font-weight:600; min-width:150px; }
+  .lg-row { display:flex; gap:12px; font-size:13px; align-items:center; }
+  .lg-svg { color:var(--ink); flex:0 0 auto; }
   .lg-mean { color:var(--muted); }
 </style>
 </head>

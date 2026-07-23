@@ -3706,9 +3706,10 @@ export class ToolHandlers {
           result.ascii = chartToAscii(chart, data.focus);
         }
         if (format === "mermaid" || format === "both") {
-          result.mermaid = chartToMermaid(chart, data.focus, showLegend);
+          result.mermaid = chartToMermaid(chart, data.focus);
         }
-        // A shape/edge key for exactly the elements present in this flow.
+        // A shape/edge key for exactly the elements present in this flow (the
+        // model can print it as a short list; the HTML always draws it).
         if (showLegend) result.legend = chartLegend(chart);
 
         if (data.writeHtml) {
@@ -3745,7 +3746,7 @@ export class ToolHandlers {
         }
 
         const baseAction =
-          "To render the graph: emit the `mermaid` string in its OWN ```mermaid fenced block with minimal surrounding prose — a standalone block is promoted to the client's diagram viewer (large), whereas one buried in explanation renders as a small inline thumbnail. Keep commentary in a separate paragraph before or after, not wrapped around the block. The mermaid already includes a `Legend` subgraph keying only the shapes used in this flow; the same key is in the `legend` field if you prefer to print it as a short list. Also show the `ascii` tree (works in every client, incl. terminal).";
+          "To render the graph: emit the `mermaid` string in its OWN ```mermaid fenced block with minimal surrounding prose — a standalone block is promoted to the client's diagram viewer (large), whereas one buried in explanation renders as a small inline thumbnail. Keep commentary in a separate paragraph before or after, not wrapped around the block. A `legend` field keys only the shapes/edges used in this flow — print it as a short list under the diagram if helpful (the rich HTML draws the shapes for real). Also show the `ascii` tree (works in every client, incl. terminal).";
 
         const htmlAction = result.htmlUrl
           ? ` A rich, zoomable HTML view was written to the user's OWN local machine (this MCP server runs locally, on the same computer as the user) — it is NOT in your sandbox and needs no upload. Do NOT try to read, fetch, open, download, or "package" the file, and do NOT regenerate it yourself — it is already complete and self-contained.${
