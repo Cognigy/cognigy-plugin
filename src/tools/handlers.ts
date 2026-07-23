@@ -3741,7 +3741,9 @@ export class ToolHandlers {
           result.ascii = chartToAscii(chart, data.focus);
         }
         if (format === "mermaid" || format === "both") {
-          result.mermaid = chartToMermaid(chart, data.focus);
+          result.mermaid = chartToMermaid(chart, data.focus, {
+            legend: showLegend,
+          });
         }
         // A shape/edge key for exactly the elements present in this flow (the
         // model can print it as a short list; the HTML always draws it).

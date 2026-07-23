@@ -261,6 +261,60 @@ const SHAPE_MEANING: Record<ShapeCat, { shape: string; meaning: string }> = {
 // Stable display order.
 const SHAPE_ORDER: ShapeCat[] = ["start", "agent", "branch", "step", "end"];
 
+// Short label placed INSIDE each legend shape (the shape itself is the key, the
+// word is its meaning — no shape *names* like "Diamond"). Kept terse so the
+// in-diagram legend stays a small strip.
+const LEGEND_SHORT: Record<ShapeCat, string> = {
+  start: "Start",
+  agent: "AI Agent",
+  branch: "Branch",
+  step: "Step",
+  end: "End",
+};
+
+// A representative node type per category, so mmShape draws the right shape for
+// a legend key (reverse of shapeCat).
+function catToType(c: ShapeCat): string {
+  switch (c) {
+    case "start":
+      return "start";
+    case "end":
+      return "end";
+    case "branch":
+      return "ifElse";
+    case "agent":
+      return "aiAgentJob";
+    default:
+      return "say";
+  }
+}
+
+// Build a minimal in-diagram legend: one real shape per category present, laid
+// out as a compact left→right strip in a quiet, transparent subgraph. The
+// meaning is the shape's own label — the reader sees, e.g., a diamond that says
+// "Branch", never the word "Diamond". Empty if the chart has no nodes.
+function mermaidLegend(chart: Chart): string[] {
+  const cats = SHAPE_ORDER.filter((c) =>
+    (chart.nodes ?? []).some((n) => shapeCat(n.type) === c),
+  );
+  if (!cats.length) return [];
+
+  const lines = ['  subgraph legend ["Legend"]', "    direction LR"];
+  for (const c of cats) {
+    lines.push("    " + mmShape(catToType(c), `lg_${c}`, LEGEND_SHORT[c]));
+  }
+  // Invisible links keep the keys in one tidy row without drawing arrows.
+  if (cats.length > 1) {
+    lines.push("    " + cats.map((c) => `lg_${c}`).join(" ~~~ "));
+  }
+  lines.push("  end");
+  // Quiet styling so the legend reads as a caption, not a second diagram.
+  lines.push(
+    "  style legend fill:transparent,stroke:#cbd5e1,stroke-width:1px,color:#64748b;",
+  );
+  return lines;
+}
+
 export function chartLegend(chart: Chart): LegendRow[] {
   const cats = new Set<ShapeCat>();
   for (const n of chart.nodes ?? []) cats.add(shapeCat(n.type));
@@ -317,6 +371,7 @@ function legendSvg(kind: LegendKind): string {
 export function chartToMermaid(
   chart: Chart,
   focus?: string | string[],
+  opts: { legend?: boolean } = {},
 ): string {
   const { byId, rel, startId } = index(chart);
   const lines: string[] = ["flowchart TD"];
@@ -366,6 +421,8 @@ export function chartToMermaid(
     );
     lines.push(`  class ${focused.map(mmId).join(",")} focus;`);
   }
+
+  if (opts.legend) lines.push(...mermaidLegend(chart));
 
   return lines.join("\n");
 }

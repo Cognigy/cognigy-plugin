@@ -207,8 +207,39 @@ describe("chartLegend", () => {
     expect(means).toContain("Flow sequence (next)");
   });
 
-  it("does not embed a legend subgraph in the mermaid (keeps it clean)", () => {
-    expect(chartToMermaid(chart)).not.toContain("subgraph Legend");
+  it("does not embed a legend subgraph in the mermaid by default", () => {
+    expect(chartToMermaid(chart)).not.toContain("subgraph legend");
+  });
+
+  it("emits a minimal in-diagram legend only when asked", () => {
+    const mm = chartToMermaid(chart, undefined, { legend: true });
+    // one quiet subgraph, laid out as a horizontal strip
+    expect(mm).toContain('subgraph legend ["Legend"]');
+    expect(mm).toContain("direction LR");
+    // the shape IS the key — meaning sits inside the real shape, no shape names
+    expect(mm).toContain('lg_start(("Start"))'); // circle
+    expect(mm).toContain('lg_branch{"Branch"}'); // diamond
+    expect(mm).toContain('lg_agent[["AI Agent"]]'); // subroutine
+    expect(mm).not.toContain("Diamond"); // never the shape's name
+    // invisible links keep the row tidy, no visible arrows between keys
+    expect(mm).toContain("~~~");
+    // styled as a quiet caption, not a second diagram
+    expect(mm).toContain("style legend fill:transparent");
+  });
+
+  it("legend lists only the shape categories present", () => {
+    const c: Chart = {
+      nodes: [
+        { _id: "s", type: "start" },
+        { _id: "a", type: "say", label: "hi" },
+      ],
+      relations: [{ node: "s", next: "a" }],
+    };
+    const mm = chartToMermaid(c, undefined, { legend: true });
+    expect(mm).toContain('lg_start(("Start"))');
+    expect(mm).toContain('lg_step["Step"]');
+    expect(mm).not.toContain("lg_branch"); // no branch node in this flow
+    expect(mm).not.toContain("lg_end");
   });
 
   it("tags each row with a kind for the drawn HTML legend", () => {
