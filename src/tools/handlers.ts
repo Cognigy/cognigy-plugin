@@ -3720,7 +3720,7 @@ export class ToolHandlers {
 
         return withHints(result, {
           action:
-            "Display the `ascii` tree inline (works in every client, incl. terminal). In Desktop/web clients, also emit the `mermaid` string inside a ```mermaid fenced block so it renders as a graph. If `htmlUrl` is present, share it as a clickable link so the user can open the rich graph in a browser.",
+            "To render the graph: emit the `mermaid` string in its OWN ```mermaid fenced block with minimal surrounding prose — a standalone block is promoted to the client's diagram viewer (large), whereas one buried in explanation renders as a small inline thumbnail. Keep commentary in a separate paragraph before or after, not wrapped around the block. Also show the `ascii` tree (works in every client, incl. terminal). If `htmlUrl` is present, share it as a clickable link — it is the most reliable large, zoomable view (open in a browser).",
         });
       }
 

@@ -1,4 +1,6 @@
 import { describe, it, expect } from "@jest/globals";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   chartToAscii,
   chartToMermaid,
@@ -79,6 +81,62 @@ describe("chartToAscii", () => {
     };
     const out = chartToAscii(c);
     expect(out).toContain("↺ (loops to");
+  });
+});
+
+describe("real API chart (next is a string, not an array)", () => {
+  const chart: Chart = JSON.parse(
+    readFileSync(
+      fileURLToPath(new URL("./fixtures/xAppTestChart.json", import.meta.url)),
+      "utf8",
+    ),
+  );
+
+  // Regression: the API sends `next` as a single id string. An earlier walk
+  // assumed string[], so `next?.[0]` read the first CHARACTER and every edge
+  // was dropped — nodes rendered as a disconnected horizontal row.
+  it("draws the full next chain through the tool branch", () => {
+    const mm = chartToMermaid(chart);
+    // top-level chain
+    expect(mm).toContain(
+      "n_6a4f9a84bad16ab4ee5121ba --> n_6a588dec0d80aa36aabb18db",
+    ); // Start -> Set Session Config
+    expect(mm).toContain(
+      "n_6a588dec0d80aa36aabb18db --> n_6a4f9a84d9543729fbbfc41f",
+    ); // -> AI Agent
+    // inside the book_a_trip tool branch (the part that was missing)
+    expect(mm).toContain(
+      "n_6a4f9fdffac4430baebe7200 --> n_6a4fa008d9543729fbc020ec",
+    ); // book_a_trip -> Init Session
+    expect(mm).toContain(
+      "n_6a4fa17ed9543729fbc033fc --> n_6a4f9fdffac4430baebe7217",
+    ); // Assemble -> Resolve
+    // agent's parallel branches stay dotted "contains"
+    expect(mm).toContain(
+      "n_6a4f9a84d9543729fbbfc41f -.->|contains| n_6a4f9fdffac4430baebe7200",
+    );
+  });
+
+  it("renders the tool-branch sequence in the ascii tree", () => {
+    const out = chartToAscii(chart);
+    // the branch children appear as a sequence, not floating nodes
+    for (const label of [
+      "xApp: Init Session",
+      "Say",
+      "xApp: Hotel Map",
+      "xApp: Flight Selection",
+      "xApp: Seat Selector",
+      "Assemble booking",
+      "book_a_trip - Resolve",
+    ]) {
+      expect(out).toContain(label);
+    }
+  });
+
+  it("labels the AI Agent node with its agent name", () => {
+    // preview.aiAgentName ("X app test") is preferred over the generic label
+    expect(chartToMermaid(chart)).toContain('[["X app test"]]');
+    expect(chartToAscii(chart)).toContain("X app test");
   });
 });
 

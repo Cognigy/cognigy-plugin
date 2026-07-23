@@ -3,7 +3,8 @@
  *
  * Input: the object returned by `GET /new/v2.0/flows/{flowId}/chart`
  *   { nodes: [{ _id|id, type, label?, preview? }],
- *     relations: [{ node, next?: string[], children?: string[] }] }
+ *     relations: [{ node, next?: string|string[]|null, children?: string[] }] }
+ *   (`next` is a single id string in the live API — see nextIds).
  *
  * Output: a picture as a string — ASCII tree (terminal-native), mermaid
  * (renders inline in Desktop/web, or in a ```mermaid fenced block), or a
@@ -19,12 +20,14 @@ export interface ChartNode {
   id?: string;
   type?: string;
   label?: string;
-  preview?: string | { text?: string };
+  preview?: string | { text?: string | string[]; aiAgentName?: string };
 }
 
 export interface ChartRelation {
   node: string;
-  next?: string[];
+  // The API returns a single id string (or null); older/test data may use an
+  // array. Read it via nextIds() which normalizes both to string[].
+  next?: string | string[] | null;
   children?: string[];
 }
 
@@ -45,11 +48,29 @@ function nodeId(n: ChartNode): string {
   return (n._id ?? n.id ?? "") as string;
 }
 
+// The API sends `next` as a single id string (or null). Normalize any shape
+// (string | string[] | null) to a string[] so the walk is uniform.
+function nextIds(r: ChartRelation | undefined): string[] {
+  const n = r?.next;
+  if (!n) return [];
+  return Array.isArray(n) ? n : [n];
+}
+
 function nodeLabel(n: ChartNode | undefined): string {
   if (!n) return "(unknown)";
-  if (typeof n.label === "string" && n.label.trim()) return n.label.trim();
   const p = n.preview;
-  const prev = typeof p === "string" ? p : p?.text;
+  // AI Agent job nodes carry the agent's name in preview — prefer it, since
+  // the label is just the generic "AI Agent" (matches how the UI titles it).
+  if (p && typeof p === "object" && p.aiAgentName?.trim()) {
+    return p.aiAgentName.trim();
+  }
+  if (typeof n.label === "string" && n.label.trim()) return n.label.trim();
+  const prev =
+    typeof p === "string"
+      ? p
+      : Array.isArray(p?.text)
+        ? p?.text.join(" ")
+        : p?.text;
   if (prev && prev.trim()) return prev.trim();
   return n.type ?? "node";
 }
@@ -67,7 +88,7 @@ function index(chart: Chart): Indexed {
   if (!startId) {
     const pointed = new Set<string>();
     for (const r of chart.relations ?? []) {
-      for (const x of r.next ?? []) pointed.add(x);
+      for (const x of nextIds(r)) pointed.add(x);
       for (const x of r.children ?? []) pointed.add(x);
     }
     startId = [...byId.values()].find((n) => !pointed.has(nodeId(n)));
@@ -115,7 +136,7 @@ export function chartToAscii(chart: Chart, focusId?: string): string {
     while (cur && !seen.has(cur)) {
       seen.add(cur);
       ids.push(cur);
-      cur = rel.get(cur)?.next?.[0];
+      cur = nextIds(rel.get(cur))[0];
     }
     if (cur) ids.push(`↺:${cur}`); // loop marker
     return ids;
@@ -197,7 +218,7 @@ export function chartToMermaid(chart: Chart, focusId?: string): string {
 
   // edges: next = solid, children = dotted "contains"
   for (const r of chart.relations ?? []) {
-    for (const nx of r.next ?? []) {
+    for (const nx of nextIds(r)) {
       if (byId.has(nx)) lines.push(`  ${mmId(r.node)} --> ${mmId(nx)}`);
     }
     for (const ch of r.children ?? []) {
