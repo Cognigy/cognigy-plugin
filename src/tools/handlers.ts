@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from "fs";
 import { tmpdir } from "os";
+import { spawn } from "child_process";
 import { pipeline } from "stream/promises";
 import { basename, dirname, isAbsolute, join } from "path";
 import { randomUUID } from "crypto";
@@ -3716,14 +3717,39 @@ export class ToolHandlers {
           writeFileSync(file, html, "utf8");
           result.htmlPath = file;
           result.htmlUrl = pathToFileURL(file).href;
+
+          // Opt-in: open the file in the user's default browser. Safe because
+          // the MCP server runs on the user's own machine.
+          if (data.openInBrowser) {
+            try {
+              const opener =
+                process.platform === "darwin"
+                  ? "open"
+                  : process.platform === "win32"
+                    ? "start"
+                    : "xdg-open";
+              spawn(opener, [file], {
+                detached: true,
+                stdio: "ignore",
+                shell: process.platform === "win32",
+              }).unref();
+              result.opened = true;
+            } catch {
+              result.opened = false;
+            }
+          }
         }
 
         const baseAction =
           "To render the graph: emit the `mermaid` string in its OWN ```mermaid fenced block with minimal surrounding prose — a standalone block is promoted to the client's diagram viewer (large), whereas one buried in explanation renders as a small inline thumbnail. Keep commentary in a separate paragraph before or after, not wrapped around the block. Also show the `ascii` tree (works in every client, incl. terminal).";
 
         const htmlAction = result.htmlUrl
-          ? ` Share \`htmlUrl\` as a clickable link — it is the most reliable large, zoomable view (open in a browser).`
-          : ` Then, on its own line, proactively offer the rich view — e.g. "Want a rich, zoomable HTML diagram you can open in a browser? (yes)". If the user agrees, re-call this operation with writeHtml:true (same flowId/focus) and share the returned htmlUrl.`;
+          ? ` A rich, zoomable HTML view was written to the user's OWN local machine (this MCP server runs locally, on the same computer as the user) — it is NOT in your sandbox and needs no upload. Do NOT try to read, fetch, open, download, or "package" the file, and do NOT regenerate it yourself — it is already complete and self-contained.${
+              result.opened
+                ? " It was opened in the user's default browser automatically; also give them the `htmlUrl`/`htmlPath` in case it did not."
+                : ' Simply tell the user to open it in a browser, giving them the `htmlUrl` (a file:// link) and the plain `htmlPath`, e.g. "Open this in your browser: <htmlUrl>".'
+            }`
+          : ` Then, on its own line, proactively offer the rich view — e.g. "Want a rich, zoomable HTML diagram you can open in a browser? (yes)". If the user agrees, re-call this operation with writeHtml:true (and openInBrowser:true to open it for them automatically), same flowId/focus. The file is written to the user's own machine; just hand them the returned htmlUrl/htmlPath — do not try to access it yourself.`;
 
         return withHints(result, { action: baseAction + htmlAction });
       }

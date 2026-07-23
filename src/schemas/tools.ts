@@ -215,6 +215,7 @@ export const manageFlowNodesSchema = z.object({
   focus: idSchema.optional(),
   format: z.enum(["ascii", "mermaid", "both"]).optional(),
   writeHtml: z.boolean().optional(),
+  openInBrowser: z.boolean().optional(),
 });
 
 // Tool 13: manage_packages
