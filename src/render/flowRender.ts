@@ -538,7 +538,7 @@ export function chartToHtml(
     <div class="lg-grid">${legend}</div>
   </div>
   <details open>
-    <summary>ASCII tree (offline fallback)</summary>
+    <summary>ASCII tree (text view)</summary>
     <pre class="ascii">${esc(ascii)}</pre>
   </details>
 </div>
