@@ -290,12 +290,12 @@ function runInstall(client: Client, creds: UserConfigFile): void {
     const res = installClaudeCode(creds);
     if (res.method === "cli") {
       process.stdout.write(
-        green("\n✓ Claude Code") +
-          ": plugin installed via the claude CLI " +
+        green(bold("\n✅ Claude Code — all set.")) +
+          " Plugin installed via the claude CLI " +
           dim("(key stored in keychain)") +
-          ".\n  Restart Claude Code (or /reload-plugins) to apply. " +
-          green("You get tools, skills, and agents.") +
-          "\n" +
+          ".\n  Just restart Claude Code (or /reload-plugins) — you get " +
+          green("tools, skills, and agents") +
+          ". No further steps.\n" +
           dim(
             "  This install is shared with the Claude Desktop 'Code' tab.\n" +
               `  To get future fixes automatically, enable auto-update once:\n    ${autoUpdateHint()}\n`,
@@ -369,12 +369,11 @@ function runInstall(client: Client, creds: UserConfigFile): void {
       "  " +
       bold(yellow("SKILLS & AGENTS install ONLY via these in-app steps")) +
       " —\n  do them now, in Claude Desktop:\n\n" +
-      `    ${cyan("1.")} Click ${bold("Customize")} in the left sidebar.\n` +
-      `    ${cyan("2.")} Next to ${bold("Personal plugins")} click ${bold("+")}, hover ${bold("Add")}, click ${bold("Add marketplace")}.\n` +
-      `    ${cyan("3.")} In the URL field enter ${bold("Cognigy/cognigy-plugin")}, select the result, click ${bold("Sync")}.\n` +
-      `    ${cyan("4.")} The ${bold("cognigy-plugin")} marketplace is now added.\n` +
-      `    ${cyan("5.")} Install the ${bold("Cognigy")} plugin by clicking ${bold("+")}.\n` +
-      `    ${cyan("6.")} On the local-MCP warning, click ${bold("Continue")}.\n\n` +
+      `    ${cyan("1.")} In chat, go ${bold("Customize")} → ${bold("Plugins")} → ${bold("Add")} → ${bold("Add marketplace")}.\n` +
+      `    ${cyan("2.")} In the URL field enter ${bold("Cognigy/cognigy-plugin")}, select the result, click ${bold("Sync")}.\n` +
+      `    ${cyan("3.")} The ${bold("cognigy-plugin")} marketplace is now added.\n` +
+      `    ${cyan("4.")} Install the ${bold("Cognigy")} plugin by clicking ${bold("+")}.\n` +
+      `    ${cyan("5.")} On the local-MCP warning, click ${bold("Continue")}.\n\n` +
       dim(
         "  Leave the plugin's own 'platform' connector unconnected — the\n" +
           "  'Cognigy' connector already serves the tools.\n",

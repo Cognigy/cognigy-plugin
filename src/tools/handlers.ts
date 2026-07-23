@@ -5,8 +5,10 @@ import {
   mkdirSync,
   readFileSync,
   statSync,
+  writeFileSync,
 } from "fs";
 import { tmpdir } from "os";
+import { spawn } from "child_process";
 import { pipeline } from "stream/promises";
 import { basename, dirname, isAbsolute, join } from "path";
 import { randomUUID } from "crypto";
@@ -30,6 +32,56 @@ import {
   type VoiceFix,
 } from "./voiceChecklist.js";
 import * as schemas from "../schemas/tools.js";
+import {
+  chartToAscii,
+  chartToMermaid,
+  chartToHtml,
+  chartLegend,
+} from "../render/flowRender.js";
+
+// The self-contained mermaid UMD build, inlined into rich flow-viz HTML so it
+// renders offline. Copied to dist/assets at build time (scripts/copy-assets.mjs);
+// falls back to node_modules in dev. Read once, then cached (null = not found →
+// the HTML uses a CDN loader instead).
+let mermaidJsCache: string | null | undefined;
+function loadMermaidJs(): string | undefined {
+  if (mermaidJsCache !== undefined) return mermaidJsCache ?? undefined;
+  const candidates = [
+    new URL("../assets/mermaid.min.js", import.meta.url), // published: dist/assets
+    new URL("../../node_modules/mermaid/dist/mermaid.min.js", import.meta.url), // dev
+  ];
+  for (const url of candidates) {
+    try {
+      if (existsSync(url)) {
+        mermaidJsCache = readFileSync(url, "utf8");
+        return mermaidJsCache;
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+  mermaidJsCache = null;
+  return undefined;
+}
+
+// Attach a minimal, one-time render suggestion to a flow-mutation result so the
+// model briefly offers to visualize the change — without rendering unprompted
+// or nagging. Merged into _hints so it never clobbers an existing warning.
+function withRenderSuggestion<T extends object>(
+  result: T,
+  flowId: string,
+  focusNodeId?: string,
+): T {
+  const call = `manage_flow_nodes { operation: "render", flowId: "${flowId}"${
+    focusNodeId ? `, focus: "${focusNodeId}"` : ""
+  } }`;
+  const existing = (result as any)._hints ?? {};
+  (result as any)._hints = {
+    ...existing,
+    renderSuggestion: `Flow changed. Offer once, in one short line (do not render unprompted, do not repeat the offer): ask if the user wants to see the updated flow — if yes, call ${call}.`,
+  };
+  return result;
+}
 import {
   buildPackageExportablePreview,
   buildPackageExportPlan,
@@ -3470,15 +3522,19 @@ export class ToolHandlers {
         };
 
         if (missingInitAppSession) {
-          return withHints(result, {
-            warning:
-              "No xApp: Init Session (initAppSession) node exists in this flow. Every xApp node needs one, and it must run before this node — it creates the session and populates input.apps.url. (This check only verifies presence, not execution order.)",
-            action:
-              "Add an initAppSession node and ensure it runs before this xApp node (earlier in the same tool branch).",
-          });
+          return withRenderSuggestion(
+            withHints(result, {
+              warning:
+                "No xApp: Init Session (initAppSession) node exists in this flow. Every xApp node needs one, and it must run before this node — it creates the session and populates input.apps.url. (This check only verifies presence, not execution order.)",
+              action:
+                "Add an initAppSession node and ensure it runs before this xApp node (earlier in the same tool branch).",
+            }),
+            flowId,
+            nodeId,
+          );
         }
 
-        return result;
+        return withRenderSuggestion(result, flowId, nodeId);
       }
 
       // ----- UPDATE -----
@@ -3561,15 +3617,19 @@ export class ToolHandlers {
                 patchPayload,
               );
             }
-            return {
-              updated: true,
-              nodeId: data.nodeId,
-              ...(data.label ? { label: data.label } : {}),
-              ...(data.config
-                ? { configUpdated: Object.keys(data.config) }
-                : {}),
-              casesUpdated: caseResults,
-            };
+            return withRenderSuggestion(
+              {
+                updated: true,
+                nodeId: data.nodeId,
+                ...(data.label ? { label: data.label } : {}),
+                ...(data.config
+                  ? { configUpdated: Object.keys(data.config) }
+                  : {}),
+                casesUpdated: caseResults,
+              },
+              flowId,
+              data.nodeId,
+            );
           } else {
             const transformed = transformConfigForApi(nodeType, data.config);
             patchPayload.config = deepMerge(existingConfig, transformed);
@@ -3597,17 +3657,21 @@ export class ToolHandlers {
               `/v2.0/flows/${flowId}/chart/nodes/${data.nodeId}`,
             );
             if (saved?.config?.hasError) {
-              return withHints(result, {
-                warning:
-                  "Node saved, but config.hasError is true — the code failed to transpile (TypeScript/syntax error).",
-                action: "Fix the code and update again.",
-              });
+              return withRenderSuggestion(
+                withHints(result, {
+                  warning:
+                    "Node saved, but config.hasError is true — the code failed to transpile (TypeScript/syntax error).",
+                  action: "Fix the code and update again.",
+                }),
+                flowId,
+                data.nodeId,
+              );
             }
           } catch {
             // Non-fatal — the update itself succeeded.
           }
         }
-        return result;
+        return withRenderSuggestion(result, flowId, data.nodeId);
       }
 
       // ----- DELETE -----
@@ -3626,7 +3690,112 @@ export class ToolHandlers {
           `/v2.0/flows/${flowId}/chart/nodes/${data.nodeId}`,
         );
 
-        return { deleted: true, nodeId: data.nodeId };
+        // No focus on delete — the node is gone; just suggest a fresh render.
+        return withRenderSuggestion(
+          { deleted: true, nodeId: data.nodeId },
+          flowId,
+        );
+      }
+
+      // ----- RENDER -----
+      case "render": {
+        // Topology (start→next chain + children) comes from the chart endpoint;
+        // node labels come from the node-list endpoint. Merge the two.
+        let chart: any;
+        try {
+          chart = await this.apiClient.get(`/new/v2.0/flows/${flowId}/chart`);
+        } catch {
+          return withHints(
+            { error: "Could not load flow chart." },
+            {
+              action:
+                "Verify flowId. Use list_resources { resourceType: 'flow', projectId }.",
+            },
+          );
+        }
+
+        try {
+          const list: any = await this.apiClient.get(
+            `/v2.0/flows/${flowId}/chart/nodes`,
+            { params: { limit: 200 } },
+          );
+          const items = list.items ?? list;
+          if (Array.isArray(items)) {
+            const labelById = new Map<string, string>(
+              items.map((n: any) => [n._id || n.id, n.label]),
+            );
+            for (const n of chart.nodes ?? []) {
+              const id = n._id || n.id;
+              const lbl = labelById.get(id);
+              if (!n.label && lbl) n.label = lbl;
+            }
+          }
+        } catch {
+          // Labels are optional — the serializer falls back to preview/type.
+        }
+
+        const format = data.format ?? "both";
+        const showLegend = data.legend ?? true;
+        const result: any = {};
+        if (format === "ascii" || format === "both") {
+          result.ascii = chartToAscii(chart, data.focus);
+        }
+        if (format === "mermaid" || format === "both") {
+          result.mermaid = chartToMermaid(chart, data.focus, {
+            legend: showLegend,
+          });
+        }
+        // A shape/edge key for exactly the elements present in this flow (the
+        // model can print it as a short list; the HTML always draws it).
+        if (showLegend) result.legend = chartLegend(chart);
+
+        if (data.writeHtml) {
+          const html = chartToHtml(chart, {
+            title: `Flow ${flowId}`,
+            focusId: data.focus,
+            mermaidJs: loadMermaidJs(), // inline for offline; undefined → CDN
+          });
+          const file = join(tmpdir(), `cognigy-flow-${flowId}.html`);
+          writeFileSync(file, html, "utf8");
+          result.htmlPath = file;
+          result.htmlUrl = pathToFileURL(file).href;
+
+          // Open the file in the user's default browser by default whenever an
+          // HTML view is written — the whole point of writeHtml is to look at
+          // it. Safe: the MCP server runs on the user's own machine. Pass
+          // openInBrowser:false to only get the path back without opening.
+          if (data.openInBrowser !== false) {
+            try {
+              const opener =
+                process.platform === "darwin"
+                  ? "open"
+                  : process.platform === "win32"
+                    ? "start"
+                    : "xdg-open";
+              spawn(opener, [file], {
+                detached: true,
+                stdio: "ignore",
+                shell: process.platform === "win32",
+              }).unref();
+              result.opened = true;
+            } catch {
+              result.opened = false;
+            }
+          }
+        }
+
+        const baseAction =
+          "CRITICAL — how to deliver the diagram so it renders natively (zoomable, mobile-friendly): create a native Mermaid/diagram ARTIFACT whose content is EXACTLY the `mermaid` string (titled e.g. Flow: <flow name>). Only a native mermaid artifact produces the interactive 'Download and open · MERMAID' card that works on phones. HARD RULES: (1) Do NOT wrap the mermaid in an HTML page/artifact or a generic HTML 'visualize' widget/connector — an HTML-embedded diagram is not mobile-friendly and is the wrong result. (2) Do NOT paste the mermaid as an inline ```mermaid fenced code block — it renders as plain text or a tiny thumbnail. Use ONLY a native mermaid-type artifact. Keep ALL other content — commentary, the `legend`, the `ascii` tree — OUTSIDE the artifact, in the normal message text. The `ascii` tree is only a fallback for clients with no mermaid-artifact support at all (e.g. a terminal); the rich HTML file (writeHtml) is only for opening in a desktop browser, never for rendering inside the chat.";
+
+        const htmlAction = result.htmlUrl
+          ? ` A rich, zoomable HTML view was written to the user's OWN local machine (this MCP server runs locally, on the same computer as the user) — it is NOT in your sandbox and needs no upload. Do NOT try to read, fetch, open, download, or "package" the file, and do NOT regenerate it yourself — it is already complete and self-contained.${
+              result.opened
+                ? " It was opened in the user's default browser automatically; also give them the `htmlUrl`/`htmlPath` in case it did not."
+                : ' Simply tell the user to open it in a browser, giving them the `htmlUrl` (a file:// link) and the plain `htmlPath`, e.g. "Open this in your browser: <htmlUrl>".'
+            }`
+          : ` Then, on its own line, proactively offer the rich view — e.g. "Want a rich, zoomable HTML diagram you can open in a browser? (yes)". If the user agrees, re-call this operation with writeHtml:true (it opens in the browser automatically), same flowId/focus. The file is written to the user's own machine; just hand them the returned htmlUrl/htmlPath — do not try to access it yourself.`;
+
+        return withHints(result, { action: baseAction + htmlAction });
       }
 
       default:

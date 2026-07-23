@@ -1749,7 +1749,20 @@ describe("ToolHandlers v2", () => {
       });
 
       expect(result.updated).toBe(true);
-      expect(result._hints).toBeUndefined();
+      // No transpile warning (a render suggestion in _hints is expected).
+      expect(result._hints?.warning).toBeUndefined();
+    });
+
+    it("suggests rendering the flow after an update (focused on the node)", async () => {
+      api.patch.mockResolvedValueOnce({ _id: codeNodeId });
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "update",
+        flowId: ID.flow,
+        nodeId: codeNodeId,
+        label: "Greeting",
+      });
+      expect(result._hints?.renderSuggestion).toContain('operation: "render"');
+      expect(result._hints?.renderSuggestion).toContain(codeNodeId);
     });
 
     it("does not echo server-computed transpiled/hasError back in the PATCH", async () => {
@@ -1878,7 +1891,8 @@ describe("ToolHandlers v2", () => {
       });
 
       expect(result.type).toBe("initAppSession");
-      expect(result._hints).toBeUndefined();
+      // No missing-init-session warning (a render suggestion is expected).
+      expect(result._hints?.warning).toBeUndefined();
       // initAppSession is not xApp-dependent → no node-list lookup
       expect(api.get).not.toHaveBeenCalled();
       expect(api.post).toHaveBeenCalledWith(
@@ -1910,7 +1924,8 @@ describe("ToolHandlers v2", () => {
       });
 
       expect(result.type).toBe("setAdaptiveCardAppState");
-      expect(result._hints).toBeUndefined();
+      // No missing-init-session warning (a render suggestion is expected).
+      expect(result._hints?.warning).toBeUndefined();
       expect(api.post).toHaveBeenCalledWith(
         expect.stringContaining("/chart/nodes"),
         expect.objectContaining({
