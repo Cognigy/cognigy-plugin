@@ -214,6 +214,7 @@ export const manageFlowNodesSchema = z.object({
   // render operation
   focus: z.union([idSchema, z.array(idSchema)]).optional(),
   format: z.enum(["ascii", "mermaid", "both"]).optional(),
+  legend: z.boolean().optional(),
   writeHtml: z.boolean().optional(),
   openInBrowser: z.boolean().optional(),
 });

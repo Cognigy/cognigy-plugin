@@ -197,26 +197,101 @@ function mmLabel(s: string): string {
   return s.replace(/"/g, "'").slice(0, 40);
 }
 
+// Shape category a node type maps to. Keep in sync with mmShape/GLYPH.
+type ShapeCat = "start" | "end" | "agent" | "branch" | "step";
+function shapeCat(type: string | undefined): ShapeCat {
+  switch (type) {
+    case "start":
+      return "start";
+    case "end":
+      return "end";
+    case "ifElse":
+    case "switch":
+      return "branch";
+    case "aiAgentJob":
+      return "agent";
+    default:
+      return "step";
+  }
+}
+
 function mmShape(type: string | undefined, id: string, label: string): string {
   const l = `"${mmLabel(label)}"`;
-  switch (type) {
+  switch (shapeCat(type)) {
     case "start":
       return `${id}((${l}))`;
     case "end":
       return `${id}([${l}])`;
-    case "ifElse":
-    case "switch":
+    case "branch":
       return `${id}{${l}}`;
-    case "aiAgentJob":
+    case "agent":
       return `${id}[[${l}]]`;
     default:
       return `${id}[${l}]`;
   }
 }
 
+// A shape/edge key for exactly the elements present in THIS chart.
+const SHAPE_MEANING: Record<ShapeCat, { shape: string; meaning: string }> = {
+  start: { shape: "Circle", meaning: "Start" },
+  agent: { shape: "Double-outlined box", meaning: "AI Agent" },
+  branch: { shape: "Diamond", meaning: "Branch (If/Else, Switch)" },
+  step: {
+    shape: "Rectangle",
+    meaning: "Action step (Say, Code, xApp, tool, …)",
+  },
+  end: { shape: "Rounded box", meaning: "End" },
+};
+// Stable display order.
+const SHAPE_ORDER: ShapeCat[] = ["start", "agent", "branch", "step", "end"];
+
+export function chartLegend(
+  chart: Chart,
+): { shape: string; meaning: string }[] {
+  const cats = new Set<ShapeCat>();
+  for (const n of chart.nodes ?? []) cats.add(shapeCat(n.type));
+
+  const rows = SHAPE_ORDER.filter((c) => cats.has(c)).map(
+    (c) => SHAPE_MEANING[c],
+  );
+
+  const rels = chart.relations ?? [];
+  if (rels.some((r) => nextIds(r).length))
+    rows.push({ shape: "Solid arrow →", meaning: "Flow sequence (next)" });
+  if (rels.some((r) => (r.children ?? []).length))
+    rows.push({
+      shape: "Dotted arrow (contains)",
+      meaning: "Nested branch / tool body",
+    });
+  return rows;
+}
+
+// A mermaid `Legend` subgraph with one sample node per shape present, so the
+// key renders inside the diagram image itself. Isolated (lg_* ids, no edges to
+// the flow) so it does not affect the main layout.
+function mermaidLegend(chart: Chart): string[] {
+  const cats = new Set<ShapeCat>();
+  for (const n of chart.nodes ?? []) cats.add(shapeCat(n.type));
+  const present = SHAPE_ORDER.filter((c) => cats.has(c));
+  if (!present.length) return [];
+
+  const lines = ["  subgraph Legend", "    direction LR"];
+  present.forEach((c, i) => {
+    lines.push(
+      "    " + mmShape(catToType(c), `lg_${i}`, SHAPE_MEANING[c].meaning),
+    );
+  });
+  lines.push("  end");
+  return lines;
+}
+function catToType(c: ShapeCat): string {
+  return c === "agent" ? "aiAgentJob" : c === "branch" ? "ifElse" : c;
+}
+
 export function chartToMermaid(
   chart: Chart,
   focus?: string | string[],
+  legend = false,
 ): string {
   const { byId, rel, startId } = index(chart);
   const lines: string[] = ["flowchart TD"];
@@ -267,6 +342,8 @@ export function chartToMermaid(
     lines.push(`  class ${focused.map(mmId).join(",")} focus;`);
   }
 
+  if (legend) lines.push(...mermaidLegend(chart));
+
   return lines.join("\n");
 }
 
@@ -297,6 +374,12 @@ export function chartToHtml(
   const title = opts.title ?? "Cognigy Flow";
   const mermaid = chartToMermaid(chart, opts.focusId);
   const ascii = chartToAscii(chart, opts.focusId);
+  const legend = chartLegend(chart)
+    .map(
+      (r) =>
+        `<div class="lg-row"><span class="lg-shape">${esc(r.shape)}</span><span class="lg-mean">${esc(r.meaning)}</span></div>`,
+    )
+    .join("");
 
   // When the mermaid UMD source is supplied, inline it so the page renders
   // fully offline (no CDN). Otherwise fall back to a CDN import. The
@@ -353,6 +436,14 @@ export function chartToHtml(
     border-radius:12px; padding:20px; overflow-x:auto;
     font-family:ui-monospace,Menlo,Consolas,monospace; font-size:13px; line-height:1.5; }
   .err { color:var(--muted); font-size:13px; padding:16px 0; }
+  .legend { margin-top:20px; background:var(--surface); border:1px solid var(--line);
+    border-radius:12px; padding:16px 18px; }
+  .legend h2 { font-size:12px; text-transform:uppercase; letter-spacing:0.06em;
+    color:var(--muted); margin:0 0 12px; font-weight:600; }
+  .lg-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:8px 20px; }
+  .lg-row { display:flex; gap:10px; font-size:13px; align-items:baseline; }
+  .lg-shape { color:var(--ink); font-weight:600; min-width:150px; }
+  .lg-mean { color:var(--muted); }
 </style>
 </head>
 <body>
@@ -361,6 +452,10 @@ export function chartToHtml(
   <p class="sub">Deterministic render of the flow chart · generated by the Cognigy plugin</p>
   <div class="card">
     <div class="diagram"><pre class="mermaid">${esc(mermaid)}</pre></div>
+  </div>
+  <div class="legend">
+    <h2>Legend — shapes in this flow</h2>
+    <div class="lg-grid">${legend}</div>
   </div>
   <details open>
     <summary>ASCII tree (offline fallback)</summary>

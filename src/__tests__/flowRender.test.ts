@@ -5,6 +5,7 @@ import {
   chartToAscii,
   chartToMermaid,
   chartToHtml,
+  chartLegend,
   type Chart,
 } from "../render/flowRender.js";
 
@@ -172,6 +173,46 @@ describe("chartToMermaid", () => {
     expect(chartToMermaid(chart, "branch")).toBe(
       chartToMermaid(chart, "branch"),
     );
+  });
+});
+
+describe("chartLegend", () => {
+  it("lists only the shapes/edges present in the flow", () => {
+    // chart has start, end, aiAgentJob, ifElse (branch), and step nodes,
+    // plus next + children edges — so every row should appear.
+    const rows = chartLegend(chart);
+    const means = rows.map((r) => r.meaning);
+    expect(means).toContain("Start");
+    expect(means).toContain("End");
+    expect(means).toContain("AI Agent");
+    expect(means).toContain("Branch (If/Else, Switch)");
+    expect(means.some((m) => m.startsWith("Action step"))).toBe(true);
+    expect(means).toContain("Flow sequence (next)");
+    expect(means).toContain("Nested branch / tool body");
+  });
+
+  it("omits shapes not present (no branch, no children)", () => {
+    const c: Chart = {
+      nodes: [
+        { _id: "s", type: "start" },
+        { _id: "a", type: "say", label: "hi" },
+      ],
+      relations: [{ node: "s", next: "a" }],
+    };
+    const means = chartLegend(c).map((r) => r.meaning);
+    expect(means).not.toContain("Branch (If/Else, Switch)");
+    expect(means).not.toContain("End");
+    expect(means).not.toContain("Nested branch / tool body");
+    expect(means).toContain("Start");
+    expect(means).toContain("Flow sequence (next)");
+  });
+
+  it("embeds a Legend subgraph in mermaid only when requested", () => {
+    expect(chartToMermaid(chart, undefined, true)).toContain("subgraph Legend");
+    expect(chartToMermaid(chart, undefined, false)).not.toContain(
+      "subgraph Legend",
+    );
+    expect(chartToMermaid(chart)).not.toContain("subgraph Legend");
   });
 });
 

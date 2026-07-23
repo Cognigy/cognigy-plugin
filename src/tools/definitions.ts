@@ -835,6 +835,11 @@ After creating, use talk_to_agent to test.`,
           description:
             "render only: which representation(s) to return. Default: both.",
         },
+        legend: {
+          type: "boolean",
+          description:
+            "render only: include a key of only the shapes/edges present in this flow (embedded in the mermaid + returned as `legend` rows + shown in the HTML). Default: true.",
+        },
         writeHtml: {
           type: "boolean",
           description:
