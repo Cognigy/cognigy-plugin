@@ -207,23 +207,42 @@ function mmShape(type: string | undefined, id: string, label: string): string {
 }
 
 export function chartToMermaid(chart: Chart, focusId?: string): string {
-  const { byId, startId } = index(chart);
+  const { byId, rel, startId } = index(chart);
   const lines: string[] = ["flowchart TD"];
 
-  // node declarations
-  for (const n of chart.nodes ?? []) {
-    const id = nodeId(n);
-    lines.push("  " + mmShape(n.type, mmId(id), nodeLabel(n)));
+  // Declare and wire nodes in traversal order (children before the `next`
+  // continuation) so mermaid's auto-layout tends to place branches left→right
+  // in chart order — e.g. Default (children[0]) leftward, End (the agent's
+  // next) last. This is a layout *nudge*: dagre still optimizes crossings, so
+  // exact left/right lanes are not guaranteed.
+  const order: string[] = [];
+  const seen = new Set<string>();
+  const visit = (id: string | undefined) => {
+    if (!id || seen.has(id) || !byId.has(id)) return;
+    seen.add(id);
+    order.push(id);
+    const r = rel.get(id);
+    for (const c of r?.children ?? []) visit(c);
+    for (const n of nextIds(r)) visit(n);
+  };
+  visit(startId);
+  for (const n of chart.nodes ?? []) visit(nodeId(n)); // any orphans
+
+  for (const id of order) {
+    lines.push(
+      "  " + mmShape(byId.get(id)?.type, mmId(id), nodeLabel(byId.get(id))),
+    );
   }
 
-  // edges: next = solid, children = dotted "contains"
-  for (const r of chart.relations ?? []) {
-    for (const nx of nextIds(r)) {
-      if (byId.has(nx)) lines.push(`  ${mmId(r.node)} --> ${mmId(nx)}`);
+  // edges: children = dotted "contains" (emitted first, in chart order),
+  // then next = solid continuation.
+  for (const id of order) {
+    const r = rel.get(id);
+    for (const ch of r?.children ?? []) {
+      if (byId.has(ch)) lines.push(`  ${mmId(id)} -.->|contains| ${mmId(ch)}`);
     }
-    for (const ch of r.children ?? []) {
-      if (byId.has(ch))
-        lines.push(`  ${mmId(r.node)} -.->|contains| ${mmId(ch)}`);
+    for (const nx of nextIds(r)) {
+      if (byId.has(nx)) lines.push(`  ${mmId(id)} --> ${mmId(nx)}`);
     }
   }
 
@@ -234,8 +253,6 @@ export function chartToMermaid(chart: Chart, focusId?: string): string {
     lines.push(`  class ${mmId(focusId)} focus;`);
   }
 
-  // silence unused-in-some-paths
-  void startId;
   return lines.join("\n");
 }
 

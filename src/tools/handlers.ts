@@ -3718,10 +3718,14 @@ export class ToolHandlers {
           result.htmlUrl = pathToFileURL(file).href;
         }
 
-        return withHints(result, {
-          action:
-            "To render the graph: emit the `mermaid` string in its OWN ```mermaid fenced block with minimal surrounding prose — a standalone block is promoted to the client's diagram viewer (large), whereas one buried in explanation renders as a small inline thumbnail. Keep commentary in a separate paragraph before or after, not wrapped around the block. Also show the `ascii` tree (works in every client, incl. terminal). If `htmlUrl` is present, share it as a clickable link — it is the most reliable large, zoomable view (open in a browser).",
-        });
+        const baseAction =
+          "To render the graph: emit the `mermaid` string in its OWN ```mermaid fenced block with minimal surrounding prose — a standalone block is promoted to the client's diagram viewer (large), whereas one buried in explanation renders as a small inline thumbnail. Keep commentary in a separate paragraph before or after, not wrapped around the block. Also show the `ascii` tree (works in every client, incl. terminal).";
+
+        const htmlAction = result.htmlUrl
+          ? ` Share \`htmlUrl\` as a clickable link — it is the most reliable large, zoomable view (open in a browser).`
+          : ` Then, on its own line, proactively offer the rich view — e.g. "Want a rich, zoomable HTML diagram you can open in a browser? (yes)". If the user agrees, re-call this operation with writeHtml:true (same flowId/focus) and share the returned htmlUrl.`;
+
+        return withHints(result, { action: baseAction + htmlAction });
       }
 
       default:
