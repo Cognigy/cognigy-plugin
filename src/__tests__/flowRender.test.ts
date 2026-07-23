@@ -156,6 +156,18 @@ describe("chartToMermaid", () => {
     expect(chartToMermaid(chart)).not.toContain("focus;");
   });
 
+  it("sets an explicit text color so the highlight stays readable", () => {
+    expect(chartToMermaid(chart, "branch")).toContain("color:#111827");
+  });
+
+  it("highlights multiple focus nodes in one class statement", () => {
+    const mm = chartToMermaid(chart, ["branch", "say_over"]);
+    expect(mm).toContain("class n_branch,n_say_over focus;");
+    // ascii marks each of them
+    const out = chartToAscii(chart, ["branch", "say_over"]);
+    expect(out.match(/«here»/g)?.length).toBe(2);
+  });
+
   it("produces identical output for identical input (deterministic)", () => {
     expect(chartToMermaid(chart, "branch")).toBe(
       chartToMermaid(chart, "branch"),

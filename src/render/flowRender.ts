@@ -113,21 +113,29 @@ function glyph(type: string | undefined): string {
   return (type && GLYPH[type]) || "▢";
 }
 
+// focus may be a single id or several — normalize to a Set.
+function focusSet(focus?: string | string[]): Set<string> {
+  if (!focus) return new Set();
+  return new Set(Array.isArray(focus) ? focus : [focus]);
+}
+
 /**
  * Walk the `next` chain vertically; nest `children` with tree branches.
- * `focusId` (optional) marks a node with «» for partial-render highlight.
+ * `focus` (optional) marks one or more nodes with «» for partial-render
+ * highlight.
  */
-export function chartToAscii(chart: Chart, focusId?: string): string {
+export function chartToAscii(chart: Chart, focus?: string | string[]): string {
   const { byId, rel, startId } = index(chart);
   if (!startId) return "(empty flow)";
 
   const out: string[] = [];
   const seen = new Set<string>();
+  const focused = focusSet(focus);
 
   const label = (id: string) => nodeLabel(byId.get(id));
   const line = (id: string, prefix: string, conn: string) =>
     `${prefix}${conn}${glyph(byId.get(id)?.type)} ${label(id)}` +
-    (id === focusId ? "  «here»" : "");
+    (focused.has(id) ? "  «here»" : "");
 
   // Follow the `next` chain from a node, guarding loops.
   function chainOf(startId: string): string[] {
@@ -206,7 +214,10 @@ function mmShape(type: string | undefined, id: string, label: string): string {
   }
 }
 
-export function chartToMermaid(chart: Chart, focusId?: string): string {
+export function chartToMermaid(
+  chart: Chart,
+  focus?: string | string[],
+): string {
   const { byId, rel, startId } = index(chart);
   const lines: string[] = ["flowchart TD"];
 
@@ -246,11 +257,14 @@ export function chartToMermaid(chart: Chart, focusId?: string): string {
     }
   }
 
-  if (focusId && byId.has(focusId)) {
+  const focused = [...focusSet(focus)].filter((id) => byId.has(id));
+  if (focused.length) {
+    // Explicit dark text color so the label stays readable on the light fill
+    // regardless of the client's theme (dark clients default text to light).
     lines.push(
-      `  classDef focus fill:#fde68a,stroke:#d97706,stroke-width:2px;`,
+      `  classDef focus fill:#fde68a,stroke:#d97706,stroke-width:3px,color:#111827;`,
     );
-    lines.push(`  class ${mmId(focusId)} focus;`);
+    lines.push(`  class ${focused.map(mmId).join(",")} focus;`);
   }
 
   return lines.join("\n");
@@ -274,7 +288,11 @@ function esc(s: string): string {
  */
 export function chartToHtml(
   chart: Chart,
-  opts: { title?: string; focusId?: string; mermaidJs?: string } = {},
+  opts: {
+    title?: string;
+    focusId?: string | string[];
+    mermaidJs?: string;
+  } = {},
 ): string {
   const title = opts.title ?? "Cognigy Flow";
   const mermaid = chartToMermaid(chart, opts.focusId);
