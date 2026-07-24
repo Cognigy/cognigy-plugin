@@ -478,7 +478,10 @@ export function chartToHtml(
     : `<script type="module">
   try {
     const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
-    mermaid.initialize({ startOnLoad: true, theme: "neutral" });
+    // Import is async and may resolve after load, so drive rendering
+    // explicitly instead of relying on startOnLoad.
+    mermaid.initialize({ startOnLoad: false, theme: "neutral" });
+    await mermaid.run();
   } catch (e) {
     document.querySelector(".diagram").innerHTML =
       '<p class="err">Mermaid could not load (offline?). See the ASCII tree below.</p>';

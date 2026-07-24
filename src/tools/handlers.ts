@@ -3766,16 +3766,20 @@ export class ToolHandlers {
           // openInBrowser:false to only get the path back without opening.
           if (data.openInBrowser !== false) {
             try {
-              const opener =
-                process.platform === "darwin"
+              const isWin = process.platform === "win32";
+              const opener = isWin
+                ? "start"
+                : process.platform === "darwin"
                   ? "open"
-                  : process.platform === "win32"
-                    ? "start"
-                    : "xdg-open";
-              spawn(opener, [file], {
+                  : "xdg-open";
+              // On Windows `start` is a cmd.exe builtin whose first quoted arg
+              // is the window TITLE — pass an empty title so a path containing
+              // spaces isn't swallowed as the title and the file still opens.
+              const openerArgs = isWin ? ['""', file] : [file];
+              spawn(opener, openerArgs, {
                 detached: true,
                 stdio: "ignore",
-                shell: process.platform === "win32",
+                shell: isWin,
               }).unref();
               result.opened = true;
             } catch {
