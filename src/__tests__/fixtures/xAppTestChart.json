@@ -1,0 +1,179 @@
+{
+  "_id": "6a4f9a84bad16ab4ee5121b4",
+  "relations": [
+    {
+      "node": "6a4f9a84bad16ab4ee5121ba",
+      "children": [],
+      "next": "6a588dec0d80aa36aabb18db",
+      "_id": "6a4f9a84bad16ab4ee5121bb"
+    },
+    {
+      "node": "6a4f9a84bad16ab4ee5121c5",
+      "children": [],
+      "next": null,
+      "_id": "6a4f9a84bad16ab4ee5121c8"
+    },
+    {
+      "node": "6a4f9a84d9543729fbbfc41f",
+      "children": ["6a4f9a84d9543729fbbfc429", "6a4f9fdffac4430baebe7200"],
+      "next": "6a4f9a84bad16ab4ee5121c5",
+      "_id": "6a4f9a84d9543729fbbfc422"
+    },
+    {
+      "node": "6a4f9a84d9543729fbbfc429",
+      "children": [],
+      "next": null,
+      "_id": "6a4f9a84d9543729fbbfc42c"
+    },
+    {
+      "node": "6a4f9fdffac4430baebe7200",
+      "children": [],
+      "next": "6a4fa008d9543729fbc020ec",
+      "_id": "6a4f9fdffac4430baebe7203"
+    },
+    {
+      "node": "6a4f9fdffac4430baebe7217",
+      "children": [],
+      "next": null,
+      "_id": "6a4f9fdffac4430baebe721a"
+    },
+    {
+      "node": "6a4fa008d9543729fbc020ec",
+      "children": [],
+      "next": "6a4faeaefac4430baebf43c6",
+      "_id": "6a4fa008d9543729fbc020ef"
+    },
+    {
+      "node": "6a4fa118fac4430baebe8183",
+      "children": [],
+      "next": "6a4fa13dd9543729fbc03061",
+      "_id": "6a4fa118fac4430baebe8186"
+    },
+    {
+      "node": "6a4fa13dd9543729fbc03061",
+      "children": [],
+      "next": "6a4fa15bd9543729fbc03261",
+      "_id": "6a4fa13dd9543729fbc03066"
+    },
+    {
+      "node": "6a4fa15bd9543729fbc03261",
+      "children": [],
+      "next": "6a4fa17ed9543729fbc033fc",
+      "_id": "6a4fa15bd9543729fbc03264"
+    },
+    {
+      "node": "6a4fa17ed9543729fbc033fc",
+      "children": [],
+      "next": "6a4f9fdffac4430baebe7217",
+      "_id": "6a4fa17ed9543729fbc033ff"
+    },
+    {
+      "node": "6a4faeaefac4430baebf43c6",
+      "children": [],
+      "next": "6a4fa118fac4430baebe8183",
+      "_id": "6a4faeaefac4430baebf43c9"
+    },
+    {
+      "node": "6a588dec0d80aa36aabb18db",
+      "children": [],
+      "next": "6a4f9a84d9543729fbbfc41f",
+      "_id": "6a588dec0d80aa36aabb18de"
+    }
+  ],
+  "nodes": [
+    {
+      "_id": "6a588dec0d80aa36aabb18db",
+      "type": "setSessionConfig",
+      "label": "Set Session Config",
+      "isEntryPoint": false,
+      "preview": ""
+    },
+    {
+      "_id": "6a4faeaefac4430baebf43c6",
+      "type": "say",
+      "label": "Say",
+      "isEntryPoint": false,
+      "preview": { "text": ["{{input.apps.url}}"], "type": "buttons" }
+    },
+    {
+      "_id": "6a4fa17ed9543729fbc033fc",
+      "type": "code",
+      "label": "Assemble booking",
+      "isEntryPoint": false,
+      "preview": ""
+    },
+    {
+      "_id": "6a4fa15bd9543729fbc03261",
+      "type": "setHTMLAppState",
+      "label": "xApp: Seat Selector",
+      "isEntryPoint": false,
+      "preview": ""
+    },
+    {
+      "_id": "6a4fa13dd9543729fbc03061",
+      "type": "setHTMLAppState",
+      "label": "xApp: Flight Selection",
+      "isEntryPoint": false,
+      "preview": ""
+    },
+    {
+      "_id": "6a4fa118fac4430baebe8183",
+      "type": "setHTMLAppState",
+      "label": "xApp: Hotel Map",
+      "isEntryPoint": false,
+      "preview": ""
+    },
+    {
+      "_id": "6a4fa008d9543729fbc020ec",
+      "type": "initAppSession",
+      "label": "xApp: Init Session",
+      "isEntryPoint": false,
+      "preview": ""
+    },
+    {
+      "_id": "6a4f9fdffac4430baebe7217",
+      "type": "aiAgentToolAnswer",
+      "label": "book_a_trip - Resolve",
+      "isEntryPoint": false,
+      "preview": "{{JSON.stringify(context.booking)}}"
+    },
+    {
+      "_id": "6a4f9fdffac4430baebe7200",
+      "type": "aiAgentJobTool",
+      "label": "book_a_trip",
+      "isEntryPoint": false,
+      "preview": "book_a_trip"
+    },
+    {
+      "_id": "6a4f9a84d9543729fbbfc429",
+      "type": "aiAgentJobDefault",
+      "label": "Default",
+      "isEntryPoint": false,
+      "preview": ""
+    },
+    {
+      "_id": "6a4f9a84d9543729fbbfc41f",
+      "type": "aiAgentJob",
+      "label": "AI Agent",
+      "isEntryPoint": true,
+      "preview": {
+        "aiAgentName": "X app test",
+        "aiAgentImage": "default-avatar:1"
+      }
+    },
+    {
+      "_id": "6a4f9a84bad16ab4ee5121c5",
+      "type": "end",
+      "label": "End",
+      "isEntryPoint": false,
+      "preview": ""
+    },
+    {
+      "_id": "6a4f9a84bad16ab4ee5121ba",
+      "type": "start",
+      "label": "Start",
+      "isEntryPoint": true,
+      "preview": ""
+    }
+  ]
+}

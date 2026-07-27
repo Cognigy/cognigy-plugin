@@ -1,6 +1,6 @@
 ---
 name: flow-nodes
-description: "Use when adding custom logic inside a Cognigy tool branch with manage_flow_nodes — supported node types, config schemas, placement rules, and the tool-first workflow."
+description: "Use when adding custom logic inside a Cognigy tool branch with manage_flow_nodes, or when rendering/visualizing a flow as a diagram — supported node types, config schemas, placement rules, the tool-first workflow, and the render operation."
 ---
 
 # Flow Node Reference
@@ -421,6 +421,29 @@ When you create a `lookup` (switch) node, the case child nodes start with empty 
 ```
 
 The handler sends the correct API format (`{ config: { case: { value: "..." } } }`) automatically.
+
+---
+
+## Visualizing a flow (render)
+
+`manage_flow_nodes { operation: "render", flowId }` deterministically serializes the whole flow into a diagram. It is read-only. The engine builds the picture in code, so you never re-derive the graph (no hallucinated edges, ~0 tokens).
+
+Returned fields:
+
+- `ascii` — a text tree of the flow (`next` chain top-to-bottom, `children` nested). Display it inline in **any** client, including a terminal.
+- `mermaid` — a `flowchart TD` string. **Deliver it ONLY as a native Mermaid/diagram artifact** (the "Download and open · MERMAID" card). This is the one form that renders zoomably and works on phones.
+  - Do **NOT** wrap it in an HTML page/widget or a generic HTML "visualize" connector — an HTML-embedded diagram is not mobile-friendly.
+  - Do **NOT** paste it as an inline ` ```mermaid ` fenced code block — it renders as plain text or a tiny thumbnail.
+  - Keep commentary, the legend, and the ascii tree **outside** the artifact.
+- `legend` — a key of only the shapes/edges present in this flow (also drawn inside the mermaid as a compact strip and in the HTML panel). Toggle with `legend: false`.
+
+Options:
+
+- `focus: "<nodeId>"` or `focus: ["<id1>", "<id2>"]` — highlight one or more nodes (e.g. ones you just created/edited) so the user sees how the change fits.
+- `format: "ascii" | "mermaid" | "both"` (default `both`).
+- `writeHtml: true` — also write a self-contained, offline rich HTML graph to a tmp file **on the user's own machine** (this MCP server runs locally) and **open it in the browser automatically**. Returns `htmlUrl` (a `file://` link) and `htmlPath`. The file is already complete on that machine — just hand the user the link; do NOT try to fetch, upload, or regenerate it. Pass `openInBrowser: false` to only get the link back without opening.
+
+After a node create/update/delete, offer a render once, in one short line (do not render unprompted, do not repeat the offer).
 
 ---
 

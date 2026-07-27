@@ -770,7 +770,7 @@ After creating, use talk_to_agent to test.`,
   {
     name: "manage_flow_nodes",
     description:
-      'Add flow nodes inside tool branches to build custom logic for AI Agent tools.\n\nIMPORTANT: Nodes should be created INSIDE tool branches. First create a tool with create_tool { toolType: "tool" }, then use this tool to add logic nodes under it (parentNodeId = toolNodeId, mode = "appendChild"). Do NOT add standalone nodes before the AI Agent Job node unless the user explicitly asks for it.\n\nTool branch placement is handled automatically: when you appendChild to an aiAgentJobTool, then, else, case, or default node, the handler auto-rewrites to append mode so nodes land in the correct execution chain. Both appendChild and append work correctly for tool branches.\n\nBRANCHING NODES (ifThenElse, lookup):\n- ifThenElse auto-creates then/else child nodes. lookup auto-creates case/default child nodes.\n- To add nodes inside a branch: list nodes to find the branch child ID, then use mode "append" with parentNodeId = the branch child node ID.\n- Do NOT use mode "appendChild" on then/else/case/default nodes — use "append" instead (the handler auto-corrects this, but "append" is the correct approach).\n- To set case values on a lookup/switch node, update the parent switch with a cases array: config { cases: [{ id: "<caseNodeId>", value: "billing" }] }.\n- To update a single case node directly: update with config { value: "billing" }.\n\nOPERATIONS:\n- list: List all nodes in a flow (returns id, type, label, parentId, isEntryPoint only — NO config).\n- get: Read one node in full, including its config. Requires nodeId. Use this before editing a node (e.g. to read a code node\'s current TypeScript) — list does not return config. For code nodes the returned config includes `hasError` (true = last saved code failed to transpile); the large server-computed `transpiled` output is omitted.\n- create: Add a node inside a tool branch. Requires nodeType and config. Set parentNodeId to the tool node ID and mode to "appendChild" to place nodes inside the tool. Use mode "append" to place after a sibling node within the same branch.\n- update: Modify a node\'s config or label. Only provided config fields are changed — existing fields are preserved. For switch/lookup nodes, include a cases array in config to set case values on child case nodes.\n- delete: Remove a node from the flow.\n\nSUPPORTED NODE TYPES: the authoritative set is defined by the server node registry and returned in the error if you pass an unsupported type. Common types: say, question, ifThenElse, lookup, setSessionContext, code, goTo, sleep, httpRequest. xApp nodes: initAppSession, showXAppAdaptiveCard, showXAppHtml, setXAppState, getXAppSessionPin (initAppSession must precede other xApp nodes).\n\nFor AI Agent tool nodes (knowledge, send_email, mcp, http), use create_tool / update_tool instead — they handle the required parent-child node wiring automatically.',
+      'Manage the logic nodes inside a flow (list/get/create/update/delete) and render the flow as a diagram. Nodes are helpers that live INSIDE AI Agent tool branches: create a tool first (create_tool { toolType: "tool" }), then add nodes with parentNodeId = toolNodeId, mode = "appendChild". NEVER add standalone nodes before the AI Agent Job node. The flow-nodes skill owns the full workflow — placement, branching (ifThenElse/lookup), node config, and case values.\n\nOPERATIONS:\n- list: all nodes in a flow (id, type, label, parentId, isEntryPoint only — NO config).\n- get: one node in full incl. config (requires nodeId). Read before editing. For code nodes the config reports `hasError`; the large server-computed `transpiled` output is omitted.\n- create: add a node (requires nodeType + config). parentNodeId + mode place it — see the flow-nodes skill.\n- update: change a node\'s config or label (only provided fields change). For switch/lookup nodes, pass a `cases` array to set case values.\n- delete: remove a node.\n- render (read-only): visualize the flow. Returns an `ascii` tree (display inline in any client incl. terminal) and a `mermaid` string. Deliver the mermaid ONLY as a native Mermaid/diagram artifact — do NOT wrap it in HTML or paste it as an inline ```mermaid fence (both break the zoomable, mobile-friendly viewer). Options: focus=<nodeId|nodeId[]> highlights nodes; writeHtml writes a self-contained rich HTML graph to a local tmp file and opens it in the browser (returns htmlUrl/htmlPath — the file is already on the user\'s machine, just hand them the link). See the flow-nodes skill for details.\n\nSupported node types come from the server node registry; an unsupported nodeType returns the current list. For AI Agent tool nodes (knowledge, send_email, mcp, http) use create_tool / update_tool instead.',
     annotations: {
       title: "Manage Flow Nodes",
       readOnlyHint: false,
@@ -783,7 +783,7 @@ After creating, use talk_to_agent to test.`,
       properties: {
         operation: {
           type: "string",
-          enum: ["list", "get", "create", "update", "delete"],
+          enum: ["list", "get", "create", "update", "delete", "render"],
           description: "Operation to perform",
         },
         flowId: {
@@ -820,6 +820,35 @@ After creating, use talk_to_agent to test.`,
         config: {
           type: "object",
           description: "Node-type-specific configuration.",
+        },
+        focus: {
+          oneOf: [
+            { type: "string" },
+            { type: "array", items: { type: "string" } },
+          ],
+          description:
+            "render only: node ID (or an array of node IDs) to highlight in the diagram (e.g. nodes you just created or edited).",
+        },
+        format: {
+          type: "string",
+          enum: ["ascii", "mermaid", "both"],
+          description:
+            "render only: which representation(s) to return. Default: both.",
+        },
+        legend: {
+          type: "boolean",
+          description:
+            "render only: include a key of only the shapes/edges present in this flow (embedded in the mermaid + returned as `legend` rows + shown in the HTML). Default: true.",
+        },
+        writeHtml: {
+          type: "boolean",
+          description:
+            "render only: also write a self-contained rich HTML graph to a tmp file on the user's local machine and return its htmlUrl/htmlPath (the user opens it in a browser). The file is on the user's own computer — do not try to fetch or regenerate it. Default: false.",
+        },
+        openInBrowser: {
+          type: "boolean",
+          description:
+            "render only (requires writeHtml): open the generated HTML in the user's default browser automatically. Default: true — set false to only get htmlUrl/htmlPath back without opening.",
         },
       },
       required: ["operation", "flowId"],

@@ -203,7 +203,7 @@ export const updateToolSchema = z.object({
 
 // Tool 12: manage_flow_nodes
 export const manageFlowNodesSchema = z.object({
-  operation: z.enum(["list", "get", "create", "update", "delete"]),
+  operation: z.enum(["list", "get", "create", "update", "delete", "render"]),
   flowId: idSchema,
   nodeId: idSchema.optional(),
   nodeType: z.string().optional(),
@@ -211,6 +211,12 @@ export const manageFlowNodesSchema = z.object({
   parentNodeId: idSchema.optional(),
   mode: z.enum(["append", "appendChild"]).optional(),
   config: z.record(z.any()).optional(),
+  // render operation
+  focus: z.union([idSchema, z.array(idSchema)]).optional(),
+  format: z.enum(["ascii", "mermaid", "both"]).optional(),
+  legend: z.boolean().optional(),
+  writeHtml: z.boolean().optional(),
+  openInBrowser: z.boolean().optional(),
 });
 
 // Tool 13: manage_packages
