@@ -1,3 +1,9 @@
+## [1.6.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.5.0...v1.6.0) (2026-07-27)
+
+### Features
+
+* **flow:** render operation — visualize flows (ASCII + mermaid + HTML) ([#13](https://github.com/Cognigy/cognigy-plugin/issues/13)) ([19f50d6](https://github.com/Cognigy/cognigy-plugin/commit/19f50d654362f11d4c6cf46b677251ffaee78c09)), closes [#111827](https://github.com/Cognigy/cognigy-plugin/issues/111827)
+
 ## [1.5.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.4.1...v1.5.0) (2026-07-22)
 
 ### Features
