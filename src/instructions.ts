@@ -15,7 +15,7 @@ TOOL TYPE SELECTION (create_tool):
 - Use toolType "send_email" when the user wants to send emails.
 
 DOCUMENTATION LOOKUP:
-- The plugin also bundles the official Cognigy docs MCP server (docs.cognigy.com). When the user asks how a Cognigy.AI feature, node, endpoint, or setting works — or you are unsure of platform behavior, valid config values, or terminology — search the docs (search_cognigy_documentation) BEFORE answering from memory or guessing. Read full pages via the docs filesystem tool when the search excerpt is not enough. Prefer documented answers over prior knowledge; the platform changes faster than model training data.
+- The plugin also bundles the official Cognigy docs MCP server (docs.cognigy.com). When the user asks how a Cognigy.AI feature, node, endpoint, or setting works — or you are unsure of platform behavior, valid config values, or terminology — search the docs (search_cognigy_documentation) BEFORE answering from memory or guessing. Read full pages via query_docs_filesystem_cognigy_documentation (an MCP tool running shell-like read commands against a virtual docs filesystem — NOT the local shell) when the search excerpt is not enough. Prefer documented answers over prior knowledge; the platform changes faster than model training data.
 
 RULES:
 - create_ai_agent auto-provisions flow + AI Agent Job Node + REST endpoint. Do NOT create these separately.

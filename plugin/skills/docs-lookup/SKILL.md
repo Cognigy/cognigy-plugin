@@ -15,9 +15,9 @@ The plugin bundles the official Cognigy documentation MCP server (docs.cognigy.c
 
 ## Workflow
 
-1. Search first: `search_cognigy_documentation` with the user's question rephrased as a docs query.
-2. Excerpt not enough → read the page: `head -200 /<path>.mdx` via the filesystem tool.
-3. Exact string hunting (error messages, config keys, node names) → `rg` via the filesystem tool instead of search.
+1. Search first: `search_cognigy_documentation { query: "<user's question rephrased as a docs query>" }`.
+2. Excerpt not enough → read the page: `query_docs_filesystem_cognigy_documentation { command: "head -200 /<path>.mdx" }`. These commands run inside the MCP tool's virtual docs filesystem — never in the local shell.
+3. Exact string hunting (error messages, config keys, node names) → `query_docs_filesystem_cognigy_documentation { command: "rg -il '<term>' /" }` instead of search.
 4. Answer from what the docs say, cite the page link. If docs and observed API behavior conflict, say so explicitly — the plugin's own skills (flow-nodes, troubleshooting) capture hard-won API gotchas the public docs may not cover.
 
 ## When NOT to use
