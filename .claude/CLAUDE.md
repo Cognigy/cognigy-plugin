@@ -66,6 +66,7 @@ Endpoints under `/v2.0/flows/{flowId}/chart`:
 - Test: `npm test` (Jest, ESM). Single-process: `npm test -- --runInBand`.
 - Build: `npm run build` (clean `dist`, `tsc`). Dev: `npm run dev` (tsx watch).
 - Lint: `npm run lint`. Format: `npx prettier --write <file>`.
+- The **prod plugin's `platform` server cannot boot in a session rooted in this repo**: `npx -p @cognigy/plugin-engine@<pin>` treats the repo's own `package.json` (same name + version as the pin) as already satisfying the spec, skips the install, and runs the bare bin through `sh` with only `<repo>/node_modules/.bin` on PATH — `command not found`, exit 127, reported as `-32000`. Not a release bug and not fixable in the manifest; users are unaffected. Use `npm run plugin:dev` here; verify the published path from outside the repo.
 - Local plugin testing: `npm run plugin:dev` installs a generated dev marketplace (`.dev-plugin/`, gitignored) serving the working tree — engine runs from `src/` via tsx (no build), skills/agents symlinked; iterate with `/reload-plugins`. `npm run plugin:dev:off` restores the GitHub install. Never edit the tracked `plugin.json` for testing — `npm run check:manifest` guards it in pre-commit and CI.
 
 ## Conventions

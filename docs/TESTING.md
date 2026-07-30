@@ -80,6 +80,18 @@ Then:
 > `src/` changes. Unreleased engine changes are only testable via the local dev loop above; the
 > published path can be re-verified end to end after the release.
 
+> **Gotcha — the prod plugin cannot boot inside this repo.** The manifest launches the engine with
+> `npx -y -p @cognigy/plugin-engine@<pin> cognigy-mcp`. When the client's working directory is this
+> repo, `npm exec` sees the repo's own `package.json` (`@cognigy/plugin-engine`, same version as the
+> pin), decides the spec is already satisfied locally, skips the npx install, and runs the bare
+> command through `sh` with only `<repo>/node_modules/.bin` on `PATH` — which never contains a
+> package's own bins. The result is `sh: cognigy-mcp: command not found` (exit 127), surfacing as
+> `Failed to reconnect to plugin:cognigy:platform: -32000`.
+>
+> This affects **only** sessions rooted in this repo (the pin equals the local version); end users
+> are unaffected. Verify the published path from a session outside the repo, and use
+> `npm run plugin:dev` for work inside it — the dev manifest runs `src/` via tsx and never calls npx.
+
 **Picking up changes / re-testing a clean install:**
 
 ```

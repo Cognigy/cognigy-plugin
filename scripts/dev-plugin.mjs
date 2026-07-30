@@ -174,7 +174,13 @@ function off() {
 Prod plugin restored (cognigy@${PROD_MARKETPLACE}).
 Next steps in Claude Code:
   1. /plugin configure cognigy@${PROD_MARKETPLACE}   (re-enter credentials if prompted)
-  2. /reload-plugins                                 (or restart the session)`);
+  2. /reload-plugins                                 (or restart the session)
+
+Note: the prod plugin's "platform" server CANNOT boot in a session whose
+working directory is this repo, because "npx -p @cognigy/plugin-engine@<pin>"
+treats the repo's own package.json as already satisfying the pin and never
+installs the bin (exit 127 -> MCP error -32000). Verify the prod plugin from a
+session outside this repo; inside it, use "npm run plugin:dev".`);
 }
 
 const mode = process.argv[2];
