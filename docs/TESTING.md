@@ -43,9 +43,9 @@ npm run plugin:dev:off
 ```
 
 > **Never edit the tracked `plugin/.claude-plugin/plugin.json` for testing.** Its published form
-> (`npx -y -p @cognigy/plugin-engine@<version> cognigy-mcp`, version in lockstep with
-> `package.json`) is enforced by `npm run check:manifest`, which runs in pre-commit and PR CI — a
-> dev-edited manifest cannot be committed.
+> (`npx -y -p cognigy-engine@npm:@cognigy/plugin-engine@<version> cognigy-mcp`, version in lockstep
+> with `package.json`) is enforced by `npm run check:manifest`, which runs in pre-commit and PR CI —
+> a dev-edited manifest cannot be committed.
 
 The dev manifest is generated from the current branch's `plugin.json` — after switching branches,
 re-run `npm run plugin:dev`.
@@ -69,9 +69,10 @@ Use this to verify the plugin the way end users install it.
 
 Then:
 
-1. On first boot, the plugin's `mcpServers` command runs `npx -y -p @cognigy/plugin-engine@<version> cognigy-mcp`,
-   which fetches the engine pinned to the plugin's own version (kept in lockstep by semantic-release)
-   and launches it. npx caches by version, so repeat boots are fast/offline once fetched. No `@latest` float.
+1. On first boot, the plugin's `mcpServers` command runs
+   `npx -y -p cognigy-engine@npm:@cognigy/plugin-engine@<version> cognigy-mcp`, which fetches the
+   engine pinned to the plugin's own version (kept in lockstep by semantic-release) and launches it.
+   npx caches by version, so repeat boots are fast/offline once fetched. No `@latest` float.
 2. Provide your `COGNIGY_API_BASE_URL` and `COGNIGY_API_KEY` when prompted.
 3. Verify the tools are available under the `mcp__plugin_cognigy_platform__` prefix and that
    skills auto-load on intent.
@@ -80,17 +81,13 @@ Then:
 > `src/` changes. Unreleased engine changes are only testable via the local dev loop above; the
 > published path can be re-verified end to end after the release.
 
-> **Gotcha — the prod plugin cannot boot inside this repo.** The manifest launches the engine with
-> `npx -y -p @cognigy/plugin-engine@<pin> cognigy-mcp`. When the client's working directory is this
-> repo, `npm exec` sees the repo's own `package.json` (`@cognigy/plugin-engine`, same version as the
-> pin), decides the spec is already satisfied locally, skips the npx install, and runs the bare
-> command through `sh` with only `<repo>/node_modules/.bin` on `PATH` — which never contains a
-> package's own bins. The result is `sh: cognigy-mcp: command not found` (exit 127), surfacing as
-> `Failed to reconnect to plugin:cognigy:platform: -32000`.
->
-> This affects **only** sessions rooted in this repo (the pin equals the local version); end users
-> are unaffected. Verify the published path from a session outside the repo, and use
-> `npm run plugin:dev` for work inside it — the dev manifest runs `src/` via tsx and never calls npx.
+> **Why the pin is an npm alias** (`cognigy-engine@npm:@cognigy/plugin-engine@<pin>`): with a plain
+> `@cognigy/plugin-engine@<pin>` spec, `npm exec` in a session rooted in **this repo** sees the
+> repo's own `package.json` (same name + version as the pin), decides the spec is already satisfied
+> locally, skips the install, and fails with `sh: cognigy-mcp: command not found` (exit 127,
+> surfacing as MCP error `-32000`). The alias name never matches the repo's package name, so npm
+> always installs from the registry and the prod plugin boots anywhere — including inside this repo.
+> `npm run check:manifest` enforces this form; do not "simplify" it back.
 
 **Picking up changes / re-testing a clean install:**
 

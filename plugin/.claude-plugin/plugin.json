@@ -29,7 +29,12 @@
   "mcpServers": {
     "platform": {
       "command": "npx",
-      "args": ["-y", "-p", "@cognigy/plugin-engine@1.7.0", "cognigy-mcp"],
+      "args": [
+        "-y",
+        "-p",
+        "cognigy-engine@npm:@cognigy/plugin-engine@1.7.0",
+        "cognigy-mcp"
+      ],
       "env": {
         "COGNIGY_API_BASE_URL": "${user_config.cognigy_api_base_url}",
         "COGNIGY_API_KEY": "${user_config.cognigy_api_key}"

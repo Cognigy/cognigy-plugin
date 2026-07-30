@@ -24,10 +24,14 @@ const platform = manifest.mcpServers?.platform;
 if (!platform) {
   errors.push("mcpServers.platform is missing");
 } else {
+  // Alias form (cognigy-engine@npm:...) is REQUIRED, not cosmetic: a plain
+  // `@cognigy/plugin-engine@<v>` spec makes `npm exec` treat this repo's own
+  // package.json as satisfying the pin when a session is rooted here, skip
+  // the install, and fail with `cognigy-mcp: command not found` (-32000).
   const expectedArgs = [
     "-y",
     "-p",
-    `@cognigy/plugin-engine@${pkg.version}`,
+    `cognigy-engine@npm:@cognigy/plugin-engine@${pkg.version}`,
     "cognigy-mcp",
   ];
   if (platform.command !== "npx") {
