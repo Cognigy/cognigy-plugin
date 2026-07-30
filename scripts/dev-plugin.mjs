@@ -108,7 +108,9 @@ function generateDevPlugin() {
   );
 
   // Symlink everything else in plugin/ (skills, agents, ...) so working-tree
-  // edits are served live; fall back to copying if symlinks are unavailable.
+  // edits are served live; fall back to copying if symlinks are unavailable
+  // (e.g. Windows without Developer Mode / elevation).
+  const copied = [];
   for (const entry of readdirSync(join(repoRoot, "plugin"))) {
     if (entry === ".claude-plugin") continue;
     const target = join(repoRoot, "plugin", entry);
@@ -117,15 +119,24 @@ function generateDevPlugin() {
       symlinkSync(target, link, "dir");
     } catch {
       cpSync(target, link, { recursive: true });
+      copied.push(entry);
     }
   }
 
   console.log(`  ✓ generated ${devRoot}`);
+  return { copied };
 }
 
 function on() {
   console.log("Enabling local dev plugin…");
-  generateDevPlugin();
+  const { copied } = generateDevPlugin();
+  if (copied.length > 0) {
+    console.warn(
+      `  ⚠ symlinks unavailable — copied instead: ${copied.join(", ")}. ` +
+        `Edits under plugin/{${copied.join(",")}} are NOT live; ` +
+        `re-run "npm run plugin:dev" after changing them.`,
+    );
+  }
   claude(["plugin", "uninstall", `cognigy@${PROD_MARKETPLACE}`], {
     allowFailure: true,
   });
