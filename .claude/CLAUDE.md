@@ -66,6 +66,7 @@ Endpoints under `/v2.0/flows/{flowId}/chart`:
 - Test: `npm test` (Jest, ESM). Single-process: `npm test -- --runInBand`.
 - Build: `npm run build` (clean `dist`, `tsc`). Dev: `npm run dev` (tsx watch).
 - Lint: `npm run lint`. Format: `npx prettier --write <file>`.
+- Local plugin testing: `npm run plugin:dev` installs a generated dev marketplace (`.dev-plugin/`, gitignored) serving the working tree — engine runs from `src/` via tsx (no build), skills/agents symlinked; iterate with `/reload-plugins`. `npm run plugin:dev:off` restores the GitHub install. Never edit the tracked `plugin.json` for testing — `npm run check:manifest` guards it in pre-commit and CI.
 
 ## Conventions
 
