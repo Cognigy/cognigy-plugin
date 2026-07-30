@@ -15,6 +15,7 @@ A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy
 - **Browser voice deployment**: create Voice Gateway endpoints with WebRTC demo URLs
 - **Voice preview setup**: configure supported speech providers for voice experiences
 - **Skills + agents**: workflow guidance auto-loads as skills in supporting clients; build/go-live loops run as subagents
+- **Built-in docs lookup**: bundles the official [Cognigy documentation](https://docs.cognigy.com) MCP server — your assistant searches and reads the docs before answering platform questions, instead of guessing from training data
 - Built-in rate limiting, Zod input validation, and RFC 7807 error responses
 
 ## Tools
