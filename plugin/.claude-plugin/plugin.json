@@ -34,6 +34,10 @@
         "COGNIGY_API_BASE_URL": "${user_config.cognigy_api_base_url}",
         "COGNIGY_API_KEY": "${user_config.cognigy_api_key}"
       }
+    },
+    "docs": {
+      "type": "http",
+      "url": "https://docs.cognigy.com/mcp"
     }
   }
 }
