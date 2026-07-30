@@ -249,19 +249,49 @@ describe("filterResponse", () => {
     });
   });
 
-  it("filters project fields", () => {
+  it("filters project fields, keeping lastChanged over createdAt", () => {
     const raw = {
       _id: "proj-1",
       name: "My Project",
-      description: "A project",
-      createdAt: "2024-01-01",
+      color: "blue",
+      createdAt: 1700000000,
+      lastChanged: 1800000000,
+      createdBy: "60d5ec49f1a2c8b1a4e0f001",
+      lastChangedBy: "60d5ec49f1a2c8b1a4e0f001",
       members: ["user1"],
     };
     expect(filterResponse("project", raw)).toEqual({
       id: "proj-1",
       name: "My Project",
-      description: "A project",
-      createdAt: "2024-01-01",
+      lastChanged: 1800000000,
+    });
+  });
+
+  it("omits lastChangedBy from projects (opaque id, resolve via user/me)", () => {
+    const filtered = filterResponse("project", {
+      _id: "proj-1",
+      name: "My Project",
+      lastChanged: 1800000000,
+      lastChangedBy: "60d5ec49f1a2c8b1a4e0f001",
+    });
+    expect(filtered.lastChangedBy).toBeUndefined();
+  });
+
+  it("filters user fields and drops the project id list", () => {
+    const raw = {
+      _id: "60d5ec49f1a2c8b1a4e0f001",
+      id: "60d5ec49f1a2c8b1a4e0f001",
+      name: "someone@example.com",
+      organisation: "60d5ec49f1a2c8b1a4e0f0aa",
+      roles: ["admin", "projectManager"],
+      projects: ["60d5ec49f1a2c8b1a4e0f0b1", "60d5ec49f1a2c8b1a4e0f0b2"],
+      acceptedTOS: true,
+      disabled: false,
+    };
+    expect(filterResponse("user", raw)).toEqual({
+      id: "60d5ec49f1a2c8b1a4e0f001",
+      name: "someone@example.com",
+      roles: ["admin", "projectManager"],
     });
   });
 
@@ -335,21 +365,21 @@ describe("filterList", () => {
       {
         _id: "p1",
         name: "P1",
-        description: "d1",
-        createdAt: "2024-01-01",
+        createdAt: 1700000000,
+        lastChanged: 1800000000,
         extra: "x",
       },
       {
         _id: "p2",
         name: "P2",
-        description: "d2",
-        createdAt: "2024-02-01",
+        createdAt: 1700000001,
+        lastChanged: 1800000001,
         extra: "y",
       },
     ];
     expect(filterList("project", items)).toEqual([
-      { id: "p1", name: "P1", description: "d1", createdAt: "2024-01-01" },
-      { id: "p2", name: "P2", description: "d2", createdAt: "2024-02-01" },
+      { id: "p1", name: "P1", lastChanged: 1800000000 },
+      { id: "p2", name: "P2", lastChanged: 1800000001 },
     ]);
   });
 

@@ -28,6 +28,20 @@ description: "Use when a Cognigy agent returns empty responses, a tool call or c
 - UUIDs (36-char with dashes) are referenceIds — most tools need \_id, not referenceId
 - Use list_resources to find valid IDs
 
+## 401 / 403 errors, or "who changed this?"
+
+- get_resource { resourceType: "user", id: "me" } returns the account the API key
+  belongs to, plus its `roles`. Check `roles` before blaming the API for a 403.
+- `createdBy` / `lastChangedBy` on any resource are opaque user ids. Never assume
+  one is the current user — compare it to the `id` from `user`/`me`. List
+  responses omit them; read them with get_resource { ..., raw: true }.
+
+## Finding the most recently touched resource
+
+- Sort server-side instead of paging through everything and comparing by hand:
+  list_resources { resourceType: "project", sort: "lastChanged:desc", limit: 5 }
+- `sort` takes `field:direction` and works on any field the resource returns.
+
 ## setup_llm fails
 
 - See the llm-providers skill for valid provider and model strings

@@ -84,11 +84,22 @@ export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
     startedAt: r.startedAt,
     messageCount: r.messageCount,
   }),
+  // `lastChanged` instead of `createdAt`: for "which project am I working in"
+  // recency beats creation date, and it costs 2 extra chars. Projects have no
+  // `description` field at all. `lastChangedBy` is deliberately omitted — it is
+  // an opaque 24-hex user id; resolve it with get_resource { resourceType:
+  // 'user', id: 'me' } and read it from the single-project raw response.
   project: (r) => ({
     id: rid(r),
     name: r.name,
-    description: r.description,
-    createdAt: r.createdAt,
+    lastChanged: r.lastChanged,
+  }),
+  // Drops `projects` (a long array of opaque project ids) and `organisation`.
+  // `id` is what project/agent `createdBy` + `lastChangedBy` reference.
+  user: (r) => ({
+    id: rid(r),
+    name: r.name,
+    roles: r.roles,
   }),
   extension: (r) => ({
     id: rid(r),
