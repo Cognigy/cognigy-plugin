@@ -1,3 +1,9 @@
+## [1.7.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.6.0...v1.7.0) (2026-07-30)
+
+### Features
+
+* **plugin:** bundle Cognigy docs MCP server + docs-lookup steering ([#14](https://github.com/Cognigy/cognigy-plugin/issues/14)) ([bb6adf0](https://github.com/Cognigy/cognigy-plugin/commit/bb6adf02bf07ef4b5a8f03062b09d8518b244e77))
+
 ## [1.6.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.5.0...v1.6.0) (2026-07-27)
 
 ### Features
