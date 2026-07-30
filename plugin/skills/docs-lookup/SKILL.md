@@ -22,6 +22,8 @@ The plugin bundles the official Cognigy documentation MCP server (docs.cognigy.c
 3. **Extract — narrow.** `rg -n -i -A3 "<best term>" /<path>.mdx` pulls the exact rows with context. Prefer this over `cat` on a large page; use `head -200 /<path>.mdx` when you need the page's structure, and `wc -c` first if you're unsure of its size.
 4. **Answer** from what the docs say and cite the page link (`https://docs.cognigy.com/<path>`). If docs and observed API behavior conflict, say so explicitly — the plugin's own skills (flow-nodes, troubleshooting) capture hard-won API gotchas the public docs may not cover.
 
+> **Anchors don't work in directory mode.** `^` and `$` match when the target is an explicit file path, but silently match NOTHING when the target is a directory — the virtual filesystem serves directory traversal from chunks with different line boundaries. Verified: `rg -c '^REST Endpoint' /api-reference/flows/create-a-flow.mdx` → 1, but `rg -l '^REST Endpoint' /api-reference/flows/` → 0 files, while the same pattern unanchored → 13 files. So: **search directories unanchored, and only anchor once you are pointing at a single file.**
+
 ### Worked example — "how does the AI Agent Node decide which tool to call?"
 
 ```
@@ -34,6 +36,31 @@ rg -n -i -A3 "tool choice" /ai/agents/develop/node-reference/ai/ai-agent.mdx
 ```
 
 Two calls, ~3 KB, complete answer. Note the wide alternation in step 1: narrowing it to `"tool.?selection|which tool"` matches nothing, because the docs call the setting **Tool Choice**.
+
+## REST API routes — use `find`, not `rg`
+
+`/api-reference/` is organised as `<resource>/<verb-phrase>.mdx` (e.g. `/api-reference/flows/create-a-flow.mdx`), and every page carries its route on one line as `REST Endpoint <METHOD> <path>`. Because the filenames are predictable English, **`find` by filename beats keyword guessing** — this sidesteps the vocabulary problem entirely.
+
+```
+# intent → page
+find /api-reference -iname "*create-a-flow*"        → /api-reference/flows/create-a-flow.mdx
+
+# whole API surface for one resource, ~13 compact lines
+rg -N --no-filename "REST Endpoint" /api-reference/flows/ | sort -u
+  → GET|PATCH|POST /v2.0/flows, DELETE|GET|PATCH /v2.0/flows/{flowId},
+    GET /v2.0/flows/{flowId}/chart, POST /v2.0/flows/{flowId}/clone, …
+
+# route → page (reverse lookup; unanchored, so sub-routes also match)
+rg -l "REST Endpoint POST /v2\.0/flows" /api-reference/flows/
+```
+
+**Never `cat` an API-reference page.** Half to nine-tenths of each one is the identical `400/401/402/403/404/405/409/413/5xx` error-envelope boilerplate, and the response schema usually repeats the request schema. Cut to the useful part:
+
+```
+sed -n '/^REST Endpoint/,/^Responses:/p' /api-reference/flows/create-a-flow.mdx
+```
+
+That yields route + summary + query/header params + request body in **946 bytes vs 6,627 for the full page**. Measured across three sampled endpoint pages the reduction ranged **3.4×–7.4×** (`create-an-ai-agent` 9,800→2,919; `create-a-flow` 6,627→946; `create-a-knowledge-store` 5,867→796). Add `/^Responses:/,/^400:/p` as a second range when you need the success-response shape.
 
 ## When NOT to use
 
