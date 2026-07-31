@@ -29,7 +29,7 @@ The plugin bundles the official Cognigy documentation MCP server (docs.cognigy.c
 
    If docs and observed API behavior conflict, say so explicitly — the plugin's own skills (flow-nodes, troubleshooting) capture hard-won API gotchas the public docs may not cover.
 
-> **Anchors don't work in directory mode.** `^` and `$` match when the target is an explicit file path, but silently match NOTHING when the target is a directory — the virtual filesystem serves directory traversal from chunks with different line boundaries. Verified: `rg -c '^REST Endpoint' /api-reference/flows/create-a-flow.mdx` → 1, but `rg -l '^REST Endpoint' /api-reference/flows/` → 0 files, while the same pattern unanchored → 13 files. So: **search directories unanchored, and only anchor once you are pointing at a single file.**
+> **Anchors don't work in directory mode.** `^` and `$` match when the target is an explicit file path, but silently match NOTHING when the target is a directory (cause unknown — some quirk of how the virtual filesystem serves directory traversal). Verified: `rg -c '^REST Endpoint' /api-reference/flows/create-a-flow.mdx` → 1, but `rg -l '^REST Endpoint' /api-reference/flows/` → 0 files, while the same pattern unanchored → 13 files. So: **search directories unanchored, and only anchor once you are pointing at a single file.**
 
 ### Worked example — "how does the AI Agent Node decide which tool to call?"
 
@@ -51,8 +51,10 @@ Note the wide alternation in step 1 — and note how it fails when narrowed. `rg
 `/api-reference/` is organised as `<resource>/<verb-phrase>.mdx` (e.g. `/api-reference/flows/create-a-flow.mdx`), and every page carries its route on one line as `REST Endpoint <METHOD> <path>`. Because the filenames are predictable English, **`find` by filename beats keyword guessing** — this sidesteps the vocabulary problem entirely.
 
 ```
-# intent → page
-find /api-reference -iname "*create-a-flow*"        → /api-reference/flows/create-a-flow.mdx
+# intent → page (expect near-miss siblings; pick by name)
+find /api-reference -iname "*create-a-flow*"
+  → /api-reference/flows/create-a-flow.mdx
+  → /api-reference/flows/create-a-flow-from-a-child-node.mdx
 
 # whole API surface for one resource, ~13 compact lines
 rg -N --no-filename "REST Endpoint" /api-reference/flows/ | sort -u
