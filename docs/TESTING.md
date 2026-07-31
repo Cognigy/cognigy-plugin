@@ -102,6 +102,35 @@ Then:
 There is no `init --client` installer, `.mcpb` bundle, or standalone-client config — the paths above
 are the only test paths.
 
+### Codex
+
+Test the Codex plugin manifests from a pushed branch (Codex reads the repo's
+`.claude-plugin/marketplace.json`, so any branch works):
+
+```bash
+codex plugin marketplace add Cognigy/cognigy-plugin --ref <branch>
+```
+
+then install **cognigy** via `/plugins` in a Codex session and confirm the skills
+list and the `platform` tools respond (creds must exist — run `cognigy-setup
+--client codex` first or write `~/.cognigy-plugin/config.json`). The installer
+path itself: `npx -y -p @cognigy/plugin-engine@latest cognigy-setup --client codex …`,
+then check `~/.codex/config.toml` for the `[mcp_servers.cognigy]` block.
+
+### Gemini CLI
+
+Local dev loop without a release — build the extension staging dir and link it:
+
+```bash
+npm run build
+node scripts/build-gemini-extension.mjs 0.0.0-dev
+gemini extensions link .gemini-extension
+```
+
+Restart `gemini`; skills/context changes need a rebuild + restart. The
+release-asset path (`gemini extensions install https://github.com/Cognigy/cognigy-plugin`)
+only works against the Latest GitHub release carrying `cognigy-gemini-extension.zip`.
+
 ## 3. Run Automated Checks
 
 Before opening a PR, run the usual checks:
