@@ -1,6 +1,6 @@
 # NiCE Cognigy Plugin
 
-> Distributed exclusively as a **plugin** — supported by **Claude Code**, **Claude Desktop**, **OpenAI Codex**, and **Google Gemini CLI** today, with more clients to come. The plugin installs its server engine (pinned to the plugin version) and ships skills + agents.
+> Distributed exclusively through each client's native plugin mechanism — a **plugin** on **Claude Code**, **Claude Desktop**, and **OpenAI Codex**, an **extension** on **Google Gemini CLI** — with more clients to come. Each package installs the server engine (pinned to the plugin version) and ships skills + agents.
 
 A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy.com) REST API. Create, test, and improve LLM-based AI Agents through a self-improvement loop — without leaving your client.
 

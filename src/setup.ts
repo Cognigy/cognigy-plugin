@@ -567,13 +567,21 @@ function runUpdate(): void {
       "• Codex runs the engine @latest — nothing to do; plugin skills update via /plugins.\n",
     ),
   );
+  // Only touch Gemini when our extension is actually installed — otherwise
+  // `gemini extensions update cognigy` exits non-zero and fails the whole run.
+  if (installedGeminiExtensionVersion() === null) {
+    process.stdout.write(
+      dim("• Gemini CLI: extension not installed — nothing to update.\n\n"),
+    );
+    return;
+  }
   const gem = updateGemini();
   if (gem.method === "cli") {
     process.stdout.write(green("✓ Gemini CLI") + ": extension updated.\n\n");
   } else {
     process.stdout.write(
       dim(
-        "• Gemini CLI not found — if installed elsewhere, run: " +
+        "• Gemini CLI not found — to update, run: " +
           (gem.commands ?? []).join(" ") +
           "\n\n",
       ),
