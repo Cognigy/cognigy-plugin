@@ -1,0 +1,7 @@
+{
+  "name": "cognigy",
+  "version": "1.8.1",
+  "description": "NiCE Cognigy Plugin — create, test, and manage AI Agents on the NiCE Cognigy platform",
+  "skills": "./skills/",
+  "mcpServers": "./.codex-plugin/mcp.json"
+}

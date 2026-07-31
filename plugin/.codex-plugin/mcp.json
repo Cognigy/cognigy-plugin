@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "platform": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "-p",
+        "cognigy-engine@npm:@cognigy/plugin-engine@1.8.1",
+        "cognigy-mcp"
+      ]
+    },
+    "docs": {
+      "type": "http",
+      "url": "https://docs.cognigy.com/mcp"
+    }
+  }
+}
