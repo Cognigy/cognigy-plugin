@@ -4,4 +4,9 @@ if [ -z "$files" ]; then
   exit 0
 fi
 
+# Block committing a dev-edited plugin manifest (must stay in published npx form).
+if echo "$files" | grep -q '^plugin/.claude-plugin/plugin.json$'; then
+  node scripts/check-plugin-manifest.mjs || exit 1
+fi
+
 echo "$files" | xargs npx prettier --check

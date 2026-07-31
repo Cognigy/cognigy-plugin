@@ -1,7 +1,7 @@
 # Testing
 
 This guide covers the two ways to test the NiCE Cognigy Plugin: installing it through a marketplace
-like an end user, and the fast local-engine loop you use during development.
+like an end user, and the one-command local dev loop you use during development.
 
 ## Prerequisites
 
@@ -12,7 +12,51 @@ You will need:
 - Node.js 20+
 - A supported client — Claude Code or Codex today (more to come). The steps below use Claude Code.
 
-## 1. Test via the Marketplace + Plugin (end-user path)
+## 1. Local Dev Loop (dev — the fast path)
+
+Use this whenever you change the engine (`src/`), skills, agents, or the plugin manifest. One
+command installs a dev copy of the plugin that serves your working tree — no build step, no manual
+manifest edits:
+
+```bash
+npm run plugin:dev
+```
+
+What it does (see `scripts/dev-plugin.mjs`):
+
+- Generates a gitignored dev marketplace under `.dev-plugin/` whose manifest is a copy of
+  `plugin/.claude-plugin/plugin.json` with one change: the `platform` server runs `src/index.ts`
+  directly via **tsx** (no `npm run build` needed). Skills and agents are **symlinked** to the
+  working tree, so edits are live. Remote servers (e.g. the bundled `docs` server) are unchanged.
+- Uninstalls the prod plugin (avoids duplicate tool names) and installs `cognigy@cognigy-dev`.
+
+Then, in Claude Code:
+
+1. `/plugin configure cognigy@cognigy-dev` — enter your API base URL + key (once).
+2. `/reload-plugins` (or restart the session).
+3. Iterate: edit `src/**` or `plugin/**`, then `/reload-plugins`. That's the whole loop.
+
+Done testing? Restore the published plugin:
+
+```bash
+npm run plugin:dev:off
+```
+
+> **Never edit the tracked `plugin/.claude-plugin/plugin.json` for testing.** Its published form
+> (`npx -y -p cognigy-engine@npm:@cognigy/plugin-engine@<version> cognigy-mcp`, version in lockstep
+> with `package.json`) is enforced by `npm run check:manifest`, which runs in pre-commit and PR CI —
+> a dev-edited manifest cannot be committed.
+
+The dev manifest is generated from the current branch's `plugin.json` — after switching branches,
+re-run `npm run plugin:dev`.
+
+This path is **Claude Code only**: Claude Desktop syncs marketplaces server-side and stores plugin
+config in your claude.ai account, so there is no scriptable local install. For a Desktop
+engine-only smoke test, point the installer-wired `Cognigy` connector in
+`claude_desktop_config.json` at a local `dist/index.js` (requires `npm run build` and a full
+Desktop restart), and point it back at `~/.cognigy-plugin/desktop-launch.mjs` when done.
+
+## 2. Test via the Marketplace + Plugin (end-user path)
 
 Use this to verify the plugin the way end users install it.
 
@@ -23,88 +67,40 @@ Use this to verify the plugin the way end users install it.
 /plugin install cognigy@cognigy-plugin
 ```
 
-**Local checkout (test your branch as a plugin):** add the marketplace from your repo directory
-instead — it reads `.claude-plugin/marketplace.json` at the path you give:
-
-```
-/plugin marketplace add /absolute/path/to/cognigy-plugin
-/plugin install cognigy@cognigy-plugin
-```
-
 Then:
 
-1. On first boot, the plugin's `mcpServers` command runs `npx -y -p @cognigy/plugin-engine@<version> cognigy-mcp`,
-   which fetches the engine pinned to the plugin's own version (kept in lockstep by semantic-release)
-   and launches it. npx caches by version, so repeat boots are fast/offline once fetched. No `@latest` float.
+1. On first boot, the plugin's `mcpServers` command runs
+   `npx -y -p cognigy-engine@npm:@cognigy/plugin-engine@<version> cognigy-mcp`, which fetches the
+   engine pinned to the plugin's own version (kept in lockstep by semantic-release) and launches it.
+   npx caches by version, so repeat boots are fast/offline once fetched. No `@latest` float.
 2. Provide your `COGNIGY_API_BASE_URL` and `COGNIGY_API_KEY` when prompted.
 3. Verify the tools are available under the `mcp__plugin_cognigy_platform__` prefix and that
    skills auto-load on intent.
 
-**Picking up changes:**
+> **Heads-up:** this path runs the **released** engine for the pinned version — not your local
+> `src/` changes. Unreleased engine changes are only testable via the local dev loop above; the
+> published path can be re-verified end to end after the release.
 
-- For most `plugin/` edits (skills, agents, `plugin.json`, the launcher), run `/reload-plugins`.
-- To re-test a clean install (e.g. after `marketplace.json` changes), remove and re-add:
+> **Why the pin is an npm alias** (`cognigy-engine@npm:@cognigy/plugin-engine@<pin>`): with a plain
+> `@cognigy/plugin-engine@<pin>` spec, `npm exec` in a session rooted in **this repo** sees the
+> repo's own `package.json` (same name + version as the pin), decides the spec is already satisfied
+> locally, skips the install, and fails with `sh: cognigy-mcp: command not found` (exit 127,
+> surfacing as MCP error `-32000`). The alias name never matches the repo's package name, so npm
+> always installs from the registry and the prod plugin boots anywhere — including inside this repo.
+> `npm run check:manifest` enforces this form; do not "simplify" it back.
 
-  ```
-  /plugin marketplace remove cognigy-plugin
-  /plugin marketplace add /absolute/path/to/cognigy-plugin
-  /plugin install cognigy@cognigy-plugin
-  ```
+**Picking up changes / re-testing a clean install:**
 
-> **Heads-up:** the launcher fetches `@cognigy/plugin-engine@<plugin version>` from npm, so the
-> marketplace path runs the **released** engine for that version — not your local `src/` changes. To
-> test engine changes you haven't released, use the local-engine loop below — it bypasses the
-> launcher and runs your local build.
-
-## 2. Local Engine Build (dev — the fast loop)
-
-Use this whenever you change the engine (`src/`). It runs your local build directly, bypassing the
-launcher and npm so you don't need a published engine.
-
-1. Clone and build:
-
-   ```bash
-   git clone https://github.com/Cognigy/cognigy-plugin.git
-   cd cognigy-plugin
-   npm ci
-   npm run build
-   ```
-
-2. Temporarily point the plugin at your local build. In `plugin/.claude-plugin/plugin.json`, set
-   `mcpServers.platform.args` to your local `dist/index.js` (absolute path) instead of the launcher:
-
-   ```json
-   "args": ["/absolute/path/to/cognigy-plugin/dist/index.js"]
-   ```
-
-   **Revert this before committing** — it is for local testing only.
-
-3. Reload the plugin:
-
-   ```
-   /reload-plugins
-   ```
-
-4. Exercise the tools and skills. After each `src/` change, repeat `npm run build` + `/reload-plugins`.
-
-### Optional: exercise the launcher with your local build
-
-The loop above skips the launcher. The marketplace path (section 1) exercises the launcher but pulls
-the **released** engine. To run the launcher against **your local build**, pre-populate the install
-dir from a local tarball so its version matches the pin and the launcher hands off without fetching:
-
-```bash
-npm run build
-npm pack                                   # -> cognigy-plugin-engine-<version>.tgz
-npm install ./cognigy-plugin-engine-*.tgz --prefix "$CLAUDE_PLUGIN_DATA"
+```
+/plugin marketplace remove cognigy-plugin
+/plugin marketplace add Cognigy/cognigy-plugin
+/plugin install cognigy@cognigy-plugin
 ```
 
-Then `/reload-plugins` with `plugin.json` pointing back at the launcher: it sees the installed
-version equals the plugin version, skips the npm fetch, and hands off. (Find `${CLAUDE_PLUGIN_DATA}`
-from the plugin's runtime env; it's the per-plugin data dir the host assigns.)
+(`npm run plugin:dev:off` runs exactly this restore for you.)
 
 There is no `init --client` installer, `.mcpb` bundle, or standalone-client config — the paths above
-are the only local test paths.
+are the only test paths.
 
 ## 3. Run Automated Checks
 
@@ -114,11 +110,12 @@ Before opening a PR, run the usual checks:
 npm test
 npm run lint
 npx tsc --noEmit
+npm run check:manifest
 ```
 
 ## Recommended Workflow Before Release
 
 1. Run `npm run build`
-2. Run `npm test`, `npm run lint`, and `npx tsc --noEmit`
-3. Test the local engine build by pointing `plugin.json` at local `dist/index.js`, then revert the change
+2. Run `npm test`, `npm run lint`, `npx tsc --noEmit`, and `npm run check:manifest`
+3. Test your changes with the local dev loop (`npm run plugin:dev`), then restore with `npm run plugin:dev:off`
 4. Verify the marketplace + plugin install path end to end (against a published engine version)

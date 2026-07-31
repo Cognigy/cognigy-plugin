@@ -13,11 +13,15 @@ npm run build
 
 This repo is the source for the `@cognigy/plugin-engine` npm package, which the plugin
 auto-installs at runtime, pinned to the plugin's own version (the two share one number, kept in
-lockstep by semantic-release — see [Allowed types](#allowed-types)). To test a local
-engine build, temporarily point the plugin's `mcpServers.platform.args` in
-`plugin/.claude-plugin/plugin.json` at your local `dist/index.js`, run `/reload-plugins`, then
-revert before committing. See [`TESTING.md`](./TESTING.md) for the full local-engine and
-marketplace test paths.
+lockstep by semantic-release — see [Allowed types](#allowed-types)).
+
+To test your changes (engine + skills + agents) from the working tree, run `npm run plugin:dev` —
+it installs a generated dev plugin that runs `src/` directly via tsx (no build) with skills
+symlinked; iterate with `/reload-plugins` and restore the published plugin with
+`npm run plugin:dev:off`. Do **not** edit the tracked `plugin/.claude-plugin/plugin.json` for
+testing — `npm run check:manifest` guards its published form in pre-commit and CI. See
+[`TESTING.md` — Local Dev Loop](./TESTING.md#1-local-dev-loop-dev--the-fast-path) and
+[Marketplace path](./TESTING.md#2-test-via-the-marketplace--plugin-end-user-path) for details.
 
 ## Commit Messages
 
@@ -91,15 +95,18 @@ so a separate global install is not required.
 
 ## Scripts
 
-| Command                                | Description                                       |
-| -------------------------------------- | ------------------------------------------------- |
-| `npm run build`                        | Clean `dist` and compile TypeScript               |
-| `npm run dev`                          | Watch mode (tsx)                                  |
-| `npm start`                            | Run the built server (`node dist/index.js`)       |
-| `npm test`                             | Run test suite                                    |
-| `npm run lint`                         | Run ESLint                                        |
-| `npm run prettier:check -- <files...>` | Check formatting with Prettier for specific files |
-| `npm run prettier:write -- <files...>` | Format specific files with Prettier               |
+| Command                                | Description                                                                                                        |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `npm run build`                        | Clean `dist` and compile TypeScript                                                                                |
+| `npm run dev`                          | Watch mode (tsx)                                                                                                   |
+| `npm start`                            | Run the built server (`node dist/index.js`)                                                                        |
+| `npm test`                             | Run test suite                                                                                                     |
+| `npm run lint`                         | Run ESLint                                                                                                         |
+| `npm run prettier:check -- <files...>` | Check formatting with Prettier for specific files                                                                  |
+| `npm run prettier:write -- <files...>` | Format specific files with Prettier                                                                                |
+| `npm run plugin:dev`                   | Install local dev plugin serving the working tree ([TESTING.md](./TESTING.md#1-local-dev-loop-dev--the-fast-path)) |
+| `npm run plugin:dev:off`               | Remove the dev plugin, restore the published one                                                                   |
+| `npm run check:manifest`               | Validate the tracked plugin manifest (pre-commit/CI guard)                                                         |
 
 ## Submitting Changes
 

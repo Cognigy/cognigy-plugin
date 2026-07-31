@@ -31,6 +31,9 @@ Thumbs.db
 coverage/
 .nyc_output/
 
+# Generated local-dev plugin marketplace (npm run plugin:dev)
+.dev-plugin/
+
 # Local planning notes (not for commit)
 .plans/
 docs/plans

@@ -34,10 +34,14 @@ if (applied !== version) {
   process.exit(1);
 }
 
+// The pin uses an npm alias (cognigy-engine@npm:@cognigy/plugin-engine@<v>)
+// so `npm exec` never resolves the spec to this repo's own package when the
+// client session is rooted here (name match would skip the install and the
+// bin would be missing — MCP error -32000).
 const enginePin = (parsed.mcpServers?.platform?.args ?? []).find((a) =>
-  a.startsWith("@cognigy/plugin-engine@"),
+  a.includes("@cognigy/plugin-engine@"),
 );
-if (enginePin !== `@cognigy/plugin-engine@${version}`) {
+if (!enginePin?.endsWith(`@cognigy/plugin-engine@${version}`)) {
   console.error(
     `[release] FAILED to pin the engine in ${file} to ${version} (got ${enginePin ?? "none"}); the mcpServers npx args may have moved.`,
   );

@@ -33,6 +33,10 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: printf '%s\n' "$PR_TITLE" | npx commitlint --verbose
 
+      # Rejects a committed local-dev manifest (must keep the published npx form).
+      - name: Verify plugin manifest
+        run: npm run check:manifest
+
       - name: Run tests
         run: npm test
 
