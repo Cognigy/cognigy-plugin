@@ -11,7 +11,7 @@ The plugin bundles the official Cognigy documentation MCP server (docs.cognigy.c
 
 ## Tools
 
-- `query_docs_filesystem_cognigy_documentation` — **the primary tool.** Read-only shell-like queries (`rg`, `grep`, `cat`, `head`, `tail`, `tree`, `ls`, `jq`) over a virtual filesystem of every docs page (`.mdx`) plus OpenAPI specs. These run inside the MCP tool's virtual filesystem — NEVER in the local shell. Each call is stateless: the working directory resets to `/`, so use absolute paths or chain with `&&`.
+- `query_docs_filesystem_cognigy_documentation` — **the primary tool.** Read-only shell-like queries over a virtual filesystem of every docs page (`.mdx`) plus OpenAPI specs. The server documents support for `rg`, `grep`, `find`, `tree`, `ls`, `cat`, `head`, `tail`, `stat`, `wc`, `sort`, `uniq`, `cut`, `sed`, `awk`, `jq` and basic text utilities; run `--help` on any command to confirm usage. Flag coverage is narrower than GNU (e.g. `cat -A` is rejected), so keep flags conventional. These run inside the MCP tool's virtual filesystem — NEVER in the local shell. Each call is stateless: the working directory resets to `/`, so use absolute paths or chain with `&&` (`cd /api-reference && ls`).
 - `search_cognigy_documentation` — semantic search. Takes only a `query` string: no result limit, no relevance floor, no filters. Fall back to it only when you cannot guess the docs' vocabulary at all. Expect a very large result; when it overflows into a file, triage by extracting the `Title:`/`Page:` lines, then read the best one or two pages with the filesystem tool — never read the dump whole.
 - `submit_feedback` — report incorrect, outdated, or confusing docs to the Cognigy docs team. Offer this when you and the user hit a genuine documentation gap.
 
@@ -19,8 +19,15 @@ The plugin bundles the official Cognigy documentation MCP server (docs.cognigy.c
 
 1. **Orient** (only when unsure where a topic lives): `tree / -L 2`. Top-level sections are `ai/`, `voice-gateway/`, `webchat/`, `api-reference/`, `api-reference-simulator/`, `insights/`, `live-agent/`, `agent-copilot/`, `ops-center/`, `xApps/`, `click-to-call/`, `release-notes/`, `openapi/`, `help/`.
 2. **Locate — cast wide.** `rg -l -i "term1|term2|term3" /<section>/` lists candidate files. Use a _deliberately broad_ alternation of synonyms and phrasings: `rg` is lexical, so a too-narrow pattern silently returns nothing. Match the docs' own title-case UI labels ("Tool Choice", "Barge In", "Set Session Config"), not the user's phrasing.
-3. **Extract — narrow.** `rg -n -i -A3 "<best term>" /<path>.mdx` pulls the exact rows with context. Prefer this over `cat` on a large page; use `head -200 /<path>.mdx` when you need the page's structure, and `wc -c` first if you're unsure of its size.
-4. **Answer** from what the docs say and cite the page link (`https://docs.cognigy.com/<path>`). If docs and observed API behavior conflict, say so explicitly — the plugin's own skills (flow-nodes, troubleshooting) capture hard-won API gotchas the public docs may not cover.
+3. **Extract — narrow.** `rg -n -i -A3 "<best term>" /<path>.mdx` pulls the exact rows with context. Prefer this over `cat` on a large page; use `head -200 /<path>.mdx` when you need the page's structure, and `wc -c /<path>.mdx` first if you're unsure of its size.
+4. **Answer** from what the docs say and cite the page link. **Strip the `.mdx` suffix to build the public URL** — the filesystem path is internal and the `.mdx` form 404s. Filesystem paths already start with `/`, so do not add another slash:
+
+   ```
+   /ai/agents/develop/node-reference/ai/ai-agent.mdx        ← filesystem path
+   https://docs.cognigy.com/ai/agents/develop/node-reference/ai/ai-agent   ← cite this
+   ```
+
+   If docs and observed API behavior conflict, say so explicitly — the plugin's own skills (flow-nodes, troubleshooting) capture hard-won API gotchas the public docs may not cover.
 
 > **Anchors don't work in directory mode.** `^` and `$` match when the target is an explicit file path, but silently match NOTHING when the target is a directory — the virtual filesystem serves directory traversal from chunks with different line boundaries. Verified: `rg -c '^REST Endpoint' /api-reference/flows/create-a-flow.mdx` → 1, but `rg -l '^REST Endpoint' /api-reference/flows/` → 0 files, while the same pattern unanchored → 13 files. So: **search directories unanchored, and only anchor once you are pointing at a single file.**
 
