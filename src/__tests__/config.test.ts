@@ -95,6 +95,15 @@ describe("loadConfig", () => {
     );
   });
 
+  it("does not match 'api-' occurring mid-segment instead of at a segment boundary", () => {
+    process.env.COGNIGY_API_BASE_URL = "https://myapi-dev.example.com";
+    process.env.COGNIGY_API_KEY = "test-key";
+    const config = loadConfig();
+    expect(config.endpointBaseUrl).toBe("https://myapi-dev.example.com");
+    expect(config.webchatBaseUrl).toBe("https://myapi-dev.example.com");
+    expect(config.staticFilesBaseUrl).toBe("https://myapi-dev.example.com");
+  });
+
   it("uses explicit COGNIGY_ENDPOINT_BASE_URL if provided", () => {
     process.env.COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai";
     process.env.COGNIGY_API_KEY = "test-key";

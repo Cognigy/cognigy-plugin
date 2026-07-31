@@ -67,14 +67,16 @@ function normalizeApiBaseUrl(raw: string): string {
 function deriveHostBaseUrl(apiBaseUrl: string, replacement: string): string {
   try {
     const url = new URL(apiBaseUrl);
-    const match = url.hostname.match(/^(.*?)api-(.+)$/);
-    if (match) {
-      return `${url.protocol}//${match[1]}${replacement}-${match[2]}`;
-    }
+    url.hostname = url.hostname.replace(/(^|-)api-/, `$1${replacement}-`);
+    return `${url.protocol}//${url.hostname}`;
   } catch {
-    // fall through
+    // Not a parseable URL: fall back to a host-scoped replace on the
+    // scheme://host portion only, leaving any path/query untouched.
+    const schemeMatch = apiBaseUrl.match(/^([a-z]+:\/\/)([^/?#]*)(.*)$/i);
+    if (!schemeMatch) return apiBaseUrl;
+    const [, scheme, host, rest] = schemeMatch;
+    return `${scheme}${host.replace(/(^|-)api-/, `$1${replacement}-`)}${rest}`;
   }
-  return apiBaseUrl.replace(/api-/, `${replacement}-`);
 }
 
 /**
