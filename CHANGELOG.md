@@ -1,3 +1,9 @@
+## [1.8.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.7.1...v1.8.0) (2026-07-31)
+
+### Features
+
+* **tools:** sort list_resources server-side and resolve the current user ([#16](https://github.com/Cognigy/cognigy-plugin/issues/16)) ([8c3e725](https://github.com/Cognigy/cognigy-plugin/commit/8c3e7252fed53f04933a53e5cf17383fefd44f5a))
+
 ## [1.7.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.7.0...v1.7.1) (2026-07-31)
 
 ### Bug Fixes
