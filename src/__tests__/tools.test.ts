@@ -880,6 +880,63 @@ describe("ToolHandlers v2", () => {
       });
       expect(result.items).toHaveLength(1);
     });
+
+    it("forwards sort to the projects endpoint", async () => {
+      api.get.mockResolvedValue({
+        items: [{ _id: ID.project, name: "Newest", lastChanged: 1800000000 }],
+        total: 1,
+      });
+
+      const result = await h.handleToolCall("list_resources", {
+        resourceType: "project",
+        sort: "lastChanged:desc",
+        limit: 5,
+      });
+
+      expect(api.get).toHaveBeenCalledWith("/v2.0/projects", {
+        params: { limit: 5, skip: 0, sort: "lastChanged:desc" },
+      });
+      expect(result.items[0].lastChanged).toBe(1800000000);
+    });
+
+    it("omits sort from params when not supplied", async () => {
+      api.get.mockResolvedValue({ items: [], total: 0 });
+
+      await h.handleToolCall("list_resources", { resourceType: "project" });
+
+      expect(api.get).toHaveBeenCalledWith("/v2.0/projects", {
+        params: { limit: 25, skip: 0 },
+      });
+    });
+
+    it("forwards sort to project-scoped endpoints", async () => {
+      api.get.mockResolvedValue({ items: [], total: 0 });
+
+      await h.handleToolCall("list_resources", {
+        resourceType: "agent",
+        projectId: ID.project,
+        sort: "name:asc",
+      });
+
+      expect(api.get).toHaveBeenCalledWith("/v2.0/aiagents", {
+        params: expect.objectContaining({ sort: "name:asc" }),
+      });
+    });
+
+    it("warns that sort is ignored for tool type", async () => {
+      api.get.mockResolvedValueOnce({ flowId: ID.flow }).mockResolvedValueOnce({
+        items: [{ _id: ID.tool, type: "aiAgentJobTool", label: "Weather API" }],
+      });
+
+      const result = await h.handleToolCall("list_resources", {
+        resourceType: "tool",
+        aiAgentId: ID.agent,
+        sort: "name:asc",
+      });
+
+      expect(result.items).toHaveLength(1);
+      expect(result._hints.warning).toContain("sort was ignored");
+    });
   });
 
   // =========================================================================
@@ -918,6 +975,42 @@ describe("ToolHandlers v2", () => {
       expect(result.secret).toBe("visible");
     });
 
+    it("resolves the current user via the 'me' alias", async () => {
+      api.get.mockResolvedValue({
+        _id: "60d5ec49f1a2c8b1a4e0f001",
+        id: "60d5ec49f1a2c8b1a4e0f001",
+        name: "someone@example.com",
+        roles: ["admin"],
+        projects: [ID.project],
+        organisation: "60d5ec49f1a2c8b1a4e0f0aa",
+      });
+
+      const result = await h.handleToolCall("get_resource", {
+        resourceType: "user",
+        id: "me",
+      });
+
+      expect(api.get).toHaveBeenCalledWith("/v2.0/users/me");
+      expect(result.id).toBe("60d5ec49f1a2c8b1a4e0f001");
+      expect(result.name).toBe("someone@example.com");
+      expect(result.projects).toBeUndefined();
+    });
+
+    it("resolves a specific user by id", async () => {
+      api.get.mockResolvedValue({
+        _id: ID.agent,
+        name: "other@example.com",
+        roles: [],
+      });
+
+      await h.handleToolCall("get_resource", {
+        resourceType: "user",
+        id: ID.agent,
+      });
+
+      expect(api.get).toHaveBeenCalledWith(`/v2.0/users/${ID.agent}`);
+    });
+
     it("handles each resource type", async () => {
       const types = [
         "agent",
@@ -928,6 +1021,7 @@ describe("ToolHandlers v2", () => {
         "knowledge_store",
         "extension",
         "function",
+        "user",
       ];
       for (const t of types) {
         api.get.mockResolvedValueOnce({ _id: ID.agent, name: "X" });

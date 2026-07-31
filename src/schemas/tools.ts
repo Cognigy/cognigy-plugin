@@ -82,6 +82,13 @@ export const listResourcesSchema = z.object({
   endDate: z.string().optional(),
   channel: z.string().optional(),
   useCase: z.string().optional(),
+  sort: z
+    .string()
+    .regex(
+      /^[A-Za-z][A-Za-z0-9_]*:(asc|desc)$/,
+      "Must be 'field:direction', e.g. 'lastChanged:desc'",
+    )
+    .optional(),
   ...paginationSchema,
 });
 
@@ -98,6 +105,7 @@ export const getResourceSchema = z.object({
     "knowledge_store",
     "extension",
     "function",
+    "user",
   ]),
   id: z.string().min(1),
   projectId: idSchema.optional(),

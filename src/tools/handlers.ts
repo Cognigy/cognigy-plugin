@@ -2083,8 +2083,14 @@ export class ToolHandlers {
   // =========================================================================
   async handleListResources(args: any): Promise<any> {
     const data = schemas.listResourcesSchema.parse(args);
-    const { resourceType, projectId, aiAgentId, limit, skip } = data;
-    const paging = { limit: limit ?? 25, skip: skip ?? 0 };
+    const { resourceType, projectId, aiAgentId, limit, skip, sort } = data;
+    // `sort` rides along with paging so every server-backed list endpoint gets
+    // it. 'tool' builds its own params and has no server-side sort.
+    const paging = {
+      limit: limit ?? 25,
+      skip: skip ?? 0,
+      ...(sort ? { sort } : {}),
+    };
 
     // Validate projectId requirement
     if (resourceType !== "project" && resourceType !== "tool" && !projectId) {
@@ -2249,6 +2255,13 @@ export class ToolHandlers {
 
     const result: any = { items: filtered, total: total ?? filtered.length };
 
+    if (sort && resourceType === "tool") {
+      return withHints(result, {
+        warning:
+          "sort was ignored: 'tool' items are read from the agent's flow chart, which has no server-side sort.",
+      });
+    }
+
     if (filtered.length === 0 && resourceType === "agent") {
       return withHints(result, {
         hint: "No agents found.",
@@ -2276,6 +2289,10 @@ export class ToolHandlers {
       knowledge_store: `/v2.0/knowledgestores/${id}`,
       extension: `/v2.0/extensions/${id}`,
       function: `/v2.0/functions/${id}`,
+      // id "me" hits GET /v2.0/users/me — the only way to learn which user the
+      // API key belongs to, so `createdBy` / `lastChangedBy` ids can be
+      // attributed instead of guessed.
+      user: `/v2.0/users/${id}`,
     };
 
     const url = endpointMap[resourceType];
