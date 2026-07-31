@@ -1,3 +1,9 @@
+## [1.8.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.8.0...v1.8.1) (2026-07-31)
+
+### Documentation
+
+* **docs-lookup:** filesystem-first lookup + REST API-route recipe ([#17](https://github.com/Cognigy/cognigy-plugin/issues/17)) ([d02bd88](https://github.com/Cognigy/cognigy-plugin/commit/d02bd88daad4414f84d118db5eadf8cdd0952d4b))
+
 ## [1.8.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.7.1...v1.8.0) (2026-07-31)
 
 ### Features
