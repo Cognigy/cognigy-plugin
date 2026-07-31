@@ -18,7 +18,7 @@ The plugin bundles the official Cognigy documentation MCP server (docs.cognigy.c
 ## Workflow
 
 1. **Orient** (only when unsure where a topic lives): `tree / -L 2`. Top-level sections are `ai/`, `voice-gateway/`, `webchat/`, `api-reference/`, `api-reference-simulator/`, `insights/`, `live-agent/`, `agent-copilot/`, `ops-center/`, `xApps/`, `click-to-call/`, `release-notes/`, `openapi/`, `help/`.
-2. **Locate — cast wide.** `rg -l -i "term1|term2|term3" /<section>/` lists candidate files. Use a _deliberately broad_ alternation of synonyms and phrasings: `rg` is lexical, so a too-narrow pattern silently returns nothing. Match the docs' own title-case UI labels ("Tool Choice", "Barge In", "Set Session Config"), not the user's phrasing.
+2. **Locate — cast wide.** `rg -l -i "term1|term2|term3" /<section>/` lists candidate files. Use a _deliberately broad_ alternation of synonyms and phrasings: `rg` is lexical, so a too-narrow pattern either returns nothing or — worse — returns only tangential pages while missing the right one, with nothing to signal the miss (see the worked example below). Match the docs' own title-case UI labels ("Tool Choice", "Barge In", "Set Session Config"), not the user's phrasing.
 3. **Extract — narrow.** `rg -n -i -A3 "<best term>" /<path>.mdx` pulls the exact rows with context. Prefer this over `cat` on a large page; use `head -200 /<path>.mdx` when you need the page's structure, and `wc -c /<path>.mdx` first if you're unsure of its size.
 4. **Answer** from what the docs say and cite the page link. **Strip the `.mdx` suffix to build the public URL** — the filesystem path is internal and the `.mdx` form 404s. Filesystem paths already start with `/`, so do not add another slash:
 
@@ -42,7 +42,9 @@ rg -n -i -A3 "tool choice" /ai/agents/develop/node-reference/ai/ai-agent.mdx
     "Avoiding Infinite Loops when Tool Choice is Required" section
 ```
 
-Two calls, ~3 KB, complete answer. Note the wide alternation in step 1: narrowing it to `"tool.?selection|which tool"` matches nothing, because the docs call the setting **Tool Choice**.
+Two calls, ~3 KB, complete answer.
+
+Note the wide alternation in step 1 — and note how it fails when narrowed. `rg -l -i "tool.?selection|which tool" /ai/` does **not** come back empty; it returns exactly one file, `/ai/agents/develop/node-reference/service/add-transcript-step.mdx`, and silently misses `ai-agent.mdx`, the page that actually documents the setting. **A plausible wrong page is more dangerous than no result**, because nothing signals that you should keep looking. The docs call the setting **Tool Choice**; matching their label is what separates the two outcomes.
 
 ## REST API routes — use `find`, not `rg`
 
