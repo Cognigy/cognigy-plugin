@@ -1,3 +1,9 @@
+## [1.7.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.7.0...v1.7.1) (2026-07-31)
+
+### Bug Fixes
+
+* **plugin:** npm-alias engine pin + one-command local dev testing ([#15](https://github.com/Cognigy/cognigy-plugin/issues/15)) ([68d7aec](https://github.com/Cognigy/cognigy-plugin/commit/68d7aecef10af58016d93e34d23e3f1c0e2f91ba))
+
 ## [1.7.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.6.0...v1.7.0) (2026-07-30)
 
 ### Features
