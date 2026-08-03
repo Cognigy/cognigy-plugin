@@ -21,6 +21,8 @@
     "capabilities": ["Interactive", "Read", "Write"],
     "websiteURL": "https://www.cognigy.com",
     "privacyPolicyURL": "https://www.cognigy.com/privacy-policy",
+    "logo": "./assets/icon.svg",
+    "composerIcon": "./assets/icon.svg",
     "defaultPrompt": [
       "List my Cognigy projects and the AI Agents in each one",
       "Create a customer support AI Agent in my Cognigy project and test it",
