@@ -10,8 +10,8 @@
  *     present (key → keychain), else a creds-file fallback + printed commands.
  *   - Claude Desktop (standalone app): merges an auto-updating MCP server entry
  *     into claude_desktop_config.json.
- *   - OpenAI Codex (CLI + IDE + ChatGPT desktop): `codex mcp add` into
- *     ~/.codex/config.toml + plugin marketplace for skills; creds-file only.
+ *   - ChatGPT + Codex (CLI + IDE): `codex mcp add` into ~/.codex/config.toml
+ *     + plugin marketplace for skills; creds-file only.
  *   - Google Gemini CLI: `gemini extensions install` (creds-file only — Gemini
  *     never passes the shell env to extension MCP servers).
  *
@@ -89,8 +89,9 @@ const CLIENT_LABELS: Record<Client, string> = {
   // here means the separate Chat connector wired into claude_desktop_config.json.
   "claude-code": "Claude Code (CLI + Desktop 'Code' tab)",
   "claude-desktop": "Claude Desktop chat (standalone connector)",
-  // One ~/.codex/config.toml serves all three Codex surfaces.
-  codex: "OpenAI Codex (CLI + IDE + ChatGPT desktop)",
+  // OpenAI merged Codex into the ChatGPT desktop app (July 2026); one
+  // ~/.codex/config.toml serves that app, the CLI, and the IDE extension.
+  codex: "ChatGPT + Codex (CLI + IDE)",
   gemini: "Google Gemini CLI",
 };
 
@@ -366,17 +367,17 @@ function runInstall(client: Client, creds: UserConfigFile): void {
     const res = installCodex(creds);
     if (res.method === "cli") {
       process.stdout.write(
-        green(bold("\n✅ Codex — all set.")) +
+        green(bold("\n✅ ChatGPT + Codex — all set.")) +
           ` MCP server wired into ${CODEX_CONFIG_PATH}\n` +
           dim(
-            "  (shared by the Codex CLI, IDE extension, and ChatGPT desktop app;\n" +
+            "  (shared by the ChatGPT desktop app, the Codex CLI, and the IDE extension;\n" +
               `   credentials read from ${res.configFile})\n`,
           ) +
-          `  Restart Codex — the ${bold("cognigy")} server gives you the ${green("tools")}.\n`,
+          `  Restart ChatGPT / Codex — the ${bold("cognigy")} server gives you the ${green("tools")}.\n`,
       );
     } else {
       process.stdout.write(
-        green("\n✓ Codex") +
+        green("\n✓ ChatGPT + Codex") +
           `: 'codex' CLI not found — wrote creds to ${res.configFile}.\n` +
           "  Wire the server yourself (either form):\n" +
           (res.commands ?? [])
@@ -392,14 +393,14 @@ function runInstall(client: Client, creds: UserConfigFile): void {
       "\n" +
         yellow(RULE) +
         "\n" +
-        yellow(bold("  ⚠️  ONE MORE STEP — CODEX SKILLS  ⚠️")) +
+        yellow(bold("  ⚠️  ONE MORE STEP — CHATGPT / CODEX SKILLS  ⚠️")) +
         "\n" +
         yellow(RULE) +
         "\n" +
         bold("  The server above gives you tools only.") +
         "\n  " +
         bold(yellow("SKILLS install ONLY via these in-app steps")) +
-        " —\n  do them now, in Codex:\n\n" +
+        " —\n  do them now, in the Codex tab / CLI:\n\n" +
         `    ${cyan("1.")} In a Codex session, run ${bold("/plugins")}.\n` +
         `    ${cyan("2.")} Find ${bold("cognigy")} in the ${bold("cognigy-plugin")} marketplace and install it.\n` +
         `    ${cyan("3.")} Start a ${bold("new thread")} — Codex loads plugins at session start.\n\n` +
@@ -544,7 +545,7 @@ function runStatus(): void {
   }
   const geminiVersion = installedGeminiExtensionVersion();
   process.stdout.write(
-    `  Codex:                ${codexHasCognigyEntry() ? green("MCP server wired") : dim("not wired")}\n`,
+    `  ChatGPT + Codex:      ${codexHasCognigyEntry() ? green("MCP server wired") : dim("not wired")}\n`,
   );
   process.stdout.write(
     `  Gemini CLI:           ${geminiVersion ? green(`extension ${geminiVersion}`) : dim("not installed")}\n`,
@@ -583,7 +584,7 @@ function runUpdate(): void {
   );
   process.stdout.write(
     dim(
-      "• Codex runs the engine @latest — nothing to do; plugin skills update via /plugins.\n",
+      "• ChatGPT + Codex run the engine @latest — nothing to do; plugin skills update via /plugins.\n",
     ),
   );
   // Only touch Gemini when our extension is actually installed — otherwise
@@ -623,7 +624,7 @@ async function runUninstall(argv: string[]): Promise<void> {
       process.exit(1);
     }
     const ans = await ask(
-      `Remove the Cognigy plugin/connector from Claude Code, Claude Desktop, Codex, and Gemini CLI${purge ? " and delete ~/.cognigy-plugin" : ""}? [y/N]: `,
+      `Remove the Cognigy plugin/connector from Claude Code, Claude Desktop, ChatGPT + Codex, and Gemini CLI${purge ? " and delete ~/.cognigy-plugin" : ""}? [y/N]: `,
     );
     if (!/^y(es)?$/i.test(ans)) {
       process.stdout.write("Aborted.\n");
@@ -662,13 +663,15 @@ async function runUninstall(argv: string[]): Promise<void> {
   const codex = uninstallCodex();
   if (codex.method === "cli") {
     process.stdout.write(
-      (codex.removedServer ? green("✓ Codex") : dim("• Codex")) +
+      (codex.removedServer
+        ? green("✓ ChatGPT + Codex")
+        : dim("• ChatGPT + Codex")) +
         `: ${codex.removedServer ? "MCP server removed from" : "no MCP server found in"} ${CODEX_CONFIG_PATH}\n` +
         dim("  installed the plugin too? remove it in Codex via /plugins.\n"),
     );
   } else {
     process.stdout.write(
-      dim("• Codex") +
+      dim("• ChatGPT + Codex") +
         ": 'codex' CLI not found. If wired, remove by hand:\n" +
         (codex.commands ?? [])
           .map((c) => cyan(`    ${c.split("\n").join("\n    ")}`))

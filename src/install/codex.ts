@@ -1,7 +1,8 @@
 /**
- * Install the Cognigy MCP server into OpenAI Codex. One `~/.codex/config.toml`
- * serves the Codex CLI, the IDE extension, and the ChatGPT desktop app, so a
- * single `codex mcp add` wires all three. We never write the TOML ourselves —
+ * Install the Cognigy MCP server into ChatGPT + Codex. OpenAI merged the
+ * standalone Codex app into the ChatGPT desktop app (July 2026), and one
+ * `~/.codex/config.toml` serves that app, the Codex CLI, and the IDE
+ * extension, so a single `codex mcp add` wires all three. We never write the TOML ourselves —
  * the codex CLI owns it; without the CLI we print the exact command and a
  * config snippet for the user to apply.
  *

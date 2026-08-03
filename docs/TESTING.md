@@ -10,7 +10,7 @@ You will need:
 - A Cognigy API base URL
 - A Cognigy API key
 - Node.js 20+
-- A supported client — Claude Code or Codex today (more to come). The steps below use Claude Code.
+- A supported client — Claude Code, Claude Desktop, ChatGPT + Codex, or Gemini CLI. The steps below use Claude Code.
 
 ## 1. Local Dev Loop (dev — the fast path)
 
@@ -102,7 +102,7 @@ Then:
 There is no `init --client` installer, `.mcpb` bundle, or standalone-client config — the paths above
 are the only test paths.
 
-### Codex
+### ChatGPT + Codex
 
 Test the Codex plugin manifests from a pushed branch (Codex reads the repo's
 `.claude-plugin/marketplace.json`, so any branch works):

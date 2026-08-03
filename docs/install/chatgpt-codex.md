@@ -1,6 +1,6 @@
-# Install for OpenAI Codex
+# Install for ChatGPT + Codex
 
-Covers every Codex surface — the **Codex CLI**, the **IDE extension**, and Codex inside the **ChatGPT desktop app** (the standalone Codex app was merged into ChatGPT in July 2026). All three read the same `~/.codex/config.toml`, so one install serves all of them.
+Covers **ChatGPT** and **Codex** together. OpenAI merged the standalone Codex app into the ChatGPT desktop app in July 2026, so Chat, Work, and Codex are now tabs in one application you switch between — and the plugin works across it, the **Codex CLI**, and the **IDE extension**. All three surfaces read the same `~/.codex/config.toml`, so one install serves all of them.
 
 |                  |                                                                      |
 | ---------------- | -------------------------------------------------------------------- |
@@ -12,7 +12,7 @@ Covers every Codex surface — the **Codex CLI**, the **IDE extension**, and Cod
 
 ## Step 1 — Run the installer
 
-[Run the installer](../../README.md#installation) and pick **OpenAI Codex**. It runs `codex mcp add`, which writes:
+[Run the installer](../../README.md#installation) and pick **ChatGPT + Codex**. It runs `codex mcp add`, which writes:
 
 ```toml
 [mcp_servers.cognigy]
@@ -20,7 +20,7 @@ command = "npx"
 args = ["-y", "-p", "cognigy-engine@npm:@cognigy/plugin-engine@latest", "cognigy-mcp"]
 ```
 
-Restart Codex — **the tools work now**.
+Restart the ChatGPT app (or Codex) — **the tools work now**.
 
 No `codex` CLI on PATH? The installer writes the credentials file anyway and prints both the command and the TOML block above so you can apply either by hand.
 
@@ -28,7 +28,7 @@ No `codex` CLI on PATH? The installer writes the credentials file anyway and pri
 
 The MCP server serves tools only. Skills come from the plugin:
 
-1. In a Codex session, run `/plugins`.
+1. In a Codex session (the Codex tab of the ChatGPT app, the CLI, or the IDE extension), run `/plugins`.
 2. Find **cognigy** in the **cognigy-plugin** marketplace and install it.
 3. Start a new thread — Codex injects plugins at session start and has no hot reload.
 

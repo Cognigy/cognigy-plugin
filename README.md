@@ -1,6 +1,6 @@
 # NiCE Cognigy Plugin
 
-> Distributed exclusively through each client's native plugin mechanism — a **plugin** on **Claude Code**, **Claude Desktop**, and **OpenAI Codex**, an **extension** on **Google Gemini CLI** — with more clients to come. Each package installs the server engine (pinned to the plugin version) and ships skills + agents.
+> Distributed exclusively through each client's native plugin mechanism — a **plugin** on **Claude Code**, **Claude Desktop**, and **ChatGPT + Codex**, an **extension** on **Google Gemini CLI** — with more clients to come. Each package installs the server engine (pinned to the plugin version) and ships skills + agents.
 
 A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy.com) REST API. Create, test, and improve LLM-based AI Agents through a self-improvement loop — without leaving your client.
 
@@ -73,7 +73,7 @@ What each client gets, and what (if anything) you finish by hand — full instru
 | ------------------------------------------------------------------------- | ----- | ------ | ------ | --------------------------------- |
 | **[Claude Code](docs/install/claude-code.md)** (CLI + Desktop "Code" tab) | ✅    | ✅     | ✅     | None                              |
 | **[Claude Desktop chat](docs/install/claude-desktop.md)**                 | ✅    | ✅     | ✅     | Install the plugin in-app         |
-| **[OpenAI Codex](docs/install/codex.md)** (CLI + IDE + ChatGPT app)       | ✅    | ✅     | —      | Install the plugin via `/plugins` |
+| **[ChatGPT + Codex](docs/install/chatgpt-codex.md)** (CLI + IDE)          | ✅    | ✅     | —      | Install the plugin via `/plugins` |
 | **[Google Gemini CLI](docs/install/gemini-cli.md)**                       | ✅    | ✅     | ✅     | None                              |
 
 <details>
@@ -91,7 +91,7 @@ npx -y -p @cognigy/plugin-engine@latest cognigy-setup \
 
 ## Staying up to date
 
-Updates are automatic on Claude Desktop (engine refreshes each launch), Codex (the server runs the engine at `@latest`), and Gemini CLI (installed with auto-update on). **Claude Code is the exception** — it leaves auto-update off for third-party marketplaces, so turn it on once under `/plugin → Marketplaces → cognigy-plugin`.
+Updates are automatic on Claude Desktop (engine refreshes each launch), ChatGPT + Codex (the server runs the engine at `@latest`), and Gemini CLI (installed with auto-update on). **Claude Code is the exception** — it leaves auto-update off for third-party marketplaces, so turn it on once under `/plugin → Marketplaces → cognigy-plugin`.
 
 The installer doubles as a manager:
 
@@ -120,7 +120,7 @@ Create a complete AI Agent in one tool call, then iterate and improve through co
 
 ## Configuration
 
-The [installer](#installation) collects your **Cognigy API base URL** and **API key** and wires them per client: on Claude Code into the system **keychain**, on Claude Desktop into `claude_desktop_config.json` (`chmod 600`). The engine receives them as environment variables. If neither is set for a given launch, the engine falls back to `~/.cognigy-plugin/config.json` (`chmod 600`), which the installer also writes — so credentials resolve from the environment first, then that file. Codex and Gemini CLI installs rely on that file exclusively: their client configs carry no secrets (and Gemini never passes your shell environment to extension MCP servers anyway). The optional variables below can be set in the MCP server `env` if you need to override defaults.
+The [installer](#installation) collects your **Cognigy API base URL** and **API key** and wires them per client: on Claude Code into the system **keychain**, on Claude Desktop into `claude_desktop_config.json` (`chmod 600`). The engine receives them as environment variables. If neither is set for a given launch, the engine falls back to `~/.cognigy-plugin/config.json` (`chmod 600`), which the installer also writes — so credentials resolve from the environment first, then that file. ChatGPT + Codex and Gemini CLI installs rely on that file exclusively: their client configs carry no secrets (and Gemini never passes your shell environment to extension MCP servers anyway). The optional variables below can be set in the MCP server `env` if you need to override defaults.
 
 | Variable                  | Required | Default | Description                      |
 | ------------------------- | -------- | ------- | -------------------------------- |
@@ -282,7 +282,7 @@ Full privacy policy: [https://www.cognigy.com/privacy-policy](https://www.cognig
 
 ## Documentation
 
-- [docs/install/](https://github.com/Cognigy/cognigy-plugin/tree/main/docs/install) — per-client install guides ([Claude Code](docs/install/claude-code.md), [Claude Desktop](docs/install/claude-desktop.md), [Codex](docs/install/codex.md), [Gemini CLI](docs/install/gemini-cli.md))
+- [docs/install/](https://github.com/Cognigy/cognigy-plugin/tree/main/docs/install) — per-client install guides ([Claude Code](docs/install/claude-code.md), [Claude Desktop](docs/install/claude-desktop.md), [ChatGPT + Codex](docs/install/chatgpt-codex.md), [Gemini CLI](docs/install/gemini-cli.md))
 - [docs/ARCHITECTURE.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/ARCHITECTURE.md) — tool design, self-improvement loop, ID formats
 - [docs/USAGE.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/USAGE.md) — detailed usage reference
 - [docs/TESTING.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/TESTING.md) — how to test the plugin and a local engine build
