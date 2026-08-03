@@ -12,13 +12,7 @@ Shipped as a **Gemini CLI extension** — one installable unit carrying everythi
 
 ## Install
 
-Either run the installer and pick **Google Gemini CLI**:
-
-```
-npx -y -p @cognigy/plugin-engine@latest cognigy-setup
-```
-
-or install the extension directly:
+Either [run the installer](../../README.md#installation) and pick **Google Gemini CLI**, or install the extension directly:
 
 ```
 gemini extensions install https://github.com/Cognigy/cognigy-plugin

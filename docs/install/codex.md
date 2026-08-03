@@ -12,11 +12,7 @@ Covers every Codex surface — the **Codex CLI**, the **IDE extension**, and Cod
 
 ## Step 1 — Run the installer
 
-```
-npx -y -p @cognigy/plugin-engine@latest cognigy-setup
-```
-
-Pick **OpenAI Codex**. The installer runs `codex mcp add`, which writes:
+[Run the installer](../../README.md#installation) and pick **OpenAI Codex**. It runs `codex mcp add`, which writes:
 
 ```toml
 [mcp_servers.cognigy]

@@ -57,7 +57,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Cognigy/cognigy-plugin/main/
 irm https://raw.githubusercontent.com/Cognigy/cognigy-plugin/main/install.ps1 | iex
 ```
 
-> The bootstrap only checks that Node.js 20+ is present (it tells you how to install it if not — it never installs it for you), then hands off to the real installer.
+> The bootstrap only checks that Node.js 20+ is present (it tells you how to install it if not — it never installs it for you), then runs exactly the command below. Use whichever you prefer; they do the same thing.
 
 Already have [Node.js 20+](https://nodejs.org)? Skip the bootstrap:
 

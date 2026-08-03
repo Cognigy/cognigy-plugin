@@ -11,11 +11,7 @@ Covers the **chat** side of the standalone Claude Desktop app. The Desktop **"Co
 
 ## Step 1 — Run the installer
 
-```
-npx -y -p @cognigy/plugin-engine@latest cognigy-setup
-```
-
-Pick **Claude Desktop chat**. The installer merges a `Cognigy` connector into `claude_desktop_config.json` (backing up any existing file to `.bak` first) pointing at an auto-updating, offline-safe launcher. Restart Claude Desktop — **the tools work now**.
+[Run the installer](../../README.md#installation) and pick **Claude Desktop chat**. It merges a `Cognigy` connector into `claude_desktop_config.json` (backing up any existing file to `.bak` first) pointing at an auto-updating, offline-safe launcher. Restart Claude Desktop — **the tools work now**.
 
 ## Step 2 — Install the plugin in the app (skills + agents)
 

@@ -11,11 +11,7 @@ Covers the **Claude Code CLI** and the **Claude Desktop "Code" tab** — since t
 
 ## Install
 
-Run the installer and pick **Claude Code**:
-
-```
-npx -y -p @cognigy/plugin-engine@latest cognigy-setup
-```
+[Run the installer](../../README.md#installation) and pick **Claude Code**.
 
 It adds the `Cognigy/cognigy-plugin` marketplace, installs the plugin at user scope, and routes your API key into the OS keychain via `claude plugin install --config`. Restart Claude Code (or run `/reload-plugins`) and you're done.
 
