@@ -119,11 +119,14 @@ then check `~/.codex/config.toml` for the `[mcp_servers.cognigy]` block.
 
 ### Gemini CLI
 
-Local dev loop without a release — build the extension staging dir and link it:
+Local dev loop without a release — build the extension staging dir and link it.
+Use the **currently released** engine version, not a fake one: the manifest pins
+`@cognigy/plugin-engine@<version>` and npx must be able to resolve it from the
+registry, or the platform server won't boot.
 
 ```bash
 npm run build
-node scripts/build-gemini-extension.mjs 0.0.0-dev
+node scripts/build-gemini-extension.mjs "$(node -p "require('./package.json').version")"
 gemini extensions link .gemini-extension
 ```
 
