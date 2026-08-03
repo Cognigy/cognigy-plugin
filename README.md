@@ -43,18 +43,7 @@ Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, flow 
 
 ## Installation
 
-What each client gets:
-
-| Client                                     | Tools | Skills | Agents | Credentials stored in                   |
-| ------------------------------------------ | ----- | ------ | ------ | --------------------------------------- |
-| Claude Code (CLI + Desktop "Code" tab)     | ✅    | ✅     | ✅     | OS keychain                             |
-| Claude Desktop chat (connector)            | ✅    | ✅¹    | ✅¹    | `claude_desktop_config.json` (0600)     |
-| OpenAI Codex (CLI + IDE + ChatGPT desktop) | ✅    | ✅²    | —      | `~/.cognigy-plugin/config.json` (0600)  |
-| Google Gemini CLI (extension)              | ✅    | ✅     | ✅     | `~/.cognigy-plugin/config.json` (0600)³ |
-
-¹ via the in-app plugin install (Step 2 below). ² via `/plugins` in Codex (Step 2 below). ³ manual (non-installer) Gemini installs prompt for credentials instead and store the key in the OS keychain.
-
-### Step 1 — Run the installer
+One installer covers every client. Run it, pick your client(s), enter your Cognigy API base URL (Enter for the trial default) and API key (masked as you type), then restart the client.
 
 **macOS / Linux** — one line (checks for Node.js, then runs the installer):
 
@@ -70,75 +59,27 @@ irm https://raw.githubusercontent.com/Cognigy/cognigy-plugin/main/install.ps1 | 
 
 > The bootstrap only checks that Node.js 20+ is present (it tells you how to install it if not — it never installs it for you), then hands off to the real installer.
 
-Already have [Node.js 20+](https://nodejs.org)? You can skip the bootstrap and run the installer directly:
+Already have [Node.js 20+](https://nodejs.org)? Skip the bootstrap:
 
 ```
 npx -y -p @cognigy/plugin-engine@latest cognigy-setup
 ```
 
-Pick your client(s), enter your Cognigy API base URL (press Enter for the trial default) and API key (masked as you type), then restart the client.
+### Per-client guides
 
-✅ **Claude Code users — you're done.** You get the tools, skills, and agents. (The standalone CLI and the Claude Desktop **"Code"** tab share the same install.)
+What each client gets, and what (if anything) you finish by hand — full instructions, Windows notes, and troubleshooting in each guide:
 
-> 🔄 **Turn on auto-updates** so future fixes reach you automatically — Claude Code leaves this **off** for third-party marketplaces by default. One-time step: see [Staying up to date](#staying-up-to-date).
-
-> **Only have Claude Desktop, no `claude` CLI?** The installer wires the chat connector (tools) and prints how to add the plugin in the Desktop **Code** tab's plugin browser (`+` → Plugins → Add plugin → `Cognigy/cognigy-plugin`) for skills + agents.
-
-> **On Windows, after installing for Claude Code:** a normal restart may not be enough to load the plugin. **Fully quit** Claude Code — end every **Claude** process in **Task Manager** (a normal close can leave it running in the background), then reopen it. If the tools, skills, and agents still don't appear, **restart your machine**.
-
-> **On Windows, after installing for Claude Desktop:** to make the connector appear:
->
-> 1. **Fully restart** Claude Desktop — closing the window leaves it running in the system tray; quit it from there (or via Task Manager) so it actually relaunches.
-> 2. Check that the **Cognigy** connector now shows up under Settings → Connectors.
-> 3. If it does, **disable it and re-enable it once** — this forces a tool refresh so the Cognigy tools load.
-
-### Step 2 — Claude Desktop chat only: finish in the app
-
-Step 1 already wired the working connector, so **the tools work now**. To also get the **skills and agents**, install the plugin from inside Claude Desktop:
-
-1. Click **Customize** in the left sidebar.
-2. Next to **Personal plugins**, click **+**, hover **Add**, and click **Add marketplace**.
-3. In the URL field enter `Cognigy/cognigy-plugin`, select the found result, and click **Sync**.
-4. The `cognigy-plugin` marketplace is now added.
-5. Install the **Cognigy** plugin by clicking **+**.
-6. On the warning about a local MCP, click **Continue**.
-
-Leave the plugin's own `platform` connector **unconnected** — the `Cognigy` connector from Step 1 already serves the tools.
-
-### Step 2 — Codex only: install the plugin for skills
-
-Step 1 already wired the `cognigy` MCP server into `~/.codex/config.toml` (shared by the Codex CLI, the IDE extension, and the ChatGPT desktop app), so **the tools work now**. To also get the **skills**, install the plugin from inside Codex:
-
-1. In a Codex session, run `/plugins`.
-2. Find **cognigy** in the **cognigy-plugin** marketplace and install it.
-
-The plugin bundles its own `platform` server — that duplicate is fine to leave disabled; the global `cognigy` entry from Step 1 already serves the tools. Skills need Codex CLI ≥ 0.117.0.
-
-> **ChatGPT desktop app note:** GUI apps launch with a minimal `PATH`. If the `cognigy` server fails to start there with an `npx`-not-found error, run the Step 1 installer from a terminal once (it writes the config the app reads) and prefer using Codex from the terminal or IDE.
-
-### Step 2 — Gemini CLI: nothing else to do
-
-The extension install is all-in-one: tools, skills, agents, and the always-on `GEMINI.md` context. Restart `gemini` after installing. Installing manually instead of via Step 1:
-
-```
-gemini extensions install https://github.com/Cognigy/cognigy-plugin
-```
-
-Gemini prompts for the API base URL and key on manual installs (the key goes to the OS keychain).
+| Client                                                                    | Tools | Skills | Agents | Extra step after the installer    |
+| ------------------------------------------------------------------------- | ----- | ------ | ------ | --------------------------------- |
+| **[Claude Code](docs/install/claude-code.md)** (CLI + Desktop "Code" tab) | ✅    | ✅     | ✅     | None                              |
+| **[Claude Desktop chat](docs/install/claude-desktop.md)**                 | ✅    | ✅     | ✅     | Install the plugin in-app         |
+| **[OpenAI Codex](docs/install/codex.md)** (CLI + IDE + ChatGPT app)       | ✅    | ✅     | —      | Install the plugin via `/plugins` |
+| **[Google Gemini CLI](docs/install/gemini-cli.md)**                       | ✅    | ✅     | ✅     | None                              |
 
 <details>
-<summary>Why the extra step on Claude Desktop? (for the technically curious)</summary>
+<summary>Scripting / CI</summary>
 
-The plugin ships its own connector (`platform`), but on **Claude Desktop chat** it can't be given credentials — Desktop stores plugin config in your claude.ai account rather than a local file, and offers no field to enter the API key, so that connector stays a no-op. To make the tools work regardless, the Step 1 installer wires a **standalone `Cognigy` connector** directly into `claude_desktop_config.json` (credentials stored there, `chmod 600`) behind an auto-updating, offline-safe launcher. The plugin install in Step 2 then adds only the parts Desktop _can_ deliver — the skills and agents. Claude Code has none of these limitations, which is why it's a single step.
-
-</details>
-
-> 🔄 **Claude Desktop users:** the connector keeps its engine current on every restart, but see [Staying up to date](#staying-up-to-date) for how updates work and how to check versions.
-
-<details>
-<summary>Scripting / CI, and manual install</summary>
-
-**Scripting / CI** — skip the prompts with flags:
+Skip the prompts with flags:
 
 ```
 npx -y -p @cognigy/plugin-engine@latest cognigy-setup \
@@ -146,27 +87,18 @@ npx -y -p @cognigy/plugin-engine@latest cognigy-setup \
   --api-base-url https://api-trial.cognigy.ai --api-key <key>
 ```
 
-**Manual install (Claude Code)** — instead of the installer:
-
-```
-/plugin marketplace add Cognigy/cognigy-plugin
-/plugin install cognigy@cognigy-plugin
-```
-
-then `npx -y -p @cognigy/plugin-engine@latest cognigy-setup --client claude-code` to wire credentials.
-
 </details>
 
 ## Staying up to date
 
-Claude Desktop auto-updates the engine on every launch. Claude Code updates only when marketplace auto-update is enabled (third-party marketplaces default **off**): turn it on under `/plugin → Marketplaces → cognigy-plugin`, or run `/plugin update cognigy@cognigy-plugin`. The first Claude Code session downloads the engine — if tools don't appear, run `/mcp` and reconnect (or restart); later sessions are instant. Codex runs the engine `@latest`, so it picks up new releases on restart; its plugin (skills) updates via `/plugins`. The Gemini extension is installed with auto-update enabled; `gemini extensions update cognigy` forces it.
+Updates are automatic on Claude Desktop (engine refreshes each launch), Codex (the server runs the engine at `@latest`), and Gemini CLI (installed with auto-update on). **Claude Code is the exception** — it leaves auto-update off for third-party marketplaces, so turn it on once under `/plugin → Marketplaces → cognigy-plugin`.
 
-The installer also doubles as a manager (run the same `cognigy-setup` with a subcommand):
+The installer doubles as a manager:
 
 ```
-npx -y -p @cognigy/plugin-engine@latest cognigy-setup status      # what's installed + latest available
-npx -y -p @cognigy/plugin-engine@latest cognigy-setup update      # pull the latest (Claude Code)
-npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall   # remove plugin + connector (--purge also clears ~/.cognigy-plugin)
+npx -y -p @cognigy/plugin-engine@latest cognigy-setup status      # what's installed, per client, + latest available
+npx -y -p @cognigy/plugin-engine@latest cognigy-setup update      # pull the latest where it isn't automatic
+npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall   # remove from every client (--purge also clears ~/.cognigy-plugin)
 ```
 
 Beyond the MCP tools, the plugin ships **skills** and **agents** that surface the workflows automatically:
@@ -350,6 +282,7 @@ Full privacy policy: [https://www.cognigy.com/privacy-policy](https://www.cognig
 
 ## Documentation
 
+- [docs/install/](https://github.com/Cognigy/cognigy-plugin/tree/main/docs/install) — per-client install guides ([Claude Code](docs/install/claude-code.md), [Claude Desktop](docs/install/claude-desktop.md), [Codex](docs/install/codex.md), [Gemini CLI](docs/install/gemini-cli.md))
 - [docs/ARCHITECTURE.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/ARCHITECTURE.md) — tool design, self-improvement loop, ID formats
 - [docs/USAGE.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/USAGE.md) — detailed usage reference
 - [docs/TESTING.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/TESTING.md) — how to test the plugin and a local engine build

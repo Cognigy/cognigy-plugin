@@ -372,13 +372,7 @@ function runInstall(client: Client, creds: UserConfigFile): void {
             "  (shared by the Codex CLI, IDE extension, and ChatGPT desktop app;\n" +
               `   credentials read from ${res.configFile})\n`,
           ) +
-          `  Restart Codex — the ${bold("cognigy")} server gives you the ${green("tools")}.\n\n` +
-          `  ${bold("Skills (optional but recommended):")} in a Codex session run ${cyan("/plugins")},\n` +
-          `  find ${bold("cognigy")} in the ${bold("cognigy-plugin")} marketplace and install it.\n` +
-          dim(
-            "  The plugin bundles its own 'platform' server — that duplicate is fine;\n" +
-              "  the global entry above already serves the tools.\n",
-          ),
+          `  Restart Codex — the ${bold("cognigy")} server gives you the ${green("tools")}.\n`,
       );
     } else {
       process.stdout.write(
@@ -391,6 +385,31 @@ function runInstall(client: Client, creds: UserConfigFile): void {
           "\n",
       );
     }
+    // Same shape as the Desktop block below: on Codex the MCP server carries
+    // tools only, and skills arrive exclusively through the interactive
+    // /plugins install — easy to miss when it's printed as a dim aside.
+    process.stdout.write(
+      "\n" +
+        yellow(RULE) +
+        "\n" +
+        yellow(bold("  ⚠️  ONE MORE STEP — CODEX SKILLS  ⚠️")) +
+        "\n" +
+        yellow(RULE) +
+        "\n" +
+        bold("  The server above gives you tools only.") +
+        "\n  " +
+        bold(yellow("SKILLS install ONLY via these in-app steps")) +
+        " —\n  do them now, in Codex:\n\n" +
+        `    ${cyan("1.")} In a Codex session, run ${bold("/plugins")}.\n` +
+        `    ${cyan("2.")} Find ${bold("cognigy")} in the ${bold("cognigy-plugin")} marketplace and install it.\n` +
+        `    ${cyan("3.")} Start a ${bold("new thread")} — Codex loads plugins at session start.\n\n` +
+        dim(
+          "  Needs Codex CLI 0.117.0+. The plugin bundles its own 'platform' server —\n" +
+            "  leave that duplicate disabled; the entry above already serves the tools.\n",
+        ) +
+        yellow(RULE) +
+        "\n",
+    );
     if (process.platform === "win32") {
       process.stdout.write(
         "\n" +
@@ -751,8 +770,34 @@ async function main(): Promise<void> {
     COGNIGY_API_KEY: apiKey,
   };
 
+  // Isolate per-client failures: one client's install blowing up must not skip
+  // the clients queued behind it (they are independent installs, and the user
+  // asked for all of them). Failures are collected and reported at the end.
+  const failed: { client: Client; message: string }[] = [];
   for (const client of clients) {
-    runInstall(client, creds);
+    try {
+      runInstall(client, creds);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      failed.push({ client, message });
+      process.stdout.write(
+        "\n" + yellow(`✗ ${CLIENT_LABELS[client]}: ${message}`) + "\n",
+      );
+    }
+  }
+
+  if (failed.length > 0) {
+    const ok = clients.length - failed.length;
+    process.stderr.write(
+      yellow(
+        bold(
+          `\n${ok} of ${clients.length} client(s) set up; ${failed.length} failed: ` +
+            failed.map((f) => f.client).join(", ") +
+            ".\n",
+        ),
+      ),
+    );
+    process.exit(1);
   }
 
   process.stdout.write(green(bold("\n✓ Done.\n")));

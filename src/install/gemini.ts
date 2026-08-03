@@ -20,6 +20,8 @@ import { detectOnPath, runCliTool } from "./cliRunner.js";
 
 const EXTENSION_NAME = "cognigy";
 const REPO_URL = "https://github.com/Cognigy/cognigy-plugin";
+/** First release whose GitHub assets carry cognigy-gemini-extension.zip. */
+const MIN_EXTENSION_VERSION = "1.9.0";
 
 export const GEMINI_EXT_DIR = join(
   homedir(),
@@ -108,8 +110,14 @@ export function installGemini(creds: UserConfigFile): GeminiResult {
   if (res.status !== 0 || res.error) {
     const reason = res.error ? res.error.message : `exit ${res.status}`;
     throw new Error(
-      `'gemini extensions install' failed (${reason}). Creds are in ${configFile}; ` +
-        `install by hand:\n  ${geminiFallbackCommands().join("\n  ")}`,
+      `'gemini extensions install' failed (${reason}). Creds are in ${configFile}.\n` +
+        // Gemini installs from the newest GitHub release and falls back to
+        // GitHub's auto-generated source tarball when that release carries no
+        // extension archive — the tarball has no gemini-extension.json at its
+        // root, so the install dies with "Configuration file not found".
+        `  If the error above says "Configuration file not found … gemini-extension.json",\n` +
+        `  the newest release predates Gemini support — it needs plugin ${MIN_EXTENSION_VERSION}+.\n` +
+        `  Otherwise install by hand:\n    ${geminiFallbackCommands().join("\n    ")}`,
     );
   }
 
