@@ -45,6 +45,8 @@ enabled = false
 
 `config.toml` has no keychain, so the installer keeps secrets out of it entirely: it writes `~/.cognigy-plugin/config.json` (`chmod 600`) and the engine falls back to that file whenever `COGNIGY_API_BASE_URL` / `COGNIGY_API_KEY` are absent from the environment. Exported env vars still win if you prefer to set them per shell.
 
+> **The empty "Environment variables" fields are intentional.** In the ChatGPT app under Settings → MCPs → Cognigy MCP you'll find that section blank — leave it that way. Filling it in would copy your API key into `config.toml` as plaintext, where nothing protects it; the credentials file above already reaches the server, which is why the tools work with those fields empty.
+
 ## Notes and caveats
 
 - **ChatGPT desktop app / minimal PATH** — GUI apps launch with a reduced `PATH`. If the `cognigy` server fails there with an `npx`-not-found error, run the installer once from a terminal (it writes the config the app reads) and prefer Codex from the terminal or IDE.
