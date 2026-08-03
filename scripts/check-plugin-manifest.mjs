@@ -75,6 +75,17 @@ function checkCodexPluginJson(manifest, errors) {
   } else if (!existsSync(join(repoRoot, "plugin", manifest.mcpServers))) {
     errors.push(`mcpServers pointer ${manifest.mcpServers} does not resolve`);
   }
+  // The store page renders these; a renamed asset would silently fall back to
+  // the generic icon, which is invisible in review.
+  for (const field of ["logo", "composerIcon"]) {
+    const value = manifest.interface?.[field];
+    if (value === undefined) continue;
+    if (!existsSync(join(repoRoot, "plugin", value))) {
+      errors.push(
+        `interface.${field} points at ${value}, which does not exist`,
+      );
+    }
+  }
 }
 
 function checkCodexMcpJson(manifest, errors) {

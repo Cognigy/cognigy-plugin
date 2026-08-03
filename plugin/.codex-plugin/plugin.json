@@ -21,15 +21,15 @@
     "capabilities": ["Interactive", "Read", "Write"],
     "websiteURL": "https://www.cognigy.com",
     "privacyPolicyURL": "https://www.cognigy.com/privacy-policy",
-    "logo": "./assets/icon.svg",
-    "composerIcon": "./assets/icon.svg",
+    "logo": "./assets/logo.png",
+    "composerIcon": "./assets/icon.png",
     "defaultPrompt": [
       "List my Cognigy projects and the AI Agents in each one",
       "Create a customer support AI Agent in my Cognigy project and test it",
       "Add a knowledge store to my agent so it can answer from our docs",
       "Audit my voice agent against the Go-Live Checklist"
     ],
-    "brandColor": "#4a0d8f",
+    "brandColor": "#6001FF",
     "screenshots": []
   }
 }
