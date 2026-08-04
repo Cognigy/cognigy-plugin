@@ -45,7 +45,7 @@ gemini extensions update cognigy
 gemini extensions uninstall cognigy
 ```
 
-`cognigy-setup uninstall` does this too (add `--purge` to also delete `~/.cognigy-plugin`).
+`cognigy-setup uninstall --client gemini` does this too. Drop `--client` to uninstall from every client; add `--purge` to also delete `~/.cognigy-plugin`, the credentials file every client shares.
 
 ## Troubleshooting
 

@@ -69,12 +69,12 @@ npx -y -p @cognigy/plugin-engine@latest cognigy-setup
 
 What each client gets, and what (if anything) you finish by hand — full instructions, Windows notes, and troubleshooting in each guide:
 
-| Client                                                                    | Tools | Skills | Agents | Extra step after the installer    |
-| ------------------------------------------------------------------------- | ----- | ------ | ------ | --------------------------------- |
-| **[Claude Code](docs/install/claude-code.md)** (CLI + Desktop "Code" tab) | ✅    | ✅     | ✅     | None                              |
-| **[Claude Desktop chat](docs/install/claude-desktop.md)**                 | ✅    | ✅     | ✅     | Install the plugin in-app         |
-| **[ChatGPT + Codex](docs/install/chatgpt-codex.md)** (CLI + IDE)          | ✅    | ✅     | —      | Install the plugin via `/plugins` |
-| **[Google Gemini CLI](docs/install/gemini-cli.md)**                       | ✅    | ✅     | ✅     | None                              |
+| Client                                                                    | Tools | Skills | Agents | Extra step after the installer               |
+| ------------------------------------------------------------------------- | ----- | ------ | ------ | -------------------------------------------- |
+| **[Claude Code](docs/install/claude-code.md)** (CLI + Desktop "Code" tab) | ✅    | ✅     | ✅     | None                                         |
+| **[Claude Desktop chat](docs/install/claude-desktop.md)**                 | ✅    | ✅     | ✅     | Install the plugin in-app                    |
+| **[ChatGPT + Codex](docs/install/chatgpt-codex.md)** (CLI + IDE)          | ✅    | ✅     | —      | Install the plugin in-app OR with `/plugins` |
+| **[Google Gemini CLI](docs/install/gemini-cli.md)**                       | ✅    | ✅     | ✅     | None                                         |
 
 <details>
 <summary>Scripting / CI</summary>
@@ -98,7 +98,7 @@ The installer doubles as a manager:
 ```
 npx -y -p @cognigy/plugin-engine@latest cognigy-setup status      # what's installed, per client, + latest available
 npx -y -p @cognigy/plugin-engine@latest cognigy-setup update      # pull the latest where it isn't automatic
-npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall   # remove from every client (--purge also clears ~/.cognigy-plugin)
+npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall   # remove from every client (--client narrows it; --purge also clears ~/.cognigy-plugin)
 ```
 
 Beyond the MCP tools, the plugin ships **skills** and **agents** that surface the workflows automatically:

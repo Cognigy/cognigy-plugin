@@ -1,6 +1,7 @@
 import { describe, it, expect, afterAll, jest } from "@jest/globals";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -27,7 +28,7 @@ jest.unstable_mockModule("../install/desktopLauncher.js", () => ({
   writeDesktopLauncher: () => join(FAKE_HOME, "desktop-launch.mjs"),
 }));
 
-const { installClaudeDesktop, ENGINE_PREFIX } = await import(
+const { installClaudeDesktop, ENGINE_PREFIX, purgeUserHome } = await import(
   "../install/claudeDesktop.js"
 );
 
@@ -105,5 +106,18 @@ describe("installClaudeDesktop", () => {
     expect(() => installClaudeDesktop(CREDS, freshConfigPath())).toThrow(
       /Failed to install/,
     );
+  });
+});
+
+describe("purgeUserHome", () => {
+  // Runs last on purpose: it deletes the fake ~/.cognigy-plugin the install
+  // tests above write into.
+  it("deletes ~/.cognigy-plugin and reports whether anything was there", () => {
+    mkdirSync(FAKE_HOME, { recursive: true });
+    writeFileSync(join(FAKE_HOME, "config.json"), "{}");
+
+    expect(purgeUserHome()).toBe(true);
+    expect(existsSync(FAKE_HOME)).toBe(false);
+    expect(purgeUserHome()).toBe(false); // already gone
   });
 });

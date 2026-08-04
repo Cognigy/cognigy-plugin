@@ -31,6 +31,7 @@ import {
   desktopHasCognigyEntry,
   installClaudeDesktop,
   installedDesktopEngineVersion,
+  purgeUserHome,
   resolveDesktopConfigPath,
   uninstallClaudeDesktop,
 } from "./install/claudeDesktop.js";
@@ -609,11 +610,30 @@ function runUpdate(): void {
   }
 }
 
-/** `uninstall` — remove the plugin + connector. `--purge` also drops ~/.cognigy-plugin. */
+/**
+ * `uninstall` — remove the plugin + connector. `--client` narrows it to one or
+ * more clients (default: all, matching `install`'s flag). `--purge` also drops
+ * ~/.cognigy-plugin, which is shared by every client, so it runs independently
+ * of which clients were selected.
+ */
 async function runUninstall(argv: string[]): Promise<void> {
   const purge = argv.includes("--purge");
   const assumeYes = argv.includes("--yes") || argv.includes("-y");
+  const selected = parseFlags(argv).clients;
+  const targets = selected.length > 0 ? selected : [...ALL_CLIENTS];
+  const wants = (client: Client) => targets.includes(client);
+
   process.stdout.write(bold(cyan("\nUninstalling NiCE Cognigy Plugin\n\n")));
+  // ~/.cognigy-plugin holds the credentials the engine falls back to for every
+  // client — purging it while leaving other clients wired breaks them.
+  if (purge && selected.length > 0) {
+    process.stdout.write(
+      yellow(
+        "! --purge deletes ~/.cognigy-plugin, which every client shares.\n" +
+          "  Clients you are keeping will lose their credentials.\n\n",
+      ),
+    );
+  }
   if (!assumeYes) {
     // Never delete without an explicit yes. Non-interactive (piped/CI) has no
     // way to answer the prompt, so require --yes there rather than proceeding.
@@ -624,7 +644,7 @@ async function runUninstall(argv: string[]): Promise<void> {
       process.exit(1);
     }
     const ans = await ask(
-      `Remove the Cognigy plugin/connector from Claude Code, Claude Desktop, ChatGPT + Codex, and Gemini CLI${purge ? " and delete ~/.cognigy-plugin" : ""}? [y/N]: `,
+      `Remove the Cognigy plugin/connector from ${targets.map((c) => CLIENT_LABELS[c]).join(", ")}${purge ? " and delete ~/.cognigy-plugin" : ""}? [y/N]: `,
     );
     if (!/^y(es)?$/i.test(ans)) {
       process.stdout.write("Aborted.\n");
@@ -632,6 +652,25 @@ async function runUninstall(argv: string[]): Promise<void> {
     }
   }
 
+  if (wants("claude-code")) runUninstallClaudeCode();
+  if (wants("claude-desktop")) runUninstallClaudeDesktop();
+  if (wants("codex")) runUninstallCodex();
+  if (wants("gemini")) runUninstallGemini();
+
+  if (purge) {
+    process.stdout.write(
+      purgeUserHome()
+        ? green("✓ Removed ~/.cognigy-plugin") + " (credentials + engine).\n"
+        : dim("• ~/.cognigy-plugin") + ": nothing to remove.\n",
+    );
+  }
+
+  process.stdout.write(
+    dim("\nRestart your client(s) to finish removing the plugin.\n\n"),
+  );
+}
+
+function runUninstallClaudeCode(): void {
   const code = uninstallClaudeCode();
   if (code.method === "cli") {
     const parts = [
@@ -652,14 +691,21 @@ async function runUninstall(argv: string[]): Promise<void> {
         "\n",
     );
   }
+}
 
-  const desk = uninstallClaudeDesktop(resolveDesktopConfigPath(), purge);
+function runUninstallClaudeDesktop(): void {
+  // Purge is handled globally by the caller — never per-client.
+  const desk = uninstallClaudeDesktop(resolveDesktopConfigPath(), false);
   process.stdout.write(
     (desk.removedEntry ? green("✓ Claude Desktop") : dim("• Claude Desktop")) +
       `: ${desk.removedEntry ? "connector removed from" : "no connector found in"} ${desk.configPath}\n` +
-      (desk.removedEngine ? dim("  removed ~/.cognigy-plugin\n") : ""),
+      // The plugin half lives in the claude.ai account + IndexedDB, not a local
+      // file, so nothing here can remove it — same reason we can't install it.
+      dim("  installed the plugin too? remove it in Customize → Plugins.\n"),
   );
+}
 
+function runUninstallCodex(): void {
   const codex = uninstallCodex();
   if (codex.method === "cli") {
     process.stdout.write(
@@ -679,7 +725,9 @@ async function runUninstall(argv: string[]): Promise<void> {
         "\n",
     );
   }
+}
 
+function runUninstallGemini(): void {
   const gem = uninstallGemini();
   if (gem.method === "cli") {
     process.stdout.write(
@@ -694,10 +742,6 @@ async function runUninstall(argv: string[]): Promise<void> {
         "\n",
     );
   }
-
-  process.stdout.write(
-    dim("\nRestart your client(s) to finish removing the plugin.\n\n"),
-  );
 }
 
 /**

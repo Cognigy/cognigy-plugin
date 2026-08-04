@@ -45,7 +45,9 @@ To make the connector appear:
 ## Uninstall
 
 ```
-npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall
+npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall --client claude-desktop
 ```
 
-Removes the connector entry (add `--purge` to also delete `~/.cognigy-plugin`, which holds the launcher and engine). Remove the plugin itself from **Customize → Plugins**.
+This removes the **connector entry only** — Desktop keeps plugin state in your claude.ai account, not a local file, so the installer cannot touch it. **Remove the plugin yourself from Customize → Plugins**, or it stays.
+
+Drop `--client` to uninstall from every client. Add `--purge` to also delete `~/.cognigy-plugin` (launcher, engine, and the credentials every client shares).

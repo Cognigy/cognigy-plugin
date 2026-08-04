@@ -56,7 +56,9 @@ enabled = false
 ## Uninstall
 
 ```
-npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall
+npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall --client codex
 ```
 
 Runs `codex mcp remove cognigy`. Remove the plugin itself from the `/plugins` screen — there is no non-interactive plugin uninstall.
+
+Drop `--client` to uninstall from every client. Add `--purge` to also delete `~/.cognigy-plugin` — the credentials file every client shares.

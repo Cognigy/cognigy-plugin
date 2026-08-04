@@ -45,10 +45,10 @@ A normal restart often isn't enough — the old process lingers and the plugin w
 ## Uninstall
 
 ```
-npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall
+npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall --client claude-code
 ```
 
-Add `--purge` to also delete `~/.cognigy-plugin`. By hand: `/plugin uninstall cognigy@cognigy-plugin` then `/plugin marketplace remove cognigy-plugin`.
+Without `--client` it removes the plugin from every client. Add `--purge` to also delete `~/.cognigy-plugin` — that file holds the credentials **all** clients fall back to, so purging while others stay installed breaks them. By hand: `/plugin uninstall cognigy@cognigy-plugin` then `/plugin marketplace remove cognigy-plugin`.
 
 ## Troubleshooting
 
