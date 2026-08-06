@@ -150,6 +150,35 @@ describe("update_tool", () => {
     );
   });
 
+  it("updates config for a2a type (toolId, agentBaseUrl, taskTimeout)", async () => {
+    mockAgentWithFlow();
+    api.patch.mockResolvedValue({});
+
+    const result = await h.handleToolCall("update_tool", {
+      aiAgentId: ID.agent,
+      toolNodeId: ID.tool,
+      toolType: "a2a",
+      config: {
+        toolId: "flights_agent",
+        agentBaseUrl: "https://endpoint-trial.cognigy.ai/a2a/v1/tok-abc123",
+        taskTimeout: 0,
+      },
+    });
+
+    expect(result.updated).toBe(true);
+    expect(result.updatedFields).toContain("config");
+    expect(api.patch).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes/${ID.tool}`,
+      {
+        config: {
+          toolId: "flights_agent",
+          agentBaseUrl: "https://endpoint-trial.cognigy.ai/a2a/v1/tok-abc123",
+          taskTimeout: 0,
+        },
+      },
+    );
+  });
+
   it("returns error when no flow found for agent", async () => {
     mockAgentWithoutFlow();
 

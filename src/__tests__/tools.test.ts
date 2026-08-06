@@ -22,6 +22,7 @@ const ID = {
   pkg: "60d5ec49f1a2c8b1a4e0f00b",
   task: "60d5ec49f1a2c8b1a4e0f00c",
   task2: "60d5ec49f1a2c8b1a4e0f00d",
+  node2: "60d5ec49f1a2c8b1a4e0f00e",
 };
 
 describe("ToolHandlers v2", () => {
@@ -1394,6 +1395,114 @@ describe("ToolHandlers v2", () => {
       );
     });
 
+    it("creates an a2a tool", async () => {
+      mockFlowWithJobNode();
+      api.post
+        .mockResolvedValueOnce({ _id: ID.tool })
+        .mockResolvedValueOnce({ _id: ID.node2 });
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "a2a",
+        name: "Flights Agent",
+        config: {
+          agentBaseUrl: "https://endpoint-trial.cognigy.ai/a2a/v1/tok-abc123",
+          agentCardPath: ".well-known/agent.json",
+          executionMode: "blocking",
+          taskTimeout: 0,
+        },
+      });
+
+      expect(result.toolType).toBe("a2a");
+      expect(api.post).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("/chart/nodes"),
+        expect.objectContaining({
+          type: "aiAgentJobA2AAgent",
+          mode: "appendChild",
+          config: expect.objectContaining({
+            name: "Flights Agent",
+            agentBaseUrl: "https://endpoint-trial.cognigy.ai/a2a/v1/tok-abc123",
+            executionMode: "blocking",
+            taskTimeout: 0,
+          }),
+        }),
+      );
+      expect(api.post).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining("/chart/nodes"),
+        expect.objectContaining({ type: "aiAgentJobCallA2AAgent" }),
+      );
+    });
+
+    it("errors when agentBaseUrl is missing for an a2a tool", async () => {
+      mockFlowWithJobNode();
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "a2a",
+        name: "Flights Agent",
+        config: {},
+      });
+
+      expect(result.error).toContain("agentBaseUrl is required");
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it("stores toolId on an a2a tool so it can be reused", async () => {
+      mockFlowWithJobNode();
+      api.post
+        .mockResolvedValueOnce({ _id: ID.tool })
+        .mockResolvedValueOnce({ _id: ID.node2 });
+
+      await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "a2a",
+        name: "Flights Agent",
+        config: {
+          toolId: "flights_agent",
+          agentBaseUrl: "https://endpoint-trial.cognigy.ai/a2a/v1/tok-abc123",
+        },
+      });
+
+      expect(api.post).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("/chart/nodes"),
+        expect.objectContaining({
+          config: expect.objectContaining({ toolId: "flights_agent" }),
+        }),
+      );
+    });
+
+    it("reuses a duplicate a2a tool by toolId instead of creating another", async () => {
+      api.get.mockResolvedValueOnce({ flowId: ID.flow }).mockResolvedValueOnce({
+        items: [
+          { _id: ID.entry, isEntryPoint: true },
+          { _id: ID.node, type: "aiAgentJob" },
+          {
+            _id: ID.tool,
+            type: "aiAgentJobA2AAgent",
+            label: "Flights Agent",
+            config: { toolId: "flights_agent" },
+          },
+        ],
+      });
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "a2a",
+        name: "Flights Agent",
+        config: {
+          toolId: "flights_agent",
+          agentBaseUrl: "https://endpoint-trial.cognigy.ai/a2a/v1/tok-abc123",
+        },
+      });
+
+      expect(result.reusedExisting).toBe(true);
+      expect(result.toolId).toBe(ID.tool);
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
     it("uses toolId as node label instead of display name", async () => {
       mockFlowWithJobNode();
       api.post.mockResolvedValue({ _id: ID.tool });
@@ -2715,6 +2824,7 @@ describe("ToolHandlers v2", () => {
       // GET after create
       api.get
         .mockResolvedValueOnce({ localeReference: "loc-123" }) // flow lookup
+        .mockResolvedValueOnce({ referenceId: "loc-123" }) // locale detail
         .mockResolvedValueOnce(mockEndpoint) // after POST
         .mockResolvedValueOnce({ ...mockEndpoint, webrtcClient: true }); // after PATCH
       // PATCH to provision WebRTC
@@ -2868,6 +2978,7 @@ describe("ToolHandlers v2", () => {
       api.post.mockResolvedValueOnce(mockCreated);
       api.get
         .mockResolvedValueOnce({ localeReference: "loc-123" }) // flow
+        .mockResolvedValueOnce({ referenceId: "loc-123" }) // locale detail
         .mockResolvedValueOnce(mockCreated); // after POST
       api.patch.mockRejectedValueOnce(new Error("WebRTC provision failed"));
 

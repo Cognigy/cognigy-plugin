@@ -24,7 +24,7 @@ The same npm package also exposes two bins: **`cognigy-setup`** — the one-comm
 
 ## Tools — few tools, many operations
 
-16 tools, each often a multi-operation dispatcher (e.g. `manage_flow_nodes { operation }`, `manage_knowledge`, `manage_packages`). Prefer extending an existing tool over adding one. Each tool spans:
+17 tools, each often a multi-operation dispatcher (e.g. `manage_flow_nodes { operation }`, `manage_knowledge`, `manage_packages`). Prefer extending an existing tool over adding one. Each tool spans:
 
 | File                        | Role                                                                            |
 | --------------------------- | ------------------------------------------------------------------------------- |

@@ -8,7 +8,7 @@ A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy
 
 ## Features
 
-- **16 workflow tools** for agent creation, deployment, packaging, and voice setup
+- **17 workflow tools** for agent creation, deployment, packaging, voice setup, and agent-to-agent (A2A) delegation
 - **One-call agent setup**: creates Agent + Flow + AI Agent Job Node + REST Endpoint automatically
 - **Self-improvement loop**: talk to your agent, evaluate responses, update the job description, repeat
 - **Knowledge store support**: attach RAG knowledge stores to agents as tools
@@ -30,7 +30,7 @@ A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy
 | `get_resource`         | Read  | Get detailed information about a single resource                                                    |
 | `delete_resource`      | Write | Permanently delete a resource                                                                       |
 | `manage_knowledge`     | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG                         |
-| `create_tool`          | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node                                     |
+| `create_tool`          | Write | Add a tool (HTTP, knowledge, email, MCP, A2A) to an agent's job node                                |
 | `update_tool`          | Write | Update an existing tool node's configuration                                                        |
 | `manage_webchat`       | Write | Create or configure a Webchat v3 endpoint for website deployment                                    |
 | `manage_flow_nodes`    | Write | Create, update, delete, or list flow nodes for conversation logic                                   |
@@ -38,6 +38,7 @@ A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy
 | `manage_voice_gateway` | Write | Create or configure a Voice Gateway endpoint with WebRTC for browser-based voice interaction        |
 | `manage_settings`      | Write | Manage project-level settings including voice preview and Knowledge AI configuration                |
 | `audit_voice_agent`    | Write | Audit a voice agent against the Go-Live Checklist; reports by default, applies safe fixes on demand |
+| `manage_a2a_server`    | Write | Create or configure an A2A (Agent2Agent) server endpoint for agent-to-agent delegation              |
 
 Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, flow nodes, packages, settings, LLM providers, tools, troubleshooting) ships as **skills** that load automatically when your request matches, in clients that support them (e.g. Claude Code) — see below.
 

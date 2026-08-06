@@ -414,6 +414,7 @@ const TOOL_TYPE_MAP: Record<string, { type: string; extension: string }> = {
   send_email: { type: "sendEmailTool", extension: "@cognigy/basic-nodes" },
   mcp: { type: "aiAgentJobMCPTool", extension: "@cognigy/basic-nodes" },
   http: { type: "aiAgentJobTool", extension: "@cognigy/basic-nodes" },
+  a2a: { type: "aiAgentJobA2AAgent", extension: "@cognigy/basic-nodes" },
 };
 
 const RESOLVE_NODE_MAP: Record<string, { type: string; label: string } | null> =
@@ -423,6 +424,7 @@ const RESOLVE_NODE_MAP: Record<string, { type: string; label: string } | null> =
     knowledge: null,
     send_email: null,
     http: null, // HTTP handles its own resolve node creation
+    a2a: { type: "aiAgentJobCallA2AAgent", label: "Call A2A Agent" },
   };
 
 /**
@@ -453,10 +455,38 @@ function buildHttpNodeConfig(http: {
   return cfg;
 }
 
+/**
+ * Copy A2A Agent tool config fields (shared by create_tool and update_tool)
+ * from the user-facing `cfg` object onto the raw node `nodeConfig`.
+ */
+function applyA2AToolConfig(nodeConfig: Record<string, any>, cfg: any): void {
+  if (cfg.agentBaseUrl) nodeConfig.agentBaseUrl = cfg.agentBaseUrl;
+  if (cfg.agentCardPath) nodeConfig.agentCardPath = cfg.agentCardPath;
+  if (cfg.timeout !== undefined) nodeConfig.timeout = cfg.timeout;
+  if (cfg.executionMode) nodeConfig.executionMode = cfg.executionMode;
+  if (cfg.taskTimeout !== undefined) nodeConfig.taskTimeout = cfg.taskTimeout;
+  if (cfg.maxAutonomousTurns !== undefined)
+    nodeConfig.maxAutonomousTurns = cfg.maxAutonomousTurns;
+  if (cfg.toolFilter) nodeConfig.toolFilter = cfg.toolFilter;
+  if (cfg.whitelist) nodeConfig.whitelist = cfg.whitelist;
+  if (cfg.blacklist) nodeConfig.blacklist = cfg.blacklist;
+  if (cfg.authType) nodeConfig.authType = cfg.authType;
+  if (cfg.apiKeyConnection) nodeConfig.apiKeyConnection = cfg.apiKeyConnection;
+  if (cfg.apiKeyHeader) nodeConfig.apiKeyHeader = cfg.apiKeyHeader;
+  if (cfg.bearerConnection) nodeConfig.bearerConnection = cfg.bearerConnection;
+  if (cfg.basicConnection) nodeConfig.basicConnection = cfg.basicConnection;
+  if (cfg.oAuth2Connection) nodeConfig.oAuth2Connection = cfg.oAuth2Connection;
+  if (cfg.authForDiscovery !== undefined)
+    nodeConfig.authForDiscovery = cfg.authForDiscovery;
+  if (cfg.agentHeaders) nodeConfig.agentHeaders = cfg.agentHeaders;
+  if (cfg.cacheCard !== undefined) nodeConfig.cacheCard = cfg.cacheCard;
+}
+
 const AI_AGENT_TOOL_TYPES = new Set([
   "aiAgentJobDefault",
   "aiAgentJobTool",
   "aiAgentJobMCPTool",
+  "aiAgentJobA2AAgent",
   "knowledgeTool",
   "handoverToAiAgentTool",
   "handoverToHumanAgentTool",
@@ -467,6 +497,7 @@ const AI_AGENT_TOOL_TYPES = new Set([
 const MCP_MANAGED_TOOL_TYPES = new Set([
   "aiAgentJobTool",
   "aiAgentJobMCPTool",
+  "aiAgentJobA2AAgent",
   "knowledgeTool",
   "sendEmailTool",
 ]);
@@ -2817,7 +2848,9 @@ export class ToolHandlers {
                   ? "send_email"
                   : duplicateTool.type === "aiAgentJobMCPTool"
                     ? "mcp"
-                    : data.toolType,
+                    : duplicateTool.type === "aiAgentJobA2AAgent"
+                      ? "a2a"
+                      : data.toolType,
             reusedExisting: true,
           },
           {
@@ -2826,6 +2859,13 @@ export class ToolHandlers {
           },
         );
       }
+    }
+
+    if (data.toolType === "a2a" && !cfg.agentBaseUrl) {
+      return withHints(
+        { error: "agentBaseUrl is required in config for a2a tool type." },
+        { action: "Provide config.agentBaseUrl and retry." },
+      );
     }
 
     // Step 3: Create the tool node
@@ -2866,6 +2906,11 @@ export class ToolHandlers {
           nodeConfig.useParameters = true;
           nodeConfig.parameters = cfg.parameters;
         }
+        break;
+      case "a2a":
+        nodeConfig.name = data.name;
+        if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
+        applyA2AToolConfig(nodeConfig, cfg);
         break;
     }
 
@@ -3149,6 +3194,11 @@ export class ToolHandlers {
         if (cfg.mcpName) nodeConfig.name = cfg.mcpName;
         if (cfg.mcpServerUrl) nodeConfig.mcpServerUrl = cfg.mcpServerUrl;
         if (cfg.timeout) nodeConfig.timeout = cfg.timeout;
+      }
+      if (toolType === "a2a") {
+        if (data.name) nodeConfig.name = data.name;
+        if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
+        applyA2AToolConfig(nodeConfig, cfg);
       }
 
       if (Object.keys(nodeConfig).length > 0) {
@@ -3862,15 +3912,10 @@ export class ToolHandlers {
         );
       }
 
-      let localeId: string | undefined;
-      try {
-        const flow: any = await this.apiClient.get(
-          `/v2.0/flows/${data.flowId}`,
-        );
-        localeId = flow?.localeReference;
-      } catch {
-        // Non-critical
-      }
+      const localeId = await this.resolveEndpointLocaleId(
+        data.flowId,
+        data.projectId,
+      );
 
       const createPayload: any = {
         projectId: data.projectId,
@@ -3938,7 +3983,7 @@ export class ToolHandlers {
     }
 
     // UPDATE: patch existing endpoint
-    if (!data.name && !hasSettings) {
+    if (!data.name && !data.flowId && !hasSettings) {
       const ep = await this.safeGetEndpoint(endpointId);
       if (ep) {
         return this.buildWebchatResponse({
@@ -3996,6 +4041,249 @@ export class ToolHandlers {
     }
   }
 
+  // =========================================================================
+  // Tool 17: manage_a2a_server
+  // =========================================================================
+  async handleManageA2AServer(args: any): Promise<any> {
+    const data = schemas.manageA2AServerSchema.parse(args);
+
+    const settings: Record<string, any> = {};
+    if (data.agentName !== undefined) settings.agentName = data.agentName;
+    if (data.agentDescription !== undefined)
+      settings.agentDescription = data.agentDescription;
+    if (data.skills !== undefined) settings.skills = data.skills;
+    if (data.enableStreaming !== undefined)
+      settings.enableStreaming = data.enableStreaming;
+    if (data.authenticationType !== undefined) {
+      settings.a2aServerEndpointAuthentication = {
+        authenticationType: data.authenticationType,
+      };
+    }
+    const hasSettings = Object.keys(settings).length > 0;
+
+    let endpointId = data.endpointId ?? null;
+
+    // CREATE when no endpointId provided, UPDATE when endpointId is explicit
+    if (!endpointId) {
+      if (!data.projectId) {
+        return withHints(
+          { error: "projectId is required to create an A2A server endpoint." },
+          {
+            action:
+              "Provide projectId. Use list_resources { resourceType: 'project' } to find one.",
+          },
+        );
+      }
+      if (!data.flowId) {
+        return withHints(
+          {
+            error:
+              "flowId is required to create an A2A server endpoint. To update an existing one, provide endpointId instead.",
+          },
+          {
+            action:
+              "Provide flowId. Use list_resources { resourceType: 'flow', projectId } to find one, or create an agent first with create_ai_agent.",
+          },
+        );
+      }
+
+      const localeId = await this.resolveEndpointLocaleId(
+        data.flowId,
+        data.projectId,
+      );
+
+      const createPayload: any = {
+        projectId: data.projectId,
+        entrypoint: data.projectId,
+        channel: "a2aServer",
+        flowId: data.flowId,
+        name: data.name || "A2A Server",
+        targetType: "flow",
+        agentId: "",
+      };
+      if (localeId) createPayload.localeId = localeId;
+
+      try {
+        const createdEndpoint: any = await this.apiClient.post(
+          "/v2.0/endpoints",
+          createPayload,
+        );
+        endpointId = createdEndpoint._id || createdEndpoint.id;
+
+        let endpoint: any = await this.apiClient.get(
+          `/v2.0/endpoints/${endpointId}`,
+        );
+
+        let settingsApplied = false;
+        if (hasSettings) {
+          try {
+            const mergedSettings = deepMerge(endpoint.settings ?? {}, settings);
+            await this.apiClient.patch(`/v2.0/endpoints/${endpointId}`, {
+              settings: mergedSettings,
+            });
+            endpoint = await this.apiClient.get(
+              `/v2.0/endpoints/${endpointId}`,
+            );
+            settingsApplied = true;
+          } catch {
+            // Settings patch failed but endpoint was created — continue
+          }
+        }
+
+        const response = await this.buildA2AServerResponse({
+          created: true,
+          endpointId: endpointId!,
+          endpoint,
+        });
+        if (hasSettings && !settingsApplied) {
+          return withHints(response, {
+            warning: "Endpoint created but settings failed to apply.",
+            action: `Retry settings by calling manage_a2a_server { endpointId: "${endpointId}", ...settings }`,
+          });
+        }
+        return response;
+      } catch (error: any) {
+        return withHints(
+          { error: `Failed to create A2A server endpoint: ${error.message}` },
+          {
+            action: "Check projectId and flowId, then retry.",
+          },
+        );
+      }
+    }
+
+    // UPDATE: patch existing endpoint
+    if (!data.name && !data.flowId && !hasSettings) {
+      const ep = await this.safeGetEndpoint(endpointId);
+      if (ep) {
+        return await this.buildA2AServerResponse({
+          endpointId: endpointId!,
+          endpoint: ep,
+          note: "No changes requested. Returning current endpoint info.",
+        });
+      }
+      return withHints(
+        {
+          error:
+            "Nothing to update. Provide at least one of name, agentName, agentDescription, skills, enableStreaming, authenticationType.",
+        },
+        { action: "Include fields to update." },
+      );
+    }
+
+    try {
+      const fullEndpoint: any = await this.apiClient.get(
+        `/v2.0/endpoints/${endpointId}`,
+      );
+      const existingSettings = fullEndpoint.settings ?? {};
+      const mergedSettings = deepMerge(existingSettings, settings);
+
+      const patchPayload: any = { settings: mergedSettings };
+      if (data.name) patchPayload.name = data.name;
+      if (data.flowId) patchPayload.flowId = data.flowId;
+
+      await this.apiClient.patch(`/v2.0/endpoints/${endpointId}`, patchPayload);
+      const endpoint: any = await this.apiClient.get(
+        `/v2.0/endpoints/${endpointId}`,
+      );
+
+      return await this.buildA2AServerResponse({
+        updated: true,
+        endpointId: endpointId!,
+        endpoint,
+      });
+    } catch (error: any) {
+      return withHints(
+        { error: `Failed to update A2A server endpoint: ${error.message}` },
+        { action: "Verify endpointId and settings, then retry." },
+      );
+    }
+  }
+
+  /**
+   * GET the Agent Card and report whether the A2A server is actually alive.
+   * Fire-and-report rather than fire-and-forget: never throws, just reduces
+   * to { reachable: false, error } so a dead agent never blocks the response.
+   */
+  private async checkA2AAgentCard(agentCardUrl: string): Promise<{
+    reachable: boolean;
+    agentName?: string;
+    skills?: string[];
+    error?: string;
+    skipped?: boolean;
+  }> {
+    try {
+      const res = await axios.get(agentCardUrl, { timeout: 5000 });
+      const card = res.data ?? {};
+      return {
+        reachable: true,
+        agentName: card.name,
+        skills: Array.isArray(card.skills)
+          ? card.skills.map((s: any) => s.id ?? s.name)
+          : undefined,
+      };
+    } catch (error: any) {
+      return {
+        reachable: false,
+        error: error.response ? `HTTP ${error.response.status}` : error.message,
+      };
+    }
+  }
+
+  private async buildA2AServerResponse(opts: {
+    created?: boolean;
+    updated?: boolean;
+    endpointId: string;
+    endpoint: any;
+    note?: string;
+  }): Promise<any> {
+    const { endpoint } = opts;
+    // The a2aServer channel is served under a distinct /a2a/v1/ path prefix —
+    // unlike every other channel (rest, webchat3, mcpServer, ...), which are
+    // served directly at endpointBaseUrl/<URLToken>. Getting this wrong is a
+    // silent 404 on both discovery and every subsequent task call.
+    const agentBaseUrl =
+      endpoint.URLToken && this.endpointBaseUrl
+        ? `${this.endpointBaseUrl}/a2a/v1/${endpoint.URLToken}`
+        : undefined;
+    const agentCardUrl = agentBaseUrl
+      ? `${agentBaseUrl}/.well-known/agent.json`
+      : undefined;
+    const authenticationType =
+      endpoint.settings?.a2aServerEndpointAuthentication?.authenticationType;
+
+    const result: any = {};
+    if (opts.created) result.created = true;
+    if (opts.updated) result.updated = true;
+    result.endpointId = opts.endpointId;
+    result.name = endpoint.name;
+    result.channel = endpoint.channel ?? "a2aServer";
+    result.agentBaseUrl = agentBaseUrl;
+    result.agentCardUrl = agentCardUrl;
+    result.settings = {
+      agentName: endpoint.settings?.agentName,
+      agentDescription: endpoint.settings?.agentDescription,
+      skills: endpoint.settings?.skills,
+      enableStreaming: endpoint.settings?.enableStreaming,
+      authenticationType,
+    };
+    if (agentCardUrl) {
+      // Only meaningful to check unauthenticated — an endpoint that requires
+      // credentials will 401 here even when correctly configured, which would
+      // misreport a healthy agent as unreachable.
+      result.liveCheck =
+        authenticationType && authenticationType !== "none"
+          ? {
+              skipped: true,
+              reason:
+                "Endpoint requires authentication — reachability not checked (no credentials available for an unauthenticated probe).",
+            }
+          : await this.checkA2AAgentCard(agentCardUrl);
+    }
+    if (opts.note) result.note = opts.note;
+    return result;
+  }
+
   /**
    * Build a consistent webchat response. The demo URL is always the top-level
    * field so the LLM surfaces it by default. Integration details (configUrl,
@@ -4047,6 +4335,49 @@ export class ToolHandlers {
     updates: Record<string, any>,
   ): Record<string, any> {
     return deepMerge(existing, updates);
+  }
+
+  /**
+   * Resolve the locale UUID an endpoint's `localeId` field actually expects.
+   * `flow.localeReference` is the locale document's Mongo _id, NOT its
+   * referenceId — sending it as-is leaves Studio's "Open Demo Webchat" (and
+   * the voice preview) silently disabled with no visible error, since the
+   * endpoint's locale never resolves. Falls back to the project's first
+   * locale if the flow lookup fails.
+   */
+  private async resolveEndpointLocaleId(
+    flowId: string,
+    projectId?: string,
+  ): Promise<string | undefined> {
+    try {
+      const flow: any = await this.apiClient.get(`/v2.0/flows/${flowId}`);
+      const localeDocId = flow?.localeReference;
+      if (localeDocId) {
+        try {
+          const locale: any = await this.apiClient.get(
+            `/v2.0/locales/${localeDocId}`,
+          );
+          return locale?.referenceId ?? locale?._id ?? localeDocId;
+        } catch {
+          return localeDocId;
+        }
+      }
+    } catch {
+      // fall through to project locale list
+    }
+    if (!projectId) return undefined;
+    try {
+      const locales: any = await this.apiClient.get("/v2.0/locales", {
+        params: { projectId },
+      });
+      const items = locales?.items ?? locales;
+      if (Array.isArray(items) && items.length > 0) {
+        return items[0].referenceId ?? items[0]._id;
+      }
+    } catch {
+      // Non-critical — endpoint will be created without locale
+    }
+    return undefined;
   }
 
   private async safeGetEndpoint(endpointId: string): Promise<any> {
@@ -4103,28 +4434,10 @@ export class ToolHandlers {
       }
 
       // Resolve locale — try flow first, fall back to project's primary locale
-      let localeId: string | undefined;
-      try {
-        const flow: any = await this.apiClient.get(
-          `/v2.0/flows/${data.flowId}`,
-        );
-        localeId = flow?.localeReference;
-      } catch {
-        // Fall through to project locale
-      }
-      if (!localeId) {
-        try {
-          const locales: any = await this.apiClient.get("/v2.0/locales", {
-            params: { projectId: data.projectId },
-          });
-          const items = locales?.items ?? locales;
-          if (Array.isArray(items) && items.length > 0) {
-            localeId = items[0].referenceId ?? items[0]._id;
-          }
-        } catch {
-          // Non-critical — endpoint will be created without locale
-        }
-      }
+      const localeId = await this.resolveEndpointLocaleId(
+        data.flowId,
+        data.projectId,
+      );
 
       // Step 1: Create voiceGateway2 endpoint
       const createPayload: any = {
@@ -4864,6 +5177,9 @@ export class ToolHandlers {
           break;
         case "manage_voice_gateway":
           result = await this.handleManageVoiceGateway(args);
+          break;
+        case "manage_a2a_server":
+          result = await this.handleManageA2AServer(args);
           break;
         case "manage_settings":
           result = await this.handleManageSettings(args);

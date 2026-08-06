@@ -46,6 +46,7 @@ describe("manage_webchat", () => {
   it("creates new webchat endpoint when projectId and flowId provided", async () => {
     api.get
       .mockResolvedValueOnce({ localeReference: "en-US" }) // flow locale
+      .mockResolvedValueOnce({ referenceId: "en-US" }) // locale detail
       .mockResolvedValueOnce(mockEndpoint); // re-fetch after create
     api.post.mockResolvedValueOnce({ _id: ID.endpoint });
 
@@ -87,6 +88,7 @@ describe("manage_webchat", () => {
   it("creates new endpoint even when existing webchat3 endpoints exist in project", async () => {
     api.get
       .mockResolvedValueOnce({ localeReference: "en-US" }) // flow locale
+      .mockResolvedValueOnce({ referenceId: "en-US" }) // locale detail
       .mockResolvedValueOnce(mockEndpoint); // re-fetch after create
     api.post.mockResolvedValueOnce({ _id: ID.endpoint });
 
@@ -155,7 +157,9 @@ describe("manage_webchat", () => {
   });
 
   it("returns error when creation fails", async () => {
-    api.get.mockResolvedValueOnce({ localeReference: "en-US" });
+    api.get
+      .mockResolvedValueOnce({ localeReference: "en-US" }) // flow locale
+      .mockResolvedValueOnce({ referenceId: "en-US" }); // locale detail
     api.post.mockRejectedValueOnce(new Error("Quota exceeded"));
 
     const result = await h.handleToolCall("manage_webchat", {
@@ -169,6 +173,7 @@ describe("manage_webchat", () => {
   it("handles settings patch failure on create (partial success)", async () => {
     api.get
       .mockResolvedValueOnce({ localeReference: "en-US" }) // flow locale
+      .mockResolvedValueOnce({ referenceId: "en-US" }) // locale detail
       .mockResolvedValueOnce(mockEndpoint); // re-fetch after create
     api.post.mockResolvedValueOnce({ _id: ID.endpoint });
     api.patch.mockRejectedValueOnce(new Error("Settings validation failed"));
