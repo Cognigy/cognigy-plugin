@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /**
- * Guards the published form of plugin/.claude-plugin/plugin.json.
+ * Guards the published form of the plugin's MCP config.
  *
- * Local dev testing runs the engine from source via a GENERATED manifest
- * (scripts/dev-plugin.mjs → .dev-plugin/, gitignored). The tracked manifest
- * must always keep the published npx form — a committed `node …/dist/index.js`
- * or unpinned engine would ship a broken plugin to every user. Runs in
- * pre-commit and CI.
+ * MCP servers live in plugin/.mcp.json (the canonical auto-discovered
+ * location — an inline `mcpServers` object in plugin.json loads in Claude
+ * Code but is skipped by other plugin loaders). Local dev testing runs the
+ * engine from source via a GENERATED plugin (scripts/dev-plugin.mjs →
+ * .dev-plugin/, gitignored). The tracked .mcp.json must always keep the
+ * published npx form — a committed `node …/dist/index.js` or unpinned engine
+ * would ship a broken plugin to every user. Runs in pre-commit and CI.
  */
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -14,15 +16,25 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const manifestPath = join(repoRoot, "plugin", ".claude-plugin", "plugin.json");
+const mcpPath = join(repoRoot, "plugin", ".mcp.json");
 
 const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+const mcp = JSON.parse(readFileSync(mcpPath, "utf-8"));
 const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf-8"));
 
 const errors = [];
-const platform = manifest.mcpServers?.platform;
+
+if ("mcpServers" in manifest) {
+  errors.push(
+    "plugin.json must not declare mcpServers inline — servers belong in " +
+      "plugin/.mcp.json (the inline form is skipped by non-Claude-Code loaders)",
+  );
+}
+
+const platform = mcp.mcpServers?.platform;
 
 if (!platform) {
-  errors.push("mcpServers.platform is missing");
+  errors.push(`mcpServers.platform is missing from ${mcpPath}`);
 } else {
   // Alias form (cognigy-engine@npm:...) is REQUIRED, not cosmetic: a plain
   // `@cognigy/plugin-engine@<v>` spec makes `npm exec` treat this repo's own
@@ -55,9 +67,11 @@ if (manifest.version !== pkg.version) {
 }
 
 if (errors.length > 0) {
-  console.error(`✗ ${manifestPath} failed validation:`);
+  console.error(`✗ plugin manifest/.mcp.json failed validation:`);
   for (const error of errors) console.error(`  - ${error}`);
   process.exit(1);
 }
 
-console.log("✓ plugin manifest OK (published npx form, version in sync)");
+console.log(
+  "✓ plugin manifest + .mcp.json OK (published npx form, version in sync)",
+);

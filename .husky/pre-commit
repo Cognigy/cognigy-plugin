@@ -4,8 +4,8 @@ if [ -z "$files" ]; then
   exit 0
 fi
 
-# Block committing a dev-edited plugin manifest (must stay in published npx form).
-if echo "$files" | grep -q '^plugin/.claude-plugin/plugin.json$'; then
+# Block committing a dev-edited plugin manifest or MCP config (must stay in published npx form).
+if echo "$files" | grep -q -E '^plugin/(\.claude-plugin/plugin\.json|\.mcp\.json)$'; then
   node scripts/check-plugin-manifest.mjs || exit 1
 fi
 

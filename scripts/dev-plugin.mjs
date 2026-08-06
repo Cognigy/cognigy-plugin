@@ -7,10 +7,11 @@
  *   npm run plugin:dev:off   — remove the dev install and restore the GitHub plugin
  *
  * How it works:
- *  - Generates a dev marketplace under .dev-plugin/ whose plugin manifest is a
- *    copy of plugin/.claude-plugin/plugin.json with ONE change: the `platform`
- *    server runs the local TypeScript source directly via tsx (no build step).
- *    Skills and agents are symlinked to the working tree, so edits are live.
+ *  - Generates a dev marketplace under .dev-plugin/ whose plugin is a copy of
+ *    plugin/ (manifest + .mcp.json) with ONE change: the `platform` server in
+ *    .mcp.json runs the local TypeScript source directly via tsx (no build
+ *    step). Skills and agents are symlinked to the working tree, so edits are
+ *    live.
  *  - Installs it as cognigy@cognigy-dev and uninstalls the prod plugin to avoid
  *    duplicate tool names.
  *  - After source/skill edits: run /reload-plugins in Claude Code. That's it.
@@ -67,16 +68,19 @@ function generateDevPlugin() {
       "utf-8",
     ),
   );
+  const mcp = JSON.parse(
+    readFileSync(join(repoRoot, "plugin", ".mcp.json"), "utf-8"),
+  );
 
   manifest.version = `${manifest.version}-dev`;
   manifest.description = `${manifest.description} (LOCAL DEV — serves the working tree)`;
-  manifest.mcpServers.platform = {
+  mcp.mcpServers.platform = {
     command: "node",
     args: [
       join(repoRoot, "node_modules", "tsx", "dist", "cli.mjs"),
       join(repoRoot, "src", "index.ts"),
     ],
-    env: manifest.mcpServers.platform.env,
+    env: mcp.mcpServers.platform.env,
   };
 
   rmSync(devRoot, { recursive: true, force: true });
@@ -106,13 +110,17 @@ function generateDevPlugin() {
     join(devRoot, "plugin", ".claude-plugin", "plugin.json"),
     JSON.stringify(manifest, null, 2) + "\n",
   );
+  writeFileSync(
+    join(devRoot, "plugin", ".mcp.json"),
+    JSON.stringify(mcp, null, 2) + "\n",
+  );
 
   // Symlink everything else in plugin/ (skills, agents, ...) so working-tree
   // edits are served live; fall back to copying if symlinks are unavailable
   // (e.g. Windows without Developer Mode / elevation).
   const copied = [];
   for (const entry of readdirSync(join(repoRoot, "plugin"))) {
-    if (entry === ".claude-plugin") continue;
+    if (entry === ".claude-plugin" || entry === ".mcp.json") continue;
     const target = join(repoRoot, "plugin", entry);
     const link = join(devRoot, "plugin", entry);
     try {

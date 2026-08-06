@@ -25,24 +25,5 @@
       "sensitive": true,
       "required": true
     }
-  },
-  "mcpServers": {
-    "platform": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "-p",
-        "cognigy-engine@npm:@cognigy/plugin-engine@1.8.1",
-        "cognigy-mcp"
-      ],
-      "env": {
-        "COGNIGY_API_BASE_URL": "${user_config.cognigy_api_base_url}",
-        "COGNIGY_API_KEY": "${user_config.cognigy_api_key}"
-      }
-    },
-    "docs": {
-      "type": "http",
-      "url": "https://docs.cognigy.com/mcp"
-    }
   }
 }
