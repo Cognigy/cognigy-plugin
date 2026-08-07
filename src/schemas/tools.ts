@@ -38,13 +38,15 @@ export const updateAiAgentSchema = z.object({
 // Which providers may use which provider-specific setup_llm field.
 const SETUP_LLM_FIELD_PROVIDERS = {
   baseCustomUrl: ["openAICompatible"],
-  customModel: ["openAICompatible", "awsBedrock"],
+  customModel: ["openAICompatible", "awsBedrock", "googleGenAI"],
   customAuthHeader: ["openAICompatible"],
   apiType: ["openAI", "azureOpenAI", "openAICompatible"],
   region: ["awsBedrock"],
   accessKeyId: ["awsBedrock"],
   secretAccessKey: ["awsBedrock"],
   roleArn: ["awsBedrock"],
+  location: ["googleGenAI"],
+  serviceAccountJson: ["googleGenAI"],
 } as const;
 
 export const setupLlmSchema = z
@@ -58,6 +60,7 @@ export const setupLlmSchema = z
       "mistral",
       "openAICompatible",
       "awsBedrock",
+      "googleGenAI",
     ]),
     modelType: z.string().min(1),
     name: z.string().optional(),
@@ -72,6 +75,8 @@ export const setupLlmSchema = z
     accessKeyId: z.string().min(1).optional(),
     secretAccessKey: z.string().min(1).optional(),
     roleArn: z.string().min(1).optional(),
+    location: z.string().min(1).optional(),
+    serviceAccountJson: z.string().min(1).optional(),
     dangerouslySkipConnectionTest: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
@@ -170,6 +175,66 @@ export const setupLlmSchema = z
           path: ["customModel"],
           message:
             "modelType 'custom-model' requires customModel — the Bedrock model id (e.g. 'anthropic.claude-sonnet-4-20250514-v1:0').",
+        });
+      }
+    }
+
+    if (data.provider === "googleGenAI") {
+      if (!data.location) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["location"],
+          message:
+            "Provider 'googleGenAI' requires location — the Vertex AI region (e.g. 'us-central1' or 'global').",
+        });
+      }
+      if (data.apiKey) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["apiKey"],
+          message:
+            "Provider 'googleGenAI' does not use apiKey. Provide serviceAccountJson (the full GCP service-account JSON key) instead.",
+        });
+      }
+      if (data.serviceAccountJson) {
+        let parsed: any;
+        try {
+          parsed = JSON.parse(data.serviceAccountJson);
+        } catch {
+          parsed = undefined;
+        }
+        if (
+          !parsed ||
+          typeof parsed !== "object" ||
+          !parsed.client_email ||
+          !parsed.private_key ||
+          !parsed.project_id
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["serviceAccountJson"],
+            message:
+              "serviceAccountJson must be a GCP service-account JSON key containing client_email, private_key, and project_id.",
+          });
+        }
+      }
+      const isCustomType =
+        data.modelType === "custom-model" ||
+        data.modelType === "custom-embedding-model";
+      if (data.customModel && !isCustomType) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["modelType"],
+          message:
+            "customModel requires modelType 'custom-model' or 'custom-embedding-model' for provider 'googleGenAI'. Use a named modelType (e.g. 'gemini-3.5-flash') without customModel instead.",
+        });
+      }
+      if (isCustomType && !data.customModel) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["customModel"],
+          message:
+            "modelType 'custom-model' / 'custom-embedding-model' requires customModel — the Gemini model name (e.g. 'gemini-3.1-pro-preview').",
         });
       }
     }

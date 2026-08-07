@@ -743,6 +743,76 @@ describe("ToolHandlers v2", () => {
       expect(result.error).toContain("accessKeyId");
       expect(api.post).not.toHaveBeenCalled();
     });
+
+    it("creates a googleGenAI LLM with a Vertex AI service-account connection", async () => {
+      const serviceAccountJson = JSON.stringify({
+        type: "service_account",
+        project_id: "my-gcp-project",
+        client_email: "cognigy@my-gcp-project.iam.gserviceaccount.com",
+        private_key:
+          "-----BEGIN PRIVATE KEY-----\nabc123\n-----END PRIVATE KEY-----\n",
+      });
+      const mockGenAiLlm = {
+        _id: ID.llm,
+        referenceId: "llm-ref-uuid",
+        name: "gemini-3.5-flash",
+        provider: "googleGenAI",
+        modelType: "gemini-3.5-flash",
+        connectionId: "conn-ref-uuid",
+        isDefault: true,
+        googleGenAI: { location: "us-central1" },
+      };
+      const mockConn = { _id: "conn1", referenceId: "conn-ref-uuid" };
+      api.post
+        .mockResolvedValueOnce(mockConn)
+        .mockResolvedValueOnce(mockGenAiLlm)
+        .mockResolvedValueOnce(mockTestSuccess);
+
+      const result = await h.handleToolCall("setup_llm", {
+        projectId: ID.project,
+        provider: "googleGenAI",
+        modelType: "gemini-3.5-flash",
+        location: "us-central1",
+        serviceAccountJson,
+      });
+
+      expect(api.post).toHaveBeenCalledWith(
+        "/v2.0/connections",
+        expect.objectContaining({
+          type: "GoogleVertexAIProvider",
+          extension: "@cognigy/generative-ai-provider",
+          fields: {
+            googleCredentialsFileName: "service-account.json",
+            credentialsStringified: serviceAccountJson,
+            clientEmail: "cognigy@my-gcp-project.iam.gserviceaccount.com",
+            privateKey:
+              "-----BEGIN PRIVATE KEY-----\nabc123\n-----END PRIVATE KEY-----\n",
+            projectId: "my-gcp-project",
+          },
+        }),
+      );
+      expect(api.post).toHaveBeenCalledWith(
+        "/v2.0/largelanguagemodels",
+        expect.objectContaining({
+          modelType: "gemini-3.5-flash",
+          provider: "googleGenAI",
+          googleGenAI: { location: "us-central1" },
+        }),
+      );
+      expect(result.googleGenAI).toEqual({ location: "us-central1" });
+    });
+
+    it("returns a googleGenAI-specific error when no credentials provided", async () => {
+      const result = await h.handleToolCall("setup_llm", {
+        projectId: ID.project,
+        provider: "googleGenAI",
+        modelType: "gemini-3.5-flash",
+        location: "us-central1",
+      });
+
+      expect(result.error).toContain("serviceAccountJson");
+      expect(api.post).not.toHaveBeenCalled();
+    });
   });
 
   // =========================================================================

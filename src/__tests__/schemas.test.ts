@@ -420,6 +420,85 @@ describe("setupLlmSchema", () => {
       }),
     ).toThrow(/awsBedrock/);
   });
+
+  const SERVICE_ACCOUNT_JSON = JSON.stringify({
+    type: "service_account",
+    project_id: "my-gcp-project",
+    client_email: "cognigy@my-gcp-project.iam.gserviceaccount.com",
+    private_key:
+      "-----BEGIN PRIVATE KEY-----\nabc123\n-----END PRIVATE KEY-----\n",
+  });
+
+  it("accepts googleGenAI with a Gemini model and service account", () => {
+    const result = schemas.setupLlmSchema.parse({
+      projectId: VALID_ID,
+      provider: "googleGenAI",
+      modelType: "gemini-3.5-flash",
+      location: "us-central1",
+      serviceAccountJson: SERVICE_ACCOUNT_JSON,
+    });
+    expect(result.provider).toBe("googleGenAI");
+    expect(result.location).toBe("us-central1");
+  });
+
+  it("accepts googleGenAI with custom-model and customModel", () => {
+    const result = schemas.setupLlmSchema.parse({
+      projectId: VALID_ID,
+      provider: "googleGenAI",
+      modelType: "custom-model",
+      customModel: "gemini-3.1-pro-preview",
+      location: "global",
+      connectionId: "existing-conn-uuid",
+    });
+    expect(result.customModel).toBe("gemini-3.1-pro-preview");
+  });
+
+  it("rejects googleGenAI without location", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "googleGenAI",
+        modelType: "gemini-3.5-flash",
+        serviceAccountJson: SERVICE_ACCOUNT_JSON,
+      }),
+    ).toThrow(/location/);
+  });
+
+  it("rejects googleGenAI with apiKey instead of a service account", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "googleGenAI",
+        modelType: "gemini-3.5-flash",
+        location: "us-central1",
+        apiKey: "AIza-nope",
+      }),
+    ).toThrow(/serviceAccountJson/);
+  });
+
+  it("rejects a serviceAccountJson that is not a valid service account", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "googleGenAI",
+        modelType: "gemini-3.5-flash",
+        location: "us-central1",
+        serviceAccountJson: JSON.stringify({ foo: "bar" }),
+      }),
+    ).toThrow(/client_email/);
+  });
+
+  it("rejects googleGenAI-only fields on other providers", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "openAI",
+        modelType: "gpt-4o",
+        apiKey: "sk-abc123",
+        location: "us-central1",
+      }),
+    ).toThrow(/googleGenAI/);
+  });
 });
 
 describe("talkToAgentSchema", () => {

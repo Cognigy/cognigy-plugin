@@ -1,6 +1,6 @@
 ---
 name: llm-providers
-description: "Use when configuring or choosing an LLM for a Cognigy agent — valid provider names (openAI, anthropic, azureOpenAI, google, mistral, openAICompatible, awsBedrock), model strings, connection types, credential resolution, OpenAI-compatible endpoints (vLLM, Hugging Face, LiteLLM, Azure AI Foundry, self-hosted), and AWS Bedrock models."
+description: "Use when configuring or choosing an LLM for a Cognigy agent — valid provider names (openAI, anthropic, azureOpenAI, google, mistral, openAICompatible, awsBedrock, googleGenAI), model strings, connection types, credential resolution, OpenAI-compatible endpoints (vLLM, Hugging Face, LiteLLM, Azure AI Foundry, self-hosted), AWS Bedrock models, and Gemini 3+ via Google GenAI / Vertex AI."
 ---
 
 # LLM Provider Reference
@@ -16,6 +16,7 @@ description: "Use when configuring or choosing an LLM for a Cognigy agent — va
 | mistral     | mistral-small-2503, mistral-medium-latest                  | MistralProvider        | Requires apiKey                                               |
 | openAICompatible | custom-model, custom-embedding-model                  | OpenAICompatibleProvider | Requires apiKey + baseCustomUrl + customModel (see below)   |
 | awsBedrock  | amazon.nova-pro-v1:0, custom-model                         | AwsBedrockProvider / AwsBedrockProviderIamRole | Requires region + accessKeyId/secretAccessKey or roleArn (see below) |
+| googleGenAI | gemini-3.5-flash, gemini-embedding-2, custom-model         | GoogleVertexAIProvider | Requires location + serviceAccountJson (see below)          |
 
 ## Model groups
 
@@ -91,6 +92,32 @@ Example:
 ```
 
 When inspecting existing models, the region and custom model id are in the `awsBedrock` object of the response.
+
+## Google GenAI (googleGenAI)
+
+Use provider `googleGenAI` for **Gemini 3+** models via Vertex AI (the `@google/genai` SDK path). For Gemini 1-2.x use the legacy `google` provider.
+
+Required parameters:
+
+- `location`: Vertex AI region, e.g. `us-central1` or `global`
+- `modelType`: a Gemini 3.x model — chat: `gemini-3.5-flash`, `gemini-3.1-pro-preview`, `gemini-3-flash-preview`, `gemini-3.1-flash-lite`; embedding: `gemini-embedding-2`. For other models use `custom-model` / `custom-embedding-model` with the name in `customModel`.
+- Credentials — one of (NOT `apiKey`):
+  - `serviceAccountJson`: the full GCP service-account JSON key as a string (needs `client_email`, `private_key`, `project_id`) → auto-creates a `GoogleVertexAIProvider` connection
+  - `connectionId` of an existing same-project connection
+
+Example:
+
+```json
+{
+  "projectId": "<projectId>",
+  "provider": "googleGenAI",
+  "modelType": "gemini-3.5-flash",
+  "location": "us-central1",
+  "serviceAccountJson": "{\"type\":\"service_account\",\"project_id\":\"...\",\"client_email\":\"...\",\"private_key\":\"...\"}"
+}
+```
+
+When inspecting existing models, the Vertex AI location is in the `googleGenAI` object of the response.
 
 ## Credential resolution
 

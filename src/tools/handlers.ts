@@ -479,6 +479,7 @@ const PROVIDER_CONNECTION_TYPE: Record<string, string> = {
   mistral: "MistralProvider",
   openAICompatible: "OpenAICompatibleProvider",
   awsBedrock: "AwsBedrockProvider",
+  googleGenAI: "GoogleVertexAIProvider",
 };
 
 /**
@@ -1658,16 +1659,19 @@ export class ToolHandlers {
     const hasInlineCredentials =
       data.provider === "awsBedrock"
         ? Boolean((data.accessKeyId && data.secretAccessKey) || data.roleArn)
-        : Boolean(data.apiKey);
+        : data.provider === "googleGenAI"
+          ? Boolean(data.serviceAccountJson)
+          : Boolean(data.apiKey);
 
     if (!hasInlineCredentials && !data.connectionId) {
+      const credentialHint =
+        data.provider === "awsBedrock"
+          ? "Either accessKeyId + secretAccessKey, roleArn, or connectionId must be provided."
+          : data.provider === "googleGenAI"
+            ? "Either serviceAccountJson or connectionId must be provided."
+            : "Either apiKey or connectionId must be provided.";
       return withHints(
-        {
-          error:
-            data.provider === "awsBedrock"
-              ? "Either accessKeyId + secretAccessKey, roleArn, or connectionId must be provided."
-              : "Either apiKey or connectionId must be provided.",
-        },
+        { error: credentialHint },
         {
           action: "Read the provider guide for credential requirements.",
         },
@@ -1739,6 +1743,17 @@ export class ToolHandlers {
             secretAccessKey: data.secretAccessKey!,
           };
         }
+      } else if (data.provider === "googleGenAI") {
+        // Vertex AI connections carry the service-account key both stringified
+        // and split into its identifying fields (schema-validated upstream).
+        const serviceAccount = JSON.parse(data.serviceAccountJson!);
+        connectionFields = {
+          googleCredentialsFileName: "service-account.json",
+          credentialsStringified: data.serviceAccountJson!,
+          clientEmail: serviceAccount.client_email,
+          privateKey: serviceAccount.private_key,
+          projectId: serviceAccount.project_id,
+        };
       }
       try {
         const connection: any = await this.apiClient.post("/v2.0/connections", {
@@ -1764,22 +1779,28 @@ export class ToolHandlers {
 
     // Provider-specific metadata. For openAICompatible the actual model name
     // and endpoint live here — modelType is just "custom-model" / "custom-embedding-model".
-    // For awsBedrock the region (and optionally a custom Bedrock model id) live here.
-    const providerMeta =
-      data.provider === "openAICompatible"
-        ? {
-            customModel: data.customModel,
-            baseCustomUrl: data.baseCustomUrl,
-            ...(data.customAuthHeader
-              ? { customAuthHeader: data.customAuthHeader }
-              : {}),
-          }
-        : data.provider === "awsBedrock"
-          ? {
-              region: data.region,
-              ...(data.customModel ? { customModel: data.customModel } : {}),
-            }
-          : {};
+    // For awsBedrock the region (and optionally a custom Bedrock model id) live here;
+    // for googleGenAI the Vertex AI location.
+    let providerMeta: Record<string, string> = {};
+    if (data.provider === "openAICompatible") {
+      providerMeta = {
+        customModel: data.customModel!,
+        baseCustomUrl: data.baseCustomUrl!,
+        ...(data.customAuthHeader
+          ? { customAuthHeader: data.customAuthHeader }
+          : {}),
+      };
+    } else if (data.provider === "awsBedrock") {
+      providerMeta = {
+        region: data.region!,
+        ...(data.customModel ? { customModel: data.customModel } : {}),
+      };
+    } else if (data.provider === "googleGenAI") {
+      providerMeta = {
+        location: data.location!,
+        ...(data.customModel ? { customModel: data.customModel } : {}),
+      };
+    }
 
     let result: any;
     try {
