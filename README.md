@@ -28,7 +28,7 @@ A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy
 | `talk_to_agent`        | Write | Send a message to an AI Agent and get its response                                                  |
 | `list_resources`       | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more                           |
 | `get_resource`         | Read  | Get detailed information about a single resource                                                    |
-| `delete_resource`      | Write | Permanently delete a resource                                                                       |
+| `delete_resource`      | Write | Delete a resource (flows/projects/agents are renamed with a DELETE\_ prefix instead)                |
 | `manage_knowledge`     | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG                         |
 | `create_tool`          | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node                                     |
 | `update_tool`          | Write | Update an existing tool node's configuration                                                        |

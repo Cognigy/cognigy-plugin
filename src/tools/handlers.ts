@@ -110,6 +110,9 @@ import {
 
 const DEFAULT_AGENT_IMAGE = "default-avatar:1";
 
+// Prefix applied to agents/flows/projects instead of deleting them.
+const DELETE_PREFIX = "DELETE_";
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -2531,18 +2534,38 @@ export class ToolHandlers {
       return { deleted: true, resourceType: "tool", id };
     }
 
-    // Agent deletion requires cascade: endpoints → flow → agent.
-    // The Cognigy API rejects agent deletion while referencing resources exist.
+    // Agents, flows and projects are never hard-deleted — they are renamed
+    // with the DELETE_ prefix to mark them for manual deletion.
     if (resourceType === "agent") {
       if (cascade === false) {
-        await this.apiClient.delete(`/v2.0/aiagents/${id}`);
-        return { deleted: true, resourceType, id };
+        const agent: any = await this.apiClient.get(`/v2.0/aiagents/${id}`);
+        const rename = await this.renameForDeletion(
+          `/v2.0/aiagents/${id}`,
+          agent?.name,
+        );
+        return withHints(
+          {
+            markedForDeletion: true,
+            alreadyMarked: rename.alreadyMarked || undefined,
+            resourceType,
+            id,
+            name: rename.name,
+          },
+          {
+            warning:
+              "Agents cannot be deleted via this plugin. The agent was renamed to mark it for manual deletion; its endpoints and flow were left untouched (cascade: false).",
+            action: "Delete the agent manually in the Cognigy UI.",
+          },
+        );
       }
-      return this.cascadeDeleteAgent(id);
+      return this.softDeleteAgent(id);
+    }
+
+    if (resourceType === "flow" || resourceType === "project") {
+      return this.markForDeletion(resourceType, id);
     }
 
     const deleteMap: Record<string, string> = {
-      flow: `/v2.0/flows/${id}`,
       endpoint: `/v2.0/endpoints/${id}`,
       llm_model: `/v2.0/largelanguagemodels/${id}`,
       knowledge_store: `/v2.0/knowledgestores/${id}`,
@@ -2557,18 +2580,65 @@ export class ToolHandlers {
   }
 
   /**
-   * Cascade-delete an AI Agent and all resources provisioned alongside it:
-   * 1. Resolve the agent's flow
-   * 2. Delete every endpoint pointing at that flow
-   * 3. Delete the flow itself
-   * 4. Delete the agent resource
+   * Rename a resource to DELETE_<name> to mark it for manual deletion.
+   * Idempotent: an already-prefixed name is left unchanged.
    */
-  private async cascadeDeleteAgent(agentId: string): Promise<any> {
+  private async renameForDeletion(
+    url: string,
+    currentName: string | undefined,
+  ): Promise<{ name: string; alreadyMarked: boolean }> {
+    const name = currentName ?? "";
+    if (name.startsWith(DELETE_PREFIX)) {
+      return { name, alreadyMarked: true };
+    }
+    const newName = `${DELETE_PREFIX}${name}`;
+    await this.apiClient.patch(url, { name: newName });
+    return { name: newName, alreadyMarked: false };
+  }
+
+  /**
+   * Flows and projects cannot be deleted via the plugin — rename them to
+   * DELETE_<name> so a human can delete them manually in the Cognigy UI.
+   */
+  private async markForDeletion(
+    resourceType: "flow" | "project",
+    id: string,
+  ): Promise<any> {
+    const url =
+      resourceType === "flow" ? `/v2.0/flows/${id}` : `/v2.0/projects/${id}`;
+    const current: any = await this.apiClient.get(url);
+    const rename = await this.renameForDeletion(url, current?.name);
+    return withHints(
+      {
+        markedForDeletion: true,
+        alreadyMarked: rename.alreadyMarked || undefined,
+        resourceType,
+        id,
+        name: rename.name,
+      },
+      {
+        warning: `${resourceType === "flow" ? "Flows" : "Projects"} cannot be deleted via this plugin. The ${resourceType} was renamed to "${rename.name}" to mark it for manual deletion.`,
+        action: `Delete the ${resourceType} manually in the Cognigy UI when appropriate.`,
+      },
+    );
+  }
+
+  /**
+   * Soft-delete an AI Agent. Agents and flows are never hard-deleted:
+   * 1. Resolve the agent's flow
+   * 2. Delete every endpoint pointing at that flow (takes the agent offline)
+   * 3. Rename the flow to DELETE_<name>
+   * 4. Rename the agent to DELETE_<name>
+   */
+  private async softDeleteAgent(agentId: string): Promise<any> {
     const deleted: string[] = [];
+    const renamed: string[] = [];
     const failed: { resource: string; error: string }[] = [];
 
     const resolved = await resolveFlowForAgent(this.apiClient, agentId);
-    const agent = resolved?.agent;
+    const agent: any =
+      resolved?.agent ??
+      (await this.apiClient.get(`/v2.0/aiagents/${agentId}`));
     const flowId = resolved?.flowId;
     const projectId =
       agent?.projectReference ??
@@ -2576,13 +2646,22 @@ export class ToolHandlers {
       agent?.project?._id ??
       agent?.project?.id;
 
+    let flow: any;
+    if (flowId) {
+      try {
+        flow = await this.apiClient.get(`/v2.0/flows/${flowId}`);
+      } catch (e: any) {
+        failed.push({
+          resource: `flow:${flowId}`,
+          error: e?.message ?? String(e),
+        });
+      }
+    }
+
     // Step 1: delete endpoints that reference the agent's flow
     if (flowId && projectId) {
       try {
-        const flowRef =
-          agent?.flowReferenceId ??
-          ((await this.apiClient.get(`/v2.0/flows/${flowId}`)) as any)
-            .referenceId;
+        const flowRef = agent?.flowReferenceId ?? flow?.referenceId;
         if (flowRef) {
           const limit = 100;
           let offset = 0;
@@ -2620,7 +2699,7 @@ export class ToolHandlers {
           }
         }
       } catch (e: any) {
-        // best-effort — continue with flow/agent deletion, but record partial failure
+        // best-effort — continue with flow/agent renaming, but record partial failure
         failed.push({
           resource: `endpoints:list:${projectId}`,
           error: e?.message ?? String(e),
@@ -2628,11 +2707,11 @@ export class ToolHandlers {
       }
     }
 
-    // Step 2: delete the flow
-    if (flowId) {
+    // Step 2: rename the flow (flows are never deleted)
+    if (flowId && flow) {
       try {
-        await this.apiClient.delete(`/v2.0/flows/${flowId}`);
-        deleted.push(`flow:${flowId}`);
+        await this.renameForDeletion(`/v2.0/flows/${flowId}`, flow?.name);
+        renamed.push(`flow:${flowId}`);
       } catch (e: any) {
         failed.push({
           resource: `flow:${flowId}`,
@@ -2641,10 +2720,10 @@ export class ToolHandlers {
       }
     }
 
-    // Step 3: delete the agent
+    // Step 3: rename the agent (agents are never deleted)
     try {
-      await this.apiClient.delete(`/v2.0/aiagents/${agentId}`);
-      deleted.push(`agent:${agentId}`);
+      await this.renameForDeletion(`/v2.0/aiagents/${agentId}`, agent?.name);
+      renamed.push(`agent:${agentId}`);
     } catch (e: any) {
       failed.push({
         resource: `agent:${agentId}`,
@@ -2653,13 +2732,24 @@ export class ToolHandlers {
     }
 
     const allSucceeded =
-      failed.length === 0 && deleted.includes(`agent:${agentId}`);
-    return {
-      deleted: allSucceeded,
-      resourceType: "agent",
-      id: agentId,
-      cascade: { deleted, failed: failed.length > 0 ? failed : undefined },
-    };
+      failed.length === 0 && renamed.includes(`agent:${agentId}`);
+    return withHints(
+      {
+        markedForDeletion: allSucceeded,
+        resourceType: "agent",
+        id: agentId,
+        cascade: {
+          deleted,
+          renamed,
+          failed: failed.length > 0 ? failed : undefined,
+        },
+      },
+      {
+        warning:
+          "Agents and flows cannot be deleted via this plugin. The agent and its flow were renamed with the DELETE_ prefix to mark them for manual deletion; endpoints were permanently deleted to take the agent offline.",
+        action: "Delete the renamed resources manually in the Cognigy UI.",
+      },
+    );
   }
 
   // =========================================================================
