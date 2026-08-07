@@ -34,16 +34,85 @@ export const updateAiAgentSchema = z.object({
 });
 
 // Tool 3: setup_llm
-export const setupLlmSchema = z.object({
-  projectId: idSchema,
-  provider: z.enum(["openAI", "azureOpenAI", "anthropic", "google", "mistral"]),
-  modelType: z.string().min(1),
-  name: z.string().optional(),
-  apiKey: z.string().optional(),
-  connectionId: z.string().optional(),
-  isDefault: z.boolean().optional(),
-  dangerouslySkipConnectionTest: z.boolean().optional(),
-});
+export const setupLlmSchema = z
+  .object({
+    projectId: idSchema,
+    provider: z.enum([
+      "openAI",
+      "azureOpenAI",
+      "anthropic",
+      "google",
+      "mistral",
+      "openAICompatible",
+    ]),
+    modelType: z.string().min(1),
+    name: z.string().optional(),
+    apiKey: z.string().optional(),
+    connectionId: z.string().optional(),
+    isDefault: z.boolean().optional(),
+    baseCustomUrl: z.string().url().optional(),
+    customModel: z.string().min(1).optional(),
+    customAuthHeader: z.string().min(1).optional(),
+    apiType: z.enum(["chatCompletion", "responses"]).optional(),
+    dangerouslySkipConnectionTest: z.boolean().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.provider === "openAICompatible") {
+      if (!data.baseCustomUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["baseCustomUrl"],
+          message:
+            "Provider 'openAICompatible' requires baseCustomUrl — the provider's OpenAI-compatible API base URL (e.g. https://my-llm-host.example.com/v1).",
+        });
+      }
+      if (!data.customModel) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["customModel"],
+          message:
+            "Provider 'openAICompatible' requires customModel — the model name as known by the provider (e.g. 'llama-3.3-70b-instruct').",
+        });
+      }
+      if (
+        data.modelType !== "custom-model" &&
+        data.modelType !== "custom-embedding-model"
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["modelType"],
+          message:
+            "Provider 'openAICompatible' requires modelType 'custom-model' (chat) or 'custom-embedding-model' (embedding). Put the provider's model name in customModel instead.",
+        });
+      }
+    } else {
+      for (const field of [
+        "baseCustomUrl",
+        "customModel",
+        "customAuthHeader",
+      ] as const) {
+        if (data[field] !== undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [field],
+            message: `${field} is only supported for provider 'openAICompatible'.`,
+          });
+        }
+      }
+      if (
+        data.apiType !== undefined &&
+        data.provider !== "openAI" &&
+        data.provider !== "azureOpenAI"
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["apiType"],
+          message:
+            "apiType is only supported for providers 'openAI', 'azureOpenAI', and 'openAICompatible'.",
+        });
+      }
+    }
+  });
 
 // Tool 4: talk_to_agent
 export const talkToAgentSchema = z
