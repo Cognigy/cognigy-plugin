@@ -1,6 +1,6 @@
 ---
 name: llm-providers
-description: "Use when configuring or choosing an LLM for a Cognigy agent — valid provider names (openAI, anthropic, azureOpenAI, google, mistral, openAICompatible), model strings, connection types, credential resolution, and OpenAI-compatible endpoints (vLLM, Hugging Face, LiteLLM, Azure AI Foundry, self-hosted)."
+description: "Use when configuring or choosing an LLM for a Cognigy agent — valid provider names (openAI, anthropic, azureOpenAI, google, mistral, openAICompatible, awsBedrock), model strings, connection types, credential resolution, OpenAI-compatible endpoints (vLLM, Hugging Face, LiteLLM, Azure AI Foundry, self-hosted), and AWS Bedrock models."
 ---
 
 # LLM Provider Reference
@@ -15,6 +15,7 @@ description: "Use when configuring or choosing an LLM for a Cognigy agent — va
 | google      | gemini-2.0-flash, gemini-1.5-pro                           | GoogleVertexAIProvider | Requires apiKey                                               |
 | mistral     | mistral-small-2503, mistral-medium-latest                  | MistralProvider        | Requires apiKey                                               |
 | openAICompatible | custom-model, custom-embedding-model                  | OpenAICompatibleProvider | Requires apiKey + baseCustomUrl + customModel (see below)   |
+| awsBedrock  | amazon.nova-pro-v1:0, custom-model                         | AwsBedrockProvider / AwsBedrockProviderIamRole | Requires region + accessKeyId/secretAccessKey or roleArn (see below) |
 
 ## Model groups
 
@@ -62,6 +63,34 @@ Notes:
 
 - The Completions API for custom LLMs is deprecated (removal planned for Cognigy.AI 2026.24.0) — use Chat Completions or Responses.
 - When inspecting existing models via `list_resources` / `get_resource`, openAI-compatible models show `modelType: "custom-model"`; the real model name and endpoint are in the `openAICompatible` object (`customModel`, `baseCustomUrl`, `customAuthHeader`).
+
+## AWS Bedrock (awsBedrock)
+
+Use provider `awsBedrock` for models hosted on AWS Bedrock (Amazon Nova, Anthropic Claude on Bedrock, Titan embeddings).
+
+Required parameters:
+
+- `region`: AWS region of the Bedrock deployment, e.g. `us-east-1`
+- `modelType`: a Bedrock model id from Cognigy's supported list — chat: `amazon.nova-pro-v1:0`, `amazon.nova-lite-v1:0`, `amazon.nova-micro-v1:0`, `amazon.nova-premier-v1:0`, `amazon.nova-2-lite-v1:0`, `anthropic.claude-3-5-sonnet-20240620-v1:0`; embedding: `amazon.titan-embed-text-v2:0`. For any other Bedrock model use `custom-model` and put the model id in `customModel`.
+- Credentials — one of (NOT `apiKey`):
+  - `accessKeyId` + `secretAccessKey` (access-key auth → `AwsBedrockProvider` connection)
+  - `roleArn` (IAM-role auth → `AwsBedrockProviderIamRole` connection)
+  - `connectionId` of an existing same-project connection
+
+Example:
+
+```json
+{
+  "projectId": "<projectId>",
+  "provider": "awsBedrock",
+  "modelType": "amazon.nova-pro-v1:0",
+  "region": "eu-central-1",
+  "accessKeyId": "<AWS access key id>",
+  "secretAccessKey": "<AWS secret access key>"
+}
+```
+
+When inspecting existing models, the region and custom model id are in the `awsBedrock` object of the response.
 
 ## Credential resolution
 
