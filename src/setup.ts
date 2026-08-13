@@ -16,6 +16,7 @@
 import { createInterface } from "readline";
 import { pathToFileURL } from "url";
 import type { UserConfigFile } from "./userConfigFile.js";
+import { writeUserConfigFile } from "./userConfigFile.js";
 import {
   autoUpdateHint,
   detectClaudePath,
@@ -58,14 +59,15 @@ const CTRL_D = 4;
 const BACKSPACE = 8;
 const DELETE = 127;
 
-type Client = "claude-code" | "claude-desktop";
-const ALL_CLIENTS: Client[] = ["claude-code", "claude-desktop"];
+type Client = "claude-code" | "claude-desktop" | "other-hosts";
+const ALL_CLIENTS: Client[] = ["claude-code", "claude-desktop", "other-hosts"];
 const CLIENT_LABELS: Record<Client, string> = {
   // Post-Apr-2026 Desktop redesign: the standalone CLI and Desktop's "Code" tab
   // share ~/.claude, so one Claude-Code install serves both. "Claude Desktop"
   // here means the separate Chat connector wired into claude_desktop_config.json.
   "claude-code": "Claude Code (CLI + Desktop 'Code' tab)",
   "claude-desktop": "Claude Desktop chat (standalone connector)",
+  "other-hosts": "Other hosts (VS Code, Cursor, …) — writes a local creds file",
 };
 
 interface Flags {
@@ -104,6 +106,10 @@ export function detectClients(): Record<Client, boolean> {
   return {
     "claude-code": detectClaudePath() !== null,
     "claude-desktop": existsSync(dirname(resolveDesktopConfigPath())),
+    // Never auto-detected, so it is never pre-checked: writing a plaintext key
+    // to disk must stay an explicit choice. Claude-only users keep the keychain
+    // path with nothing on disk.
+    "other-hosts": false,
   };
 }
 
@@ -286,6 +292,42 @@ async function chooseClients(): Promise<Client[]> {
 }
 
 function runInstall(client: Client, creds: UserConfigFile): void {
+  if (client === "other-hosts") {
+    // Nothing to wire: these hosts either install the plugin themselves (VS
+    // Code reads our Claude-format manifest) or take a hand-written MCP entry.
+    // What they cannot do is supply credentials — `userConfig` is Claude-only,
+    // so they pass "${user_config.*}" through untouched. The engine treats such
+    // placeholders as unset and falls back to this file.
+    const configFile = writeUserConfigFile(creds);
+    process.stdout.write(
+      green("\n✓ Other hosts") +
+        `: wrote credentials to ${configFile} ` +
+        dim("(dir 0700, file 0600)") +
+        ".\n" +
+        "  Any host that starts the engine now picks these up automatically.\n\n" +
+        `  ${bold("VS Code / Copilot")} — install the plugin, then restart:\n` +
+        `      ${cyan("1.")} Set ${bold('"chat.plugins.enabled": true')} in settings.json.\n` +
+        `      ${cyan("2.")} Add ${bold('"chat.plugins.marketplaces": ["Cognigy/cognigy-plugin"]')}.\n` +
+        `      ${cyan("3.")} Extensions view → search ${bold("@agentPlugins")} → install ${bold("cognigy")}.\n` +
+        dim(
+          "  You get tools, skills, and agents. Leave the credential fields alone —\n" +
+            "  VS Code has no prompt for them; this file covers it.\n",
+        ),
+    );
+    // The manifest's `npx` is resolved from PATH. A GUI-launched app (Dock,
+    // Spotlight) does not source the user's shell profile, so a node installed
+    // via nvm/fnm/volta is invisible to it and the server dies with
+    // "npx: command not found". Launching from a terminal inherits PATH.
+    process.stdout.write(
+      "\n" +
+        yellow(bold("  If the server fails with 'npx: command not found':")) +
+        "\n" +
+        `    ${cyan("•")} Your node is likely from nvm/fnm/volta, which a GUI-launched app cannot see.\n` +
+        `    ${cyan("•")} Quit the host completely and relaunch it from a terminal, or\n` +
+        `    ${cyan("•")} point the MCP entry at an absolute path (e.g. ${dim("$(which npx)")}).\n`,
+    );
+    return;
+  }
   if (client === "claude-code") {
     const res = installClaudeCode(creds);
     if (res.method === "cli") {
@@ -567,7 +609,8 @@ async function main(): Promise<void> {
     apiBaseUrl = apiBaseUrl || DEFAULT_BASE_URL;
     if (clients.length === 0) {
       process.stderr.write(
-        "No client selected. Pass --client claude-code and/or --client claude-desktop.\n",
+        "No client selected. Pass one or more of: --client claude-code, " +
+          "--client claude-desktop, --client other-hosts.\n",
       );
       process.exit(1);
     }
