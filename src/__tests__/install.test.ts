@@ -350,6 +350,12 @@ describe("parseFlags", () => {
   it("ignores unknown --client values", () => {
     expect(parseFlags(["--client", "codex"]).clients).toEqual([]);
   });
+
+  it("accepts antigravity alongside the Claude clients", () => {
+    expect(
+      parseFlags(["--client=antigravity", "--client", "claude-code"]).clients,
+    ).toEqual(["antigravity", "claude-code"]);
+  });
 });
 
 describe("parseClientSelection", () => {

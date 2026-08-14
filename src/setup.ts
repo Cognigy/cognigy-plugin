@@ -10,6 +10,8 @@
  *     present (key → keychain), else a creds-file fallback + printed commands.
  *   - Claude Desktop (standalone app): merges an auto-updating MCP server entry
  *     into claude_desktop_config.json.
+ *   - Antigravity (IDE + `agy` CLI): writes MCP servers, skills and agents into
+ *     the shared ~/.gemini/config tree.
  *
  * Non-interactive (scripting/CI): pass --client, --api-base-url, --api-key.
  */
@@ -30,6 +32,14 @@ import {
   resolveDesktopConfigPath,
   uninstallClaudeDesktop,
 } from "./install/claudeDesktop.js";
+import {
+  antigravityHasPlugin,
+  detectAntigravity,
+  installAntigravity,
+  installedPluginVersion,
+  uninstallAntigravity,
+  updateAntigravity,
+} from "./install/antigravity.js";
 import { existsSync, realpathSync } from "fs";
 import { dirname } from "path";
 import { runNpm } from "./install/npmRunner.js";
@@ -58,14 +68,17 @@ const CTRL_D = 4;
 const BACKSPACE = 8;
 const DELETE = 127;
 
-type Client = "claude-code" | "claude-desktop";
-const ALL_CLIENTS: Client[] = ["claude-code", "claude-desktop"];
+type Client = "claude-code" | "claude-desktop" | "antigravity";
+const ALL_CLIENTS: Client[] = ["claude-code", "claude-desktop", "antigravity"];
 const CLIENT_LABELS: Record<Client, string> = {
   // Post-Apr-2026 Desktop redesign: the standalone CLI and Desktop's "Code" tab
   // share ~/.claude, so one Claude-Code install serves both. "Claude Desktop"
   // here means the separate Chat connector wired into claude_desktop_config.json.
   "claude-code": "Claude Code (CLI + Desktop 'Code' tab)",
   "claude-desktop": "Claude Desktop chat (standalone connector)",
+  // The IDE, the `agy` CLI and the SDK all read ~/.gemini/config, so one install
+  // serves every Antigravity surface.
+  antigravity: "Antigravity (IDE + agy CLI)",
 };
 
 interface Flags {
@@ -104,6 +117,7 @@ export function detectClients(): Record<Client, boolean> {
   return {
     "claude-code": detectClaudePath() !== null,
     "claude-desktop": existsSync(dirname(resolveDesktopConfigPath())),
+    antigravity: detectAntigravity(),
   };
 }
 
@@ -330,6 +344,49 @@ function runInstall(client: Client, creds: UserConfigFile): void {
     }
     return;
   }
+  if (client === "antigravity") {
+    const res = installAntigravity(creds);
+    process.stdout.write(
+      green(bold("\n✅ Antigravity — all set.")) +
+        ` Plugin installed to ${res.pluginDir}\n` +
+        `  ${green(String(res.skills.length))} skills · ${green(String(res.agents.length))} agents · ` +
+        green("2") +
+        " MCP servers " +
+        dim(
+          res.method === "agy"
+            ? "(registered via the agy CLI)"
+            : "(agy not found — installed directly)",
+        ) +
+        "\n" +
+        dim(
+          `  API key stored in ${res.credsFile}, not in any mcp_config.json.\n`,
+        ) +
+        "  Restart Antigravity — the IDE and the " +
+        bold("agy") +
+        " CLI share this config, so you get " +
+        green("tools, skills, and agents") +
+        " in both.\n" +
+        dim(
+          "  The engine auto-updates on every launch; run `cognigy-setup update` to refresh skills.\n",
+        ),
+    );
+    if (res.removedLegacyServer) {
+      process.stdout.write(
+        dim(
+          "  Removed an older 'cognigy' entry from the global mcp_config.json so only one engine boots.\n",
+        ),
+      );
+    }
+    if (res.skills.length === 0) {
+      // Only possible from a broken/partial package — the assets ship in dist.
+      process.stdout.write(
+        yellow(
+          "  ⚠ No skills found in this engine build; tools will work but workflow guidance won't load.\n",
+        ),
+      );
+    }
+    return;
+  }
   // claude-desktop
   const res = installClaudeDesktop(creds);
   process.stdout.write(
@@ -430,6 +487,20 @@ function runStatus(): void {
       ),
     );
   }
+  const agPlugin = antigravityHasPlugin();
+  const agVersion = installedPluginVersion();
+  process.stdout.write(
+    `  Antigravity:          ${agPlugin ? green("plugin installed") : dim("not installed")}` +
+      (agVersion ? dim(` · v${agVersion}`) : "") +
+      "\n",
+  );
+  if (agVersion && latest && agVersion !== latest) {
+    process.stdout.write(
+      yellow(
+        `    Antigravity plugin ${agVersion} < ${latest} — run \`cognigy-setup update\` to refresh skills.\n`,
+      ),
+    );
+  }
   process.stdout.write("\n");
 }
 
@@ -452,9 +523,24 @@ function runUpdate(): void {
   }
   process.stdout.write(
     dim(
-      "• Claude Desktop chat connector auto-updates its engine on every restart — nothing to do.\n\n",
+      "• Claude Desktop chat connector auto-updates its engine on every restart — nothing to do.\n",
     ),
   );
+  // Antigravity's engine auto-updates via the launcher, but the plugin's skills
+  // and agents are plain files — only a re-stage picks up a newer engine's copy.
+  if (antigravityHasPlugin()) {
+    const ag = updateAntigravity();
+    process.stdout.write(
+      green("✓ Antigravity") +
+        `: plugin re-synced (${ag.skills.length} skills, ${ag.agents.length} agents). Restart Antigravity to apply.\n\n`,
+    );
+  } else {
+    process.stdout.write(
+      dim(
+        "• Antigravity: plugin not installed — run `cognigy-setup` first.\n\n",
+      ),
+    );
+  }
 }
 
 /** `uninstall` — remove the plugin + connector. `--purge` also drops ~/.cognigy-plugin. */
@@ -472,7 +558,7 @@ async function runUninstall(argv: string[]): Promise<void> {
       process.exit(1);
     }
     const ans = await ask(
-      `Remove the Cognigy plugin (Claude Code) and connector (Desktop)${purge ? " and delete ~/.cognigy-plugin" : ""}? [y/N]: `,
+      `Remove the Cognigy plugin (Claude Code), connector (Desktop) and servers + skills (Antigravity)${purge ? " and delete ~/.cognigy-plugin" : ""}? [y/N]: `,
     );
     if (!/^y(es)?$/i.test(ans)) {
       process.stdout.write("Aborted.\n");
@@ -507,6 +593,19 @@ async function runUninstall(argv: string[]): Promise<void> {
       `: ${desk.removedEntry ? "connector removed from" : "no connector found in"} ${desk.configPath}\n` +
       (desk.removedEngine ? dim("  removed ~/.cognigy-plugin\n") : ""),
   );
+  const ag = uninstallAntigravity();
+  process.stdout.write(
+    (ag.removedPlugin ? green("✓ Antigravity") : dim("• Antigravity")) +
+      `: ${ag.removedPlugin ? "plugin removed" : "no plugin found"}` +
+      dim(ag.method === "agy" ? " (via the agy CLI)" : " (removed directly)") +
+      (ag.removedLegacyServer
+        ? dim(
+            "\n  also cleared an older 'cognigy' entry from the global mcp_config.json",
+          )
+        : "") +
+      "\n",
+  );
+
   process.stdout.write(
     dim("\nRestart your client(s) to finish removing the plugin.\n\n"),
   );
@@ -567,7 +666,7 @@ async function main(): Promise<void> {
     apiBaseUrl = apiBaseUrl || DEFAULT_BASE_URL;
     if (clients.length === 0) {
       process.stderr.write(
-        "No client selected. Pass --client claude-code and/or --client claude-desktop.\n",
+        "No client selected. Pass --client with one or more of: claude-code, claude-desktop, antigravity.\n",
       );
       process.exit(1);
     }

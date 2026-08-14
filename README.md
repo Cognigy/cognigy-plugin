@@ -1,6 +1,6 @@
 # NiCE Cognigy Plugin
 
-> Distributed exclusively as a **plugin** — supported by **Claude Code** and **Codex** today, with more clients to come. The plugin installs its server engine (pinned to the plugin version) and ships skills + agents.
+> Distributed exclusively as a **plugin** — supported by **Claude Code**, **Antigravity** (IDE + `agy` CLI) and **Codex** today, with more clients to come. The plugin installs its server engine (pinned to the plugin version) and ships skills + agents.
 
 A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy.com) REST API. Create, test, and improve LLM-based AI Agents through a self-improvement loop — without leaving your client.
 
@@ -71,6 +71,29 @@ Pick your client(s), enter your Cognigy API base URL (press Enter for the trial 
 
 > 🔄 **Turn on auto-updates** so future fixes reach you automatically — Claude Code leaves this **off** for third-party marketplaces by default. One-time step: see [Staying up to date](#staying-up-to-date).
 
+✅ **Antigravity users — you're done too.** You get the tools, skills, and agents in **both** the IDE and the `agy` CLI. Restart Antigravity and they're live.
+
+<details>
+<summary>What the installer writes for Antigravity (for the technically curious)</summary>
+
+Antigravity has a first-class plugin format, so the installer builds a real plugin and registers it with `agy plugin install` — which copies it into `~/.gemini/config/plugins/cognigy-plugin/` and records it in `import_manifest.json`. `~/.gemini/config` is shared by the IDE, the `agy` CLI and the SDK, so one install serves all three:
+
+```
+~/.gemini/config/plugins/cognigy-plugin/
+├── plugin.json            name + version + description
+├── mcp_config.json        cognigy (tools) + cognigy-docs (official docs)
+├── skills/<id>/SKILL.md   the 13 workflow skills
+└── agents/<id>/agent.md   the 2 subagents
+```
+
+The plugin's `mcp_config.json` is read **in place** — your global `~/.gemini/config/mcp_config.json` is never touched, so installing or removing the plugin can't disturb your own MCP servers. Skills keep their plain names because they are scoped to the plugin, exactly as Antigravity's bundled plugins do it.
+
+When `agy` isn't on your PATH the installer copies the plugin into place itself and marks it enabled in `~/.gemini/config/config.json`.
+
+Your API key is **not** written into any `mcp_config.json` (a file you hand-edit and paste into bug reports). It goes to `~/.cognigy-plugin/config.json` with `0600` permissions, which the engine reads whenever the environment variables are absent. If an earlier setup left a `cognigy` server in your global `mcp_config.json`, the installer removes it so only one engine boots.
+
+</details>
+
 > **Only have Claude Desktop, no `claude` CLI?** The installer wires the chat connector (tools) and prints how to add the plugin in the Desktop **Code** tab's plugin browser (`+` → Plugins → Add plugin → `Cognigy/cognigy-plugin`) for skills + agents.
 
 > **On Windows, after installing for Claude Code:** a normal restart may not be enough to load the plugin. **Fully quit** Claude Code — end every **Claude** process in **Task Manager** (a normal close can leave it running in the background), then reopen it. If the tools, skills, and agents still don't appear, **restart your machine**.
@@ -110,7 +133,7 @@ The plugin ships its own connector (`platform`), but on **Claude Desktop chat** 
 
 ```
 npx -y -p @cognigy/plugin-engine@latest cognigy-setup \
-  --client claude-code --client claude-desktop \
+  --client claude-code --client claude-desktop --client antigravity \
   --api-base-url https://api-trial.cognigy.ai --api-key <key>
 ```
 
@@ -127,7 +150,7 @@ then `npx -y -p @cognigy/plugin-engine@latest cognigy-setup --client claude-code
 
 ## Staying up to date
 
-Claude Desktop auto-updates the engine on every launch. Claude Code updates only when marketplace auto-update is enabled (third-party marketplaces default **off**): turn it on under `/plugin → Marketplaces → cognigy-plugin`, or run `/plugin update cognigy@cognigy-plugin`. The first Claude Code session downloads the engine — if tools don't appear, run `/mcp` and reconnect (or restart); later sessions are instant.
+Claude Desktop and Antigravity auto-update the engine on every launch — though on Antigravity the **skills and agents** ship as plugin files, so run `cognigy-setup update` to re-stage those. Claude Code updates only when marketplace auto-update is enabled (third-party marketplaces default **off**): turn it on under `/plugin → Marketplaces → cognigy-plugin`, or run `/plugin update cognigy@cognigy-plugin`. The first Claude Code session downloads the engine — if tools don't appear, run `/mcp` and reconnect (or restart); later sessions are instant.
 
 The installer also doubles as a manager (run the same `cognigy-setup` with a subcommand):
 
