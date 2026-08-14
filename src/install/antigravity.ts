@@ -41,13 +41,13 @@ import {
   rmSync,
   writeFileSync,
 } from "fs";
-import { spawnSync, type SpawnSyncReturns } from "child_process";
+import { spawnSync } from "child_process";
 import { homedir } from "os";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import type { UserConfigFile } from "../userConfigFile.js";
 import { writeUserConfigFile } from "../userConfigFile.js";
-import { quoteWinArgs, runNpm } from "./npmRunner.js";
+import { runNpm } from "./npmRunner.js";
 // The launcher is shared with Claude Desktop — it is a generic "auto-update the
 // engine, then hand off" shim, not a Desktop-specific one. Antigravity needs the
 // same treatment: it is a GUI app with a minimal PATH that cannot resolve `npx`.
@@ -88,6 +88,11 @@ export function findInstalledPluginDir(): string | null {
   return null;
 }
 export const AGY_CONFIG_FILE = join(GEMINI_CONFIG_DIR, "config.json");
+/** `agy`'s own record of installed plugins; `agy plugin list` reads this. */
+export const IMPORT_MANIFEST_FILE = join(
+  GEMINI_CONFIG_DIR,
+  "import_manifest.json",
+);
 /** Only read/cleaned — we never add our servers here. See module docs. */
 export const GLOBAL_MCP_CONFIG = join(GEMINI_CONFIG_DIR, "mcp_config.json");
 
@@ -247,22 +252,6 @@ export function stagePluginDir(
   return { dir: destDir, skills, agents };
 }
 
-const AGY_TIMEOUT_MS = 120_000;
-
-/**
- * Run `agy`. On Windows the binary is `agy.cmd`, which Node refuses to spawn
- * without a shell since the CVE-2024-27980 fix — so use the same shell+quoting
- * path npmRunner.ts uses. Bounded by a timeout so a hung CLI can't wedge setup.
- */
-function runAgy(agyPath: string, args: string[]): SpawnSyncReturns<string> {
-  const isWin = process.platform === "win32";
-  return spawnSync(agyPath, isWin ? quoteWinArgs(args) : args, {
-    encoding: "utf8",
-    timeout: AGY_TIMEOUT_MS,
-    shell: isWin,
-  });
-}
-
 /** Delete any previously installed copy of our plugin, from every known root. */
 export function clearInstalledPlugin(): string[] {
   const cleared: string[] = [];
@@ -286,43 +275,39 @@ function copyPluginIntoPlace(stagedDir: string): string {
 }
 
 export interface RegisterResult {
-  method: "agy" | "fallback";
   pluginDir: string;
-  /** Why `agy` was not used: absent, or the failure it reported. */
-  agyError?: string;
 }
 
 /**
- * Register a staged plugin with Antigravity. Prefers `agy plugin install` — it
- * decides the staging location and records the plugin itself — and falls back to
- * copying into place. A FAILING `agy` is reported distinctly from a MISSING one,
- * so the installer never claims "agy not found" when it actually errored.
+ * Install a staged plugin into Antigravity ourselves — no `agy`, no Antigravity
+ * launch, nothing for the user to run. We deliberately do NOT shell out to
+ * `agy plugin install`: that would make the install depend on a CLI the user may
+ * not have (the IDE ships without it), add a Windows `agy.cmd` spawn hazard, and
+ * merge into any existing plugin dir instead of replacing it — which we observed
+ * leaving a renamed agent counted twice.
+ *
+ * Doing it directly is byte-for-byte equivalent because `agy plugin install`
+ * only copies the directory and records the plugin. We reproduce both halves:
+ * the copy, and BOTH registries Antigravity reads — `import_manifest.json`
+ * (what `agy plugin list` reports) and the `plugins.<name>.enabled` flag in
+ * config.json (how the bundled plugins are registered).
  */
 export function registerPlugin(stagedDir: string): RegisterResult {
-  // `agy plugin install` COPIES INTO an existing plugin dir rather than
-  // replacing it, so files an older version shipped survive an upgrade — we
-  // observed a renamed agent counted twice. Clear any previous install first;
-  // the staged copy is the source of truth.
+  // Replace, never merge: files an older version shipped must not survive.
   clearInstalledPlugin();
+  const pluginDir = copyPluginIntoPlace(stagedDir);
+  upsertImportManifestEntry(stagedComponents(stagedDir));
+  return { pluginDir };
+}
 
-  const agy = detectAgyPath();
-  if (!agy) {
-    return { method: "fallback", pluginDir: copyPluginIntoPlace(stagedDir) };
-  }
-  const res = runAgy(agy, ["plugin", "install", stagedDir]);
-  if (res.status === 0 && !res.error) {
-    return {
-      method: "agy",
-      pluginDir: findInstalledPluginDir() ?? INSTALLED_PLUGIN_DIR,
-    };
-  }
-  const reason = res.error ? res.error.message : `exit ${res.status}`;
-  const stderr = (res.stderr ?? "").trim();
-  return {
-    method: "fallback",
-    pluginDir: copyPluginIntoPlace(stagedDir),
-    agyError: stderr ? `${reason} — ${stderr}` : reason,
-  };
+/** Which capability dirs/files the staged plugin actually carries. */
+function stagedComponents(stagedDir: string): string[] {
+  const components: string[] = [];
+  if (existsSync(join(stagedDir, "skills"))) components.push("skills");
+  if (existsSync(join(stagedDir, "agents"))) components.push("agents");
+  if (existsSync(join(stagedDir, "mcp_config.json")))
+    components.push("mcpServers");
+  return components;
 }
 
 /** Absolute path to the `agy` CLI, or null when it isn't installed. */
@@ -394,6 +379,64 @@ export function enablePluginInConfig(
   writeFileSync(configPath, `${JSON.stringify(root, null, 2)}\n`);
 }
 
+/** An entry in import_manifest.json, matching what `agy plugin install` writes. */
+export interface ImportManifestEntry {
+  name: string;
+  source: string;
+  importedAt: string;
+  components: string[];
+}
+
+/** `agy` stamps seconds-precision UTC, not the milliseconds toISOString gives. */
+export function agyTimestamp(now: Date = new Date()): string {
+  return `${now.toISOString().replace(/\.\d{3}Z$/, "")}Z`;
+}
+
+/**
+ * Record the plugin in import_manifest.json exactly as `agy plugin install`
+ * would, replacing any previous entry for it and preserving other plugins'.
+ * This is what makes `agy plugin list` — and the CLI's own bookkeeping — agree
+ * with an install we performed ourselves.
+ */
+export function upsertImportManifestEntry(
+  components: string[],
+  manifestPath: string = IMPORT_MANIFEST_FILE,
+  now: Date = new Date(),
+): void {
+  const { root, malformed } = readJsonForMerge(manifestPath);
+  if (malformed) backupOnce(manifestPath);
+  // `imports` is null (not []) when agy has nothing recorded.
+  const existing = Array.isArray(root.imports)
+    ? (root.imports as ImportManifestEntry[]).filter(
+        (e) => e && e.name !== PLUGIN_NAME,
+      )
+    : [];
+  existing.push({
+    name: PLUGIN_NAME,
+    source: "antigravity",
+    importedAt: agyTimestamp(now),
+    components,
+  });
+  root.imports = existing;
+  mkdirSync(dirname(manifestPath), { recursive: true });
+  writeFileSync(manifestPath, `${JSON.stringify(root, null, 2)}\n`);
+}
+
+/** Drop our entry from import_manifest.json, leaving other plugins' intact. */
+export function removeImportManifestEntry(
+  manifestPath: string = IMPORT_MANIFEST_FILE,
+): boolean {
+  const { root, malformed } = readJsonForMerge(manifestPath);
+  if (malformed || !Array.isArray(root.imports)) return false;
+  const before = root.imports as ImportManifestEntry[];
+  const after = before.filter((e) => e && e.name !== PLUGIN_NAME);
+  if (after.length === before.length) return false;
+  // Preserve agy's own "nothing installed" representation.
+  root.imports = after.length > 0 ? after : null;
+  writeFileSync(manifestPath, `${JSON.stringify(root, null, 2)}\n`);
+  return true;
+}
+
 /** Drop our plugin's entry from config.json, leaving other plugins intact. */
 export function disablePluginInConfig(
   configPath: string = AGY_CONFIG_FILE,
@@ -434,9 +477,6 @@ export function removeLegacyGlobalServer(
 
 export interface AntigravityInstallResult {
   pluginDir: string;
-  method: "agy" | "fallback";
-  /** Set when `agy` was present but failed, so the caller can surface why. */
-  agyError?: string;
   launcherPath: string;
   credsFile: string;
   skills: string[];
@@ -487,8 +527,6 @@ export function installAntigravity(
 
   return {
     pluginDir: registered.pluginDir,
-    method: registered.method,
-    agyError: registered.agyError,
     launcherPath,
     credsFile,
     skills: staged.skills,
@@ -551,35 +589,25 @@ export function installedPluginVersion(
 }
 
 export interface AntigravityUninstallResult {
-  method: "agy" | "fallback";
   removedPlugin: boolean;
   removedLegacyServer: boolean;
 }
 
-/** Remove the plugin via `agy` when available, else by hand. */
+/**
+ * Remove the plugin. Like the install, this needs neither `agy` nor Antigravity
+ * running — it undoes exactly what registerPlugin did, from both plugin roots
+ * and both registries.
+ */
 export function uninstallAntigravity(): AntigravityUninstallResult {
   // Snapshot first: "removed" must mean we removed something that was there,
   // not merely that nothing is there now.
   const before = findInstalledPluginDir();
-  const agy = detectAgyPath();
-  let method: AntigravityUninstallResult["method"] = "fallback";
-  if (agy && before) {
-    const res = runAgy(agy, ["plugin", "uninstall", PLUGIN_NAME]);
-    if (res.status === 0 && !res.error) method = "agy";
-  }
-  // Sweep both roots — `agy` may have staged it somewhere we don't write to,
-  // and an older run may have left a copy in the other one.
-  for (const root of PLUGIN_ROOTS) {
-    const dir = join(root, PLUGIN_NAME);
-    if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
-  }
-  // `agy plugin uninstall` clears its own manifest entry but not the
-  // config.json flag we may have written on the fallback path.
+  clearInstalledPlugin();
+  removeImportManifestEntry();
   disablePluginInConfig();
   rmSync(STAGING_DIR, { recursive: true, force: true });
 
   return {
-    method,
     removedPlugin: before !== null,
     removedLegacyServer: removeLegacyGlobalServer(),
   };

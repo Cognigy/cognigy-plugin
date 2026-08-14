@@ -351,15 +351,7 @@ function runInstall(client: Client, creds: UserConfigFile): void {
         ` Plugin installed to ${res.pluginDir}\n` +
         `  ${green(String(res.skills.length))} skills · ${green(String(res.agents.length))} agents · ` +
         green("2") +
-        " MCP servers " +
-        dim(
-          res.method === "agy"
-            ? "(registered via the agy CLI)"
-            : res.agyError
-              ? "(agy failed — installed directly)"
-              : "(agy not found — installed directly)",
-        ) +
-        "\n" +
+        " MCP servers\n" +
         dim(
           `  API key stored in ${res.credsFile}, not in any mcp_config.json.\n`,
         ) +
@@ -372,14 +364,6 @@ function runInstall(client: Client, creds: UserConfigFile): void {
           "  The engine auto-updates on every launch; run `cognigy-setup update` to refresh skills.\n",
         ),
     );
-    if (res.agyError) {
-      // The plugin is installed either way, but a broken `agy` is worth knowing
-      // about — it also manages enable/disable and uninstall.
-      process.stdout.write(
-        yellow(`  ⚠ 'agy plugin install' failed: ${res.agyError}\n`) +
-          dim("    The plugin was copied into place instead.\n"),
-      );
-    }
     if (res.removedLegacyServer) {
       process.stdout.write(
         dim(
@@ -607,7 +591,6 @@ async function runUninstall(argv: string[]): Promise<void> {
   process.stdout.write(
     (ag.removedPlugin ? green("✓ Antigravity") : dim("• Antigravity")) +
       `: ${ag.removedPlugin ? "plugin removed" : "no plugin found"}` +
-      dim(ag.method === "agy" ? " (via the agy CLI)" : " (removed directly)") +
       (ag.removedLegacyServer
         ? dim(
             "\n  also cleared an older 'cognigy' entry from the global mcp_config.json",

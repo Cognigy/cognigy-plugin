@@ -8,7 +8,7 @@
 - `src/schemas/` — Zod schemas for input validation
 - `src/utils/` — Utilities (logging, rate limiting, etc.)
 - `plugin/skills/<id>/SKILL.md` — workflow knowledge as plugin skills (hand-authored, auto-load on intent in clients that support skills, e.g. Claude Code, Antigravity). Always-on guidance lives in `src/instructions.ts`
-- `src/install/` — per-client installers: `claudeCode.ts` (plugin CLI), `claudeDesktop.ts` (connector in `claude_desktop_config.json`), `antigravity.ts` (builds a native Antigravity plugin and registers it with `agy plugin install`), `desktopLauncher.ts` (auto-updating engine shim shared by Desktop and Antigravity)
+- `src/install/` — per-client installers: `claudeCode.ts` (plugin CLI), `claudeDesktop.ts` (connector in `claude_desktop_config.json`), `antigravity.ts` (builds and installs a native Antigravity plugin directly, without needing the `agy` CLI), `desktopLauncher.ts` (auto-updating engine shim shared by Desktop and Antigravity)
 
 ## Why 16 Tools Instead of 359?
 

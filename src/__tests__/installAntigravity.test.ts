@@ -20,8 +20,11 @@ import {
   enablePluginInConfig,
   engineVersion,
   installedPluginVersion,
+  agyTimestamp,
   antigravityHasPlugin,
   readJsonForMerge,
+  removeImportManifestEntry,
+  upsertImportManifestEntry,
   removeLegacyGlobalServer,
   resolveAssetDir,
   stagePluginDir,
@@ -183,6 +186,89 @@ describe("config.json plugin flag", () => {
     writeFileSync(path, original);
     expect(disablePluginInConfig(path)).toBe(false);
     expect(readFileSync(path, "utf-8")).toBe(original);
+  });
+});
+
+describe("import_manifest.json", () => {
+  const AT = new Date("2026-08-14T12:03:36.789Z");
+
+  it("stamps agy's seconds-precision UTC format", () => {
+    expect(agyTimestamp(AT)).toBe("2026-08-14T12:03:36Z");
+  });
+
+  it("writes the entry agy would, preserving other plugins'", () => {
+    const path = join(freshDir(), "import_manifest.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        imports: [
+          {
+            name: "other-plugin",
+            source: "antigravity",
+            components: ["skills"],
+          },
+        ],
+      }),
+    );
+
+    upsertImportManifestEntry(["skills", "agents", "mcpServers"], path, AT);
+
+    const imports = JSON.parse(readFileSync(path, "utf-8")).imports;
+    expect(imports).toHaveLength(2);
+    expect(
+      imports.find((e: { name: string }) => e.name === "other-plugin"),
+    ).toBeDefined();
+    expect(
+      imports.find((e: { name: string }) => e.name === PLUGIN_NAME),
+    ).toEqual({
+      name: PLUGIN_NAME,
+      source: "antigravity",
+      importedAt: "2026-08-14T12:03:36Z",
+      components: ["skills", "agents", "mcpServers"],
+    });
+  });
+
+  it("replaces our own entry instead of duplicating it", () => {
+    const path = join(freshDir(), "import_manifest.json");
+    upsertImportManifestEntry(["skills"], path, AT);
+    upsertImportManifestEntry(["skills", "agents"], path, AT);
+    const imports = JSON.parse(readFileSync(path, "utf-8")).imports;
+    expect(imports).toHaveLength(1);
+    expect(imports[0].components).toEqual(["skills", "agents"]);
+  });
+
+  it("handles agy's null `imports` and an absent file", () => {
+    const path = join(freshDir(), "import_manifest.json");
+    writeFileSync(path, JSON.stringify({ imports: null }));
+    upsertImportManifestEntry(["skills"], path, AT);
+    expect(JSON.parse(readFileSync(path, "utf-8")).imports).toHaveLength(1);
+
+    const fresh = join(freshDir(), "nested", "import_manifest.json");
+    upsertImportManifestEntry(["skills"], fresh, AT);
+    expect(JSON.parse(readFileSync(fresh, "utf-8")).imports).toHaveLength(1);
+  });
+
+  it("removes our entry and restores agy's null when it was the last one", () => {
+    const path = join(freshDir(), "import_manifest.json");
+    upsertImportManifestEntry(["skills"], path, AT);
+    expect(removeImportManifestEntry(path)).toBe(true);
+    // agy represents "nothing installed" as null, not [].
+    expect(JSON.parse(readFileSync(path, "utf-8")).imports).toBeNull();
+    // Idempotent.
+    expect(removeImportManifestEntry(path)).toBe(false);
+  });
+
+  it("keeps other plugins when removing ours", () => {
+    const path = join(freshDir(), "import_manifest.json");
+    writeFileSync(
+      path,
+      JSON.stringify({ imports: [{ name: "other-plugin", components: [] }] }),
+    );
+    upsertImportManifestEntry(["skills"], path, AT);
+    expect(removeImportManifestEntry(path)).toBe(true);
+    const imports = JSON.parse(readFileSync(path, "utf-8")).imports;
+    expect(imports).toHaveLength(1);
+    expect(imports[0].name).toBe("other-plugin");
   });
 });
 

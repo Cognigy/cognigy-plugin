@@ -76,7 +76,9 @@ Pick your client(s), enter your Cognigy API base URL (press Enter for the trial 
 <details>
 <summary>What the installer writes for Antigravity (for the technically curious)</summary>
 
-Antigravity has a first-class plugin format, so the installer builds a real plugin and registers it with `agy plugin install` — which copies it into `~/.gemini/config/plugins/cognigy-plugin/` and records it in `import_manifest.json`. `~/.gemini/config` is shared by the IDE, the `agy` CLI and the SDK, so one install serves all three:
+Antigravity has a first-class plugin format, so the installer builds a real plugin and installs it into `~/.gemini/config/plugins/cognigy-plugin/` — a tree shared by the IDE, the `agy` CLI and the SDK, so one install serves all three.
+
+It does this **without needing Antigravity or the `agy` CLI at all** — no binary to have on PATH, nothing to run yourself, and it works before Antigravity's first launch. `agy plugin install` only copies the directory and records the plugin, so the installer does both directly: the copy, plus both registries Antigravity reads — the `import_manifest.json` entry (what `agy plugin list` reports) and the `plugins.<name>.enabled` flag in `config.json` (how the bundled plugins are registered). The result is byte-for-byte identical to an `agy`-driven install, and `agy plugin list` reports it the same way.
 
 ```
 ~/.gemini/config/plugins/cognigy-plugin/
@@ -86,7 +88,9 @@ Antigravity has a first-class plugin format, so the installer builds a real plug
 └── agents/<id>.md         the 2 subagents
 ```
 
-Antigravity moved plugin installs into `~/.gemini/config/` in CLI v1.0.2; older builds staged them under `~/.gemini/antigravity-cli/plugins/`. `agy` decides where it puts them, so the installer looks in both when reporting status or uninstalling.
+Antigravity moved plugin installs into `~/.gemini/config/` in CLI v1.0.2; older builds staged them under `~/.gemini/antigravity-cli/plugins/`. We write to the current location and look in both when reporting status or uninstalling, so a plugin an older `agy` put elsewhere is still found.
+
+`cognigy-setup uninstall` reverses all of it — plugin directory and both registry entries — again without `agy`.
 
 The plugin's `mcp_config.json` is read **in place** — your global `~/.gemini/config/mcp_config.json` is never touched, so installing or removing the plugin can't disturb your own MCP servers. Skills keep their plain names because they are scoped to the plugin, exactly as Antigravity's bundled plugins do it.
 
