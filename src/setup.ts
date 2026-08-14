@@ -314,15 +314,16 @@ function runInstall(client: Client, creds: UserConfigFile): void {
             "  VS Code has no prompt for them; this file covers it.\n",
         ),
     );
-    // The manifest's `npx` is resolved from PATH. A GUI-launched app (Dock,
-    // Spotlight) does not source the user's shell profile, so a node installed
-    // via nvm/fnm/volta is invisible to it and the server dies with
-    // "npx: command not found". Launching from a terminal inherits PATH.
+    // The manifest's `npx` is resolved from PATH, and some hosts have been seen
+    // to start it with a PATH that excludes a node installed via nvm/fnm/volta
+    // (their bin dir is added by the shell profile, which a GUI-launched app
+    // need not have sourced). Not reproducible on demand — printed as
+    // conditional troubleshooting, not as a known defect.
     process.stdout.write(
       "\n" +
         yellow(bold("  If the server fails with 'npx: command not found':")) +
         "\n" +
-        `    ${cyan("•")} Your node is likely from nvm/fnm/volta, which a GUI-launched app cannot see.\n` +
+        `    ${cyan("•")} Your node is probably from nvm/fnm/volta, whose bin dir the host may not have on PATH.\n` +
         `    ${cyan("•")} Quit the host completely and relaunch it from a terminal, or\n` +
         `    ${cyan("•")} point the MCP entry at an absolute path (e.g. ${dim("$(which npx)")}).\n`,
     );
