@@ -14,6 +14,12 @@ This is authorised testing of the user's own system.
 **This skill teaches a method, not a probe list.** Probes are generated per target from that target's
 config. A fixed script of canned jailbreaks produces false confidence — see [Probe discipline](#probe-discipline).
 
+**Match effort to stakes.** The discipline below — benign controls, reproduce-before-confirm, never
+blaming the agent for a transport artifact — is cheap and always worth it; skipping it is how false
+findings happen. Only the reporting apparatus scales. Use `quick` depth for a casual check and
+`standard`/`thorough` when the result must be trusted by someone who didn't run it, or compared
+against a later run.
+
 ---
 
 ## Phase 0 — Scope contract
