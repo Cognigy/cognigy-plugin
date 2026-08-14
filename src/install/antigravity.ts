@@ -32,6 +32,7 @@
  * whenever the environment variables are absent.
  */
 import {
+  copyFileSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -40,13 +41,13 @@ import {
   rmSync,
   writeFileSync,
 } from "fs";
-import { spawnSync } from "child_process";
+import { spawnSync, type SpawnSyncReturns } from "child_process";
 import { homedir } from "os";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import type { UserConfigFile } from "../userConfigFile.js";
 import { writeUserConfigFile } from "../userConfigFile.js";
-import { runNpm } from "./npmRunner.js";
+import { quoteWinArgs, runNpm } from "./npmRunner.js";
 // The launcher is shared with Claude Desktop — it is a generic "auto-update the
 // engine, then hand off" shim, not a Desktop-specific one. Antigravity needs the
 // same treatment: it is a GUI app with a minimal PATH that cannot resolve `npx`.
@@ -66,6 +67,26 @@ export const PLUGIN_NAME = "cognigy-plugin";
 export const GEMINI_CONFIG_DIR = join(homedir(), ".gemini", "config");
 export const PLUGINS_DIR = join(GEMINI_CONFIG_DIR, "plugins");
 export const INSTALLED_PLUGIN_DIR = join(PLUGINS_DIR, PLUGIN_NAME);
+/**
+ * Every plugin root we know of, newest first. `agy plugin install` decides where
+ * it stages, and that has moved between versions — current builds use
+ * config/plugins, older CLI builds used antigravity-cli/plugins. We only ever
+ * WRITE to PLUGINS_DIR (the fallback path), but we must LOOK in both, or status
+ * and uninstall would miss a plugin `agy` placed in the other one.
+ */
+export const PLUGIN_ROOTS = [
+  PLUGINS_DIR,
+  join(homedir(), ".gemini", "antigravity-cli", "plugins"),
+];
+
+/** Where our plugin is actually installed, or null when it isn't. */
+export function findInstalledPluginDir(): string | null {
+  for (const root of PLUGIN_ROOTS) {
+    const dir = join(root, PLUGIN_NAME);
+    if (existsSync(join(dir, "plugin.json"))) return dir;
+  }
+  return null;
+}
 export const AGY_CONFIG_FILE = join(GEMINI_CONFIG_DIR, "config.json");
 /** Only read/cleaned — we never add our servers here. See module docs. */
 export const GLOBAL_MCP_CONFIG = join(GEMINI_CONFIG_DIR, "mcp_config.json");
@@ -162,11 +183,27 @@ export function buildPluginMcpConfig(
  * Build the complete plugin directory at `destDir`, replacing anything already
  * there so files dropped in a later version don't linger. Returns what it wrote.
  */
-export function stagePluginDir(destDir: string = STAGING_DIR): {
+export function stagePluginDir(
+  destDir: string = STAGING_DIR,
+  skillsSrc: string | null = resolveAssetDir("skills"),
+  agentsSrc: string | null = resolveAssetDir("agents"),
+): {
   dir: string;
   skills: string[];
   agents: string[];
 } {
+  // Refuse to stage a plugin with no content. Without this an engine build that
+  // is missing dist/plugin-assets would stage an empty-but-valid plugin, and the
+  // update path would then overwrite a working install with it and report
+  // success. Fail loudly BEFORE anything is removed.
+  if (!skillsSrc && !agentsSrc) {
+    throw new Error(
+      "No plugin assets found: expected skills/agents under dist/plugin-assets " +
+        "(built by scripts/copy-assets.mjs) or plugin/. Refusing to stage an " +
+        "empty plugin — reinstall the engine.",
+    );
+  }
+
   rmSync(destDir, { recursive: true, force: true });
   mkdirSync(destDir, { recursive: true });
 
@@ -181,7 +218,6 @@ export function stagePluginDir(destDir: string = STAGING_DIR): {
 
   // Skills copy across as-is: folder-per-skill with a SKILL.md inside.
   const skills: string[] = [];
-  const skillsSrc = resolveAssetDir("skills");
   if (skillsSrc) {
     const skillsDest = join(destDir, "skills");
     mkdirSync(skillsDest, { recursive: true });
@@ -194,25 +230,99 @@ export function stagePluginDir(destDir: string = STAGING_DIR): {
     }
   }
 
-  // Agents are flat .md files for Claude; Antigravity wants <name>/agent.md.
+  // Agents copy across as-is too. Antigravity accepts flat `agents/<name>.md`
+  // (verified with `agy plugin validate`), which is also what other
+  // multi-client plugins ship — so our Claude-format files need no conversion.
   const agents: string[] = [];
-  const agentsSrc = resolveAssetDir("agents");
   if (agentsSrc) {
     const agentsDest = join(destDir, "agents");
     mkdirSync(agentsDest, { recursive: true });
     for (const entry of readdirSync(agentsSrc, { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
-      const name = entry.name.replace(/\.md$/, "");
-      mkdirSync(join(agentsDest, name), { recursive: true });
-      writeFileSync(
-        join(agentsDest, name, "agent.md"),
-        readFileSync(join(agentsSrc, entry.name), "utf-8"),
-      );
-      agents.push(name);
+      cpSync(join(agentsSrc, entry.name), join(agentsDest, entry.name));
+      agents.push(entry.name.replace(/\.md$/, ""));
     }
   }
 
   return { dir: destDir, skills, agents };
+}
+
+const AGY_TIMEOUT_MS = 120_000;
+
+/**
+ * Run `agy`. On Windows the binary is `agy.cmd`, which Node refuses to spawn
+ * without a shell since the CVE-2024-27980 fix — so use the same shell+quoting
+ * path npmRunner.ts uses. Bounded by a timeout so a hung CLI can't wedge setup.
+ */
+function runAgy(agyPath: string, args: string[]): SpawnSyncReturns<string> {
+  const isWin = process.platform === "win32";
+  return spawnSync(agyPath, isWin ? quoteWinArgs(args) : args, {
+    encoding: "utf8",
+    timeout: AGY_TIMEOUT_MS,
+    shell: isWin,
+  });
+}
+
+/** Delete any previously installed copy of our plugin, from every known root. */
+export function clearInstalledPlugin(): string[] {
+  const cleared: string[] = [];
+  for (const root of PLUGIN_ROOTS) {
+    const dir = join(root, PLUGIN_NAME);
+    if (!existsSync(dir)) continue;
+    rmSync(dir, { recursive: true, force: true });
+    cleared.push(dir);
+  }
+  return cleared;
+}
+
+/** Copy a staged plugin into place ourselves and mark it enabled. */
+function copyPluginIntoPlace(stagedDir: string): string {
+  const dest = INSTALLED_PLUGIN_DIR;
+  rmSync(dest, { recursive: true, force: true });
+  mkdirSync(dirname(dest), { recursive: true });
+  cpSync(stagedDir, dest, { recursive: true });
+  enablePluginInConfig();
+  return dest;
+}
+
+export interface RegisterResult {
+  method: "agy" | "fallback";
+  pluginDir: string;
+  /** Why `agy` was not used: absent, or the failure it reported. */
+  agyError?: string;
+}
+
+/**
+ * Register a staged plugin with Antigravity. Prefers `agy plugin install` — it
+ * decides the staging location and records the plugin itself — and falls back to
+ * copying into place. A FAILING `agy` is reported distinctly from a MISSING one,
+ * so the installer never claims "agy not found" when it actually errored.
+ */
+export function registerPlugin(stagedDir: string): RegisterResult {
+  // `agy plugin install` COPIES INTO an existing plugin dir rather than
+  // replacing it, so files an older version shipped survive an upgrade — we
+  // observed a renamed agent counted twice. Clear any previous install first;
+  // the staged copy is the source of truth.
+  clearInstalledPlugin();
+
+  const agy = detectAgyPath();
+  if (!agy) {
+    return { method: "fallback", pluginDir: copyPluginIntoPlace(stagedDir) };
+  }
+  const res = runAgy(agy, ["plugin", "install", stagedDir]);
+  if (res.status === 0 && !res.error) {
+    return {
+      method: "agy",
+      pluginDir: findInstalledPluginDir() ?? INSTALLED_PLUGIN_DIR,
+    };
+  }
+  const reason = res.error ? res.error.message : `exit ${res.status}`;
+  const stderr = (res.stderr ?? "").trim();
+  return {
+    method: "fallback",
+    pluginDir: copyPluginIntoPlace(stagedDir),
+    agyError: stderr ? `${reason} — ${stderr}` : reason,
+  };
 }
 
 /** Absolute path to the `agy` CLI, or null when it isn't installed. */
@@ -228,17 +338,36 @@ export function detectAgyPath(): string | null {
   return existsSync(fallback) ? fallback : null;
 }
 
-/** Parse a JSON file into an object, treating missing/malformed as empty. */
-function readJsonObject(path: string): Record<string, unknown> {
+/**
+ * Read a JSON object for merging, distinguishing "absent" (nothing to preserve)
+ * from "present but unreadable/malformed". The difference matters: silently
+ * treating an unparseable config as empty and writing over it would discard the
+ * user's other plugins and settings, so callers back it up first.
+ */
+export function readJsonForMerge(path: string): {
+  root: Record<string, unknown>;
+  malformed: boolean;
+} {
+  if (!existsSync(path)) return { root: {}, malformed: false };
   try {
     const parsed: unknown = JSON.parse(readFileSync(path, "utf-8"));
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
+      return { root: parsed as Record<string, unknown>, malformed: false };
     }
   } catch {
-    // Missing or malformed — behave as if nothing was configured.
+    // Fall through — unreadable or not JSON.
   }
-  return {};
+  return { root: {}, malformed: true };
+}
+
+/**
+ * Preserve a file we are about to rewrite from a blank slate. Keeps the FIRST
+ * backup pristine, so a second run can't overwrite the original with our own
+ * output.
+ */
+function backupOnce(path: string): void {
+  const backup = `${path}.bak`;
+  if (!existsSync(backup)) copyFileSync(path, backup);
 }
 
 /**
@@ -249,7 +378,10 @@ function readJsonObject(path: string): Record<string, unknown> {
 export function enablePluginInConfig(
   configPath: string = AGY_CONFIG_FILE,
 ): void {
-  const root = readJsonObject(configPath);
+  const { root, malformed } = readJsonForMerge(configPath);
+  // An unparseable config still holds the user's other plugins and settings.
+  // Never overwrite it blind — keep a copy before starting from a blank slate.
+  if (malformed) backupOnce(configPath);
   const plugins =
     root.plugins &&
     typeof root.plugins === "object" &&
@@ -266,8 +398,9 @@ export function enablePluginInConfig(
 export function disablePluginInConfig(
   configPath: string = AGY_CONFIG_FILE,
 ): boolean {
-  if (!existsSync(configPath)) return false;
-  const root = readJsonObject(configPath);
+  const { root, malformed } = readJsonForMerge(configPath);
+  // Removal is best-effort: never rewrite a config we could not parse.
+  if (malformed) return false;
   const plugins = root.plugins;
   if (!plugins || typeof plugins !== "object" || Array.isArray(plugins))
     return false;
@@ -285,8 +418,9 @@ export function disablePluginInConfig(
 export function removeLegacyGlobalServer(
   configPath: string = GLOBAL_MCP_CONFIG,
 ): boolean {
-  if (!existsSync(configPath)) return false;
-  const root = readJsonObject(configPath);
+  const { root, malformed } = readJsonForMerge(configPath);
+  // Same rule as disablePluginInConfig: don't rewrite what we can't parse.
+  if (malformed) return false;
   const servers = root.mcpServers;
   if (!servers || typeof servers !== "object" || Array.isArray(servers))
     return false;
@@ -301,6 +435,8 @@ export function removeLegacyGlobalServer(
 export interface AntigravityInstallResult {
   pluginDir: string;
   method: "agy" | "fallback";
+  /** Set when `agy` was present but failed, so the caller can surface why. */
+  agyError?: string;
   launcherPath: string;
   credsFile: string;
   skills: string[];
@@ -341,31 +477,18 @@ export function installAntigravity(
   const launcherPath = writeDesktopLauncher();
   const credsFile = writeUserConfigFile(creds);
 
-  // 3. Build the plugin, then register it.
+  // 3. Build the plugin, then register it (throws before touching anything if
+  //    this engine build carries no assets).
   const staged = stagePluginDir();
-  const agy = detectAgyPath();
-  let method: AntigravityInstallResult["method"] = "fallback";
-  if (agy) {
-    const install = spawnSync(agy, ["plugin", "install", staged.dir], {
-      encoding: "utf8",
-    });
-    if (install.status === 0 && !install.error) method = "agy";
-  }
-  if (method === "fallback") {
-    // No `agy` (or it failed): place the plugin ourselves and mark it enabled,
-    // matching how Antigravity's bundled plugins are registered.
-    rmSync(INSTALLED_PLUGIN_DIR, { recursive: true, force: true });
-    mkdirSync(PLUGINS_DIR, { recursive: true });
-    cpSync(staged.dir, INSTALLED_PLUGIN_DIR, { recursive: true });
-    enablePluginInConfig();
-  }
+  const registered = registerPlugin(staged.dir);
 
   // 4. Retire any older global entry so only one engine boots.
   const removedLegacyServer = removeLegacyGlobalServer();
 
   return {
-    pluginDir: INSTALLED_PLUGIN_DIR,
-    method,
+    pluginDir: registered.pluginDir,
+    method: registered.method,
+    agyError: registered.agyError,
     launcherPath,
     credsFile,
     skills: staged.skills,
@@ -380,25 +503,19 @@ export function installAntigravity(
  * skills and agents are plain files that only change when we rewrite them.
  * Credentials are left untouched.
  */
-export function updateAntigravity(): {
-  method: "agy" | "fallback";
+export function updateAntigravity(): RegisterResult & {
   skills: string[];
   agents: string[];
 } {
+  // stagePluginDir throws when this build has no assets, BEFORE the existing
+  // install is touched — otherwise an assetless engine would quietly replace a
+  // working plugin with an empty one.
   const staged = stagePluginDir();
-  const agy = detectAgyPath();
-  if (agy) {
-    const res = spawnSync(agy, ["plugin", "install", staged.dir], {
-      encoding: "utf8",
-    });
-    if (res.status === 0 && !res.error)
-      return { method: "agy", skills: staged.skills, agents: staged.agents };
-  }
-  rmSync(INSTALLED_PLUGIN_DIR, { recursive: true, force: true });
-  mkdirSync(PLUGINS_DIR, { recursive: true });
-  cpSync(staged.dir, INSTALLED_PLUGIN_DIR, { recursive: true });
-  enablePluginInConfig();
-  return { method: "fallback", skills: staged.skills, agents: staged.agents };
+  return {
+    ...registerPlugin(staged.dir),
+    skills: staged.skills,
+    agents: staged.agents,
+  };
 }
 
 /**
@@ -409,17 +526,17 @@ export function detectAntigravity(): boolean {
   return existsSync(join(homedir(), ".gemini")) || detectAgyPath() !== null;
 }
 
-/** True when our plugin is currently installed. */
-export function antigravityHasPlugin(
-  pluginDir: string = INSTALLED_PLUGIN_DIR,
-): boolean {
-  return existsSync(join(pluginDir, "plugin.json"));
+/** True when our plugin is currently installed, in either plugin root. */
+export function antigravityHasPlugin(pluginDir?: string): boolean {
+  if (pluginDir) return existsSync(join(pluginDir, "plugin.json"));
+  return findInstalledPluginDir() !== null;
 }
 
 /** Version recorded in the installed plugin's manifest, or null. */
 export function installedPluginVersion(
-  pluginDir: string = INSTALLED_PLUGIN_DIR,
+  pluginDir: string | null = findInstalledPluginDir(),
 ): string | null {
+  if (!pluginDir) return null;
   try {
     return (
       (
@@ -441,16 +558,20 @@ export interface AntigravityUninstallResult {
 
 /** Remove the plugin via `agy` when available, else by hand. */
 export function uninstallAntigravity(): AntigravityUninstallResult {
+  // Snapshot first: "removed" must mean we removed something that was there,
+  // not merely that nothing is there now.
+  const before = findInstalledPluginDir();
   const agy = detectAgyPath();
   let method: AntigravityUninstallResult["method"] = "fallback";
-  if (agy && antigravityHasPlugin()) {
-    const res = spawnSync(agy, ["plugin", "uninstall", PLUGIN_NAME], {
-      encoding: "utf8",
-    });
+  if (agy && before) {
+    const res = runAgy(agy, ["plugin", "uninstall", PLUGIN_NAME]);
     if (res.status === 0 && !res.error) method = "agy";
   }
-  if (method === "fallback" && existsSync(INSTALLED_PLUGIN_DIR)) {
-    rmSync(INSTALLED_PLUGIN_DIR, { recursive: true, force: true });
+  // Sweep both roots — `agy` may have staged it somewhere we don't write to,
+  // and an older run may have left a copy in the other one.
+  for (const root of PLUGIN_ROOTS) {
+    const dir = join(root, PLUGIN_NAME);
+    if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
   }
   // `agy plugin uninstall` clears its own manifest entry but not the
   // config.json flag we may have written on the fallback path.
@@ -459,7 +580,7 @@ export function uninstallAntigravity(): AntigravityUninstallResult {
 
   return {
     method,
-    removedPlugin: !existsSync(INSTALLED_PLUGIN_DIR),
+    removedPlugin: before !== null,
     removedLegacyServer: removeLegacyGlobalServer(),
   };
 }

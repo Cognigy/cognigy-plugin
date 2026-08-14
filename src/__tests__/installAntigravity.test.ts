@@ -21,6 +21,7 @@ import {
   engineVersion,
   installedPluginVersion,
   antigravityHasPlugin,
+  readJsonForMerge,
   removeLegacyGlobalServer,
   resolveAssetDir,
   stagePluginDir,
@@ -84,10 +85,11 @@ describe("stagePluginDir", () => {
     // Nested skill assets (the xapps templates/) must come along.
     expect(existsSync(join(dir, "skills", "xapps", "templates"))).toBe(true);
 
-    // Agents: flat .md in our repo, <name>/agent.md for Antigravity.
+    // Agents ship flat, as `agents/<name>.md` — verified against
+    // `agy plugin validate`, so no conversion of our Claude files is needed.
     expect(staged.agents).toContain("cognigy-agent-builder");
     for (const name of staged.agents) {
-      const file = join(dir, "agents", name, "agent.md");
+      const file = join(dir, "agents", `${name}.md`);
       expect(existsSync(file)).toBe(true);
       expect(readFileSync(file, "utf-8")).toContain(`name: ${name}`);
     }
@@ -103,6 +105,20 @@ describe("stagePluginDir", () => {
     writeFileSync(stale, "old");
     stagePluginDir(dir);
     expect(existsSync(stale)).toBe(false);
+  });
+});
+
+describe("stagePluginDir guards", () => {
+  it("throws rather than staging an empty plugin when assets are missing", () => {
+    // A build without dist/plugin-assets must fail loudly: the update path
+    // replaces the installed plugin with whatever was staged, so an
+    // empty-but-valid plugin would silently wipe a working install.
+    const dir = freshDir();
+    expect(() => stagePluginDir(dir, null, null)).toThrow(
+      /No plugin assets found/,
+    );
+    // Nothing was written, so an existing install is left alone.
+    expect(existsSync(join(dir, "plugin.json"))).toBe(false);
   });
 });
 
@@ -144,6 +160,53 @@ describe("config.json plugin flag", () => {
     expect(
       JSON.parse(readFileSync(path, "utf-8")).plugins[PLUGIN_NAME],
     ).toEqual({ enabled: true });
+  });
+
+  it("backs up an unparseable config instead of silently destroying it", () => {
+    // A malformed config still holds the user's other plugins and settings.
+    // Overwriting it from a blank slate would lose them with no recovery.
+    const path = join(freshDir(), "config.json");
+    const original = '{ "plugins": { "science": { "enabled": true } }, oops';
+    writeFileSync(path, original);
+
+    enablePluginInConfig(path);
+
+    expect(readFileSync(`${path}.bak`, "utf-8")).toBe(original);
+    expect(
+      JSON.parse(readFileSync(path, "utf-8")).plugins[PLUGIN_NAME],
+    ).toEqual({ enabled: true });
+  });
+
+  it("refuses to rewrite an unparseable config when removing", () => {
+    const path = join(freshDir(), "config.json");
+    const original = "{ not json";
+    writeFileSync(path, original);
+    expect(disablePluginInConfig(path)).toBe(false);
+    expect(readFileSync(path, "utf-8")).toBe(original);
+  });
+});
+
+describe("readJsonForMerge", () => {
+  it("separates absent from malformed", () => {
+    const dir = freshDir();
+    const missing = join(dir, "missing.json");
+    expect(readJsonForMerge(missing)).toEqual({ root: {}, malformed: false });
+
+    const bad = join(dir, "bad.json");
+    writeFileSync(bad, "{ nope");
+    expect(readJsonForMerge(bad).malformed).toBe(true);
+
+    // A JSON array is not a config object either.
+    const arr = join(dir, "arr.json");
+    writeFileSync(arr, "[1,2]");
+    expect(readJsonForMerge(arr).malformed).toBe(true);
+
+    const good = join(dir, "good.json");
+    writeFileSync(good, '{"a":1}');
+    expect(readJsonForMerge(good)).toEqual({
+      root: { a: 1 },
+      malformed: false,
+    });
   });
 });
 

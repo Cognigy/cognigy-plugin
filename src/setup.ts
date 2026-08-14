@@ -355,7 +355,9 @@ function runInstall(client: Client, creds: UserConfigFile): void {
         dim(
           res.method === "agy"
             ? "(registered via the agy CLI)"
-            : "(agy not found — installed directly)",
+            : res.agyError
+              ? "(agy failed — installed directly)"
+              : "(agy not found — installed directly)",
         ) +
         "\n" +
         dim(
@@ -370,6 +372,14 @@ function runInstall(client: Client, creds: UserConfigFile): void {
           "  The engine auto-updates on every launch; run `cognigy-setup update` to refresh skills.\n",
         ),
     );
+    if (res.agyError) {
+      // The plugin is installed either way, but a broken `agy` is worth knowing
+      // about — it also manages enable/disable and uninstall.
+      process.stdout.write(
+        yellow(`  ⚠ 'agy plugin install' failed: ${res.agyError}\n`) +
+          dim("    The plugin was copied into place instead.\n"),
+      );
+    }
     if (res.removedLegacyServer) {
       process.stdout.write(
         dim(

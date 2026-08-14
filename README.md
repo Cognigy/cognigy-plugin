@@ -83,8 +83,10 @@ Antigravity has a first-class plugin format, so the installer builds a real plug
 ├── plugin.json            name + version + description
 ├── mcp_config.json        cognigy (tools) + cognigy-docs (official docs)
 ├── skills/<id>/SKILL.md   the 13 workflow skills
-└── agents/<id>/agent.md   the 2 subagents
+└── agents/<id>.md         the 2 subagents
 ```
+
+Antigravity moved plugin installs into `~/.gemini/config/` in CLI v1.0.2; older builds staged them under `~/.gemini/antigravity-cli/plugins/`. `agy` decides where it puts them, so the installer looks in both when reporting status or uninstalling.
 
 The plugin's `mcp_config.json` is read **in place** — your global `~/.gemini/config/mcp_config.json` is never touched, so installing or removing the plugin can't disturb your own MCP servers. Skills keep their plain names because they are scoped to the plugin, exactly as Antigravity's bundled plugins do it.
 
