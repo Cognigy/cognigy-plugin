@@ -93,7 +93,10 @@ async function main() {
     await server.connect(transport);
     logger.info("NiCE Cognigy Plugin started successfully");
 
+    let shuttingDown = false;
     const shutdown = async () => {
+      if (shuttingDown) return;
+      shuttingDown = true;
       logger.info("Shutting down NiCE Cognigy Plugin");
       rateLimiter.destroy();
       await server.close();
@@ -101,6 +104,14 @@ async function main() {
     };
     process.on("SIGINT", shutdown);
     process.on("SIGTERM", shutdown);
+    // StdioServerTransport never listens for stdin ending — if the parent
+    // (Claude Code, or an `npx` wrapper) tears down the connection by closing
+    // the pipes instead of sending a signal, nothing here would otherwise
+    // notice. Without this, the RateLimiter's setInterval keeps the event
+    // loop alive forever, turning every such disconnect into an orphaned,
+    // memory-holding process. Treat stdin ending as a disconnect too.
+    process.stdin.on("end", shutdown);
+    process.stdin.on("close", shutdown);
   } catch (error: any) {
     logger.error("Failed to start MCP Server", {
       error: error.message,
