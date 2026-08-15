@@ -97,10 +97,18 @@ async function main() {
     const shutdown = async () => {
       if (shuttingDown) return;
       shuttingDown = true;
-      logger.info("Shutting down NiCE Cognigy Plugin");
-      rateLimiter.destroy();
-      await server.close();
-      process.exit(0);
+      // `finally` so a failing close can never strand the process: the guard
+      // above means a later signal won't retry, and this runs as an event
+      // listener, where a rejection would otherwise be unhandled.
+      try {
+        logger.info("Shutting down NiCE Cognigy Plugin");
+        rateLimiter.destroy();
+        await server.close();
+      } catch (error: any) {
+        logger.error("Error during shutdown", { error: error?.message });
+      } finally {
+        process.exit(0);
+      }
     };
     process.on("SIGINT", shutdown);
     process.on("SIGTERM", shutdown);
