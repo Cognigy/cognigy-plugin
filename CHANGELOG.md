@@ -1,3 +1,9 @@
+## [1.8.2](https://github.com/Cognigy/cognigy-plugin/compare/v1.8.1...v1.8.2) (2026-08-17)
+
+### Bug Fixes
+
+* **server:** shut down on stdin close, not just SIGINT/SIGTERM ([#28](https://github.com/Cognigy/cognigy-plugin/issues/28)) ([fa8591f](https://github.com/Cognigy/cognigy-plugin/commit/fa8591f8633b8effe212d05074b81ce6a54bb061))
+
 ## [1.8.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.8.0...v1.8.1) (2026-07-31)
 
 ### Documentation
