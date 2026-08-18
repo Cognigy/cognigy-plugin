@@ -4,10 +4,10 @@ Covers **ChatGPT** and **Codex** together. OpenAI merged the standalone Codex ap
 
 |                  |                                                                      |
 | ---------------- | -------------------------------------------------------------------- |
-| **You get**      | Tools from the installer; skills need one in-app step                |
+| **You get**      | Tools from the installer; skills need one step in the GUI or CLI     |
 | **Agents**       | Not supported — Codex subagents use a different (TOML) format        |
 | **Credentials**  | `~/.cognigy-plugin/config.json` (`chmod 600`) — never in config.toml |
-| **Requires**     | Codex CLI 0.117.0+ for the plugin (skills) step                      |
+| **Requires**     | Nothing for the GUI path; Codex CLI 0.117.0+ for the `/plugins` path |
 | **Auto-updates** | Automatic for tools: the server runs the engine at `@latest`         |
 
 ## Step 1 — Run the installer
@@ -26,13 +26,15 @@ No `codex` CLI on PATH? The installer writes the credentials file anyway and pri
 
 ## Step 2 — Install the plugin for skills
 
-The MCP server serves tools only. Skills come from the plugin:
+The MCP server serves tools only. Skills come from the plugin, and there are two equivalent ways to install it — the ChatGPT GUI or a Codex session. Pick either; they write to the same place, so doing both is unnecessary.
 
-1. In a Codex session (the Codex tab of the ChatGPT app, the CLI, or the IDE extension), run `/plugins`.
-2. Find **cognigy** in the **cognigy-plugin** marketplace and install it.
-3. Start a new thread — Codex injects plugins at session start and has no hot reload.
+**In the ChatGPT app (GUI)** — open the **Plugins** directory, switch to the **Personal** tab, add the marketplace `Cognigy/cognigy-plugin`, then install **cognigy** from it. The installed plugin works in Chat, Work, and the Codex tab.
 
-The installer already added the marketplace (`codex plugin marketplace add Cognigy/cognigy-plugin`); on older Codex builds without the `plugin` subcommand that step is skipped with a warning and tools still work.
+**In a Codex session (CLI, IDE extension, or the Codex tab)** — run `/plugins`, find **cognigy** under the **cognigy-plugin** marketplace, and install it.
+
+Either way, start a new thread afterwards — plugins are injected at session start and there is no hot reload.
+
+The installer already registered the marketplace for the CLI path (`codex plugin marketplace add Cognigy/cognigy-plugin`); on older Codex builds without the `plugin` subcommand that step is skipped with a warning, and tools still work. The GUI path doesn't depend on it — add the marketplace in the Plugins directory instead.
 
 The plugin bundles its own `platform` MCP server. That duplicate is harmless — leave it disabled; the global `cognigy` entry from Step 1 already serves the tools. To silence it explicitly:
 
