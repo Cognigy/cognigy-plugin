@@ -28,7 +28,14 @@ No `codex` CLI on PATH? The installer writes the credentials file anyway and pri
 
 The MCP server serves tools only. Skills come from the plugin, and there are two equivalent ways to install it — the ChatGPT GUI or a Codex session. Pick either; they write to the same place, so doing both is unnecessary.
 
-**In the ChatGPT app (GUI)** — open the **Plugins** directory, switch to the **Personal** tab, add the marketplace `Cognigy/cognigy-plugin`, then install **cognigy** from it. The installed plugin works in Chat, Work, and the Codex tab.
+**In the ChatGPT app (GUI)**
+
+1. Click **Plugins** in the sidebar.
+2. Click **Add** at the top right, then **Add a Marketplace**.
+3. Enter `Cognigy/cognigy-plugin` as the source and click **Add Marketplace**.
+4. Click **Install** on the **Cognigy** plugin that appears.
+
+The installed plugin works in Chat, Work, and the Codex tab.
 
 **In a Codex session (CLI, IDE extension, or the Codex tab)** — run `/plugins`, find **cognigy** under the **cognigy-plugin** marketplace, and install it.
 
