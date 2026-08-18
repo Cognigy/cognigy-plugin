@@ -1,3 +1,10 @@
+## [1.8.3](https://github.com/Cognigy/cognigy-plugin/compare/v1.8.2...v1.8.3) (2026-08-18)
+
+### Bug Fixes
+
+* **config:** derive endpoint/webchat/static URLs for prefixed tenant … ([#12](https://github.com/Cognigy/cognigy-plugin/issues/12)) [skip ci] ([31ac010](https://github.com/Cognigy/cognigy-plugin/commit/31ac010ad8266922f6762e713bb0f42e3f35cb78))
+* make credentials work on hosts without userConfig support (VS Code, Cursor) ([#26](https://github.com/Cognigy/cognigy-plugin/issues/26)) ([ec83a97](https://github.com/Cognigy/cognigy-plugin/commit/ec83a9726c4dc8d76aa5be6ff1ab7274ec047463))
+
 ## [1.8.2](https://github.com/Cognigy/cognigy-plugin/compare/v1.8.1...v1.8.2) (2026-08-17)
 
 ### Bug Fixes
