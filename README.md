@@ -201,16 +201,7 @@ The model roles are different:
 - Do not describe an untried model as "likely" unsupported or rejected.
 - Treat model names in examples as examples only, not as the source of truth.
 
-### 4. Get analytics on recent conversations
-
-```
-Show me the last 20 conversations for project <projectId> and summarize
-what topics users asked about most.
-```
-
-Uses `list_resources` to fetch conversations, then your AI assistant summarizes the content.
-
-### 5. List all projects and agents
+### 4. List all projects and agents
 
 ```
 List all my Cognigy projects and show which AI Agents exist in each one.
@@ -218,7 +209,7 @@ List all my Cognigy projects and show which AI Agents exist in each one.
 
 Uses `list_resources` with `resourceType: 'project'` and `resourceType: 'agent'`.
 
-### 6. Import a package into a project
+### 5. Import a package into a project
 
 ```
 Upload the package at /absolute/path/to/support-bot.zip into project <projectId>,
@@ -227,7 +218,7 @@ show me the import preview, then import it using the default selections.
 
 Uses `manage_packages` with `operation: 'upload_and_inspect'`, then `operation: 'import'`.
 
-### 7. Export a package from project resources
+### 6. Export a package from project resources
 
 ```
 Create a package named "support-bot" from these resource IDs in project <projectId>,
@@ -236,7 +227,7 @@ include dependencies, and save the zip to /absolute/path/to/exports/.
 
 Uses `manage_packages` with `operation: 'list_exportable'` to discover candidates, then `operation: 'export'`, then `operation: 'download'` when needed.
 
-### 8. Configure voice preview and create a browser voice endpoint
+### 7. Configure voice preview and create a browser voice endpoint
 
 ```
 Set the voice preview provider for project <projectId> to Microsoft, then create
@@ -246,7 +237,7 @@ WebRTC demo URL I can open in the browser.
 
 This uses `manage_settings` with `operation: 'set_voice_preview'` to configure speech, then `manage_voice_gateway` to provision a `voiceGateway2` endpoint with a `webrtcDemoUrl`.
 
-### 9. Configure Knowledge AI settings for search
+### 8. Configure Knowledge AI settings for search
 
 ```
 Configure Knowledge AI settings for project <projectId> by setting the Knowledge Search
