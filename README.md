@@ -103,6 +103,16 @@ The plugin ships its own connector (`platform`), but on **Claude Desktop chat** 
 
 > 🔄 **Claude Desktop users:** the connector keeps its engine current on every restart, but see [Staying up to date](#staying-up-to-date) for how updates work and how to check versions.
 
+### Step 3 — Other hosts (VS Code, Cursor, …): install the plugin yourself
+
+Pick **Other hosts** in the installer (or pass `--client other-hosts`) and it writes your credentials to `~/.cognigy-plugin/config.json` (`chmod 600`). Nothing else is wired — these hosts install the plugin themselves:
+
+**VS Code / Copilot** — in `settings.json`, set `"chat.plugins.enabled": true` and add `"chat.plugins.marketplaces": ["Cognigy/cognigy-plugin"]`, then open the Extensions view, search `@agentPlugins`, and install **cognigy**. Restart afterwards. You get tools, skills, and agents.
+
+**Leave the plugin's credential fields alone.** Only Claude Code implements `userConfig`, the manifest extension that prompts for an API key and substitutes it into the server's environment. Every other host copies the manifest text through verbatim, so the engine would receive the literal `${user_config.cognigy_api_key}`. It treats such placeholders as unset and reads the file above instead — which is why the installer writes it.
+
+> **`npx: command not found` when the server starts?** Your Node is probably from nvm/fnm/volta, whose bin directory a GUI-launched host may not have on `PATH`. Quit the host completely and relaunch it from a terminal, or point the MCP entry at an absolute path (`$(which npx)`).
+
 <details>
 <summary>Scripting / CI, and manual install</summary>
 
@@ -113,6 +123,8 @@ npx -y -p @cognigy/plugin-engine@latest cognigy-setup \
   --client claude-code --client claude-desktop \
   --api-base-url https://api-trial.cognigy.ai --api-key <key>
 ```
+
+`--client` is repeatable; valid values are `claude-code`, `claude-desktop`, and `other-hosts`. Omit it in interactive mode to pick from the menu.
 
 **Manual install (Claude Code)** — instead of the installer:
 
@@ -156,7 +168,9 @@ Create a complete AI Agent in one tool call, then iterate and improve through co
 
 ## Configuration
 
-The [installer](#installation) collects your **Cognigy API base URL** and **API key** and wires them per client: on Claude Code into the system **keychain**, on Claude Desktop into `claude_desktop_config.json` (`chmod 600`). The engine receives them as environment variables. If neither is set for a given launch, the engine falls back to `~/.cognigy-plugin/config.json` (`chmod 600`), which the installer also writes — so credentials resolve from the environment first, then that file. The optional variables below can be set in the MCP server `env` if you need to override defaults.
+The [installer](#installation) collects your **Cognigy API base URL** and **API key** and wires them per client: on Claude Code into the system **keychain**, on Claude Desktop into `claude_desktop_config.json` (`chmod 600`). The engine receives them as environment variables. If either is missing for a given launch, the engine falls back to `~/.cognigy-plugin/config.json` (`chmod 600`), which the installer also writes — so credentials resolve from the environment first, then that file.
+
+A value that arrives as an unexpanded `${...}` placeholder counts as missing. Hosts other than Claude Code don't implement `userConfig` and pass the manifest's `${user_config.cognigy_api_key}` through literally; treating that as a real credential would both fail the request and shadow the file fallback. The optional variables below can be set in the MCP server `env` if you need to override defaults.
 
 | Variable                  | Required | Default | Description                      |
 | ------------------------- | -------- | ------- | -------------------------------- |
