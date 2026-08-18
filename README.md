@@ -69,13 +69,13 @@ npx -y -p @cognigy/plugin-engine@latest cognigy-setup
 
 What each client gets, and what (if anything) you finish by hand — full instructions, Windows notes, and troubleshooting in each guide:
 
-| Client                                                                    | Tools | Skills | Agents | Extra step after the installer                 |
-| ------------------------------------------------------------------------- | ----- | ------ | ------ | ---------------------------------------------- |
-| **[Claude Code](docs/install/claude-code.md)** (CLI + Desktop "Code" tab) | ✅    | ✅     | ✅     | None                                           |
-| **[Claude Desktop chat](docs/install/claude-desktop.md)**                 | ✅    | ✅     | ✅     | Install the plugin in-app                      |
-| **[ChatGPT + Codex](docs/install/chatgpt-codex.md)** (CLI + IDE)          | ✅    | ✅     | —      | None with the `codex` CLI; else install in-app |
-| **[Google Gemini CLI](docs/install/gemini-cli.md)** (Code Assist only)    | ✅    | ✅     | ✅     | None                                           |
-| **[Other hosts](docs/install/other-hosts.md)** (VS Code, Cursor, …)       | ✅    | ✅     | ✅     | Install the plugin in the host itself          |
+| Client                                                                    | Tools | Skills | Agents | Extra step after the installer        |
+| ------------------------------------------------------------------------- | ----- | ------ | ------ | ------------------------------------- |
+| **[Claude Code](docs/install/claude-code.md)** (CLI + Desktop "Code" tab) | ✅    | ✅     | ✅     | None                                  |
+| **[Claude Desktop chat](docs/install/claude-desktop.md)**                 | ✅    | ✅     | ✅     | Install the plugin in-app             |
+| **[ChatGPT + Codex](docs/install/chatgpt-codex.md)** (CLI + IDE)          | ✅    | ✅     | —      | None                                  |
+| **[Google Gemini CLI](docs/install/gemini-cli.md)** (Code Assist only)    | ✅    | ✅     | ✅     | None                                  |
+| **[Other hosts](docs/install/other-hosts.md)** (VS Code, Cursor, …)       | ✅    | ✅     | ✅     | Install the plugin in the host itself |
 
 <details>
 <summary>Scripting / CI</summary>
