@@ -53,7 +53,7 @@ enabled = false
 
 - **ChatGPT desktop app / minimal PATH** — GUI apps launch with a reduced `PATH`. If the `cognigy` server fails there with an `npx`-not-found error, run the installer once from a terminal (it writes the config the app reads) and prefer Codex from the terminal or IDE.
 - **Project-scoped config is ignored by the desktop app** — it loads only the global `~/.codex/config.toml` ([openai/codex#13025](https://github.com/openai/codex/issues/13025)). The installer writes the global file, so this doesn't affect you.
-- **Updates** — the engine spec is `@latest`, so tools pick up new releases on restart. Skills update through `/plugins`.
+- **Updates** — the engine spec is `@latest`, so tools pick up new releases on restart. Skills update wherever you installed the plugin: the Plugins directory in the ChatGPT app, or `/plugins` in a Codex session.
 
 ## Uninstall
 
@@ -61,6 +61,6 @@ enabled = false
 npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall --client codex
 ```
 
-Runs `codex mcp remove cognigy`. Remove the plugin itself from the `/plugins` screen — there is no non-interactive plugin uninstall.
+Runs `codex mcp remove cognigy`. Remove the plugin itself where you installed it — the Plugins directory in the ChatGPT app, or the `/plugins` screen in a Codex session. There is no non-interactive plugin uninstall on either path.
 
 Drop `--client` to uninstall from every client. Add `--purge` to also delete `~/.cognigy-plugin` — the credentials file every client shares.
