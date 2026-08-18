@@ -17,9 +17,11 @@ Then **start a new thread**. That's it — you have tools and skills everywhere.
 
 An already-open thread won't see the plugin; Codex loads plugins when a session starts.
 
-## Install from the app instead
+The installer is not optional: it is the only thing that supplies your Cognigy API key. The ChatGPT app has no field for it, because Codex cannot prompt a plugin for secrets.
 
-The installer needs a terminal. If you'd rather not use one — or it couldn't finish — do this in the ChatGPT app:
+## If the installer couldn't install the plugin
+
+The installer needs the `codex` CLI on PATH to install the plugin for you. Without it, it writes your credentials and stops — finish in the ChatGPT app:
 
 1. Click **Plugins** in the sidebar.
 2. Click **Add** at the top right, then **Add a Marketplace**.
@@ -29,7 +31,7 @@ The installer needs a terminal. If you'd rather not use one — or it couldn't f
 
 In a Codex session you can do the same with `/plugins`.
 
-**You still need to run the installer once** for your API key — the app has no field to enter it. If you installed the plugin here first, run the installer afterwards and it will just add the credentials.
+You can also install the plugin here first and run the installer afterwards — order doesn't matter, but **both halves are required**.
 
 ## Uninstall
 
