@@ -4,50 +4,45 @@ Covers **ChatGPT** and **Codex** together. OpenAI merged the standalone Codex ap
 
 |                  |                                                                      |
 | ---------------- | -------------------------------------------------------------------- |
-| **You get**      | Tools from the installer; skills need one step in the GUI or CLI     |
+| **You get**      | Tools and skills, both from the plugin — one install                 |
 | **Agents**       | Not supported — Codex subagents use a different (TOML) format        |
 | **Credentials**  | `~/.cognigy-plugin/config.json` (`chmod 600`) — never in config.toml |
-| **Requires**     | Nothing for the GUI path; Codex CLI 0.117.0+ for the `/plugins` path |
-| **Auto-updates** | Automatic for tools: the server runs the engine at `@latest`         |
+| **Requires**     | Codex CLI 0.117.0+ to automate the plugin install; else do it in-app |
+| **Auto-updates** | The plugin's server runs the engine at `@latest`                     |
 
 ## Step 1 — Run the installer
 
-[Run the installer](../../README.md#installation) and pick **ChatGPT + Codex**. It runs `codex mcp add`, which writes:
+[Run the installer](../../README.md#installation) and pick **ChatGPT + Codex**. With the `codex` CLI on PATH it does everything non-interactively:
 
-```toml
-[mcp_servers.cognigy]
-command = "npx"
-args = ["-y", "-p", "cognigy-engine@npm:@cognigy/plugin-engine@latest", "cognigy-mcp"]
+```
+codex plugin marketplace add Cognigy/cognigy-plugin
+codex plugin add cognigy@cognigy-plugin
 ```
 
-Restart the ChatGPT app (or Codex) — **the tools work now**.
+and writes your credentials to `~/.cognigy-plugin/config.json` (`chmod 600`).
 
-No `codex` CLI on PATH? The installer writes the credentials file anyway and prints both the command and the TOML block above so you can apply either by hand.
+Start a **new thread** — Codex loads plugins at session start, so an already-open thread won't see them. You now have **tools and skills**.
 
-## Step 2 — Install the plugin for skills
+## Step 2 — only if the installer couldn't finish
 
-The MCP server serves tools only. Skills come from the plugin, and there are two equivalent ways to install it — the ChatGPT GUI or a Codex session. Pick either; they write to the same place, so doing both is unnecessary.
-
-**In the ChatGPT app (GUI)**
+No `codex` on PATH, or a step failed? The credentials file is written regardless, so the rest is in the app:
 
 1. Click **Plugins** in the sidebar.
 2. Click **Add** at the top right, then **Add a Marketplace**.
 3. Enter `Cognigy/cognigy-plugin` as the source and click **Add Marketplace**.
-4. Click **Install** on the **Cognigy** plugin that appears.
+4. Click **Install** on the **Cognigy** plugin.
+5. Start a new thread.
 
-The installed plugin works in Chat, Work, and the Codex tab.
+Or, in a Codex session: `/plugins` → install **cognigy** from the **cognigy-plugin** marketplace. Both routes reach the same place; the GUI needs no Codex CLI at all.
 
-**In a Codex session (CLI, IDE extension, or the Codex tab)** — run `/plugins`, find **cognigy** under the **cognigy-plugin** marketplace, and install it.
+## Where the tools come from
 
-Either way, start a new thread afterwards — plugins are injected at session start and there is no hot reload.
+The plugin declares its own `platform` MCP server, and Codex starts it once the plugin is installed. That is the whole tool surface — **the installer writes no global `[mcp_servers.cognigy]` entry**, because a second registration of the same engine would put 32 tools in the picker for 16 real ones. Claude Code works the same way.
 
-The installer already registered the marketplace for the CLI path (`codex plugin marketplace add Cognigy/cognigy-plugin`); on older Codex builds without the `plugin` subcommand that step is skipped with a warning, and tools still work. The GUI path doesn't depend on it — add the marketplace in the Plugins directory instead.
+If you wired a global `cognigy` server by hand (or with an older version of this installer), remove it so only one engine runs:
 
-The plugin bundles its own `platform` MCP server. That duplicate is harmless — leave it disabled; the global `cognigy` entry from Step 1 already serves the tools. To silence it explicitly:
-
-```toml
-[plugins."cognigy@cognigy-plugin".mcp_servers.platform]
-enabled = false
+```
+codex mcp remove cognigy
 ```
 
 ## Credentials
@@ -59,8 +54,8 @@ enabled = false
 ## Notes and caveats
 
 - **ChatGPT desktop app / minimal PATH** — GUI apps launch with a reduced `PATH`. If the `cognigy` server fails there with an `npx`-not-found error, run the installer once from a terminal (it writes the config the app reads) and prefer Codex from the terminal or IDE.
-- **Project-scoped config is ignored by the desktop app** — it loads only the global `~/.codex/config.toml` ([openai/codex#13025](https://github.com/openai/codex/issues/13025)). The installer writes the global file, so this doesn't affect you.
-- **Updates** — the engine spec is `@latest`, so tools pick up new releases on restart. Skills update wherever you installed the plugin: the Plugins directory in the ChatGPT app, or `/plugins` in a Codex session.
+- **Project-scoped config is ignored by the desktop app** — it loads only the global `~/.codex/config.toml` ([openai/codex#13025](https://github.com/openai/codex/issues/13025)). Plugins are recorded there, so this doesn't affect you.
+- **Updates** — the plugin's server runs the engine at `@latest`, so tools pick up new releases on restart. Skills update with the plugin: the Plugins directory in the ChatGPT app, or `/plugins` in a Codex session.
 
 ## Uninstall
 
@@ -68,6 +63,6 @@ enabled = false
 npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall --client codex
 ```
 
-Runs `codex mcp remove cognigy`. Remove the plugin itself where you installed it — the Plugins directory in the ChatGPT app, or the `/plugins` screen in a Codex session. There is no non-interactive plugin uninstall on either path.
+Runs `codex plugin remove cognigy@cognigy-plugin` and drops the marketplace registration. Without the `codex` CLI, remove it in the app instead: **Plugins** in the sidebar → **⋯** on Cognigy → **Uninstall**.
 
 Drop `--client` to uninstall from every client. Add `--purge` to also delete `~/.cognigy-plugin` — the credentials file every client shares.

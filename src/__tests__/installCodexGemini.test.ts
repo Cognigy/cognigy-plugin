@@ -4,10 +4,11 @@ import { tmpdir } from "os";
 import { join } from "path";
 import {
   buildCodexMarketplaceAddArgs,
-  buildCodexMcpAddArgs,
-  buildCodexMcpRemoveArgs,
-  codexConfigSnippet,
-  codexHasCognigyEntry,
+  buildCodexMarketplaceRemoveArgs,
+  buildCodexPluginAddArgs,
+  buildCodexPluginRemoveArgs,
+  codexGuiSteps,
+  codexHasCognigyPlugin,
 } from "../install/codex.js";
 import {
   buildGeminiInstallArgs,
@@ -28,27 +29,7 @@ afterEach(() => {
 });
 
 describe("codex arg building", () => {
-  it("mcp add uses the aliased engine spec after the -- separator", () => {
-    // The alias form (cognigy-engine@npm:...) is load-bearing: a plain spec
-    // resolves to this repo's own package in sessions rooted here (-32000).
-    expect(buildCodexMcpAddArgs()).toEqual([
-      "mcp",
-      "add",
-      "cognigy",
-      "--",
-      "npx",
-      "-y",
-      "-p",
-      "cognigy-engine@npm:@cognigy/plugin-engine@latest",
-      "cognigy-mcp",
-    ]);
-  });
-
-  it("mcp remove targets the same server key", () => {
-    expect(buildCodexMcpRemoveArgs()).toEqual(["mcp", "remove", "cognigy"]);
-  });
-
-  it("marketplace add points at the GitHub repo", () => {
+  it("marketplace add takes the owner/repo SOURCE", () => {
     expect(buildCodexMarketplaceAddArgs()).toEqual([
       "plugin",
       "marketplace",
@@ -57,34 +38,66 @@ describe("codex arg building", () => {
     ]);
   });
 
-  it("config snippet is a [mcp_servers.cognigy] table with the alias pin", () => {
-    const snippet = codexConfigSnippet();
-    expect(snippet).toMatch(/^\[mcp_servers\.cognigy\]$/m);
-    expect(snippet).toContain(
-      "cognigy-engine@npm:@cognigy/plugin-engine@latest",
-    );
+  it("marketplace remove takes the registered NAME, not the source", () => {
+    // `codex plugin marketplace remove <MARKETPLACE_NAME>` — the name is the
+    // `name` field of marketplace.json, so passing owner/repo here is a no-op.
+    expect(buildCodexMarketplaceRemoveArgs()).toEqual([
+      "plugin",
+      "marketplace",
+      "remove",
+      "cognigy-plugin",
+    ]);
+  });
+
+  it("plugin add/remove use the PLUGIN@MARKETPLACE selector", () => {
+    expect(buildCodexPluginAddArgs()).toEqual([
+      "plugin",
+      "add",
+      "cognigy@cognigy-plugin",
+    ]);
+    expect(buildCodexPluginRemoveArgs()).toEqual([
+      "plugin",
+      "remove",
+      "cognigy@cognigy-plugin",
+    ]);
+  });
+
+  it("no arg builder wires a global mcp server", () => {
+    // The plugin declares its own `platform` server; a global
+    // [mcp_servers.cognigy] entry would be a duplicate engine.
+    const all = [
+      ...buildCodexMarketplaceAddArgs(),
+      ...buildCodexMarketplaceRemoveArgs(),
+      ...buildCodexPluginAddArgs(),
+      ...buildCodexPluginRemoveArgs(),
+    ];
+    expect(all).not.toContain("mcp");
+  });
+
+  it("the GUI fallback names the marketplace source", () => {
+    expect(codexGuiSteps().join("\n")).toContain("Cognigy/cognigy-plugin");
   });
 });
 
-describe("codexHasCognigyEntry", () => {
-  it("finds an existing [mcp_servers.cognigy] table", () => {
+describe("codexHasCognigyPlugin", () => {
+  it("finds the installed-plugin table", () => {
     const config = join(tmp(), "config.toml");
     writeFileSync(
       config,
-      `model = "gpt-5"\n\n[mcp_servers.cognigy]\ncommand = "npx"\n`,
+      `model = "gpt-5"\n\n[plugins."cognigy@cognigy-plugin"]\nenabled = true\n`,
     );
-    expect(codexHasCognigyEntry(config)).toBe(true);
+    expect(codexHasCognigyPlugin(config)).toBe(true);
   });
 
-  it("is false for other servers, missing file, and lookalike keys", () => {
+  it("is false for other plugins, missing file, and a bare mcp server", () => {
     const dir = tmp();
-    expect(codexHasCognigyEntry(join(dir, "nope.toml"))).toBe(false);
+    expect(codexHasCognigyPlugin(join(dir, "nope.toml"))).toBe(false);
     const config = join(dir, "config.toml");
     writeFileSync(
       config,
-      `[mcp_servers.context7]\ncommand = "npx"\n\n[plugins."cognigy@cognigy-plugin"]\nenabled = true\n`,
+      `[plugins."github@openai-curated"]\nenabled = true\n\n[mcp_servers.cognigy]\ncommand = "npx"\n`,
     );
-    expect(codexHasCognigyEntry(config)).toBe(false);
+    expect(codexHasCognigyPlugin(config)).toBe(false);
   });
 });
 

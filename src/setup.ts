@@ -10,7 +10,7 @@
  *     present (key → keychain), else a creds-file fallback + printed commands.
  *   - Claude Desktop (standalone app): merges an auto-updating MCP server entry
  *     into claude_desktop_config.json.
- *   - ChatGPT + Codex (CLI + IDE): `codex mcp add` into ~/.codex/config.toml
+ *   - ChatGPT + Codex (CLI + IDE): `codex plugin add` (the plugin's own server)
  *     + plugin marketplace for skills; creds-file only.
  *   - Google Gemini CLI: `gemini extensions install` (creds-file only — Gemini
  *     never passes the shell env to extension MCP servers).
@@ -38,8 +38,8 @@ import {
 } from "./install/claudeDesktop.js";
 import { detectOnPath } from "./install/cliRunner.js";
 import {
-  CODEX_CONFIG_PATH,
-  codexHasCognigyEntry,
+  codexGuiSteps,
+  codexHasCognigyPlugin,
   installCodex,
   uninstallCodex,
 } from "./install/codex.js";
@@ -419,52 +419,35 @@ function runInstall(client: Client, creds: UserConfigFile): void {
   }
   if (client === "codex") {
     const res = installCodex(creds);
-    if (res.method === "cli") {
+    if (res.method === "cli" && res.installedPlugin) {
       process.stdout.write(
         green(bold("\n✅ ChatGPT + Codex — all set.")) +
-          ` MCP server wired into ${CODEX_CONFIG_PATH}\n` +
+          ` Plugin installed; credentials in ${res.configFile}.\n` +
           dim(
-            "  (shared by the ChatGPT desktop app, the Codex CLI, and the IDE extension;\n" +
-              `   credentials read from ${res.configFile})\n`,
+            "  (one install serves the ChatGPT desktop app, the Codex CLI, and the IDE extension)\n",
           ) +
-          `  Restart ChatGPT / Codex — the ${bold("cognigy")} server gives you the ${green("tools")}.\n`,
+          `  Start a ${bold("new thread")} — you get ${green("tools and skills")}.\n` +
+          dim(
+            "  Codex loads plugins at session start, so an open thread won't see them.\n",
+          ),
       );
     } else {
+      // Either no `codex` on PATH, or a CLI step failed. The creds file is
+      // written either way, so the remaining work is entirely in-app.
       process.stdout.write(
         green("\n✓ ChatGPT + Codex") +
-          `: 'codex' CLI not found — wrote creds to ${res.configFile}.\n` +
-          "  Wire the server yourself (either form):\n" +
-          (res.commands ?? [])
-            .map((c) => cyan(`    ${c.split("\n").join("\n    ")}`))
-            .join("\n") +
-          "\n",
+          `: wrote credentials to ${res.configFile}.\n` +
+          "  Finish in the ChatGPT app:\n\n" +
+          (res.guiSteps ?? codexGuiSteps())
+            .map((step, i) => `    ${cyan(`${i + 1}.`)} ${step}\n`)
+            .join("") +
+          "\n" +
+          `    ${cyan("5.")} Start a ${bold("new thread")}.\n` +
+          dim(
+            "  Or, in a Codex session: /plugins → install cognigy from cognigy-plugin.\n",
+          ),
       );
     }
-    // Same shape as the Desktop block below: on Codex the MCP server carries
-    // tools only, and skills arrive exclusively through the interactive
-    // /plugins install — easy to miss when it's printed as a dim aside.
-    process.stdout.write(
-      "\n" +
-        yellow(RULE) +
-        "\n" +
-        yellow(bold("  ⚠️  ONE MORE STEP — CHATGPT / CODEX SKILLS  ⚠️")) +
-        "\n" +
-        yellow(RULE) +
-        "\n" +
-        bold("  The server above gives you tools only.") +
-        "\n  " +
-        bold(yellow("SKILLS install ONLY via these in-app steps")) +
-        " —\n  do them now, in the Codex tab / CLI:\n\n" +
-        `    ${cyan("1.")} In a Codex session, run ${bold("/plugins")}.\n` +
-        `    ${cyan("2.")} Find ${bold("cognigy")} in the ${bold("cognigy-plugin")} marketplace and install it.\n` +
-        `    ${cyan("3.")} Start a ${bold("new thread")} — Codex loads plugins at session start.\n\n` +
-        dim(
-          "  Needs Codex CLI 0.117.0+. The plugin bundles its own 'platform' server —\n" +
-            "  leave that duplicate disabled; the entry above already serves the tools.\n",
-        ) +
-        yellow(RULE) +
-        "\n",
-    );
     if (process.platform === "win32") {
       process.stdout.write(
         "\n" +
@@ -599,7 +582,7 @@ function runStatus(): void {
   }
   const geminiVersion = installedGeminiExtensionVersion();
   process.stdout.write(
-    `  ChatGPT + Codex:      ${codexHasCognigyEntry() ? green("MCP server wired") : dim("not wired")}\n`,
+    `  ChatGPT + Codex:      ${codexHasCognigyPlugin() ? green("plugin installed") : dim("not installed")}\n`,
   );
   process.stdout.write(
     `  Gemini CLI:           ${geminiVersion ? green(`extension ${geminiVersion}`) : dim("not installed")}\n`,
@@ -638,7 +621,7 @@ function runUpdate(): void {
   );
   process.stdout.write(
     dim(
-      "• ChatGPT + Codex run the engine @latest — nothing to do; plugin skills update via /plugins.\n",
+      "• ChatGPT + Codex: the plugin runs the engine @latest — restart to pick up a new release.\n",
     ),
   );
   // Only touch Gemini when our extension is actually installed — otherwise
@@ -763,20 +746,18 @@ function runUninstallCodex(): void {
   const codex = uninstallCodex();
   if (codex.method === "cli") {
     process.stdout.write(
-      (codex.removedServer
+      (codex.removedPlugin
         ? green("✓ ChatGPT + Codex")
         : dim("• ChatGPT + Codex")) +
-        `: ${codex.removedServer ? "MCP server removed from" : "no MCP server found in"} ${CODEX_CONFIG_PATH}\n` +
-        dim("  installed the plugin too? remove it in Codex via /plugins.\n"),
+        `: ${codex.removedPlugin ? "plugin removed" : "no plugin installed"}` +
+        (codex.removedMarketplace ? ", marketplace deregistered" : "") +
+        ".\n",
     );
   } else {
     process.stdout.write(
       dim("• ChatGPT + Codex") +
-        ": 'codex' CLI not found. If wired, remove by hand:\n" +
-        (codex.commands ?? [])
-          .map((c) => cyan(`    ${c.split("\n").join("\n    ")}`))
-          .join("\n") +
-        "\n",
+        ": 'codex' CLI not found — remove the plugin in the app\n" +
+        dim("  (Plugins in the sidebar → ⋯ on Cognigy → Uninstall).\n"),
     );
   }
 }

@@ -1,24 +1,26 @@
 /**
- * Install the Cognigy MCP server into ChatGPT + Codex. OpenAI merged the
+ * Install the Cognigy plugin into ChatGPT + Codex. OpenAI merged the
  * standalone Codex app into the ChatGPT desktop app (July 2026), and one
  * `~/.codex/config.toml` serves that app, the Codex CLI, and the IDE
- * extension, so a single `codex mcp add` wires all three. We never write the TOML ourselves —
- * the codex CLI owns it; without the CLI we print the exact command and a
- * config snippet for the user to apply.
+ * extension, so a single install reaches all three.
  *
- * Credentials are NOT put in config.toml (it has no keychain): the installer
- * writes ~/.cognigy-plugin/config.json and the engine falls back to it when
- * the env vars are absent (src/config.ts).
+ * We deliberately do NOT write a global `[mcp_servers.cognigy]` entry. The
+ * plugin already declares its own `platform` server (plugin/.codex-plugin/
+ * mcp.json) and Codex starts it once the plugin is installed, so a global
+ * entry would be a second copy of the same engine — 32 tools in the picker for
+ * 16 real ones, against a tool surface kept deliberately small. Claude Code
+ * works the same way: the plugin is the whole install.
  *
- * The engine spec is `@latest` (not the release pin): config.toml is a
- * user-global file never re-synced by our releases — same auto-update
- * philosophy as the Claude Desktop launcher. The alias form is still required
- * (repo-name collision → `cognigy-mcp: command not found`, MCP -32000).
+ * Credentials are the one thing Codex cannot supply. config.toml has no
+ * keychain and Codex has no `userConfig` equivalent (no `${...}` interpolation
+ * anywhere in its manifest loader), so the plugin's server entry carries no
+ * `env` and the engine reads ~/.cognigy-plugin/config.json instead
+ * (src/config.ts).
  *
- * Skills arrive separately via Codex's plugin system: `codex plugin
- * marketplace add Cognigy/cognigy-plugin` (log-and-continue — older Codex
- * versions lack the subcommand), then the user installs "cognigy" in the
- * `/plugins` TUI.
+ * Everything else is `codex plugin`, which is fully non-interactive:
+ *   codex plugin marketplace add Cognigy/cognigy-plugin
+ *   codex plugin add cognigy@cognigy-plugin
+ * Without the CLI we print the equivalent GUI steps.
  */
 import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
@@ -27,9 +29,17 @@ import type { UserConfigFile } from "../userConfigFile.js";
 import { writeUserConfigFile } from "../userConfigFile.js";
 import { detectOnPath, runCliTool } from "./cliRunner.js";
 
-const SERVER_KEY = "cognigy";
-const MARKETPLACE = "Cognigy/cognigy-plugin";
-const ENGINE_SPEC = "cognigy-engine@npm:@cognigy/plugin-engine@latest";
+const PLUGIN_NAME = "cognigy";
+/** Marketplace *source* — what `marketplace add` takes (owner/repo). */
+const MARKETPLACE_SOURCE = "Cognigy/cognigy-plugin";
+/**
+ * Marketplace *name* — the `name` field of .claude-plugin/marketplace.json,
+ * which is what Codex registers it as and what `marketplace remove` takes.
+ * Not interchangeable with the source above.
+ */
+const MARKETPLACE_NAME = "cognigy-plugin";
+/** Plugin selector for `plugin add` / `plugin remove`. */
+const PLUGIN_SELECTOR = `${PLUGIN_NAME}@${MARKETPLACE_NAME}`;
 
 export const CODEX_CONFIG_PATH = join(homedir(), ".codex", "config.toml");
 
@@ -38,140 +48,129 @@ export function detectCodexPath(): string | null {
   return detectOnPath("codex");
 }
 
-/** `codex mcp add cognigy -- npx …` — writes [mcp_servers.cognigy] for us. */
-export function buildCodexMcpAddArgs(): string[] {
-  return [
-    "mcp",
-    "add",
-    SERVER_KEY,
-    "--",
-    "npx",
-    "-y",
-    "-p",
-    ENGINE_SPEC,
-    "cognigy-mcp",
-  ];
-}
-
-/** `codex mcp remove cognigy`. */
-export function buildCodexMcpRemoveArgs(): string[] {
-  return ["mcp", "remove", SERVER_KEY];
-}
-
-/** `codex plugin marketplace add <owner/repo>` — makes skills installable. */
+/** `codex plugin marketplace add Cognigy/cognigy-plugin`. */
 export function buildCodexMarketplaceAddArgs(): string[] {
-  return ["plugin", "marketplace", "add", MARKETPLACE];
+  return ["plugin", "marketplace", "add", MARKETPLACE_SOURCE];
 }
 
-/** The [mcp_servers.cognigy] block a user pastes when the CLI isn't there. */
-export function codexConfigSnippet(): string {
-  return [
-    `[mcp_servers.${SERVER_KEY}]`,
-    `command = "npx"`,
-    `args = ["-y", "-p", "${ENGINE_SPEC}", "cognigy-mcp"]`,
-  ].join("\n");
+/** `codex plugin marketplace remove cognigy-plugin` (by name, not source). */
+export function buildCodexMarketplaceRemoveArgs(): string[] {
+  return ["plugin", "marketplace", "remove", MARKETPLACE_NAME];
 }
 
-/** Whether ~/.codex/config.toml already has our server (string probe only). */
-export function codexHasCognigyEntry(
+/** `codex plugin add cognigy@cognigy-plugin`. */
+export function buildCodexPluginAddArgs(): string[] {
+  return ["plugin", "add", PLUGIN_SELECTOR];
+}
+
+/** `codex plugin remove cognigy@cognigy-plugin`. */
+export function buildCodexPluginRemoveArgs(): string[] {
+  return ["plugin", "remove", PLUGIN_SELECTOR];
+}
+
+/**
+ * Whether the plugin looks installed. Codex records installed plugins in
+ * config.toml as `[plugins."<name>@<marketplace>"]`; a string probe is enough
+ * (we never parse or write that TOML — the codex CLI owns it).
+ */
+export function codexHasCognigyPlugin(
   configPath: string = CODEX_CONFIG_PATH,
 ): boolean {
   if (!existsSync(configPath)) return false;
   try {
-    return /^\[mcp_servers\.cognigy\]/m.test(readFileSync(configPath, "utf8"));
+    return new RegExp(`^\\[plugins\\."${PLUGIN_SELECTOR}"\\]`, "m").test(
+      readFileSync(configPath, "utf8"),
+    );
   } catch {
     return false;
   }
+}
+
+/** The in-app steps, for when the codex CLI isn't available. */
+export function codexGuiSteps(): string[] {
+  return [
+    "Click Plugins in the sidebar of the ChatGPT app.",
+    "Click Add at the top right, then 'Add a Marketplace'.",
+    `Enter ${MARKETPLACE_SOURCE} as the source and click 'Add Marketplace'.`,
+    "Click Install on the Cognigy plugin.",
+  ];
 }
 
 export type CodexMethod = "cli" | "fallback";
 
 export interface CodexResult {
   method: CodexMethod;
-  /** Always written — the engine's only cred source for Codex. */
+  /** Always written — the plugin's server has no env, so this is its only source. */
   configFile: string;
-  /** Fallback only: the command + TOML snippet to apply by hand. */
-  commands?: string[];
-}
-
-/** Manual steps when the codex CLI isn't on PATH. */
-export function codexFallbackCommands(): string[] {
-  return [
-    `codex mcp add ${SERVER_KEY} -- npx -y -p ${ENGINE_SPEC} cognigy-mcp`,
-    `— or add to ${CODEX_CONFIG_PATH}:\n${codexConfigSnippet()}`,
-  ];
+  /** CLI path: whether the plugin itself got installed. */
+  installedPlugin?: boolean;
+  /** Fallback path: the in-app steps to follow instead. */
+  guiSteps?: string[];
 }
 
 /**
- * Install into Codex. Creds file first, always (config.toml never carries
- * secrets). CLI present → `mcp add` (throws on failure — the creds file is
- * already in place, so the error message can point at the manual commands);
- * then `plugin marketplace add` log-and-continue. CLI absent → manual steps.
+ * Install into Codex: creds file first (it is the load-bearing part and must
+ * exist before the server ever boots), then register the marketplace and
+ * install the plugin. Never throws — if the CLI half fails the user can finish
+ * in the app, and the printed steps say so.
  */
 export function installCodex(creds: UserConfigFile): CodexResult {
   const configFile = writeUserConfigFile(creds);
   const codexPath = detectCodexPath();
 
   if (!codexPath) {
-    return {
-      method: "fallback",
-      configFile,
-      commands: codexFallbackCommands(),
-    };
+    return { method: "fallback", configFile, guiSteps: codexGuiSteps() };
   }
 
-  const add = runCliTool("codex", codexPath, buildCodexMcpAddArgs());
-  if (add.status !== 0 || add.error) {
-    const reason = add.error ? add.error.message : `exit ${add.status}`;
-    throw new Error(
-      `'codex mcp add' failed (${reason}). Creds are in ${configFile}; ` +
-        `wire the server by hand:\n  ${codexFallbackCommands().join("\n  ")}`,
-    );
-  }
-
-  // Older Codex builds (< 0.117.0) have no plugin subcommand — log-and-continue;
-  // tools already work via the mcp add above.
+  // Idempotent: re-adding an existing marketplace exits 0.
   const mp = runCliTool("codex", codexPath, buildCodexMarketplaceAddArgs());
   if (mp.status !== 0 || mp.error) {
     process.stderr.write(
-      `[cognigy] 'codex plugin marketplace add ${MARKETPLACE}' exited ${mp.status}; ` +
-        "skills need Codex >= 0.117.0 — tools are wired regardless.\n",
+      `[cognigy] 'codex plugin marketplace add ${MARKETPLACE_SOURCE}' exited ${mp.status}; ` +
+        "add it in the app instead (Plugins → Add → Add a Marketplace).\n",
+    );
+    return { method: "cli", configFile, installedPlugin: false };
+  }
+
+  const add = runCliTool("codex", codexPath, buildCodexPluginAddArgs());
+  const installedPlugin = add.status === 0 && !add.error;
+  if (!installedPlugin) {
+    process.stderr.write(
+      `[cognigy] 'codex plugin add ${PLUGIN_SELECTOR}' exited ${add.status}; ` +
+        "install it from the Plugins directory or /plugins instead.\n",
     );
   }
 
-  return { method: "cli", configFile };
+  return { method: "cli", configFile, installedPlugin };
 }
 
 export interface CodexUninstallResult {
   method: CodexMethod;
-  /** CLI only: whether `mcp remove` actually removed the entry (exit 0). */
-  removedServer?: boolean;
-  /** Fallback only: manual steps. */
-  commands?: string[];
+  /** CLI path: whether the plugin was actually removed. */
+  removedPlugin?: boolean;
+  /** CLI path: whether the marketplace registration was dropped. */
+  removedMarketplace?: boolean;
 }
 
 /**
- * Remove the config.toml server entry via the CLI; else manual instructions.
- * Plugin/skills removal stays a printed `/plugins` step either way — there is
- * no non-interactive plugin uninstall.
+ * Remove the plugin, then the marketplace registration (in that order — a
+ * marketplace with an installed plugin still attached is not worth removing
+ * first). Without the CLI there is nothing to do here: the caller prints the
+ * in-app steps.
  */
 export function uninstallCodex(): CodexUninstallResult {
   const codexPath = detectCodexPath();
-  if (!codexPath) {
-    return {
-      method: "fallback",
-      commands: [
-        `codex mcp remove ${SERVER_KEY}`,
-        `— or delete the [mcp_servers.${SERVER_KEY}] block from ${CODEX_CONFIG_PATH}`,
-      ],
-    };
-  }
-  const rm = runCliTool("codex", codexPath, buildCodexMcpRemoveArgs());
-  const removedServer = rm.status === 0 && !rm.error;
-  if (!removedServer) {
-    process.stderr.write(
-      `[cognigy] 'codex mcp remove ${SERVER_KEY}' did not remove anything (exit ${rm.status}); continuing.\n`,
-    );
-  }
-  return { method: "cli", removedServer };
+  if (!codexPath) return { method: "fallback" };
+
+  const rmPlugin = runCliTool("codex", codexPath, buildCodexPluginRemoveArgs());
+  const removedPlugin = rmPlugin.status === 0 && !rmPlugin.error;
+
+  const rmMarket = runCliTool(
+    "codex",
+    codexPath,
+    buildCodexMarketplaceRemoveArgs(),
+  );
+  const removedMarketplace = rmMarket.status === 0 && !rmMarket.error;
+
+  return { method: "cli", removedPlugin, removedMarketplace };
 }
