@@ -122,14 +122,17 @@ export function installCodex(creds: UserConfigFile): CodexResult {
     return { method: "fallback", configFile, guiSteps: codexGuiSteps() };
   }
 
-  // Idempotent: re-adding an existing marketplace exits 0.
+  // Re-adding the SAME source exits 0, but a marketplace already registered
+  // under this name from a *different* source string — the HTTPS URL the GUI
+  // writes, or a branch ref used for testing — is a hard error. That is not a
+  // failure for us: the marketplace we need is there either way, so fall
+  // through and let `plugin add` be the judge.
   const mp = runCliTool("codex", codexPath, buildCodexMarketplaceAddArgs());
   if (mp.status !== 0 || mp.error) {
     process.stderr.write(
       `[cognigy] 'codex plugin marketplace add ${MARKETPLACE_SOURCE}' exited ${mp.status}; ` +
-        "add it in the app instead (Plugins → Add → Add a Marketplace).\n",
+        `continuing — '${MARKETPLACE_NAME}' may already be registered from another source.\n`,
     );
-    return { method: "cli", configFile, installedPlugin: false };
   }
 
   const add = runCliTool("codex", codexPath, buildCodexPluginAddArgs());

@@ -74,6 +74,17 @@ describe("codex arg building", () => {
     expect(all).not.toContain("mcp");
   });
 
+  it("marketplace add and remove use different argument kinds", () => {
+    // Guards the recovery path: `marketplace add` fails outright when the name
+    // is registered from a different source string (the HTTPS URL the GUI
+    // writes, or a branch ref), so the installer must not treat that as fatal.
+    // Encoding the asymmetry here keeps the two from being "unified" later.
+    const add = buildCodexMarketplaceAddArgs().at(-1);
+    const remove = buildCodexMarketplaceRemoveArgs().at(-1);
+    expect(add).toContain("/");
+    expect(remove).not.toContain("/");
+  });
+
   it("the GUI fallback names the marketplace source", () => {
     expect(codexGuiSteps().join("\n")).toContain("Cognigy/cognigy-plugin");
   });
