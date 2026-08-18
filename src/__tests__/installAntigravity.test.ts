@@ -47,6 +47,9 @@ describe("buildPluginManifest", () => {
     expect(m.name).toBe(PLUGIN_NAME);
     expect(m.version).toBe("1.2.3");
     expect(typeof m.description).toBe("string");
+    // Optional per the schema docs, but it is what gives editors validation
+    // when someone opens the staged manifest.
+    expect(m.$schema).toBe("https://antigravity.google/schemas/v1/plugin.json");
   });
 
   it("defaults to this engine's real version", () => {

@@ -5,7 +5,7 @@ if [ -z "$files" ]; then
 fi
 
 # Block committing a dev-edited plugin manifest (must stay in published npx form).
-if echo "$files" | grep -q '^plugin/.claude-plugin/plugin.json$'; then
+if echo "$files" | grep -qE '^plugin/(\.claude-plugin|\.codex-plugin)/'; then
   node scripts/check-plugin-manifest.mjs || exit 1
 fi
 

@@ -1,0 +1,35 @@
+{
+  "name": "cognigy",
+  "version": "1.8.3",
+  "description": "NiCE Cognigy Plugin — create, test, and manage AI Agents on the NiCE Cognigy platform",
+  "author": {
+    "name": "Cognigy",
+    "url": "https://www.cognigy.com"
+  },
+  "homepage": "https://www.cognigy.com",
+  "repository": "https://github.com/Cognigy/cognigy-plugin",
+  "license": "MIT",
+  "keywords": ["cognigy", "ai-agents", "conversational-ai", "mcp", "llm"],
+  "skills": "./skills/",
+  "mcpServers": "./.codex-plugin/mcp.json",
+  "interface": {
+    "displayName": "Cognigy",
+    "shortDescription": "Build and test Cognigy AI Agents",
+    "longDescription": "Create, configure, test, and deploy AI Agents on the NiCE Cognigy platform over the Cognigy REST API. Covers the full loop — provisioning an agent with its flow, job node, and endpoint; attaching knowledge stores and tools; talking to the agent to evaluate responses; and deploying to Webchat or Voice Gateway.",
+    "developerName": "Cognigy",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "websiteURL": "https://www.cognigy.com",
+    "privacyPolicyURL": "https://www.cognigy.com/privacy-policy",
+    "logo": "./assets/logo.png",
+    "composerIcon": "./assets/icon.png",
+    "defaultPrompt": [
+      "List my Cognigy projects and the AI Agents in each one",
+      "Create a customer support AI Agent in my Cognigy project and test it",
+      "Add a knowledge store to my agent so it can answer from our docs",
+      "Audit my voice agent against the Go-Live Checklist"
+    ],
+    "brandColor": "#6001FF",
+    "screenshots": []
+  }
+}

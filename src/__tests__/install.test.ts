@@ -33,6 +33,7 @@ import {
   writeDesktopLauncher,
 } from "../install/desktopLauncher.js";
 import {
+  detectClients,
   isMainModule,
   parseClientSelection,
   parseFlags,
@@ -347,8 +348,29 @@ describe("parseFlags", () => {
     expect(f.apiKey).toBe("k");
   });
 
+  it("accepts the codex and gemini clients", () => {
+    expect(
+      parseFlags(["--client", "codex", "--client=gemini", "--client", "codex"])
+        .clients,
+    ).toEqual(["codex", "gemini"]);
+  });
+
   it("ignores unknown --client values", () => {
-    expect(parseFlags(["--client", "codex"]).clients).toEqual([]);
+    expect(parseFlags(["--client", "cursor"]).clients).toEqual([]);
+  });
+
+  it("accepts the other-hosts target", () => {
+    expect(parseFlags(["--client=other-hosts"]).clients).toEqual([
+      "other-hosts",
+    ]);
+  });
+});
+
+describe("detectClients", () => {
+  // Writing a plaintext API key to disk is opt-in: 'other-hosts' must never be
+  // auto-detected, because detected clients become the pre-checked defaults.
+  it("never pre-selects other-hosts", () => {
+    expect(detectClients()["other-hosts"]).toBe(false);
   });
 
   it("accepts antigravity alongside the Claude clients", () => {
@@ -374,6 +396,15 @@ describe("parseClientSelection", () => {
 
   it("dedupes and drops out-of-range/garbage", () => {
     expect(parseClientSelection("1 1 9 x", [...menu])).toEqual(["claude-code"]);
+  });
+
+  it("handles the full four-client menu", () => {
+    const full = ["claude-code", "claude-desktop", "codex", "gemini"] as const;
+    expect(parseClientSelection("3,4", [...full])).toEqual(["codex", "gemini"]);
+    expect(parseClientSelection("4 1", [...full])).toEqual([
+      "gemini",
+      "claude-code",
+    ]);
   });
 });
 

@@ -59,20 +59,32 @@ function normalizeApiBaseUrl(raw: string): string {
 }
 
 /**
+ * Derive a sibling base URL from the API base URL by swapping the "api-"
+ * segment of the hostname for another one (e.g. "endpoint-", "static-").
+ * Handles both bare hosts (api-dev.cognigy.ai) and prefixed tenant hosts
+ * (cognigy-api-na1.nicecxone.com -> cognigy-endpoint-na1.nicecxone.com).
+ */
+function deriveHostBaseUrl(apiBaseUrl: string, replacement: string): string {
+  try {
+    const url = new URL(apiBaseUrl);
+    url.hostname = url.hostname.replace(/(^|-)api-/, `$1${replacement}-`);
+    return `${url.protocol}//${url.hostname}`;
+  } catch {
+    // Not a parseable URL: fall back to a host-scoped replace on the
+    // scheme://host portion only, leaving any path/query untouched.
+    const schemeMatch = apiBaseUrl.match(/^([a-z]+:\/\/)([^/?#]*)(.*)$/i);
+    if (!schemeMatch) return apiBaseUrl;
+    const [, scheme, host, rest] = schemeMatch;
+    return `${scheme}${host.replace(/(^|-)api-/, `$1${replacement}-`)}${rest}`;
+  }
+}
+
+/**
  * Derive the endpoint base URL from the API base URL.
  * Pattern: https://api-{env}.cognigy.ai -> https://endpoint-{env}.cognigy.ai
  */
 function deriveEndpointBaseUrl(apiBaseUrl: string): string {
-  try {
-    const url = new URL(apiBaseUrl);
-    const match = url.hostname.match(/^api-(.+)$/);
-    if (match) {
-      return `${url.protocol}//endpoint-${match[1]}`;
-    }
-  } catch {
-    // fall through
-  }
-  return apiBaseUrl.replace(/\/api-/, "/endpoint-");
+  return deriveHostBaseUrl(apiBaseUrl, "endpoint");
 }
 
 /**
@@ -80,16 +92,7 @@ function deriveEndpointBaseUrl(apiBaseUrl: string): string {
  * Pattern: https://api-{env}.cognigy.ai -> https://static-{env}.cognigy.ai
  */
 function deriveStaticFilesBaseUrl(apiBaseUrl: string): string {
-  try {
-    const url = new URL(apiBaseUrl);
-    const match = url.hostname.match(/^api-(.+)$/);
-    if (match) {
-      return `${url.protocol}//static-${match[1]}`;
-    }
-  } catch {
-    // fall through
-  }
-  return apiBaseUrl.replace(/\/api-/, "/static-");
+  return deriveHostBaseUrl(apiBaseUrl, "static");
 }
 
 /**
@@ -97,16 +100,45 @@ function deriveStaticFilesBaseUrl(apiBaseUrl: string): string {
  * Pattern: https://api-{env}.cognigy.ai -> https://webchat-{env}.cognigy.ai
  */
 function deriveWebchatBaseUrl(apiBaseUrl: string): string {
-  try {
-    const url = new URL(apiBaseUrl);
-    const match = url.hostname.match(/^api-(.+)$/);
-    if (match) {
-      return `${url.protocol}//webchat-${match[1]}`;
-    }
-  } catch {
-    // fall through
-  }
-  return apiBaseUrl.replace(/\/api-/, "/webchat-");
+  return deriveHostBaseUrl(apiBaseUrl, "webchat");
+}
+
+/**
+ * True for a value that is nothing but an unexpanded `${...}` placeholder.
+ *
+ * `userConfig` is a Claude Code extension to the plugin manifest: Claude Code
+ * prompts for the values and substitutes them into `mcpServers.*.env`. Hosts
+ * that only implement the portable subset (VS Code / Copilot, Cursor, …) copy
+ * the manifest text through verbatim, so the engine receives the literal
+ * "${user_config.cognigy_api_key}". Those strings are non-empty, which means
+ * that without this check they (a) reach axios as a real base URL and fail with
+ * ERR_INVALID_URL, and (b) shadow the on-disk fallback written by the setup CLI.
+ *
+ * Deliberately anchored to the whole (trimmed) value: a real API key or URL is
+ * never entirely wrapped in `${…}`, so this cannot discard a genuine credential.
+ */
+function isUnexpandedPlaceholder(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.startsWith("${") && trimmed.endsWith("}");
+}
+
+/** An env value, or undefined when absent or an unexpanded placeholder. */
+function usableEnv(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return isUnexpandedPlaceholder(value) ? undefined : value;
+}
+
+/**
+ * Extra sentence for the "not set" errors when the host handed us a
+ * placeholder. Without it the message reads as "not set" to someone looking
+ * straight at a manifest that plainly does set it.
+ */
+function placeholderHint(raw: string | undefined): string {
+  if (!raw || !isUnexpandedPlaceholder(raw)) return "";
+  return (
+    ` This host did not substitute the plugin manifest placeholder ${raw.trim()} ` +
+    `(it does not support userConfig), so the value never arrived.`
+  );
 }
 
 const VALID_LOG_LEVELS = new Set<string>(["debug", "info", "warn", "error"]);
@@ -131,28 +163,32 @@ function parseIntWithDefault(
  */
 export function loadConfig(): Config {
   // Environment variables win (terminal install stores them via userConfig /
-  // keychain). Only when one is missing do we consult the on-disk fallback
-  // written by the `cognigy-setup` CLI — this is the path GUI users take
-  // when their installer never prompted for credentials.
-  const fileConfig =
-    process.env.COGNIGY_API_BASE_URL && process.env.COGNIGY_API_KEY
-      ? {}
-      : readUserConfigFile();
+  // keychain). Only when one is missing — or arrived as an unexpanded
+  // `${user_config.*}` placeholder, which is the same thing — do we consult the
+  // on-disk fallback written by the `cognigy-setup` CLI. That is the path hosts
+  // take when their installer never prompted for credentials.
+  const envApiBaseUrl = usableEnv(process.env.COGNIGY_API_BASE_URL);
+  const envApiKey = usableEnv(process.env.COGNIGY_API_KEY);
 
-  const apiBaseUrl =
-    process.env.COGNIGY_API_BASE_URL || fileConfig.COGNIGY_API_BASE_URL;
-  const apiKey = process.env.COGNIGY_API_KEY || fileConfig.COGNIGY_API_KEY;
+  const fileConfig = envApiBaseUrl && envApiKey ? {} : readUserConfigFile();
+
+  const apiBaseUrl = envApiBaseUrl || fileConfig.COGNIGY_API_BASE_URL;
+  const apiKey = envApiKey || fileConfig.COGNIGY_API_KEY;
 
   if (!apiBaseUrl) {
     throw new Error(
-      `COGNIGY_API_BASE_URL is not set. Provide it via the plugin install prompt, ` +
+      `COGNIGY_API_BASE_URL is not set.` +
+        placeholderHint(process.env.COGNIGY_API_BASE_URL) +
+        ` Provide it via the plugin install prompt, ` +
         `or run "npx -y -p @cognigy/plugin-engine cognigy-setup" to write ${USER_CONFIG_FILE}.`,
     );
   }
 
   if (!apiKey) {
     throw new Error(
-      `COGNIGY_API_KEY is not set. Provide it via the plugin install prompt, ` +
+      `COGNIGY_API_KEY is not set.` +
+        placeholderHint(process.env.COGNIGY_API_KEY) +
+        ` Provide it via the plugin install prompt, ` +
         `or run "npx -y -p @cognigy/plugin-engine cognigy-setup" to write ${USER_CONFIG_FILE}.`,
     );
   }

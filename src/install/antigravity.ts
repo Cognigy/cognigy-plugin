@@ -156,6 +156,9 @@ export function buildPluginManifest(
   version: string = engineVersion(),
 ): Record<string, unknown> {
   return {
+    // Editors (VS Code, WebStorm) use this for autocomplete + validation when
+    // someone opens the staged manifest; Antigravity itself ignores it.
+    $schema: "https://antigravity.google/schemas/v1/plugin.json",
     name: PLUGIN_NAME,
     version,
     description:

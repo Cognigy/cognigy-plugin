@@ -1,6 +1,6 @@
 # NiCE Cognigy Plugin
 
-> Distributed exclusively as a **plugin** — supported by **Claude Code**, **Antigravity** (IDE + `agy` CLI) and **Codex** today, with more clients to come. The plugin installs its server engine (pinned to the plugin version) and ships skills + agents.
+> Distributed exclusively through each client's native plugin mechanism — a **plugin** on **Claude Code**, **Claude Desktop**, **ChatGPT + Codex**, and **Antigravity**, an **extension** on **Google Gemini CLI** — with more clients to come. Each package installs the server engine (pinned to the plugin version) and ships skills + agents.
 
 A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy.com) REST API. Create, test, and improve LLM-based AI Agents through a self-improvement loop — without leaving your client.
 
@@ -43,7 +43,7 @@ Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, flow 
 
 ## Installation
 
-### Step 1 — Run the installer
+One installer covers every client. Run it, pick your client(s), enter your Cognigy API base URL (Enter for the trial default) and API key (masked as you type), then restart the client.
 
 **macOS / Linux** — one line (checks for Node.js, then runs the installer):
 
@@ -57,113 +57,55 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Cognigy/cognigy-plugin/main/
 irm https://raw.githubusercontent.com/Cognigy/cognigy-plugin/main/install.ps1 | iex
 ```
 
-> The bootstrap only checks that Node.js 20+ is present (it tells you how to install it if not — it never installs it for you), then hands off to the real installer.
+> The bootstrap only checks that Node.js 20+ is present (it tells you how to install it if not — it never installs it for you), then runs exactly the command below. Use whichever you prefer; they do the same thing.
 
-Already have [Node.js 20+](https://nodejs.org)? You can skip the bootstrap and run the installer directly:
+Already have [Node.js 20+](https://nodejs.org)? Skip the bootstrap:
 
 ```
 npx -y -p @cognigy/plugin-engine@latest cognigy-setup
 ```
 
-Pick your client(s), enter your Cognigy API base URL (press Enter for the trial default) and API key (masked as you type), then restart the client.
+### Per-client guides
 
-✅ **Claude Code users — you're done.** You get the tools, skills, and agents. (The standalone CLI and the Claude Desktop **"Code"** tab share the same install.)
+What each client gets, and what (if anything) you finish by hand — full instructions, Windows notes, and troubleshooting in each guide:
 
-> 🔄 **Turn on auto-updates** so future fixes reach you automatically — Claude Code leaves this **off** for third-party marketplaces by default. One-time step: see [Staying up to date](#staying-up-to-date).
-
-✅ **Antigravity users — you're done too.** You get the tools, skills, and agents in **both** the IDE and the `agy` CLI. Restart Antigravity and they're live.
-
-<details>
-<summary>What the installer writes for Antigravity (for the technically curious)</summary>
-
-Antigravity has a first-class plugin format, so the installer builds a real plugin and installs it into `~/.gemini/config/plugins/cognigy-plugin/` — a tree shared by the IDE, the `agy` CLI and the SDK, so one install serves all three.
-
-It does this **without needing Antigravity or the `agy` CLI at all** — no binary to have on PATH, nothing to run yourself, and it works before Antigravity's first launch. `agy plugin install` only copies the directory and records the plugin, so the installer does both directly: the copy, plus both registries Antigravity reads — the `import_manifest.json` entry (what `agy plugin list` reports) and the `plugins.<name>.enabled` flag in `config.json` (how the bundled plugins are registered). The result is byte-for-byte identical to an `agy`-driven install, and `agy plugin list` reports it the same way.
-
-```
-~/.gemini/config/plugins/cognigy-plugin/
-├── plugin.json            name + version + description
-├── mcp_config.json        cognigy (tools) + cognigy-docs (official docs)
-├── skills/<id>/SKILL.md   the 13 workflow skills
-└── agents/<id>.md         the 2 subagents
-```
-
-Antigravity moved plugin installs into `~/.gemini/config/` in CLI v1.0.2; older builds staged them under `~/.gemini/antigravity-cli/plugins/`. We write to the current location and look in both when reporting status or uninstalling, so a plugin an older `agy` put elsewhere is still found.
-
-`cognigy-setup uninstall` reverses all of it — plugin directory and both registry entries — again without `agy`.
-
-The plugin's `mcp_config.json` is read **in place** — your global `~/.gemini/config/mcp_config.json` is never touched, so installing or removing the plugin can't disturb your own MCP servers. Skills keep their plain names because they are scoped to the plugin, exactly as Antigravity's bundled plugins do it.
-
-When `agy` isn't on your PATH the installer copies the plugin into place itself and marks it enabled in `~/.gemini/config/config.json`.
-
-Your API key is **not** written into any `mcp_config.json` (a file you hand-edit and paste into bug reports). It goes to `~/.cognigy-plugin/config.json` with `0600` permissions, which the engine reads whenever the environment variables are absent. If an earlier setup left a `cognigy` server in your global `mcp_config.json`, the installer removes it so only one engine boots.
-
-</details>
-
-> **Only have Claude Desktop, no `claude` CLI?** The installer wires the chat connector (tools) and prints how to add the plugin in the Desktop **Code** tab's plugin browser (`+` → Plugins → Add plugin → `Cognigy/cognigy-plugin`) for skills + agents.
-
-> **On Windows, after installing for Claude Code:** a normal restart may not be enough to load the plugin. **Fully quit** Claude Code — end every **Claude** process in **Task Manager** (a normal close can leave it running in the background), then reopen it. If the tools, skills, and agents still don't appear, **restart your machine**.
-
-> **On Windows, after installing for Claude Desktop:** to make the connector appear:
->
-> 1. **Fully restart** Claude Desktop — closing the window leaves it running in the system tray; quit it from there (or via Task Manager) so it actually relaunches.
-> 2. Check that the **Cognigy** connector now shows up under Settings → Connectors.
-> 3. If it does, **disable it and re-enable it once** — this forces a tool refresh so the Cognigy tools load.
-
-### Step 2 — Claude Desktop chat only: finish in the app
-
-Step 1 already wired the working connector, so **the tools work now**. To also get the **skills and agents**, install the plugin from inside Claude Desktop:
-
-1. Click **Customize** in the left sidebar.
-2. Next to **Personal plugins**, click **+**, hover **Add**, and click **Add marketplace**.
-3. In the URL field enter `Cognigy/cognigy-plugin`, select the found result, and click **Sync**.
-4. The `cognigy-plugin` marketplace is now added.
-5. Install the **Cognigy** plugin by clicking **+**.
-6. On the warning about a local MCP, click **Continue**.
-
-Leave the plugin's own `platform` connector **unconnected** — the `Cognigy` connector from Step 1 already serves the tools.
+| Client                                                                    | Tools | Skills | Agents | Extra step after the installer                 |
+| ------------------------------------------------------------------------- | ----- | ------ | ------ | ---------------------------------------------- |
+| **[Claude Code](docs/install/claude-code.md)** (CLI + Desktop "Code" tab) | ✅    | ✅     | ✅     | None                                           |
+| **[Claude Desktop chat](docs/install/claude-desktop.md)**                 | ✅    | ✅     | ✅     | Install the plugin in-app                      |
+| **[ChatGPT + Codex](docs/install/chatgpt-codex.md)** (CLI + IDE)          | ✅    | ✅     | —      | None with the `codex` CLI; else install in-app |
+| **[Google Gemini CLI](docs/install/gemini-cli.md)** (Code Assist only)    | ✅    | ✅     | ✅     | None                                           |
+| **[Antigravity](docs/install/antigravity.md)** (IDE + `agy` CLI)          | ✅    | ✅     | ✅     | None                                           |
+| **[Other hosts](docs/install/other-hosts.md)** (VS Code, Cursor, …)       | ✅    | ✅     | ✅     | Install the plugin in the host itself          |
 
 <details>
-<summary>Why the extra step on Claude Desktop? (for the technically curious)</summary>
+<summary>Scripting / CI</summary>
 
-The plugin ships its own connector (`platform`), but on **Claude Desktop chat** it can't be given credentials — Desktop stores plugin config in your claude.ai account rather than a local file, and offers no field to enter the API key, so that connector stays a no-op. To make the tools work regardless, the Step 1 installer wires a **standalone `Cognigy` connector** directly into `claude_desktop_config.json` (credentials stored there, `chmod 600`) behind an auto-updating, offline-safe launcher. The plugin install in Step 2 then adds only the parts Desktop _can_ deliver — the skills and agents. Claude Code has none of these limitations, which is why it's a single step.
-
-</details>
-
-> 🔄 **Claude Desktop users:** the connector keeps its engine current on every restart, but see [Staying up to date](#staying-up-to-date) for how updates work and how to check versions.
-
-<details>
-<summary>Scripting / CI, and manual install</summary>
-
-**Scripting / CI** — skip the prompts with flags:
+Skip the prompts with flags:
 
 ```
 npx -y -p @cognigy/plugin-engine@latest cognigy-setup \
-  --client claude-code --client claude-desktop --client antigravity \
+  --client claude-code --client claude-desktop --client codex \
+  --client gemini --client antigravity --client other-hosts \
   --api-base-url https://api-trial.cognigy.ai --api-key <key>
 ```
 
-**Manual install (Claude Code)** — instead of the installer:
-
-```
-/plugin marketplace add Cognigy/cognigy-plugin
-/plugin install cognigy@cognigy-plugin
-```
-
-then `npx -y -p @cognigy/plugin-engine@latest cognigy-setup --client claude-code` to wire credentials.
+`--client` is repeatable; valid values are `claude-code`, `claude-desktop`, `codex`, `gemini`, `antigravity`, and `other-hosts`. Omit it in interactive mode to pick from the menu.
 
 </details>
 
 ## Staying up to date
 
-Claude Desktop and Antigravity auto-update the engine on every launch — though on Antigravity the **skills and agents** ship as plugin files, so run `cognigy-setup update` to re-stage those. Claude Code updates only when marketplace auto-update is enabled (third-party marketplaces default **off**): turn it on under `/plugin → Marketplaces → cognigy-plugin`, or run `/plugin update cognigy@cognigy-plugin`. The first Claude Code session downloads the engine — if tools don't appear, run `/mcp` and reconnect (or restart); later sessions are instant.
+Updates are automatic on Claude Desktop (engine refreshes each launch), ChatGPT + Codex (the plugin runs the engine at `@latest`), Gemini CLI (installed with auto-update on), and Antigravity (the launcher pulls the latest engine each launch); on other hosts the host owns the plugin version. **Claude Code is the exception** — it leaves auto-update off for third-party marketplaces, so turn it on once under `/plugin → Marketplaces → cognigy-plugin`.
 
-The installer also doubles as a manager (run the same `cognigy-setup` with a subcommand):
+Two caveats: on **Antigravity** the skills and agents are plugin _files_, so a newer engine's copies only land when you run `cognigy-setup update`. On **ChatGPT + Codex** skills update with the plugin, not the engine.
+
+The installer doubles as a manager:
 
 ```
-npx -y -p @cognigy/plugin-engine@latest cognigy-setup status      # what's installed + latest available
-npx -y -p @cognigy/plugin-engine@latest cognigy-setup update      # pull the latest (Claude Code)
-npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall   # remove plugin + connector (--purge also clears ~/.cognigy-plugin)
+npx -y -p @cognigy/plugin-engine@latest cognigy-setup status      # what's installed, per client, + latest available
+npx -y -p @cognigy/plugin-engine@latest cognigy-setup update      # pull the latest where it isn't automatic
+npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall   # remove from every client (--client narrows it; --purge also clears ~/.cognigy-plugin)
 ```
 
 Beyond the MCP tools, the plugin ships **skills** and **agents** that surface the workflows automatically:
@@ -185,7 +127,9 @@ Create a complete AI Agent in one tool call, then iterate and improve through co
 
 ## Configuration
 
-The [installer](#installation) collects your **Cognigy API base URL** and **API key** and wires them per client: on Claude Code into the system **keychain**, on Claude Desktop into `claude_desktop_config.json` (`chmod 600`). The engine receives them as environment variables. If neither is set for a given launch, the engine falls back to `~/.cognigy-plugin/config.json` (`chmod 600`), which the installer also writes — so credentials resolve from the environment first, then that file. The optional variables below can be set in the MCP server `env` if you need to override defaults.
+The [installer](#installation) collects your **Cognigy API base URL** and **API key** and wires them per client: on Claude Code into the system **keychain**, on Claude Desktop into `claude_desktop_config.json` (`chmod 600`). The engine receives them as environment variables. If either is missing for a given launch, the engine falls back to `~/.cognigy-plugin/config.json` (`chmod 600`), which the installer also writes — so credentials resolve from the environment first, then that file. ChatGPT + Codex, Gemini CLI, and other hosts rely on that file exclusively: their client configs carry no secrets (and Gemini never passes your shell environment to extension MCP servers anyway).
+
+A value that arrives as an unexpanded `${...}` placeholder counts as missing. Hosts other than Claude Code don't implement `userConfig` and pass the manifest's `${user_config.cognigy_api_key}` through literally; treating that as a real credential would both fail the request and shadow the file fallback. The optional variables below can be set in the MCP server `env` if you need to override defaults.
 
 | Variable                  | Required | Default | Description                      |
 | ------------------------- | -------- | ------- | -------------------------------- |
@@ -266,16 +210,7 @@ The model roles are different:
 - Do not describe an untried model as "likely" unsupported or rejected.
 - Treat model names in examples as examples only, not as the source of truth.
 
-### 4. Get analytics on recent conversations
-
-```
-Show me the last 20 conversations for project <projectId> and summarize
-what topics users asked about most.
-```
-
-Uses `list_resources` to fetch conversations, then your AI assistant summarizes the content.
-
-### 5. List all projects and agents
+### 4. List all projects and agents
 
 ```
 List all my Cognigy projects and show which AI Agents exist in each one.
@@ -283,7 +218,7 @@ List all my Cognigy projects and show which AI Agents exist in each one.
 
 Uses `list_resources` with `resourceType: 'project'` and `resourceType: 'agent'`.
 
-### 6. Import a package into a project
+### 5. Import a package into a project
 
 ```
 Upload the package at /absolute/path/to/support-bot.zip into project <projectId>,
@@ -292,7 +227,7 @@ show me the import preview, then import it using the default selections.
 
 Uses `manage_packages` with `operation: 'upload_and_inspect'`, then `operation: 'import'`.
 
-### 7. Export a package from project resources
+### 6. Export a package from project resources
 
 ```
 Create a package named "support-bot" from these resource IDs in project <projectId>,
@@ -301,7 +236,7 @@ include dependencies, and save the zip to /absolute/path/to/exports/.
 
 Uses `manage_packages` with `operation: 'list_exportable'` to discover candidates, then `operation: 'export'`, then `operation: 'download'` when needed.
 
-### 8. Configure voice preview and create a browser voice endpoint
+### 7. Configure voice preview and create a browser voice endpoint
 
 ```
 Set the voice preview provider for project <projectId> to Microsoft, then create
@@ -311,7 +246,7 @@ WebRTC demo URL I can open in the browser.
 
 This uses `manage_settings` with `operation: 'set_voice_preview'` to configure speech, then `manage_voice_gateway` to provision a `voiceGateway2` endpoint with a `webrtcDemoUrl`.
 
-### 9. Configure Knowledge AI settings for search
+### 8. Configure Knowledge AI settings for search
 
 ```
 Configure Knowledge AI settings for project <projectId> by setting the Knowledge Search
@@ -347,6 +282,7 @@ Full privacy policy: [https://www.cognigy.com/privacy-policy](https://www.cognig
 
 ## Documentation
 
+- [docs/install/](https://github.com/Cognigy/cognigy-plugin/tree/main/docs/install) — per-client install guides ([Claude Code](docs/install/claude-code.md), [Claude Desktop](docs/install/claude-desktop.md), [ChatGPT + Codex](docs/install/chatgpt-codex.md), [Gemini CLI](docs/install/gemini-cli.md), [Antigravity](docs/install/antigravity.md), [other hosts](docs/install/other-hosts.md))
 - [docs/ARCHITECTURE.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/ARCHITECTURE.md) — tool design, self-improvement loop, ID formats
 - [docs/USAGE.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/USAGE.md) — detailed usage reference
 - [docs/TESTING.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/TESTING.md) — how to test the plugin and a local engine build
