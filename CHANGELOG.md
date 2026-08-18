@@ -1,3 +1,9 @@
+## [1.9.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.8.3...v1.9.0) (2026-08-18)
+
+### Features
+
+* full plugin-platform support for ChatGPT + Codex and Google Gemini CLI ([#18](https://github.com/Cognigy/cognigy-plugin/issues/18)) ([922efdc](https://github.com/Cognigy/cognigy-plugin/commit/922efdcffcbac3e612d27452683bc876eeb151a0)), closes [#4A0D8F](https://github.com/Cognigy/cognigy-plugin/issues/4A0D8F) [#6001FF](https://github.com/Cognigy/cognigy-plugin/issues/6001FF) [#26](https://github.com/Cognigy/cognigy-plugin/issues/26) [#26](https://github.com/Cognigy/cognigy-plugin/issues/26) [#26](https://github.com/Cognigy/cognigy-plugin/issues/26)
+
 ## [1.8.3](https://github.com/Cognigy/cognigy-plugin/compare/v1.8.2...v1.8.3) (2026-08-18)
 
 ### Bug Fixes
