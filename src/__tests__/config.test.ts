@@ -230,4 +230,57 @@ describe("loadConfig", () => {
       expect(() => loadConfig()).toThrow(/setup/);
     });
   });
+
+  // Hosts that don't implement the `userConfig` manifest extension (VS Code,
+  // Cursor, …) pass "${user_config.cognigy_api_key}" through verbatim. Those
+  // strings are non-empty, so without this handling they both masquerade as
+  // real credentials and shadow the on-disk fallback.
+  describe("unexpanded userConfig placeholders", () => {
+    const BASE_PLACEHOLDER = "${user_config.cognigy_api_base_url}";
+    const KEY_PLACEHOLDER = "${user_config.cognigy_api_key}";
+
+    it("treats placeholder env values as unset and reads the file instead", () => {
+      process.env.COGNIGY_API_BASE_URL = BASE_PLACEHOLDER;
+      process.env.COGNIGY_API_KEY = KEY_PLACEHOLDER;
+      readUserConfigFile.mockReturnValue({
+        COGNIGY_API_BASE_URL: "https://api-trial.cognigy.ai",
+        COGNIGY_API_KEY: "file-key",
+      });
+      const config = loadConfig();
+      expect(config.apiBaseUrl).toBe("https://api-trial.cognigy.ai");
+      expect(config.apiKey).toBe("file-key");
+    });
+
+    it("does not use a placeholder as the API base URL", () => {
+      process.env.COGNIGY_API_BASE_URL = BASE_PLACEHOLDER;
+      process.env.COGNIGY_API_KEY = "real-key";
+      readUserConfigFile.mockReturnValue({
+        COGNIGY_API_BASE_URL: "https://api-trial.cognigy.ai",
+      });
+      // Previously the placeholder survived normalisation and reached axios as
+      // a baseURL, producing ERR_INVALID_URL on the first request.
+      expect(loadConfig().apiBaseUrl).toBe("https://api-trial.cognigy.ai");
+    });
+
+    it("explains the placeholder in the error when no fallback exists", () => {
+      process.env.COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai";
+      process.env.COGNIGY_API_KEY = KEY_PLACEHOLDER;
+      expect(() => loadConfig()).toThrow(/did not substitute/);
+    });
+
+    it("tolerates surrounding whitespace around a placeholder", () => {
+      process.env.COGNIGY_API_BASE_URL = `  ${BASE_PLACEHOLDER}  `;
+      process.env.COGNIGY_API_KEY = "real-key";
+      readUserConfigFile.mockReturnValue({
+        COGNIGY_API_BASE_URL: "https://api-trial.cognigy.ai",
+      });
+      expect(loadConfig().apiBaseUrl).toBe("https://api-trial.cognigy.ai");
+    });
+
+    it("keeps real values that merely contain a dollar sign", () => {
+      process.env.COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai";
+      process.env.COGNIGY_API_KEY = "ab$c{def}";
+      expect(loadConfig().apiKey).toBe("ab$c{def}");
+    });
+  });
 });

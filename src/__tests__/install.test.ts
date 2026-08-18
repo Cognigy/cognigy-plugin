@@ -33,6 +33,7 @@ import {
   writeDesktopLauncher,
 } from "../install/desktopLauncher.js";
 import {
+  detectClients,
   isMainModule,
   parseClientSelection,
   parseFlags,
@@ -349,6 +350,20 @@ describe("parseFlags", () => {
 
   it("ignores unknown --client values", () => {
     expect(parseFlags(["--client", "codex"]).clients).toEqual([]);
+  });
+
+  it("accepts the other-hosts target", () => {
+    expect(parseFlags(["--client=other-hosts"]).clients).toEqual([
+      "other-hosts",
+    ]);
+  });
+});
+
+describe("detectClients", () => {
+  // Writing a plaintext API key to disk is opt-in: 'other-hosts' must never be
+  // auto-detected, because detected clients become the pre-checked defaults.
+  it("never pre-selects other-hosts", () => {
+    expect(detectClients()["other-hosts"]).toBe(false);
   });
 });
 

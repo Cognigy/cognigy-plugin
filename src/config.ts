@@ -103,6 +103,44 @@ function deriveWebchatBaseUrl(apiBaseUrl: string): string {
   return deriveHostBaseUrl(apiBaseUrl, "webchat");
 }
 
+/**
+ * True for a value that is nothing but an unexpanded `${...}` placeholder.
+ *
+ * `userConfig` is a Claude Code extension to the plugin manifest: Claude Code
+ * prompts for the values and substitutes them into `mcpServers.*.env`. Hosts
+ * that only implement the portable subset (VS Code / Copilot, Cursor, …) copy
+ * the manifest text through verbatim, so the engine receives the literal
+ * "${user_config.cognigy_api_key}". Those strings are non-empty, which means
+ * that without this check they (a) reach axios as a real base URL and fail with
+ * ERR_INVALID_URL, and (b) shadow the on-disk fallback written by the setup CLI.
+ *
+ * Deliberately anchored to the whole (trimmed) value: a real API key or URL is
+ * never entirely wrapped in `${…}`, so this cannot discard a genuine credential.
+ */
+function isUnexpandedPlaceholder(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.startsWith("${") && trimmed.endsWith("}");
+}
+
+/** An env value, or undefined when absent or an unexpanded placeholder. */
+function usableEnv(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return isUnexpandedPlaceholder(value) ? undefined : value;
+}
+
+/**
+ * Extra sentence for the "not set" errors when the host handed us a
+ * placeholder. Without it the message reads as "not set" to someone looking
+ * straight at a manifest that plainly does set it.
+ */
+function placeholderHint(raw: string | undefined): string {
+  if (!raw || !isUnexpandedPlaceholder(raw)) return "";
+  return (
+    ` This host did not substitute the plugin manifest placeholder ${raw.trim()} ` +
+    `(it does not support userConfig), so the value never arrived.`
+  );
+}
+
 const VALID_LOG_LEVELS = new Set<string>(["debug", "info", "warn", "error"]);
 
 function parseIntWithDefault(
@@ -125,28 +163,32 @@ function parseIntWithDefault(
  */
 export function loadConfig(): Config {
   // Environment variables win (terminal install stores them via userConfig /
-  // keychain). Only when one is missing do we consult the on-disk fallback
-  // written by the `cognigy-setup` CLI — this is the path GUI users take
-  // when their installer never prompted for credentials.
-  const fileConfig =
-    process.env.COGNIGY_API_BASE_URL && process.env.COGNIGY_API_KEY
-      ? {}
-      : readUserConfigFile();
+  // keychain). Only when one is missing — or arrived as an unexpanded
+  // `${user_config.*}` placeholder, which is the same thing — do we consult the
+  // on-disk fallback written by the `cognigy-setup` CLI. That is the path hosts
+  // take when their installer never prompted for credentials.
+  const envApiBaseUrl = usableEnv(process.env.COGNIGY_API_BASE_URL);
+  const envApiKey = usableEnv(process.env.COGNIGY_API_KEY);
 
-  const apiBaseUrl =
-    process.env.COGNIGY_API_BASE_URL || fileConfig.COGNIGY_API_BASE_URL;
-  const apiKey = process.env.COGNIGY_API_KEY || fileConfig.COGNIGY_API_KEY;
+  const fileConfig = envApiBaseUrl && envApiKey ? {} : readUserConfigFile();
+
+  const apiBaseUrl = envApiBaseUrl || fileConfig.COGNIGY_API_BASE_URL;
+  const apiKey = envApiKey || fileConfig.COGNIGY_API_KEY;
 
   if (!apiBaseUrl) {
     throw new Error(
-      `COGNIGY_API_BASE_URL is not set. Provide it via the plugin install prompt, ` +
+      `COGNIGY_API_BASE_URL is not set.` +
+        placeholderHint(process.env.COGNIGY_API_BASE_URL) +
+        ` Provide it via the plugin install prompt, ` +
         `or run "npx -y -p @cognigy/plugin-engine cognigy-setup" to write ${USER_CONFIG_FILE}.`,
     );
   }
 
   if (!apiKey) {
     throw new Error(
-      `COGNIGY_API_KEY is not set. Provide it via the plugin install prompt, ` +
+      `COGNIGY_API_KEY is not set.` +
+        placeholderHint(process.env.COGNIGY_API_KEY) +
+        ` Provide it via the plugin install prompt, ` +
         `or run "npx -y -p @cognigy/plugin-engine cognigy-setup" to write ${USER_CONFIG_FILE}.`,
     );
   }
