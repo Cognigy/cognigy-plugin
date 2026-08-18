@@ -6,16 +6,13 @@
  * ~/.cognigy-plugin/config.json creds file and printing the `/plugin` commands
  * for the user to paste in-app.
  */
-import { spawnSync } from "child_process";
 import type { UserConfigFile } from "../userConfigFile.js";
 import { writeUserConfigFile } from "../userConfigFile.js";
-import { quoteWinArgs } from "./npmRunner.js";
+import { detectOnPath, runCliTool } from "./cliRunner.js";
 
 const MARKETPLACE = "Cognigy/cognigy-plugin";
 const MARKETPLACE_NAME = "cognigy-plugin";
 const PLUGIN_ID = "cognigy@cognigy-plugin";
-
-const isWin = process.platform === "win32";
 
 /** `claude plugin marketplace add <owner/repo>` — idempotent (no-op if present). */
 export function buildMarketplaceAddArgs(): string[] {
@@ -54,25 +51,11 @@ export function buildPluginInstallArgs(creds: UserConfigFile): string[] {
 
 /** Resolve `claude` on PATH, or null. */
 export function detectClaudePath(): string | null {
-  const finder = isWin ? "where" : "which";
-  const res = spawnSync(finder, ["claude"], { encoding: "utf8" });
-  if (res.status !== 0 || !res.stdout) return null;
-  const first = res.stdout.split(/\r?\n/).find((l) => l.trim());
-  return first ? first.trim() : null;
+  return detectOnPath("claude");
 }
 
 function runClaude(claudePath: string, args: string[]) {
-  // claude is a .cmd shim on Windows → needs shell:true + arg quoting (the
-  // CVE-2024-27980 lesson). Under a shell the *command* isn't auto-quoted either,
-  // so an absolute path with spaces (e.g. under "Program Files") would break —
-  // use the bare `claude` name on Windows (PATH already resolved it, since
-  // `where` succeeded) and reserve the absolute path for non-Windows.
-  // stdin ignored so a stray prompt can't hang the run.
-  const command = isWin ? "claude" : claudePath;
-  return spawnSync(command, isWin ? quoteWinArgs(args) : args, {
-    stdio: ["ignore", "inherit", "inherit"],
-    shell: isWin,
-  });
+  return runCliTool("claude", claudePath, args);
 }
 
 export type ClaudeCodeMethod = "cli" | "fallback";

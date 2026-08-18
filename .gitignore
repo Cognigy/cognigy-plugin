@@ -34,6 +34,10 @@ coverage/
 # Generated local-dev plugin marketplace (npm run plugin:dev)
 .dev-plugin/
 
+# Generated Gemini CLI extension archive (scripts/build-gemini-extension.mjs)
+.gemini-extension/
+cognigy-gemini-extension.zip
+
 # Local planning notes (not for commit)
 .plans/
 docs/plans
