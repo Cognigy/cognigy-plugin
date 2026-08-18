@@ -1,3 +1,9 @@
+## [1.10.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.9.0...v1.10.0) (2026-08-18)
+
+### Features
+
+* **installer:** native Antigravity plugin support (IDE + agy CLI) ([#27](https://github.com/Cognigy/cognigy-plugin/issues/27)) ([151629f](https://github.com/Cognigy/cognigy-plugin/commit/151629fae397eef6f2ddce4dab69fcf90781e23a))
+
 ## [1.9.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.8.3...v1.9.0) (2026-08-18)
 
 ### Features
