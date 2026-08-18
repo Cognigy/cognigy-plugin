@@ -24,8 +24,9 @@ Only the parts a fallback can't cover need new code.
 | Repo-marketplace plugin | `claude-code`, `codex` | Client discovers `plugin/.<client>-plugin/plugin.json` via a marketplace manifest in this repo. Installer drives the client CLI (`marketplace add`), user finishes in the client's plugin UI. |
 | Direct config merge | `claude-desktop` | No CLI. Installer reads/merges the client's own MCP config file, preserving every other key, and chmods it 0600 when it holds secrets. |
 | Packaged extension | `gemini` | A build script emits a release asset; installer runs the client's `extensions install` against the GitHub release. |
+| Credentials only | `other-hosts` | The client installs the plugin itself (or takes a hand-written MCP entry); the installer writes `~/.cognigy-plugin/config.json` and wires nothing. |
 
-Most new clients are archetype 1 or 2.
+Most new clients are archetype 1 or 2. Reach for "credentials only" when the client can already find and install the plugin but has no way to ask the user for an API key — that is the whole gap, so filling it is the whole install.
 
 ## Files to change
 
@@ -67,6 +68,8 @@ The **npm alias form is required in both cases**. A plain `@cognigy/plugin-engin
 **Fail loud vs. log-and-continue.** Throw when the load-bearing step fails (the MCP server never got wired) — and say in the error that creds are already written and which commands to run by hand. Log-and-continue for optional steps like `marketplace add`, which older client versions may not support; tools still work without it.
 
 **Detection probes both PATH and config dir.** A client's IDE extension or desktop app often shares the config directory without exposing a CLI. See the `codex`/`gemini` entries in `detectClients()`.
+
+**Every entry in `ALL_CLIENTS` needs a full lifecycle.** `runUninstall()` iterates the list, so a client with only an `install` branch silently does nothing when the user targets it with `--client`. If there is genuinely nothing to undo, say that and point at what does own the cleanup — don't leave the branch out.
 
 **Uninstall says what it cannot remove.** When the plugin half of an install lives in an account or a GUI rather than a local file, the installer cannot touch it — print the manual step (Claude Desktop and Codex both do this) so the leftover isn't a surprise.
 
