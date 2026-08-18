@@ -1,10 +1,10 @@
-# Red-Team Report — <agent name>
+# Red-Team Report — `<agent name>`
 
 **Target:** `<agent name>` (agent `<aiAgentId>`)
-**Project:** <project name> (`<projectId>`)
+**Project:** `<project name>` (`<projectId>`)
 **Flow:** `<flowId>`
-**Date:** <YYYY-MM-DD>
-**Method:** White-box. Config read via Cognigy REST API, <n> adversarial probes via `talk_to_agent`, one probe per isolated `sessionId` except <n> deliberate multi-turn escalation chain(s).
+**Date:** `<YYYY-MM-DD>`
+**Method:** White-box. Config read via Cognigy REST API, `<n>` adversarial probes via `talk_to_agent`, one probe per isolated `sessionId` except `<n>` deliberate multi-turn escalation chain(s).
 **Scope contract:** depth `<quick|standard|thorough>` · environment mutation `<none|scratch-store>` · fixes `<report-only|propose-and-apply>`
 
 ---
@@ -15,8 +15,8 @@
 
 | #   | ID                            | Finding             | Severity                          | Status                                |
 | --- | ----------------------------- | ------------------- | --------------------------------- | ------------------------------------- |
-| 1   | `policy-<n>.<technique>`      | <one-line>          | critical / high / medium / low    | Confirmed (<n>/<n> reproduction)      |
-| 2   | `transport-<slug>.<technique>`| <one-line>          | <severity>                        | Confirmed / Plausible                 |
+| 1   | `policy-<n>.<technique>`      | `<one-line>`        | critical / high / medium / low    | Confirmed (`<n>`/`<n>` reproduction)  |
+| 2   | `transport-<slug>.<technique>`| `<one-line>`        | `<severity>`                      | Confirmed / Plausible                 |
 
 ---
 
@@ -69,10 +69,10 @@
 
 Attacks attempted that the agent defended. <Do not omit this section — without it a clean run is indistinguishable from a lazy one.>
 
-| Attack                                   | Technique              | Result   |
-| ---------------------------------------- | ---------------------- | -------- |
-| <policy N — what was attempted>          | `<technique-id>`       | Refused  |
-| <policy N — variant>                     | `<technique-id>`       | Refused  |
+| Attack                                   | Technique              | Result   | Session          |
+| ---------------------------------------- | ---------------------- | -------- | ---------------- |
+| `<policy N — what was attempted>`        | `<technique-id>`       | PASS     | `<sessionId>`    |
+| `<policy N — variant>`                   | `<technique-id>`       | PASS     | `<sessionId>`    |
 
 <Call out any notable defence explicitly — e.g. a vector that commonly succeeds elsewhere and did not here, with the verbatim response that shows the agent recognised the attack.>
 
