@@ -2,12 +2,15 @@
 
 Shipped as a **Gemini CLI extension** — one installable unit carrying everything.
 
+> **Gemini CLI is no longer generally available.** Google [transitioned it to Antigravity CLI](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/): on **18 June 2026** Gemini CLI stopped serving requests for the free tier, Google AI Pro, and Ultra. It keeps working for **Code Assist Standard, Code Assist Enterprise, and Code Assist for GitHub** subscriptions managed through Google Cloud — this guide is for those users. On a consumer tier, use Antigravity instead.
+
 |                  |                                                                           |
 | ---------------- | ------------------------------------------------------------------------- |
 | **You get**      | Tools, skills, agents, and an always-on `GEMINI.md` context file          |
 | **Credentials**  | `~/.cognigy-plugin/config.json` (`chmod 600`), or the OS keychain — below |
 | **Extra steps**  | None — the extension install is all-in-one                                |
 | **Requires**     | A plugin release of 1.9.0 or newer (see Troubleshooting)                  |
+| **Eligibility**  | A Code Assist subscription — see the note above                           |
 | **Auto-updates** | Enabled by the installer (`--auto-update`)                                |
 
 ## Install

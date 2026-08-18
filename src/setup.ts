@@ -20,6 +20,7 @@
 import { createInterface } from "readline";
 import { pathToFileURL } from "url";
 import type { UserConfigFile } from "./userConfigFile.js";
+import { writeUserConfigFile } from "./userConfigFile.js";
 import {
   autoUpdateHint,
   detectClaudePath,
@@ -77,12 +78,20 @@ const CTRL_D = 4;
 const BACKSPACE = 8;
 const DELETE = 127;
 
-type Client = "claude-code" | "claude-desktop" | "codex" | "gemini";
+type Client =
+  | "claude-code"
+  | "claude-desktop"
+  | "codex"
+  | "gemini"
+  | "other-hosts";
+// "other-hosts" is last on purpose: it is the catch-all for clients we do not
+// wire, so it reads as the fallback at the bottom of the menu.
 const ALL_CLIENTS: Client[] = [
   "claude-code",
   "claude-desktop",
   "codex",
   "gemini",
+  "other-hosts",
 ];
 const CLIENT_LABELS: Record<Client, string> = {
   // Post-Apr-2026 Desktop redesign: the standalone CLI and Desktop's "Code" tab
@@ -93,7 +102,10 @@ const CLIENT_LABELS: Record<Client, string> = {
   // OpenAI merged Codex into the ChatGPT desktop app (July 2026); one
   // ~/.codex/config.toml serves that app, the CLI, and the IDE extension.
   codex: "ChatGPT + Codex (CLI + IDE)",
-  gemini: "Google Gemini CLI",
+  // Consumer Gemini CLI stopped serving requests on 18 June 2026; Code Assist
+  // Standard/Enterprise/GitHub subscriptions keep it.
+  gemini: "Google Gemini CLI (Code Assist subscribers)",
+  "other-hosts": "Other hosts (VS Code, Cursor, …) — writes a local creds file",
 };
 
 interface Flags {
@@ -138,6 +150,10 @@ export function detectClients(): Record<Client, boolean> {
       detectOnPath("codex") !== null || existsSync(join(homedir(), ".codex")),
     gemini:
       detectOnPath("gemini") !== null || existsSync(join(homedir(), ".gemini")),
+    // Never auto-detected, so it is never pre-checked: writing a plaintext key
+    // to disk must stay an explicit choice. Claude-only users keep the keychain
+    // path with nothing on disk.
+    "other-hosts": false,
   };
 }
 
@@ -320,6 +336,43 @@ async function chooseClients(): Promise<Client[]> {
 }
 
 function runInstall(client: Client, creds: UserConfigFile): void {
+  if (client === "other-hosts") {
+    // Nothing to wire: these hosts either install the plugin themselves (VS
+    // Code reads our Claude-format manifest) or take a hand-written MCP entry.
+    // What they cannot do is supply credentials — `userConfig` is Claude-only,
+    // so they pass "${user_config.*}" through untouched. The engine treats such
+    // placeholders as unset and falls back to this file.
+    const configFile = writeUserConfigFile(creds);
+    process.stdout.write(
+      green("\n✓ Other hosts") +
+        `: wrote credentials to ${configFile} ` +
+        dim("(dir 0700, file 0600)") +
+        ".\n" +
+        "  Any host that starts the engine now picks these up automatically.\n\n" +
+        `  ${bold("VS Code / Copilot")} — install the plugin, then restart:\n` +
+        `      ${cyan("1.")} Set ${bold('"chat.plugins.enabled": true')} in settings.json.\n` +
+        `      ${cyan("2.")} Add ${bold('"chat.plugins.marketplaces": ["Cognigy/cognigy-plugin"]')}.\n` +
+        `      ${cyan("3.")} Extensions view → search ${bold("@agentPlugins")} → install ${bold("cognigy")}.\n` +
+        dim(
+          "  You get tools, skills, and agents. Leave the credential fields alone —\n" +
+            "  VS Code has no prompt for them; this file covers it.\n",
+        ),
+    );
+    // The manifest's `npx` is resolved from PATH, and some hosts have been seen
+    // to start it with a PATH that excludes a node installed via nvm/fnm/volta
+    // (their bin dir is added by the shell profile, which a GUI-launched app
+    // need not have sourced). Not reproducible on demand — printed as
+    // conditional troubleshooting, not as a known defect.
+    process.stdout.write(
+      "\n" +
+        yellow(bold("  If the server fails with 'npx: command not found':")) +
+        "\n" +
+        `    ${cyan("•")} Your node is probably from nvm/fnm/volta, whose bin dir the host may not have on PATH.\n` +
+        `    ${cyan("•")} Quit the host completely and relaunch it from a terminal, or\n` +
+        `    ${cyan("•")} point the MCP entry at an absolute path (e.g. ${dim("$(which npx)")}).\n`,
+    );
+    return;
+  }
   if (client === "claude-code") {
     const res = installClaudeCode(creds);
     if (res.method === "cli") {
@@ -656,6 +709,7 @@ async function runUninstall(argv: string[]): Promise<void> {
   if (wants("claude-desktop")) runUninstallClaudeDesktop();
   if (wants("codex")) runUninstallCodex();
   if (wants("gemini")) runUninstallGemini();
+  if (wants("other-hosts")) runUninstallOtherHosts(purge);
 
   if (purge) {
     process.stdout.write(
@@ -745,6 +799,25 @@ function runUninstallGemini(): void {
 }
 
 /**
+ * The `other-hosts` install wires nothing — it only writes the shared creds
+ * file — so there is nothing client-specific to undo. Say so rather than
+ * silently doing nothing, and point at `--purge`, which owns that file (it is
+ * shared by every client, so removing it can't belong to one target).
+ */
+function runUninstallOtherHosts(purge: boolean): void {
+  process.stdout.write(
+    dim("• Other hosts") +
+      ": nothing was wired — the install only wrote credentials.\n" +
+      (purge
+        ? dim("  ~/.cognigy-plugin is removed below.\n")
+        : dim(
+            "  Re-run with --purge to delete ~/.cognigy-plugin, and uninstall the\n" +
+              "  plugin in the host itself (VS Code: Extensions → cognigy).\n",
+          )),
+  );
+}
+
+/**
  * Split argv into a subcommand + the remaining args. The first token is the
  * subcommand only when it's a non-flag positional; a leading flag (e.g.
  * `--client`) keeps the historical `cognigy-setup --client …` form by defaulting
@@ -799,7 +872,9 @@ async function main(): Promise<void> {
     apiBaseUrl = apiBaseUrl || DEFAULT_BASE_URL;
     if (clients.length === 0) {
       process.stderr.write(
-        "No client selected. Pass one or more of: --client claude-code | claude-desktop | codex | gemini.\n",
+        `No client selected. Pass one or more of: ${ALL_CLIENTS.map(
+          (c) => `--client ${c}`,
+        ).join(", ")}.\n`,
       );
       process.exit(1);
     }
