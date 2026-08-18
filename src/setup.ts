@@ -385,7 +385,7 @@ function runInstall(client: Client, creds: UserConfigFile): void {
         "\n" +
         `    ${cyan("•")} Your node is probably from nvm/fnm/volta, whose bin dir the host may not have on PATH.\n` +
         `    ${cyan("•")} Quit the host completely and relaunch it from a terminal, or\n` +
-        `    ${cyan("•")} point the MCP entry at an absolute path (e.g. ${dim("$(which npx)")}).\n`,
+        `    ${cyan("•")} point the MCP entry at an absolute path — find it with ${dim(process.platform === "win32" ? "where npx" : "which npx")}.\n`,
     );
     return;
   }
@@ -490,7 +490,7 @@ function runInstall(client: Client, creds: UserConfigFile): void {
         green("tools, skills, and agents") +
         " in both.\n" +
         dim(
-          "  The engine auto-updates on every launch; run `cognigy-setup update` to refresh skills.\n",
+          "  The engine auto-updates on every launch; run `cognigy-setup update` to re-stage skills and agents.\n",
         ),
     );
     if (res.removedLegacyServer) {
@@ -643,7 +643,7 @@ function runStatus(): void {
   if (agVersion && latest && agVersion !== latest) {
     process.stdout.write(
       yellow(
-        `    Antigravity plugin ${agVersion} < ${latest} — run \`cognigy-setup update\` to refresh skills.\n`,
+        `    Antigravity plugin ${agVersion} < ${latest} — run \`cognigy-setup update\` to re-stage skills and agents.\n`,
       ),
     );
   }

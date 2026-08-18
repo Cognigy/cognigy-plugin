@@ -64,7 +64,7 @@ There is nothing host-specific to undo, so `--client other-hosts` on its own onl
 
 **`npx: command not found` when the server starts**
 
-Your Node is probably from nvm, fnm, or volta, whose `bin` directory is added by your shell profile — which a GUI-launched host need not have sourced. Either quit the host completely and relaunch it from a terminal, or replace `npx` in the MCP entry with an absolute path (`$(which npx)`).
+Your Node is probably from nvm, fnm, or volta, whose `bin` directory is added by your shell profile — which a GUI-launched host need not have sourced. Either quit the host completely and relaunch it from a terminal, or replace `npx` in the MCP entry with an absolute path — find it with `which npx` on macOS/Linux, `where npx` on Windows.
 
 **`COGNIGY_API_KEY is not set` — but the manifest sets it**
 
