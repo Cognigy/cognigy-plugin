@@ -1,6 +1,6 @@
 # NiCE Cognigy Plugin
 
-> Distributed exclusively through each client's native plugin mechanism — a **plugin** on **Claude Code**, **Claude Desktop**, and **ChatGPT + Codex**, an **extension** on **Google Gemini CLI** — with more clients to come. Each package installs the server engine (pinned to the plugin version) and ships skills + agents.
+> Distributed exclusively through each client's native plugin mechanism — a **plugin** on **Claude Code**, **Claude Desktop**, **ChatGPT + Codex**, and **Antigravity**, an **extension** on **Google Gemini CLI** — with more clients to come. Each package installs the server engine and ships skills + agents. Claude Code pins the engine to the plugin version; the other clients run it at `@latest` so fixes arrive without a reinstall.
 
 A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy.com) REST API. Create, test, and improve LLM-based AI Agents through a self-improvement loop — without leaving your client.
 
@@ -69,13 +69,14 @@ npx -y -p @cognigy/plugin-engine@latest cognigy-setup
 
 What each client gets, and what (if anything) you finish by hand — full instructions, Windows notes, and troubleshooting in each guide:
 
-| Client                                                                    | Tools | Skills | Agents | Extra step after the installer                 |
-| ------------------------------------------------------------------------- | ----- | ------ | ------ | ---------------------------------------------- |
-| **[Claude Code](docs/install/claude-code.md)** (CLI + Desktop "Code" tab) | ✅    | ✅     | ✅     | None                                           |
-| **[Claude Desktop chat](docs/install/claude-desktop.md)**                 | ✅    | ✅     | ✅     | Install the plugin in-app                      |
-| **[ChatGPT + Codex](docs/install/chatgpt-codex.md)** (CLI + IDE)          | ✅    | ✅     | —      | None with the `codex` CLI; else install in-app |
-| **[Google Gemini CLI](docs/install/gemini-cli.md)** (Code Assist only)    | ✅    | ✅     | ✅     | None                                           |
-| **[Other hosts](docs/install/other-hosts.md)** (VS Code, Cursor, …)       | ✅    | ✅     | ✅     | Install the plugin in the host itself          |
+| Client                                                                    | Tools | Skills | Agents | Extra step after the installer        |
+| ------------------------------------------------------------------------- | ----- | ------ | ------ | ------------------------------------- |
+| **[Claude Code](docs/install/claude-code.md)** (CLI + Desktop "Code" tab) | ✅    | ✅     | ✅     | None                                  |
+| **[Claude Desktop chat](docs/install/claude-desktop.md)**                 | ✅    | ✅     | ✅     | Install the plugin in-app             |
+| **[ChatGPT + Codex](docs/install/chatgpt-codex.md)** (CLI + IDE)          | ✅    | ✅     | —      | None                                  |
+| **[Google Gemini CLI](docs/install/gemini-cli.md)** (Code Assist only)    | ✅    | ✅     | ✅     | None                                  |
+| **[Antigravity](docs/install/antigravity.md)** (IDE + `agy` CLI)          | ✅    | ✅     | ✅     | None                                  |
+| **[Other hosts](docs/install/other-hosts.md)** (VS Code, Cursor, …)       | ✅    | ✅     | ✅     | Install the plugin in the host itself |
 
 <details>
 <summary>Scripting / CI</summary>
@@ -85,17 +86,19 @@ Skip the prompts with flags:
 ```
 npx -y -p @cognigy/plugin-engine@latest cognigy-setup \
   --client claude-code --client claude-desktop --client codex \
-  --client gemini --client other-hosts \
+  --client gemini --client antigravity --client other-hosts \
   --api-base-url https://api-trial.cognigy.ai --api-key <key>
 ```
 
-`--client` is repeatable; valid values are `claude-code`, `claude-desktop`, `codex`, `gemini`, and `other-hosts`. Omit it in interactive mode to pick from the menu.
+`--client` is repeatable; valid values are `claude-code`, `claude-desktop`, `codex`, `gemini`, `antigravity`, and `other-hosts`. Omit it in interactive mode to pick from the menu.
 
 </details>
 
 ## Staying up to date
 
-Updates are automatic on Claude Desktop (engine refreshes each launch), ChatGPT + Codex (the server runs the engine at `@latest`), and Gemini CLI (installed with auto-update on); on other hosts the host owns the plugin version. **Claude Code is the exception** — it leaves auto-update off for third-party marketplaces, so turn it on once under `/plugin → Marketplaces → cognigy-plugin`.
+Updates are automatic on Claude Desktop (engine refreshes each launch), ChatGPT + Codex (the plugin runs the engine at `@latest`), Gemini CLI (installed with auto-update on), and Antigravity (the launcher pulls the latest engine each launch); on other hosts the host owns the plugin version. **Claude Code is the exception** — it leaves auto-update off for third-party marketplaces, so turn it on once under `/plugin → Marketplaces → cognigy-plugin`.
+
+Two caveats: on **Antigravity** the skills and agents are plugin _files_, so a newer engine's copies only land when you run `cognigy-setup update`. On **ChatGPT + Codex** skills update with the plugin, not the engine.
 
 The installer doubles as a manager:
 
@@ -279,7 +282,7 @@ Full privacy policy: [https://www.cognigy.com/privacy-policy](https://www.cognig
 
 ## Documentation
 
-- [docs/install/](https://github.com/Cognigy/cognigy-plugin/tree/main/docs/install) — per-client install guides ([Claude Code](docs/install/claude-code.md), [Claude Desktop](docs/install/claude-desktop.md), [ChatGPT + Codex](docs/install/chatgpt-codex.md), [Gemini CLI](docs/install/gemini-cli.md), [other hosts](docs/install/other-hosts.md))
+- [docs/install/](https://github.com/Cognigy/cognigy-plugin/tree/main/docs/install) — per-client install guides ([Claude Code](docs/install/claude-code.md), [Claude Desktop](docs/install/claude-desktop.md), [ChatGPT + Codex](docs/install/chatgpt-codex.md), [Gemini CLI](docs/install/gemini-cli.md), [Antigravity](docs/install/antigravity.md), [other hosts](docs/install/other-hosts.md))
 - [docs/ARCHITECTURE.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/ARCHITECTURE.md) — tool design, self-improvement loop, ID formats
 - [docs/USAGE.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/USAGE.md) — detailed usage reference
 - [docs/TESTING.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/TESTING.md) — how to test the plugin and a local engine build

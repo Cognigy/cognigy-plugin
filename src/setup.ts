@@ -14,6 +14,8 @@
  *     + plugin marketplace for skills; creds-file only.
  *   - Google Gemini CLI: `gemini extensions install` (creds-file only — Gemini
  *     never passes the shell env to extension MCP servers).
+ *   - Antigravity (IDE + `agy` CLI): stages a plugin and registers it, writing
+ *     MCP servers, skills and agents into the shared ~/.gemini/config tree.
  *
  * Non-interactive (scripting/CI): pass --client, --api-base-url, --api-key.
  */
@@ -36,6 +38,14 @@ import {
   resolveDesktopConfigPath,
   uninstallClaudeDesktop,
 } from "./install/claudeDesktop.js";
+import {
+  antigravityHasPlugin,
+  detectAntigravity,
+  installAntigravity,
+  installedPluginVersion,
+  uninstallAntigravity,
+  updateAntigravity,
+} from "./install/antigravity.js";
 import { detectOnPath } from "./install/cliRunner.js";
 import {
   codexGuiSteps,
@@ -83,6 +93,7 @@ type Client =
   | "claude-desktop"
   | "codex"
   | "gemini"
+  | "antigravity"
   | "other-hosts";
 // "other-hosts" is last on purpose: it is the catch-all for clients we do not
 // wire, so it reads as the fallback at the bottom of the menu.
@@ -91,6 +102,7 @@ const ALL_CLIENTS: Client[] = [
   "claude-desktop",
   "codex",
   "gemini",
+  "antigravity",
   "other-hosts",
 ];
 const CLIENT_LABELS: Record<Client, string> = {
@@ -105,6 +117,9 @@ const CLIENT_LABELS: Record<Client, string> = {
   // Consumer Gemini CLI stopped serving requests on 18 June 2026; Code Assist
   // Standard/Enterprise/GitHub subscriptions keep it.
   gemini: "Google Gemini CLI (Code Assist subscribers)",
+  // The IDE, the `agy` CLI and the SDK all read ~/.gemini/config, so one install
+  // serves every Antigravity surface.
+  antigravity: "Antigravity (IDE + agy CLI)",
   "other-hosts": "Other hosts (VS Code, Cursor, …) — writes a local creds file",
 };
 
@@ -150,6 +165,7 @@ export function detectClients(): Record<Client, boolean> {
       detectOnPath("codex") !== null || existsSync(join(homedir(), ".codex")),
     gemini:
       detectOnPath("gemini") !== null || existsSync(join(homedir(), ".gemini")),
+    antigravity: detectAntigravity(),
     // Never auto-detected, so it is never pre-checked: writing a plaintext key
     // to disk must stay an explicit choice. Claude-only users keep the keychain
     // path with nothing on disk.
@@ -369,7 +385,7 @@ function runInstall(client: Client, creds: UserConfigFile): void {
         "\n" +
         `    ${cyan("•")} Your node is probably from nvm/fnm/volta, whose bin dir the host may not have on PATH.\n` +
         `    ${cyan("•")} Quit the host completely and relaunch it from a terminal, or\n` +
-        `    ${cyan("•")} point the MCP entry at an absolute path (e.g. ${dim("$(which npx)")}).\n`,
+        `    ${cyan("•")} point the MCP entry at an absolute path — find it with ${dim(process.platform === "win32" ? "where npx" : "which npx")}.\n`,
     );
     return;
   }
@@ -453,6 +469,43 @@ function runInstall(client: Client, creds: UserConfigFile): void {
         "\n" +
           cyan(bold("  Windows — finish applying:\n")) +
           `    ${cyan("•")} ${bold("Fully quit")} the ChatGPT desktop app / Codex IDE extension (end lingering processes in ${bold("Task Manager")}), then reopen.\n`,
+      );
+    }
+    return;
+  }
+  if (client === "antigravity") {
+    const res = installAntigravity(creds);
+    process.stdout.write(
+      green(bold("\n✅ Antigravity — all set.")) +
+        ` Plugin installed to ${res.pluginDir}\n` +
+        `  ${green(String(res.skills.length))} skills · ${green(String(res.agents.length))} agents · ` +
+        green("2") +
+        " MCP servers\n" +
+        dim(
+          `  API key stored in ${res.credsFile}, not in any mcp_config.json.\n`,
+        ) +
+        "  Restart Antigravity — the IDE and the " +
+        bold("agy") +
+        " CLI share this config, so you get " +
+        green("tools, skills, and agents") +
+        " in both.\n" +
+        dim(
+          "  The engine auto-updates on every launch; run `cognigy-setup update` to re-stage skills and agents.\n",
+        ),
+    );
+    if (res.removedLegacyServer) {
+      process.stdout.write(
+        dim(
+          "  Removed an older 'cognigy' entry from the global mcp_config.json so only one engine boots.\n",
+        ),
+      );
+    }
+    if (res.skills.length === 0) {
+      // Only possible from a broken/partial package — the assets ship in dist.
+      process.stdout.write(
+        yellow(
+          "  ⚠ No skills found in this engine build; tools will work but workflow guidance won't load.\n",
+        ),
       );
     }
     return;
@@ -580,6 +633,20 @@ function runStatus(): void {
       ),
     );
   }
+  const agPlugin = antigravityHasPlugin();
+  const agVersion = installedPluginVersion();
+  process.stdout.write(
+    `  Antigravity:          ${agPlugin ? green("plugin installed") : dim("not installed")}` +
+      (agVersion ? dim(` · v${agVersion}`) : "") +
+      "\n",
+  );
+  if (agVersion && latest && agVersion !== latest) {
+    process.stdout.write(
+      yellow(
+        `    Antigravity plugin ${agVersion} < ${latest} — run \`cognigy-setup update\` to re-stage skills and agents.\n`,
+      ),
+    );
+  }
   const geminiVersion = installedGeminiExtensionVersion();
   process.stdout.write(
     `  ChatGPT + Codex:      ${codexHasCognigyPlugin() ? green("plugin installed") : dim("not installed")}\n`,
@@ -624,6 +691,20 @@ function runUpdate(): void {
       "• ChatGPT + Codex: the plugin runs the engine @latest — restart to pick up a new release.\n",
     ),
   );
+  // Antigravity's engine auto-updates via the launcher, but the plugin's skills
+  // and agents are plain files — only a re-stage picks up a newer engine's copy.
+  // Must run before the Gemini block below, which returns early.
+  if (antigravityHasPlugin()) {
+    const ag = updateAntigravity();
+    process.stdout.write(
+      green("✓ Antigravity") +
+        `: plugin re-synced (${ag.skills.length} skills, ${ag.agents.length} agents). Restart Antigravity to apply.\n`,
+    );
+  } else {
+    process.stdout.write(
+      dim("• Antigravity: plugin not installed — nothing to update.\n"),
+    );
+  }
   // Only touch Gemini when our extension is actually installed — otherwise
   // `gemini extensions update cognigy` exits non-zero and fails the whole run.
   if (installedGeminiExtensionVersion() === null) {
@@ -692,6 +773,7 @@ async function runUninstall(argv: string[]): Promise<void> {
   if (wants("claude-desktop")) runUninstallClaudeDesktop();
   if (wants("codex")) runUninstallCodex();
   if (wants("gemini")) runUninstallGemini();
+  if (wants("antigravity")) runUninstallAntigravity();
   if (wants("other-hosts")) runUninstallOtherHosts(purge);
 
   if (purge) {
@@ -777,6 +859,20 @@ function runUninstallGemini(): void {
         "\n",
     );
   }
+}
+
+function runUninstallAntigravity(): void {
+  const ag = uninstallAntigravity();
+  process.stdout.write(
+    (ag.removedPlugin ? green("✓ Antigravity") : dim("• Antigravity")) +
+      `: ${ag.removedPlugin ? "plugin removed" : "no plugin found"}` +
+      (ag.removedLegacyServer
+        ? dim(
+            "\n  also cleared an older 'cognigy' entry from the global mcp_config.json",
+          )
+        : "") +
+      "\n",
+  );
 }
 
 /**

@@ -24,9 +24,10 @@ Only the parts a fallback can't cover need new code.
 | Repo-marketplace plugin | `claude-code`, `codex` | Client discovers `plugin/.<client>-plugin/plugin.json` via a marketplace manifest in this repo. Installer drives the client CLI (`marketplace add`), user finishes in the client's plugin UI. |
 | Direct config merge | `claude-desktop` | No CLI. Installer reads/merges the client's own MCP config file, preserving every other key, and chmods it 0600 when it holds secrets. |
 | Packaged extension | `gemini` | A build script emits a release asset; installer runs the client's `extensions install` against the GitHub release. |
+| Stage and register | `antigravity` | The installer builds a plugin directory itself and writes the client's own registry entries — no client CLI involved, works before the client's first launch. |
 | Credentials only | `other-hosts` | The client installs the plugin itself (or takes a hand-written MCP entry); the installer writes `~/.cognigy-plugin/config.json` and wires nothing. |
 
-Most new clients are archetype 1 or 2. Reach for "credentials only" when the client can already find and install the plugin but has no way to ask the user for an API key — that is the whole gap, so filling it is the whole install.
+Most new clients are archetype 1 or 2. "Stage and register" is the answer when the client has a real plugin format but its install command is unreliable to shell out to — see the Antigravity notes in `.claude/CLAUDE.md` for why reproducing the command beat calling it. Reach for "credentials only" when the client can already find and install the plugin but has no way to ask the user for an API key — that is the whole gap, so filling it is the whole install.
 
 ## Files to change
 
@@ -58,6 +59,8 @@ The **npm alias form is required in both cases**. A plain `@cognigy/plugin-engin
 **Never hand-bump versions.** semantic-release owns every `version` field.
 
 **Let the client's CLI own its config.** If the client ships a CLI that writes its own config (`codex mcp add`), drive the CLI and print a paste-able snippet as fallback when the binary isn't on PATH. Only parse and merge a config file yourself when there is no CLI (Claude Desktop). When merging, preserve all other servers and top-level keys, back up the original once (never overwrite an existing `.bak`), and chmod 0600 if it holds secrets.
+
+**A client CLI is not always the right tool.** Driving one costs a PATH dependency, a Windows `.cmd` spawn hazard, and whatever semantics the command happens to have — `agy plugin install`, for instance, *merges* into an existing plugin directory instead of replacing it, so a previous version's files survive an upgrade. When the command does something simple and documented, reproducing it directly is more predictable. Verify byte-equivalence against a real CLI-driven install before choosing this.
 
 **Spawn through `src/install/cliRunner.ts`.** `detectOnPath()` + `runCliTool()` handle the Windows `.cmd` shim quoting. Never call `spawnSync` on a client CLI directly.
 

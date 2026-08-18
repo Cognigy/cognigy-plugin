@@ -372,6 +372,12 @@ describe("detectClients", () => {
   it("never pre-selects other-hosts", () => {
     expect(detectClients()["other-hosts"]).toBe(false);
   });
+
+  it("accepts antigravity alongside the Claude clients", () => {
+    expect(
+      parseFlags(["--client=antigravity", "--client", "claude-code"]).clients,
+    ).toEqual(["antigravity", "claude-code"]);
+  });
 });
 
 describe("parseClientSelection", () => {
