@@ -539,9 +539,18 @@ export function installAntigravity(
 }
 
 /**
- * Re-stage and re-register the plugin from this engine's shipped assets. Used by
- * `cognigy-setup update`: the engine itself auto-updates via the launcher, but
- * skills and agents are plain files that only change when we rewrite them.
+ * Re-stage and re-register the plugin from this engine's shipped assets.
+ *
+ * Called from two places: `cognigy-setup update`, and the launcher itself on
+ * the first boot after an engine bump (see desktopLauncher.ts) — which is what
+ * makes Antigravity's skills and agents track the engine without the user
+ * running anything. Antigravity has no update command and no marketplace, so
+ * nothing else would ever rewrite these files.
+ *
+ * The launcher is rewritten here too. It lives outside the versioned engine
+ * dir, so launcher-code fixes reach existing installs only when something
+ * rewrites it; without this an old launcher would keep running forever.
+ *
  * Credentials are left untouched.
  */
 export function updateAntigravity(): RegisterResult & {
@@ -552,6 +561,7 @@ export function updateAntigravity(): RegisterResult & {
   // install is touched — otherwise an assetless engine would quietly replace a
   // working plugin with an empty one.
   const staged = stagePluginDir();
+  writeDesktopLauncher();
   return {
     ...registerPlugin(staged.dir),
     skills: staged.skills,

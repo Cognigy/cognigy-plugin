@@ -18,9 +18,26 @@
  * (src/config.ts).
  *
  * Everything else is `codex plugin`, which is fully non-interactive:
- *   codex plugin marketplace add Cognigy/cognigy-plugin
+ *   codex plugin marketplace add Cognigy/cognigy-plugin --ref main
  *   codex plugin add cognigy@cognigy-plugin
  * Without the CLI we print the equivalent GUI steps.
+ *
+ * `--ref main` is not optional, and it is what makes updates work at all.
+ * Codex auto-upgrades git marketplaces on plugin startup (openai/codex#17425,
+ * default-on since April 2026): it runs `git ls-remote`, compares against the
+ * recorded `last_revision`, and replaces the cached plugin when the ref has
+ * moved. A new plugin.json then carries a new exact engine pin, so npx fetches
+ * the matching engine — the whole chain updates on its own.
+ *
+ * That only holds if the ref MOVES. Given a bare `owner/repo`, Codex resolves
+ * the ref from the git checkout it is invoked in, so running the installer
+ * from a clone of THIS repo on a feature branch pins the marketplace to that
+ * branch. Once the branch merges and stops moving, `ls-remote` keeps returning
+ * the same revision and auto-upgrade correctly does nothing — forever.
+ * Observed live: a snapshot stuck at 1.8.3 while npm and main were at 1.10.0.
+ *
+ * So the fix is the pin, not a manual update path. `updateCodex` exists only
+ * to force the refresh immediately rather than at the next app start.
  */
 import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
@@ -32,6 +49,8 @@ import { detectOnPath, runCliTool } from "./cliRunner.js";
 const PLUGIN_NAME = "cognigy";
 /** Marketplace *source* — what `marketplace add` takes (owner/repo). */
 const MARKETPLACE_SOURCE = "Cognigy/cognigy-plugin";
+/** The only ref users should ever be pinned to. See the note at the top. */
+export const MARKETPLACE_REF = "main";
 /**
  * Marketplace *name* — the `name` field of .claude-plugin/marketplace.json,
  * which is what Codex registers it as and what `marketplace remove` takes.
@@ -48,9 +67,21 @@ export function detectCodexPath(): string | null {
   return detectOnPath("codex");
 }
 
-/** `codex plugin marketplace add Cognigy/cognigy-plugin`. */
+/** `codex plugin marketplace add Cognigy/cognigy-plugin --ref main`. */
 export function buildCodexMarketplaceAddArgs(): string[] {
-  return ["plugin", "marketplace", "add", MARKETPLACE_SOURCE];
+  return [
+    "plugin",
+    "marketplace",
+    "add",
+    MARKETPLACE_SOURCE,
+    "--ref",
+    MARKETPLACE_REF,
+  ];
+}
+
+/** `codex plugin marketplace upgrade` — refresh every git snapshot. */
+export function buildCodexMarketplaceUpgradeArgs(): string[] {
+  return ["plugin", "marketplace", "upgrade"];
 }
 
 /** `codex plugin marketplace remove cognigy-plugin` (by name, not source). */
@@ -84,6 +115,37 @@ export function codexHasCognigyPlugin(
   } catch {
     return false;
   }
+}
+
+/**
+ * The ref our marketplace is currently pinned to, or null when it is not
+ * registered as a git source (absent, or a local path a developer wired by
+ * hand — which we must leave alone).
+ *
+ * Scoped to the `[marketplaces.cognigy-plugin]` table on purpose: config.toml
+ * is the user's file and holds unrelated secrets, so we read the one block we
+ * own and never parse or rewrite the rest (the codex CLI does the writing).
+ */
+export function readCodexMarketplaceRef(
+  configPath: string = CODEX_CONFIG_PATH,
+): string | null {
+  if (!existsSync(configPath)) return null;
+  let block: string;
+  try {
+    const toml = readFileSync(configPath, "utf8");
+    const start = toml.search(
+      new RegExp(`^\\[marketplaces\\.${MARKETPLACE_NAME}\\]`, "m"),
+    );
+    if (start === -1) return null;
+    const rest = toml.slice(start);
+    // Index 0 is our own table header, so search from 1 for the next one.
+    const next = rest.slice(1).search(/^\[/m);
+    block = next === -1 ? rest : rest.slice(0, next + 1);
+  } catch {
+    return null;
+  }
+  if (!/^source_type\s*=\s*"git"/m.test(block)) return null;
+  return /^ref\s*=\s*"([^"]*)"/m.exec(block)?.[1] ?? null;
 }
 
 /** The in-app steps, for when the codex CLI isn't available. */
@@ -122,15 +184,30 @@ export function installCodex(creds: UserConfigFile): CodexResult {
     return { method: "fallback", configFile, guiSteps: codexGuiSteps() };
   }
 
-  // Re-adding the SAME source exits 0, but a marketplace already registered
-  // under this name from a *different* source string — the HTTPS URL the GUI
-  // writes, or a branch ref used for testing — is a hard error. That is not a
-  // failure for us: the marketplace we need is there either way, so fall
-  // through and let `plugin add` be the judge.
+  // A marketplace already registered under this name from a *different* source
+  // string makes `marketplace add` a hard error, so a stale git ref would
+  // survive every re-run of the installer — and `marketplace upgrade` would
+  // keep reporting it up to date, because a merged branch really is. Drop the
+  // registration first so the add below can re-pin it to main. Only for git
+  // sources on the wrong ref: a local source is a developer's own wiring.
+  const ref = readCodexMarketplaceRef();
+  if (ref !== null && ref !== MARKETPLACE_REF) {
+    process.stderr.write(
+      `[cognigy] marketplace '${MARKETPLACE_NAME}' is pinned to '${ref}'; ` +
+        `re-pinning to '${MARKETPLACE_REF}' so updates can reach you.\n`,
+    );
+    // The plugin holds a reference to the marketplace, so it goes first.
+    runCliTool("codex", codexPath, buildCodexPluginRemoveArgs());
+    runCliTool("codex", codexPath, buildCodexMarketplaceRemoveArgs());
+  }
+
+  // Re-adding the SAME source exits 0; anything else is not fatal for us,
+  // because the marketplace we need is registered either way. Fall through and
+  // let `plugin add` be the judge.
   const mp = runCliTool("codex", codexPath, buildCodexMarketplaceAddArgs());
   if (mp.status !== 0 || mp.error) {
     process.stderr.write(
-      `[cognigy] 'codex plugin marketplace add ${MARKETPLACE_SOURCE}' exited ${mp.status}; ` +
+      `[cognigy] 'codex ${buildCodexMarketplaceAddArgs().join(" ")}' exited ${mp.status}; ` +
         `continuing — '${MARKETPLACE_NAME}' may already be registered from another source.\n`,
     );
   }
@@ -176,4 +253,36 @@ export function uninstallCodex(): CodexUninstallResult {
   const removedMarketplace = rmMarket.status === 0 && !rmMarket.error;
 
   return { method: "cli", removedPlugin, removedMarketplace };
+}
+
+export interface CodexUpdateResult {
+  method: CodexMethod;
+  /** Whether the git snapshot refresh succeeded. */
+  refreshed?: boolean;
+  /** Whether re-adding the plugin from the refreshed snapshot succeeded. */
+  reinstalled?: boolean;
+}
+
+/**
+ * Update the Codex install. Neither half of it auto-updates: the marketplace
+ * is a pinned git snapshot, and the manifest pins the engine to an exact
+ * version. So refresh the snapshot, then re-add the plugin — `plugin add` is
+ * idempotent and copies the snapshot's current version into a versioned cache
+ * directory, which is what actually moves the installed version forward.
+ */
+export function updateCodex(): CodexUpdateResult {
+  // Without the CLI there is nothing to fall back to, and nothing to worry
+  // about: Codex refreshes the marketplace itself when plugins next start up.
+  // Printing `codex ...` commands to someone who has no `codex` would be worse
+  // than saying so — the caller reports the restart instead.
+  const codexPath = detectCodexPath();
+  if (!codexPath) return { method: "fallback" };
+
+  const up = runCliTool("codex", codexPath, buildCodexMarketplaceUpgradeArgs());
+  const refreshed = up.status === 0 && !up.error;
+
+  const add = runCliTool("codex", codexPath, buildCodexPluginAddArgs());
+  const reinstalled = add.status === 0 && !add.error;
+
+  return { method: "cli", refreshed, reinstalled };
 }

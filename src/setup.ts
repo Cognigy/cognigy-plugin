@@ -48,10 +48,15 @@ import {
 } from "./install/antigravity.js";
 import { detectOnPath } from "./install/cliRunner.js";
 import {
+  DESKTOP_LAUNCHER_FILE,
+  writeDesktopLauncher,
+} from "./install/desktopLauncher.js";
+import {
   codexGuiSteps,
   codexHasCognigyPlugin,
   installCodex,
   uninstallCodex,
+  updateCodex,
 } from "./install/codex.js";
 import {
   installGemini,
@@ -681,16 +686,62 @@ function runUpdate(): void {
         "\n",
     );
   }
+  // The launcher lives outside the versioned engine dir, so it is the one file
+  // an engine bump cannot refresh. Rewrite it — but only where one already
+  // exists, so this never creates a launcher on a machine using neither client.
+  if (existsSync(DESKTOP_LAUNCHER_FILE)) writeDesktopLauncher();
   process.stdout.write(
     dim(
       "• Claude Desktop chat connector auto-updates its engine on every restart — nothing to do.\n",
     ),
   );
-  process.stdout.write(
-    dim(
-      "• ChatGPT + Codex: the plugin runs the engine @latest — restart to pick up a new release.\n",
-    ),
-  );
+  // Codex auto-upgrades git marketplaces on plugin startup, so this is only a
+  // "don't wait for the next app start" nudge. Only touch it when the plugin
+  // is actually installed, so `plugin add` can't register a plugin for someone
+  // who never wanted one.
+  if (codexHasCognigyPlugin()) {
+    const cx = updateCodex();
+    if (cx.method === "fallback") {
+      // No CLI to drive, and nothing to do: Codex refreshes the marketplace
+      // itself at the next start. Printing `codex ...` here would be useless
+      // advice for someone who demonstrably has no `codex`.
+      process.stdout.write(
+        dim(
+          "• ChatGPT + Codex: 'codex' CLI not found — restart the app instead; it refreshes plugins itself on startup.\n",
+        ),
+      );
+    } else if (cx.refreshed && cx.reinstalled) {
+      process.stdout.write(
+        green("✓ ChatGPT + Codex") +
+          ": marketplace refreshed and plugin re-installed. Restart the app (or start a new thread) to apply.\n" +
+          dim(
+            "  (Codex would have picked this up on its own at the next app start.)\n",
+          ),
+      );
+    } else if (cx.reinstalled) {
+      // `plugin add` re-installed from a snapshot the upgrade failed to move,
+      // so this may well be the version already installed. Don't call it a
+      // refresh.
+      process.stdout.write(
+        yellow("• ChatGPT + Codex") +
+          ": plugin re-installed, but refreshing the marketplace failed — you may still be on the previous version.\n" +
+          dim(
+            "  Codex retries the refresh on its own at the next app start.\n",
+          ),
+      );
+    } else {
+      process.stdout.write(
+        yellow("• ChatGPT + Codex") +
+          ": update failed — run it by hand:\n" +
+          cyan("    codex plugin marketplace upgrade\n") +
+          cyan("    codex plugin add cognigy@cognigy-plugin\n"),
+      );
+    }
+  } else {
+    process.stdout.write(
+      dim("• ChatGPT + Codex: plugin not installed — nothing to update.\n"),
+    );
+  }
   // Antigravity's engine auto-updates via the launcher, but the plugin's skills
   // and agents are plain files — only a re-stage picks up a newer engine's copy.
   // Must run before the Gemini block below, which returns early.
@@ -698,7 +749,10 @@ function runUpdate(): void {
     const ag = updateAntigravity();
     process.stdout.write(
       green("✓ Antigravity") +
-        `: plugin re-synced (${ag.skills.length} skills, ${ag.agents.length} agents). Restart Antigravity to apply.\n`,
+        `: plugin re-synced (${ag.skills.length} skills, ${ag.agents.length} agents). Restart Antigravity to apply.\n` +
+        dim(
+          "  (From now on the launcher does this itself on the first launch after a release.)\n",
+        ),
     );
   } else {
     process.stdout.write(
