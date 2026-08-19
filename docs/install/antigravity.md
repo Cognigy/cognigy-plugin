@@ -2,13 +2,13 @@
 
 Antigravity has a first-class plugin format, so the installer builds a real plugin and installs it into `~/.gemini/config/plugins/cognigy-plugin/` — a tree shared by the **IDE**, the **`agy` CLI**, and the **SDK**, so one install serves all three.
 
-|                  |                                                                            |
-| ---------------- | -------------------------------------------------------------------------- |
-| **You get**      | Tools, skills, and agents — the full surface                               |
-| **Credentials**  | `~/.cognigy-plugin/config.json` (`chmod 600`) — never in mcp_config        |
-| **Extra steps**  | None — restart Antigravity                                                 |
-| **Requires**     | Nothing; the installer does not need `agy` on PATH                         |
-| **Auto-updates** | Engine yes, on every launch. Skills and agents need `cognigy-setup update` |
+|                  |                                                                         |
+| ---------------- | ----------------------------------------------------------------------- |
+| **You get**      | Tools, skills, and agents — the full surface                            |
+| **Credentials**  | `~/.cognigy-plugin/config.json` (`chmod 600`) — never in mcp_config     |
+| **Extra steps**  | None — restart Antigravity                                              |
+| **Requires**     | Nothing; the installer does not need `agy` on PATH                      |
+| **Auto-updates** | Yes — engine every launch, skills and agents on the launch after a bump |
 
 ## Install
 
@@ -44,15 +44,19 @@ The API key is **not** written into any `mcp_config.json` — that file is share
 
 ## Updating
 
-The engine auto-updates: the plugin's server runs through a launcher that pulls the latest engine on every Antigravity launch, offline-safe.
+Nothing to do. The plugin's server runs through a launcher that pulls the latest engine on every Antigravity launch (offline-safe), and on the first launch after a version bump that same launcher re-stages the plugin's skills and agents from the new engine. The engine is live immediately; the refreshed skills and agents load on the **next** launch, since Antigravity reads them at startup.
 
-Skills and agents are different — they are plain files staged at install time, so a newer engine's copies only land when you re-stage:
+This is ours, not Antigravity's: `agy` has no update command, no marketplace, and no refresh of its own — `agy plugin install` only ever copies a local directory.
+
+To pull a release now rather than at the next launch:
 
 ```
 npx -y -p @cognigy/plugin-engine@latest cognigy-setup update
 ```
 
 `cognigy-setup status` shows the installed plugin version next to the latest on npm.
+
+One caveat for existing installs: the launcher lives outside the versioned engine directory, so a launcher that predates this feature cannot update itself. Run `cognigy-setup update` once and it is rewritten; after that, updates are hands-off.
 
 ## Uninstall
 

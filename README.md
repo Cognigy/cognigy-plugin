@@ -75,12 +75,11 @@ What each client gets, and what (if anything) you finish by hand — full instru
 | **[Claude Desktop chat](docs/install/claude-desktop.md)**                 | ✅    | ✅     | ✅     | Install the plugin in-app             | Automatic                |
 | **[ChatGPT + Codex](docs/install/chatgpt-codex.md)** (CLI + IDE)          | ✅    | ✅     | —      | None                                  | Automatic                |
 | **[Google Gemini CLI](docs/install/gemini-cli.md)** (Code Assist only)    | ✅    | ✅     | ✅     | None                                  | Automatic                |
-| **[Antigravity](docs/install/antigravity.md)** (IDE + `agy` CLI)          | ✅    | ✅     | ✅     | None                                  | Automatic <sup>2</sup>   |
-| **[Other hosts](docs/install/other-hosts.md)** (VS Code, Cursor, …)       | ✅    | ✅     | ✅     | Install the plugin in the host itself | Manual <sup>3</sup>      |
+| **[Antigravity](docs/install/antigravity.md)** (IDE + `agy` CLI)          | ✅    | ✅     | ✅     | None                                  | Automatic                |
+| **[Other hosts](docs/install/other-hosts.md)** (VS Code, Cursor, …)       | ✅    | ✅     | ✅     | Install the plugin in the host itself | Manual <sup>2</sup>      |
 
 <sup>1</sup> Claude Code leaves auto-update off for third-party marketplaces — turn it on once under `/plugin → Marketplaces → cognigy-plugin`.
-<sup>2</sup> The engine updates on every launch; skills and agents are plugin _files_, so run `cognigy-setup update` to refresh those.
-<sup>3</sup> The host owns the plugin version.
+<sup>2</sup> The host owns the plugin version.
 
 <details>
 <summary>Scripting / CI</summary>

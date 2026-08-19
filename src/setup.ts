@@ -48,6 +48,10 @@ import {
 } from "./install/antigravity.js";
 import { detectOnPath } from "./install/cliRunner.js";
 import {
+  DESKTOP_LAUNCHER_FILE,
+  writeDesktopLauncher,
+} from "./install/desktopLauncher.js";
+import {
   codexGuiSteps,
   codexHasCognigyPlugin,
   installCodex,
@@ -682,6 +686,10 @@ function runUpdate(): void {
         "\n",
     );
   }
+  // The launcher lives outside the versioned engine dir, so it is the one file
+  // an engine bump cannot refresh. Rewrite it — but only where one already
+  // exists, so this never creates a launcher on a machine using neither client.
+  if (existsSync(DESKTOP_LAUNCHER_FILE)) writeDesktopLauncher();
   process.stdout.write(
     dim(
       "• Claude Desktop chat connector auto-updates its engine on every restart — nothing to do.\n",
@@ -728,7 +736,10 @@ function runUpdate(): void {
     const ag = updateAntigravity();
     process.stdout.write(
       green("✓ Antigravity") +
-        `: plugin re-synced (${ag.skills.length} skills, ${ag.agents.length} agents). Restart Antigravity to apply.\n`,
+        `: plugin re-synced (${ag.skills.length} skills, ${ag.agents.length} agents). Restart Antigravity to apply.\n` +
+        dim(
+          "  (From now on the launcher does this itself on the first launch after a release.)\n",
+        ),
     );
   } else {
     process.stdout.write(

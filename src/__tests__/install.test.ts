@@ -28,6 +28,7 @@ import {
   fallbackCommands,
 } from "../install/claudeCode.js";
 import { quoteWinArgs, resolveNpmCli } from "../install/npmRunner.js";
+import * as antigravity from "../install/antigravity.js";
 import {
   DESKTOP_LAUNCHER_SOURCE,
   writeDesktopLauncher,
@@ -289,6 +290,39 @@ describe("writeDesktopLauncher", () => {
     expect(DESKTOP_LAUNCHER_SOURCE).toContain("@cognigy/plugin-engine");
     // stdout must never be written to — diagnostics go to stderr only.
     expect(DESKTOP_LAUNCHER_SOURCE).not.toContain("process.stdout.write");
+  });
+
+  it("re-stages the Antigravity plugin before handing off, and only on a bump", () => {
+    // Antigravity ships no update command and no marketplace, so this step is
+    // the only thing that makes its skills and agents track the engine.
+    expect(DESKTOP_LAUNCHER_SOURCE).toContain("syncAntigravityPlugin");
+    expect(DESKTOP_LAUNCHER_SOURCE).toContain(
+      '"dist", "install", "antigravity.js"',
+    );
+    // Version-gated: once per release, not every boot.
+    expect(DESKTOP_LAUNCHER_SOURCE).toContain("staged === engine");
+    // Must run before the engine import, which never returns.
+    expect(
+      DESKTOP_LAUNCHER_SOURCE.indexOf("await syncAntigravityPlugin()"),
+    ).toBeLessThan(
+      DESKTOP_LAUNCHER_SOURCE.indexOf("pathToFileURL(engineEntry)"),
+    );
+    // A failure here must never take the server down with it.
+    expect(DESKTOP_LAUNCHER_SOURCE).toContain(
+      "could not refresh Antigravity plugin files",
+    );
+  });
+
+  it("calls only symbols antigravity.ts actually exports", () => {
+    // The launcher is a STRING — tsc cannot see these calls, so a rename in
+    // antigravity.ts would break auto-update silently at runtime.
+    const called = [
+      ...DESKTOP_LAUNCHER_SOURCE.matchAll(/\bmod\.([A-Za-z0-9_]+)/g),
+    ].map((m) => m[1]);
+    expect(called.length).toBeGreaterThan(0);
+    for (const name of called) {
+      expect(Object.keys(antigravity)).toContain(name);
+    }
   });
 });
 

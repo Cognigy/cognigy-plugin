@@ -23,9 +23,13 @@
  *      not hang Desktop boot).
  *   2. If newer than the installed engine, `npm install` it BEFORE handing off,
  *      so the new version is live the same boot.
- *   3. Hand off by importing the engine's dist/index.js (which self-invokes
+ *   3. Re-stage the Antigravity plugin's skills/agents when the engine moved
+ *      (no-op for Desktop, which has no plugin dir). Antigravity ships no
+ *      update command, no marketplace and no refresh of its own — see
+ *      antigravity.ts — so plugin files only track the engine if we do it here.
+ *   4. Hand off by importing the engine's dist/index.js (which self-invokes
  *      main() and connects the MCP stdio transport).
- *   4. Offline-safe: if the probe/install fails or times out but an engine is
+ *   5. Offline-safe: if the probe/install fails or times out but an engine is
  *      already on disk, boot it and warn on stderr. Hard-fail only when no engine
  *      exists at all (first-ever boot while offline).
  *
@@ -138,6 +142,27 @@ if (!existsSync(engineEntry)) {
   note(\`connect to a network and restart your client, or re-run: npx -y -p \${PKG}@latest cognigy-setup\`);
   process.exit(1);
 }
+
+// Antigravity keeps skills and agents as plain files inside its plugin dir and
+// has no update command, marketplace, or refresh of its own, so they only track
+// the engine if we re-stage them. Version-gated: this runs once per release, not
+// every boot. A no-op wherever no Cognigy plugin dir exists (Claude Desktop).
+async function syncAntigravityPlugin() {
+  try {
+    const mod = await import(
+      pathToFileURL(join(engineDir, "dist", "install", "antigravity.js")).href
+    );
+    if (!mod.antigravityHasPlugin?.()) return;
+    const staged = mod.installedPluginVersion?.() ?? null;
+    const engine = installedVersion();
+    if (!engine || staged === engine) return;
+    mod.updateAntigravity();
+    note(\`refreshed Antigravity skills/agents \${staged ?? "none"} -> \${engine}; restart Antigravity to load them\`);
+  } catch (err) {
+    note(\`could not refresh Antigravity plugin files: \${err?.message ?? err}\`);
+  }
+}
+await syncAntigravityPlugin();
 
 await import(pathToFileURL(engineEntry).href);
 `;
