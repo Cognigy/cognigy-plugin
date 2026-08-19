@@ -5,10 +5,12 @@ import { join } from "path";
 import {
   buildCodexMarketplaceAddArgs,
   buildCodexMarketplaceRemoveArgs,
+  buildCodexMarketplaceUpgradeArgs,
   buildCodexPluginAddArgs,
   buildCodexPluginRemoveArgs,
   codexGuiSteps,
   codexHasCognigyPlugin,
+  readCodexMarketplaceRef,
 } from "../install/codex.js";
 import {
   buildGeminiInstallArgs,
@@ -29,12 +31,17 @@ afterEach(() => {
 });
 
 describe("codex arg building", () => {
-  it("marketplace add takes the owner/repo SOURCE", () => {
+  it("marketplace add takes the owner/repo SOURCE, pinned to main", () => {
+    // The --ref is load-bearing: without it Codex resolves the ref from the
+    // git checkout the installer runs in, which pins the snapshot to a feature
+    // branch that stops moving once merged.
     expect(buildCodexMarketplaceAddArgs()).toEqual([
       "plugin",
       "marketplace",
       "add",
       "Cognigy/cognigy-plugin",
+      "--ref",
+      "main",
     ]);
   });
 
@@ -62,12 +69,21 @@ describe("codex arg building", () => {
     ]);
   });
 
+  it("marketplace upgrade takes no target", () => {
+    expect(buildCodexMarketplaceUpgradeArgs()).toEqual([
+      "plugin",
+      "marketplace",
+      "upgrade",
+    ]);
+  });
+
   it("no arg builder wires a global mcp server", () => {
     // The plugin declares its own `platform` server; a global
     // [mcp_servers.cognigy] entry would be a duplicate engine.
     const all = [
       ...buildCodexMarketplaceAddArgs(),
       ...buildCodexMarketplaceRemoveArgs(),
+      ...buildCodexMarketplaceUpgradeArgs(),
       ...buildCodexPluginAddArgs(),
       ...buildCodexPluginRemoveArgs(),
     ];
@@ -79,7 +95,7 @@ describe("codex arg building", () => {
     // is registered from a different source string (the HTTPS URL the GUI
     // writes, or a branch ref), so the installer must not treat that as fatal.
     // Encoding the asymmetry here keeps the two from being "unified" later.
-    const add = buildCodexMarketplaceAddArgs().at(-1);
+    const add = buildCodexMarketplaceAddArgs()[3];
     const remove = buildCodexMarketplaceRemoveArgs().at(-1);
     expect(add).toContain("/");
     expect(remove).not.toContain("/");
@@ -109,6 +125,53 @@ describe("codexHasCognigyPlugin", () => {
       `[plugins."github@openai-curated"]\nenabled = true\n\n[mcp_servers.cognigy]\ncommand = "npx"\n`,
     );
     expect(codexHasCognigyPlugin(config)).toBe(false);
+  });
+});
+
+describe("readCodexMarketplaceRef", () => {
+  it("reads the ref of our git marketplace", () => {
+    const config = join(tmp(), "config.toml");
+    writeFileSync(
+      config,
+      `model = "gpt-5"\n\n[marketplaces.cognigy-plugin]\nsource_type = "git"\n` +
+        `source = "https://github.com/Cognigy/cognigy-plugin.git"\nref = "main"\n`,
+    );
+    expect(readCodexMarketplaceRef(config)).toBe("main");
+  });
+
+  it("reports a stale branch ref so the installer can re-pin it", () => {
+    // The 1.8.3-forever bug: installed from a checkout on a feature branch,
+    // which then merged and stopped moving.
+    const config = join(tmp(), "config.toml");
+    writeFileSync(
+      config,
+      `[marketplaces.cognigy-plugin]\nsource_type = "git"\n` +
+        `ref = "feat/plugin-platforms-codex-gemini"\n\n[marketplaces.openai-bundled]\n` +
+        `source_type = "local"\nref = "not-ours"\n`,
+    );
+    expect(readCodexMarketplaceRef(config)).toBe(
+      "feat/plugin-platforms-codex-gemini",
+    );
+  });
+
+  it("is null for a local source, another marketplace, or no file", () => {
+    const dir = tmp();
+    expect(readCodexMarketplaceRef(join(dir, "nope.toml"))).toBe(null);
+
+    // A local source is a developer's own wiring — never re-pin it.
+    const local = join(dir, "local.toml");
+    writeFileSync(
+      local,
+      `[marketplaces.cognigy-plugin]\nsource_type = "local"\nsource = "/tmp/x"\n`,
+    );
+    expect(readCodexMarketplaceRef(local)).toBe(null);
+
+    const other = join(dir, "other.toml");
+    writeFileSync(
+      other,
+      `[marketplaces.openai-bundled]\nsource_type = "git"\nref = "main"\n`,
+    );
+    expect(readCodexMarketplaceRef(other)).toBe(null);
   });
 });
 

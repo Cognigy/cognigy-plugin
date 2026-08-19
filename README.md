@@ -96,7 +96,7 @@ npx -y -p @cognigy/plugin-engine@latest cognigy-setup \
 
 ## Staying up to date
 
-Updates are automatic on Claude Desktop (engine refreshes each launch), ChatGPT + Codex (the plugin runs the engine at `@latest`), Gemini CLI (installed with auto-update on), and Antigravity (the launcher pulls the latest engine each launch); on other hosts the host owns the plugin version. **Claude Code is the exception** — it leaves auto-update off for third-party marketplaces, so turn it on once under `/plugin → Marketplaces → cognigy-plugin`.
+Updates are automatic on Claude Desktop (engine refreshes each launch), ChatGPT + Codex (Codex re-checks the marketplace whenever plugins start up), Gemini CLI (installed with auto-update on), and Antigravity (the launcher pulls the latest engine each launch); on other hosts the host owns the plugin version. **Claude Code is the exception** — it leaves auto-update off for third-party marketplaces, so turn it on once under `/plugin → Marketplaces → cognigy-plugin`.
 
 Two caveats: on **Antigravity** the skills and agents are plugin _files_, so a newer engine's copies only land when you run `cognigy-setup update`. On **ChatGPT + Codex** skills update with the plugin, not the engine.
 

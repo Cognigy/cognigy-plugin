@@ -76,6 +76,20 @@ codex mcp remove cognigy
 
 **Credentials.** `config.toml` has no keychain, and Codex cannot prompt a plugin for secrets, so the installer keeps them out of it entirely: `~/.cognigy-plugin/config.json` (`chmod 600`), which the engine reads whenever `COGNIGY_API_BASE_URL` / `COGNIGY_API_KEY` are absent from the environment. Exported env vars still win if you prefer to set them per shell.
 
-**Updates.** The plugin's server runs the engine at `@latest`, so tools pick up new releases on restart. Skills ship with the plugin and update when it does.
+**Updates are automatic.** Codex re-checks its configured Git marketplaces every time plugins start up, and replaces the cached plugin when the branch has moved ([openai/codex#17425](https://github.com/openai/codex/pull/17425), on by default since April 2026). A new plugin version carries a new engine pin, so the tools follow along. In practice: restart the app now and then and you are current.
+
+To force it immediately instead of waiting for the next app start:
+
+```
+npx -y -p @cognigy/plugin-engine@latest cognigy-setup update
+```
+
+**If you are stuck on an old version**, the marketplace is almost certainly pinned to a branch that has stopped moving — auto-upgrade then works perfectly and finds nothing, forever. Check the ref:
+
+```
+codex plugin marketplace list
+```
+
+The installer registers the marketplace with `--ref main` precisely to prevent this. Without that ref, `codex plugin marketplace add Cognigy/cognigy-plugin` takes the branch from whatever Git checkout you ran it in. Re-running the installer detects a non-`main` ref and re-pins it for you.
 
 **Project-scoped config is ignored by the desktop app** — it loads only the global `~/.codex/config.toml` ([openai/codex#13025](https://github.com/openai/codex/issues/13025)). Plugins are recorded there, so this doesn't affect you.

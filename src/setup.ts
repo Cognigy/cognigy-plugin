@@ -52,6 +52,7 @@ import {
   codexHasCognigyPlugin,
   installCodex,
   uninstallCodex,
+  updateCodex,
 } from "./install/codex.js";
 import {
   installGemini,
@@ -686,11 +687,40 @@ function runUpdate(): void {
       "• Claude Desktop chat connector auto-updates its engine on every restart — nothing to do.\n",
     ),
   );
-  process.stdout.write(
-    dim(
-      "• ChatGPT + Codex: the plugin runs the engine @latest — restart to pick up a new release.\n",
-    ),
-  );
+  // Codex auto-upgrades git marketplaces on plugin startup, so this is only a
+  // "don't wait for the next app start" nudge. Only touch it when the plugin
+  // is actually installed, so `plugin add` can't register a plugin for someone
+  // who never wanted one.
+  if (codexHasCognigyPlugin()) {
+    const cx = updateCodex();
+    if (cx.method === "cli" && cx.reinstalled) {
+      process.stdout.write(
+        green("✓ ChatGPT + Codex") +
+          ": marketplace refreshed and plugin re-installed. Restart the app (or start a new thread) to apply.\n" +
+          dim(
+            "  (Codex would have picked this up on its own at the next app start.)\n",
+          ),
+      );
+    } else if (cx.method === "cli") {
+      process.stdout.write(
+        yellow("• ChatGPT + Codex") +
+          ": update failed — run it by hand:\n" +
+          cyan("    codex plugin marketplace upgrade\n") +
+          cyan("    codex plugin add cognigy@cognigy-plugin\n"),
+      );
+    } else {
+      process.stdout.write(
+        yellow("• ChatGPT + Codex") +
+          ": 'codex' CLI not found. To update, run:\n" +
+          (cx.commands ?? []).map((c) => cyan(`    ${c}`)).join("\n") +
+          "\n",
+      );
+    }
+  } else {
+    process.stdout.write(
+      dim("• ChatGPT + Codex: plugin not installed — nothing to update.\n"),
+    );
+  }
   // Antigravity's engine auto-updates via the launcher, but the plugin's skills
   // and agents are plain files — only a re-stage picks up a newer engine's copy.
   // Must run before the Gemini block below, which returns early.
