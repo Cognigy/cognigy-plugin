@@ -1,3 +1,9 @@
+## [1.10.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.10.0...v1.10.1) (2026-08-19)
+
+### Bug Fixes
+
+* make auto-updates actually reach users on ChatGPT + Codex and Antigravity ([#30](https://github.com/Cognigy/cognigy-plugin/issues/30)) ([aec1634](https://github.com/Cognigy/cognigy-plugin/commit/aec16343daae1d6435df8bf43626973f8833a68a)), closes [openai/codex#17425](https://github.com/openai/codex/issues/17425)
+
 ## [1.10.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.9.0...v1.10.0) (2026-08-18)
 
 ### Features

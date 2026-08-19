@@ -5,7 +5,7 @@
       "args": [
         "-y",
         "-p",
-        "cognigy-engine@npm:@cognigy/plugin-engine@1.10.0",
+        "cognigy-engine@npm:@cognigy/plugin-engine@1.10.1",
         "cognigy-mcp"
       ]
     },
