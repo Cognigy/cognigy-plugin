@@ -207,7 +207,7 @@ export function installCodex(creds: UserConfigFile): CodexResult {
   const mp = runCliTool("codex", codexPath, buildCodexMarketplaceAddArgs());
   if (mp.status !== 0 || mp.error) {
     process.stderr.write(
-      `[cognigy] 'codex plugin marketplace add ${MARKETPLACE_SOURCE}' exited ${mp.status}; ` +
+      `[cognigy] 'codex ${buildCodexMarketplaceAddArgs().join(" ")}' exited ${mp.status}; ` +
         `continuing — '${MARKETPLACE_NAME}' may already be registered from another source.\n`,
     );
   }
@@ -261,8 +261,6 @@ export interface CodexUpdateResult {
   refreshed?: boolean;
   /** Whether re-adding the plugin from the refreshed snapshot succeeded. */
   reinstalled?: boolean;
-  /** Fallback path: what to run by hand. */
-  commands?: string[];
 }
 
 /**
@@ -273,16 +271,12 @@ export interface CodexUpdateResult {
  * directory, which is what actually moves the installed version forward.
  */
 export function updateCodex(): CodexUpdateResult {
+  // Without the CLI there is nothing to fall back to, and nothing to worry
+  // about: Codex refreshes the marketplace itself when plugins next start up.
+  // Printing `codex ...` commands to someone who has no `codex` would be worse
+  // than saying so — the caller reports the restart instead.
   const codexPath = detectCodexPath();
-  if (!codexPath) {
-    return {
-      method: "fallback",
-      commands: [
-        `codex ${buildCodexMarketplaceUpgradeArgs().join(" ")}`,
-        `codex ${buildCodexPluginAddArgs().join(" ")}`,
-      ],
-    };
-  }
+  if (!codexPath) return { method: "fallback" };
 
   const up = runCliTool("codex", codexPath, buildCodexMarketplaceUpgradeArgs());
   const refreshed = up.status === 0 && !up.error;

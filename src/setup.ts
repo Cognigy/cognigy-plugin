@@ -701,7 +701,16 @@ function runUpdate(): void {
   // who never wanted one.
   if (codexHasCognigyPlugin()) {
     const cx = updateCodex();
-    if (cx.method === "cli" && cx.reinstalled) {
+    if (cx.method === "fallback") {
+      // No CLI to drive, and nothing to do: Codex refreshes the marketplace
+      // itself at the next start. Printing `codex ...` here would be useless
+      // advice for someone who demonstrably has no `codex`.
+      process.stdout.write(
+        dim(
+          "• ChatGPT + Codex: 'codex' CLI not found — restart the app instead; it refreshes plugins itself on startup.\n",
+        ),
+      );
+    } else if (cx.refreshed && cx.reinstalled) {
       process.stdout.write(
         green("✓ ChatGPT + Codex") +
           ": marketplace refreshed and plugin re-installed. Restart the app (or start a new thread) to apply.\n" +
@@ -709,19 +718,23 @@ function runUpdate(): void {
             "  (Codex would have picked this up on its own at the next app start.)\n",
           ),
       );
-    } else if (cx.method === "cli") {
+    } else if (cx.reinstalled) {
+      // `plugin add` re-installed from a snapshot the upgrade failed to move,
+      // so this may well be the version already installed. Don't call it a
+      // refresh.
+      process.stdout.write(
+        yellow("• ChatGPT + Codex") +
+          ": plugin re-installed, but refreshing the marketplace failed — you may still be on the previous version.\n" +
+          dim(
+            "  Codex retries the refresh on its own at the next app start.\n",
+          ),
+      );
+    } else {
       process.stdout.write(
         yellow("• ChatGPT + Codex") +
           ": update failed — run it by hand:\n" +
           cyan("    codex plugin marketplace upgrade\n") +
           cyan("    codex plugin add cognigy@cognigy-plugin\n"),
-      );
-    } else {
-      process.stdout.write(
-        yellow("• ChatGPT + Codex") +
-          ": 'codex' CLI not found. To update, run:\n" +
-          (cx.commands ?? []).map((c) => cyan(`    ${c}`)).join("\n") +
-          "\n",
       );
     }
   } else {
