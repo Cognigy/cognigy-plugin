@@ -1719,7 +1719,7 @@ After creating, use talk_to_agent to test.`,
   {
     name: "manage_snapshots",
     description:
-      'Create and restore Cognigy Snapshots so agent changes can be rolled back. A Snapshot is an immutable copy of a PROJECT.\n\nBACKUP OPERATIONS:\n- list: list the project\'s snapshots, flagging which ones this plugin created, plus the current count against the snapshot limit\n- create: create a backup snapshot of the project and wait for the task to finish\n- restore: roll the project back to a snapshot (reports a preflight first; only acts with confirm: true)\n- delete: delete a snapshot — ONLY snapshots this plugin created\n- decline: record that the user was asked for a backup and said no\n- read_task: read task status for a create, restore, or delete that outlived the wait\n\nWHEN TO USE:\n- The FIRST attempt to change an existing agent in a session is HELD by the server: it changes NOTHING and returns error \"backup_not_offered\". Ask the user whether they want a backup, then call create (yes) or decline (no), then retry the held call.\n- When the user wants to undo, call restore (preflight), show the warnings, get agreement, then restore with confirm: true.\n\nSCOPE — A SNAPSHOT IS PROJECT-WIDE:\n- It captures every AI Agent, Flow, Connection, LLM, Lexicon, Extension, Function, Playbook and Locale in the project. Restoring reverts ALL of them, not just one agent.\n- It does NOT contain Endpoints, Knowledge AI (stores/sources/chunks), Intent Trainer records, analytics, contact profiles, logs, or other snapshots. A RAG agent restored from a snapshot comes back WITHOUT its knowledge. Say so before creating or restoring.\n\nRESTORE IS DESTRUCTIVE:\n- All current project resources are DELETED and recreated from the snapshot. Resource ids change, so re-list resources afterwards.\n- Endpoints survive but their locale references are rewritten; endpoints on non-primary locales need manual repair in the UI.\n- restore without confirm: true performs NO action — it returns a preflight report. Show it to the user and get explicit agreement before retrying with confirm: true.\n\nSNAPSHOT LIMIT (default 10 per project, configurable per installation):\n- create pre-checks the count. At the limit it creates NOTHING and returns error "snapshot_limit_reached" plus the oldest deletable backup.\n- Ask the user whether to free a slot, then retry with confirmDeleteOldest: true, which deletes the OLDEST plugin-created backup and then creates.\n- If no plugin-created backup exists to delete, create refuses. The plugin NEVER deletes a human-created snapshot — the user must delete one in the Cognigy UI.\n\nIDENTIFICATION:\n- Snapshots created here are named "[AI Backup] <label> — <timestamp>" and carry a marker in their description. delete accepts ONLY snapshots with both markers.\n\nBEHAVIOR:\n- create/restore/delete are async platform tasks. By default this tool waits for completion (waitForCompletion: true) and returns the final task state.\n- Snapshot names must be unique in a project; the timestamp in the generated name guarantees that. Pass a short `label`, never a full name.\n- Downloading, packaging and uploading snapshots are deliberately NOT supported here.',
+      'Create and restore Cognigy Snapshots so agent changes can be rolled back. A Snapshot is an immutable copy of a PROJECT.\n\nBACKUP OPERATIONS:\n- list: list the project\'s snapshots, flagging which ones this plugin created, plus the current count against the snapshot limit\n- create: create a backup snapshot of the project and wait for the task to finish\n- restore: roll the project back to a snapshot (reports a preflight first; only acts with confirm: true)\n- delete: delete a snapshot — ONLY snapshots this plugin created\n- decline: record that the user was asked for a backup and said no\n- read_task: read task status for a create, restore, or delete that outlived the wait\n\nWHEN TO USE:\n- The FIRST attempt to change an existing agent in a session is HELD by the server: it changes NOTHING and returns error \"backup_not_offered\". Ask the user whether they want a backup, then call create (yes) or decline (no), then retry the held call.\n- When the user wants to undo, call restore (preflight), show the warnings, get agreement, then restore with confirm: true.\n\nSCOPE — A SNAPSHOT IS PROJECT-WIDE:\n- It captures every AI Agent, Flow, Connection, LLM, Lexicon, Extension, Function, Playbook and Locale in the project. Restoring reverts ALL of them, not just one agent.\n- It does NOT contain Endpoints, Knowledge AI (stores/sources/chunks), Intent Trainer records, analytics, contact profiles, logs, or other snapshots. A RAG agent restored from a snapshot comes back WITHOUT its knowledge. Say so before creating or restoring.\n\nRESTORE IS DESTRUCTIVE:\n- All current project resources are DELETED and recreated from the snapshot. Resource ids change, so re-list resources afterwards.\n- Endpoints survive but their locale references are rewritten; endpoints on non-primary locales need manual repair in the UI.\n- restore without confirm: true performs NO action — it returns a preflight report. Show it to the user and get explicit agreement before retrying with confirm: true.\n\nSNAPSHOT LIMIT (default 10 per project, configurable per installation):\n- create pre-checks the count. At the limit it creates NOTHING and returns error "snapshot_limit_reached" plus the oldest deletable backup.\n- Ask the user whether to free a slot, then retry with confirmDeleteOldest: true, which deletes the OLDEST plugin-created backup and then creates.\n- If no plugin-created backup exists to delete, create refuses. The plugin NEVER deletes a human-created snapshot — the user must delete one in the Cognigy UI.\n\nIDENTIFICATION:\n- Snapshots created here are named "[AI Backup] v<N> <label> — <timestamp>" and carry a marker in their description. delete accepts ONLY snapshots with both markers.\n- <N> is a version number that only ever counts up within a project, so a backup can be referred to as "v3" instead of by timestamp. list returns it as `version` (null for snapshots with no version in the name).\n\nBEHAVIOR:\n- create/restore/delete are async platform tasks. By default this tool waits for completion (waitForCompletion: true) and returns the final task state.\n- Snapshot names must be unique in a project; the timestamp in the generated name guarantees that. Pass a short `label`, never a full name.\n- Downloading, packaging and uploading snapshots are deliberately NOT supported here.\n\nOUTCOMES THAT ARE NOT YET KNOWN:\n- If a task was started but its status could not be read, the result carries error \"task_status_unknown\" and outcomeUnknown: true. The operation MAY have succeeded — do NOT report it as failed and do NOT retry it. Poll read_task with the returned taskId first.\n- restore and delete verify the snapshot belongs to the passed projectId. A snapshotId from another project returns error \"snapshot_project_mismatch\" and changes nothing.\n- If freeing a slot cannot be confirmed, create returns error \"eviction_incomplete\" and stops: no further backup is deleted and no snapshot is created. Poll the task in haltedOn, then list before retrying.',
     annotations: {
       title: "Manage Snapshots",
       readOnlyHint: false,
@@ -1743,7 +1743,19 @@ After creating, use talk_to_agent to test.`,
         snapshotId: {
           type: "string",
           description:
-            "24-char hex snapshot ID. Required for restore and delete.",
+            "24-char hex snapshot ID. Required for restore and delete. Must belong to projectId.",
+        },
+        limit: {
+          type: "integer",
+          minimum: 1,
+          maximum: 100,
+          description:
+            "For list: how many snapshots to return (default 100). The reported count, atLimit and oldestDeletableBackup always describe the whole project, never just this page.",
+        },
+        skip: {
+          type: "integer",
+          minimum: 0,
+          description: "For list: how many snapshots to skip (default 0).",
         },
         taskId: {
           type: "string",
@@ -1751,6 +1763,8 @@ After creating, use talk_to_agent to test.`,
         },
         label: {
           type: "string",
+          minLength: 1,
+          maxLength: 120,
           description:
             'Optional short label describing why the backup was taken, e.g. "pre-persona-update". Used inside the generated name; do NOT pass a full snapshot name.',
         },
@@ -1770,8 +1784,11 @@ After creating, use talk_to_agent to test.`,
             "When true (default), wait for the create/restore/delete task to finish.",
         },
         timeoutMs: {
-          type: "number",
-          description: "Task polling timeout in milliseconds. Default: 600000.",
+          type: "integer",
+          minimum: 1000,
+          maximum: 3600000,
+          description:
+            "Task polling timeout in milliseconds (1000-3600000). Default: 600000. For create it is the budget for the WHOLE call, including any deletion needed to free a slot.",
         },
       },
       required: ["operation", "projectId"],

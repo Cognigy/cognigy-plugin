@@ -57,20 +57,26 @@ below. If it returns `pending: true`, the backup does **not** exist yet — poll
 create does not satisfy the gate.
 
 `label` is a short reason, not a name. The plugin builds the name itself as
-`[AI Backup] <label> — <timestamp>` so the backup is always identifiable and always
-uniquely named.
+`[AI Backup] v<N> <label> — <timestamp>` so the backup is always identifiable and
+always uniquely named. `<N>` only counts up within a project, so you can refer to a
+backup as "v3" rather than by timestamp; `list` returns it as `version`.
 
 ### Roll back to a backup
 
 1. `manage_snapshots { operation: "list", projectId: "<projectId>" }`
 2. Pick the snapshot. `isPluginBackup: true` marks the ones this plugin created.
-3. Get a preflight — this changes **nothing**:
+3. If the target is **not** the backup this session just created — an older backup,
+   or a human-made snapshot — the project's current state is about to be destroyed
+   with nothing to come back to. Offer to snapshot the current state first, and
+   create it if the user agrees and a slot is free. Skip this when the restore
+   simply reverts this session's own changes to the backup it just took.
+4. Get a preflight — this changes **nothing**:
    - `manage_snapshots { operation: "restore", projectId: "<projectId>", snapshotId: "<snapshotId>" }`
-4. Show the user the returned `warnings` and `notRestored` lists, and the snapshot's
+5. Show the user the returned `warnings` and `notRestored` lists, and the snapshot's
    name and age. Ask for explicit agreement.
-5. Only after they agree:
+6. Only after they agree:
    - `manage_snapshots { operation: "restore", projectId: "<projectId>", snapshotId: "<snapshotId>", confirm: true }`
-6. Afterwards:
+7. Afterwards:
    - Every resource id in the project has changed. Re-list agents and flows; do not
      reuse any id from earlier in the conversation.
    - Tell the user to check Endpoints assigned to non-primary Locales in the Cognigy

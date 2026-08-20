@@ -415,7 +415,7 @@ describe("filterList", () => {
 });
 
 describe("snapshot filter", () => {
-  const marker = "cognigy-plugin:auto-backup:v1";
+  const marker = "cognigy-plugin:auto-backup";
 
   it("marks a plugin backup", () => {
     const result = filterResponse("snapshot", {
@@ -435,6 +435,37 @@ describe("snapshot filter", () => {
     expect(result.hash).toBeUndefined();
     expect(result.packageExpiresAt).toBeUndefined();
     expect(result.size).toBeUndefined();
+  });
+
+  it("still marks a backup written with the older :v1 marker", () => {
+    const result = filterResponse("snapshot", {
+      _id: "60d5ec49f1a2c8b1a4e0fa02",
+      name: "[AI Backup] pre-update — 2026-08-20 13-00-17",
+      description: `Automatic backup.\n${marker}:v1`,
+      createdAt: 1750000000,
+    });
+
+    // Descriptions are immutable: if the marker literal ever stopped matching,
+    // these backups would become undeletable and invisible to the limit check.
+    expect(result.isPluginBackup).toBe(true);
+  });
+
+  it("exposes the version parsed out of the name", () => {
+    const versioned = filterResponse("snapshot", {
+      _id: "60d5ec49f1a2c8b1a4e0fa04",
+      name: "[AI Backup] v7 pre-update — 2026-08-20 13-00-17",
+      description: `Automatic backup.\n${marker}`,
+      createdAt: 1750000000,
+    });
+    const unversioned = filterResponse("snapshot", {
+      _id: "60d5ec49f1a2c8b1a4e0fa05",
+      name: "[AI Backup] pre-update — 2026-08-20 13-00-17",
+      description: `Automatic backup.\n${marker}`,
+      createdAt: 1750000000,
+    });
+
+    expect(versioned.version).toBe(7);
+    expect(unversioned.version).toBeNull();
   });
 
   it("does not mark a human snapshot", () => {

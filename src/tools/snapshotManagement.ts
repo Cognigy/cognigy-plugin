@@ -15,7 +15,15 @@
  * the name prefix is still protected from plugin deletion.
  */
 export const AUTO_BACKUP_NAME_PREFIX = "[AI Backup] ";
-export const AUTO_BACKUP_MARKER = "cognigy-plugin:auto-backup:v1";
+/**
+ * No format version in the marker on purpose. Descriptions are immutable, so
+ * bumping the literal to :v2 would instantly un-mark every backup ever written:
+ * they would stop being deletable through the tool AND drop out of the
+ * deletable set the limit check uses, leaving a full project with no way
+ * forward. It is matched as a SUBSTRING, so backups written by an earlier build
+ * with a `:v1` suffix still read as plugin backups.
+ */
+export const AUTO_BACKUP_MARKER = "cognigy-plugin:auto-backup";
 
 /**
  * Default only. The real cap is MAX_AMOUNT_SNAPSHOTS_IN_AGENT, which the
@@ -39,6 +47,8 @@ const MAX_DESCRIPTION_LENGTH = 500;
 export interface SnapshotSummary {
   id: string | null;
   name: string;
+  /** Version parsed out of the backup name; null for anything unversioned. */
+  version: number | null;
   description: string;
   createdAt: number | null;
   createdBy: string | null;
@@ -83,6 +93,7 @@ export function formatBackupTimestamp(now: Date): string {
 export function buildAutoBackupFields(
   label: string | undefined,
   now: Date,
+  version: number,
 ): { name: string; description: string } {
   const stamp = formatBackupTimestamp(now);
   // Strip characters isValidResourceName rejects rather than letting the API
@@ -92,12 +103,11 @@ export function buildAutoBackupFields(
     .replace(/\s+/g, " ")
     .trim();
 
+  const prefix = `${AUTO_BACKUP_NAME_PREFIX}v${version} `;
   const suffix = ` — ${stamp}`;
-  const room = MAX_NAME_LENGTH - AUTO_BACKUP_NAME_PREFIX.length - suffix.length;
+  const room = MAX_NAME_LENGTH - prefix.length - suffix.length;
   const name =
-    AUTO_BACKUP_NAME_PREFIX +
-    (safeLabel || "backup").slice(0, Math.max(1, room)) +
-    suffix;
+    prefix + (safeLabel || "backup").slice(0, Math.max(1, room)) + suffix;
 
   const description = [
     "Automatic backup created by the NiCE Cognigy Plugin before agent changes.",
@@ -121,10 +131,33 @@ export function isAutoBackup(raw: any): boolean {
   );
 }
 
+/** `[AI Backup] v3 pre-persona — …` -> 3. Null when the name carries no version. */
+export function parseBackupVersion(name: any): number | null {
+  if (typeof name !== "string") return null;
+  const match = new RegExp(
+    `^${AUTO_BACKUP_NAME_PREFIX.replace(/[[\]]/g, "\\$&")}v(\\d+) `,
+  ).exec(name);
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * The next version number for a project: one above the highest ANY plugin
+ * backup in it has ever shown, never a number already used. `floor` carries the
+ * highest version this session issued, so deleting the newest backup and
+ * creating another cannot hand the same number to two different snapshots.
+ */
+export function nextBackupVersion(snapshots: any[], floor = 0): number {
+  const highest = snapshots
+    .filter(isAutoBackup)
+    .reduce((max, s) => Math.max(max, parseBackupVersion(s?.name) ?? 0), 0);
+  return Math.max(highest, floor) + 1;
+}
+
 export function summarizeSnapshot(raw: any): SnapshotSummary {
   return {
     id: snapshotId(raw),
     name: raw?.name ?? "",
+    version: parseBackupVersion(raw?.name),
     description: raw?.description ?? "",
     createdAt: raw?.createdAt ?? null,
     createdBy: raw?.createdBy ?? null,

@@ -1,4 +1,4 @@
-import { isAutoBackup } from "./snapshotManagement.js";
+import { summarizeSnapshot } from "./snapshotManagement.js";
 
 export interface ResponseHints {
   hint?: string;
@@ -122,19 +122,15 @@ export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
     name: r.name ?? r.label,
     toolType: r.toolType ?? r.type,
   }),
-  // `isPluginBackup` is the deletion gate, so it belongs in every snapshot view.
-  // `hash` and `packageExpiresAt` are dropped: both only matter for downloading,
-  // which this plugin deliberately does not do (and the platform never actually
-  // assigns packageExpiresAt).
-  snapshot: (r) => ({
-    id: rid(r),
-    name: r.name,
-    description: r.description,
-    createdAt: r.createdAt,
-    createdBy: r.createdBy,
-    isPackaged: Boolean(r.isPackaged),
-    isPluginBackup: isAutoBackup(r),
-  }),
+  // Delegated, not re-implemented: `isPluginBackup` is the deletion gate, and a
+  // second copy of that computation is the kind of thing that drifts. list
+  // renders through this filter while create/restore/delete return
+  // summarizeSnapshot directly — both must agree, always.
+  //
+  // (summarizeSnapshot drops `hash` and `packageExpiresAt` for the same reason
+  // this filter did: both only matter for downloading, which this plugin
+  // deliberately does not do.)
+  snapshot: summarizeSnapshot,
 };
 
 /**

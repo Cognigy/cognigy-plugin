@@ -3549,9 +3549,9 @@ describe("manage_snapshots", () => {
       const body = api.post.mock.calls[0][1] as any;
       expect(api.post.mock.calls[0][0]).toBe("/new/v2.0/snapshots");
       expect(body.name).toMatch(
-        /^\[AI Backup\] pre-update — \d{4}-\d{2}-\d{2}/,
+        /^\[AI Backup\] v1 pre-update — \d{4}-\d{2}-\d{2}/,
       );
-      expect(body.description).toContain("cognigy-plugin:auto-backup:v1");
+      expect(body.description).toContain("cognigy-plugin:auto-backup");
       expect(body.projectId).toBe(ID.project);
       expect(result.notIncluded.join(" ")).toContain("Knowledge AI");
     });
@@ -3707,9 +3707,11 @@ describe("manage_snapshots", () => {
 
   describe("restore", () => {
     it("only reads and changes nothing without confirm", async () => {
-      api.get.mockResolvedValueOnce(
-        autoBackup(SNAP_ID.auto1, "backup", 100) as any,
-      );
+      api.get
+        .mockResolvedValueOnce(autoBackup(SNAP_ID.auto1, "backup", 100) as any)
+        .mockResolvedValueOnce(
+          snapshotPage([autoBackup(SNAP_ID.auto1, "backup", 100)]) as any,
+        );
 
       const result = await h.handleToolCall("manage_snapshots", {
         operation: "restore",
@@ -3727,6 +3729,9 @@ describe("manage_snapshots", () => {
     it("posts with no body when confirmed", async () => {
       api.get
         .mockResolvedValueOnce(autoBackup(SNAP_ID.auto1, "backup", 100) as any)
+        .mockResolvedValueOnce(
+          snapshotPage([autoBackup(SNAP_ID.auto1, "backup", 100)]) as any,
+        )
         .mockResolvedValueOnce(doneTask as any);
       api.post.mockResolvedValueOnce({ _id: ID.task } as any);
 
@@ -3749,6 +3754,9 @@ describe("manage_snapshots", () => {
     it("restores a human-created snapshot too", async () => {
       api.get
         .mockResolvedValueOnce(humanSnapshot(SNAP_ID.human, 100) as any)
+        .mockResolvedValueOnce(
+          snapshotPage([humanSnapshot(SNAP_ID.human, 100)]) as any,
+        )
         .mockResolvedValueOnce(doneTask as any);
       api.post.mockResolvedValueOnce({ _id: ID.task } as any);
 
@@ -3799,6 +3807,9 @@ describe("manage_snapshots", () => {
     it("deletes a plugin backup", async () => {
       api.get
         .mockResolvedValueOnce(autoBackup(SNAP_ID.auto1, "backup", 100) as any)
+        .mockResolvedValueOnce(
+          snapshotPage([autoBackup(SNAP_ID.auto1, "backup", 100)]) as any,
+        )
         .mockResolvedValueOnce(doneTask as any);
       api.delete.mockResolvedValueOnce({ _id: ID.task } as any);
 
@@ -3817,6 +3828,9 @@ describe("manage_snapshots", () => {
     it("explains an endpoint-pinned snapshot", async () => {
       api.get
         .mockResolvedValueOnce(autoBackup(SNAP_ID.auto1, "backup", 100) as any)
+        .mockResolvedValueOnce(
+          snapshotPage([autoBackup(SNAP_ID.auto1, "backup", 100)]) as any,
+        )
         .mockResolvedValueOnce({
           _id: ID.task,
           status: "error",
@@ -4054,12 +4068,15 @@ describe("manage_snapshots — deferred tasks", () => {
   });
 
   it("does not claim a delete succeeded when it was only queued", async () => {
-    api.get.mockResolvedValueOnce({
+    const queued = {
       _id: "60d5ec49f1a2c8b1a4e0fa01",
       name: "[AI Backup] backup",
       description: "x\ncognigy-plugin:auto-backup:v1",
       createdAt: 100,
-    } as any);
+    };
+    api.get
+      .mockResolvedValueOnce(queued as any)
+      .mockResolvedValueOnce({ items: [queued], total: 1 } as any);
     api.delete.mockResolvedValueOnce({ _id: ID.task } as any);
 
     const result = await h.handleToolCall("manage_snapshots", {
@@ -4107,5 +4124,348 @@ describe("manage_snapshots — deferred tasks", () => {
 
     expect(update.error).toBe("backup_not_offered");
     expect(api.patch).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// manage_snapshots — the outcome must never be overstated
+//
+// Every case here is one where an earlier version answered with more certainty
+// than it had: a lost poll reported as a failure, an unconfirmed delete
+// reported as a freed slot, a foreign snapshot acted on as if it were ours, a
+// page of snapshots counted as the whole project.
+// ---------------------------------------------------------------------------
+
+describe("manage_snapshots — outcome safety", () => {
+  let api: jest.Mocked<CognigyApiClient>;
+  let h: ToolHandlers;
+
+  const tenBackups = () =>
+    Array.from({ length: 10 }, (_, i) =>
+      autoBackup(
+        `60d5ec49f1a2c8b1a4e0f1${String(i).padStart(2, "0")}`,
+        `b${i}`,
+        100 + i,
+      ),
+    );
+
+  beforeEach(() => {
+    api = {
+      get: jest.fn(),
+      post: jest.fn(),
+      patch: jest.fn(),
+      delete: jest.fn(),
+      put: jest.fn(),
+      uploadFile: jest.fn(),
+    } as any;
+    h = new ToolHandlers(api, "https://endpoint-trial.cognigy.ai");
+  });
+
+  it("does not call a create failed when only the poll failed", async () => {
+    api.get
+      .mockResolvedValueOnce({ items: [], total: 0 } as any)
+      .mockRejectedValueOnce(new Error("socket hang up"));
+    api.post.mockResolvedValueOnce({ _id: ID.task } as any);
+
+    const result = await h.handleToolCall("manage_snapshots", {
+      operation: "create",
+      projectId: ID.project,
+    });
+
+    expect(result.error).toBe("task_status_unknown");
+    expect(result.outcomeUnknown).toBe(true);
+    expect(result.taskId).toBe(ID.task);
+    expect(result._hints.action).toContain("read_task");
+    // The old wording told the model no backup existed, so a retry created a
+    // duplicate that ate a snapshot slot.
+    expect(result._hints.warning).not.toContain("Nothing was backed up");
+  });
+
+  it("still reports a task the platform genuinely failed as a failure", async () => {
+    api.get
+      .mockResolvedValueOnce({ items: [], total: 0 } as any)
+      .mockResolvedValueOnce({
+        _id: ID.task,
+        status: "error",
+        failReason: "Something broke inside the resources service.",
+      } as any);
+    api.post.mockResolvedValueOnce({ _id: ID.task } as any);
+
+    const result = await h.handleToolCall("manage_snapshots", {
+      operation: "create",
+      projectId: ID.project,
+    });
+
+    expect(result.created).toBe(false);
+    expect(result.outcomeUnknown).toBeUndefined();
+    expect(result.failReason).toContain("Something broke");
+  });
+
+  it("stops freeing slots when a deletion's status cannot be read", async () => {
+    api.get
+      .mockResolvedValueOnce(snapshotPage(tenBackups()) as any)
+      .mockRejectedValueOnce(new Error("502 Bad Gateway"));
+    api.delete.mockResolvedValueOnce({ _id: ID.task } as any);
+
+    const result = await h.handleToolCall("manage_snapshots", {
+      operation: "create",
+      projectId: ID.project,
+      confirmDeleteOldest: true,
+    });
+
+    expect(result.error).toBe("eviction_incomplete");
+    expect(result.haltedOn.kind).toBe("poll_failed");
+    expect(result.created).toBe(false);
+    // The whole point: exactly ONE backup was ever targeted. Walking to the
+    // next candidate here destroys a second backup to free one slot.
+    expect(api.delete).toHaveBeenCalledTimes(1);
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("stops freeing slots when a deletion times out", async () => {
+    const active = { _id: ID.task, status: "active", currentStep: 1 };
+    api.get
+      .mockResolvedValueOnce(snapshotPage(tenBackups()) as any)
+      .mockResolvedValue(active as any);
+    api.delete.mockResolvedValueOnce({ _id: ID.task } as any);
+
+    const result = await h.handleToolCall("manage_snapshots", {
+      operation: "create",
+      projectId: ID.project,
+      confirmDeleteOldest: true,
+      timeoutMs: 1000,
+    });
+
+    expect(result.error).toBe("eviction_incomplete");
+    expect(result.haltedOn.kind).toBe("timed_out");
+    expect(result.haltedOn.taskId).toBe(ID.task);
+    expect(api.delete).toHaveBeenCalledTimes(1);
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("reports the backup it destroyed when the create still hits the limit", async () => {
+    const backups = tenBackups();
+    api.get
+      .mockResolvedValueOnce(snapshotPage(backups) as any)
+      .mockResolvedValueOnce(doneTask as any)
+      .mockResolvedValueOnce({
+        _id: ID.task,
+        status: "error",
+        failReason:
+          "Unable to create Snapshot. Limit of allowed Snapshots for this project has been exceeded.",
+      } as any)
+      .mockResolvedValueOnce(snapshotPage(backups.slice(1)) as any);
+    api.delete.mockResolvedValueOnce({ _id: ID.task } as any);
+    api.post.mockResolvedValueOnce({ _id: ID.task } as any);
+
+    const result = await h.handleToolCall("manage_snapshots", {
+      operation: "create",
+      projectId: ID.project,
+      confirmDeleteOldest: true,
+    });
+
+    expect(result.error).toBe("snapshot_limit_reached");
+    expect(result.created).toBe(false);
+    expect(result.deletedToFreeSlot.id).toBe(backups[0]._id);
+    // A backup was permanently destroyed — saying otherwise leaves no trace.
+    expect(result._hints.warning).not.toContain("nothing was deleted");
+    expect(result._hints.warning).toContain("permanently deleted");
+  });
+
+  it("refuses to restore a snapshot that belongs to another project", async () => {
+    api.get
+      .mockResolvedValueOnce(autoBackup(SNAP_ID.auto1, "foreign", 100) as any)
+      .mockResolvedValueOnce(
+        snapshotPage([autoBackup(SNAP_ID.auto2, "ours", 200)]) as any,
+      );
+
+    const result = await h.handleToolCall("manage_snapshots", {
+      operation: "restore",
+      projectId: ID.project,
+      snapshotId: SNAP_ID.auto1,
+      confirm: true,
+    });
+
+    expect(result.error).toBe("snapshot_project_mismatch");
+    expect(result.applied).toBe(false);
+    // A confirmed restore against a foreign id rolls back the WRONG project.
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("refuses to delete a snapshot that belongs to another project", async () => {
+    api.get
+      .mockResolvedValueOnce(autoBackup(SNAP_ID.auto1, "foreign", 100) as any)
+      .mockResolvedValueOnce(
+        snapshotPage([autoBackup(SNAP_ID.auto2, "ours", 200)]) as any,
+      );
+
+    const result = await h.handleToolCall("manage_snapshots", {
+      operation: "delete",
+      projectId: ID.project,
+      snapshotId: SNAP_ID.auto1,
+    });
+
+    expect(result.error).toBe("snapshot_project_mismatch");
+    expect(result.deleted).toBe(false);
+    expect(api.delete).not.toHaveBeenCalled();
+  });
+
+  it("counts the whole project even when the caller pages the list", async () => {
+    const backups = tenBackups();
+    api.get.mockResolvedValueOnce(snapshotPage(backups) as any);
+
+    const result = await h.handleToolCall("manage_snapshots", {
+      operation: "list",
+      projectId: ID.project,
+      limit: 5,
+      skip: 5,
+    });
+
+    // A page-sized count reads as "there is room" on a project that is full.
+    expect(result.count).toBe(10);
+    expect(result.atLimit).toBe(true);
+    expect(result.snapshots).toHaveLength(5);
+    // The eviction candidate must be the project's oldest backup, not the
+    // oldest one that happened to land on the requested page.
+    expect(result.oldestDeletableBackup.id).toBe(backups[0]._id);
+  });
+
+  it("does not call a restore failed when only the poll failed", async () => {
+    api.get
+      .mockResolvedValueOnce(autoBackup(SNAP_ID.auto1, "backup", 100) as any)
+      .mockResolvedValueOnce(
+        snapshotPage([autoBackup(SNAP_ID.auto1, "backup", 100)]) as any,
+      )
+      .mockRejectedValueOnce(new Error("ECONNRESET"));
+    api.post.mockResolvedValueOnce({ _id: ID.task } as any);
+
+    const result = await h.handleToolCall("manage_snapshots", {
+      operation: "restore",
+      projectId: ID.project,
+      snapshotId: SNAP_ID.auto1,
+      confirm: true,
+    });
+
+    expect(result.error).toBe("task_status_unknown");
+    expect(result.outcomeUnknown).toBe(true);
+    expect(result._hints.action).toContain("read_task");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// manage_snapshots — backup version numbers
+//
+// Backups are referred to by version ("restore v3"), so a number must never
+// point at two different snapshots.
+// ---------------------------------------------------------------------------
+
+describe("manage_snapshots — versioned names", () => {
+  let api: jest.Mocked<CognigyApiClient>;
+  let h: ToolHandlers;
+
+  beforeEach(() => {
+    api = {
+      get: jest.fn(),
+      post: jest.fn(),
+      patch: jest.fn(),
+      delete: jest.fn(),
+      put: jest.fn(),
+      uploadFile: jest.fn(),
+    } as any;
+    h = new ToolHandlers(api, "https://endpoint-trial.cognigy.ai");
+  });
+
+  const versioned = (id: string, version: number, createdAt: number) => ({
+    _id: id,
+    name: `[AI Backup] v${version} earlier — 2026-08-20 10-00-0${version}`,
+    description: AUTO_DESC,
+    createdAt,
+    createdBy: "user1",
+    isPackaged: false,
+  });
+
+  it("numbers a new backup above the project's highest", async () => {
+    api.get
+      .mockResolvedValueOnce(
+        snapshotPage([
+          versioned(SNAP_ID.auto1, 1, 10),
+          versioned(SNAP_ID.auto2, 3, 30),
+          humanSnapshot(SNAP_ID.human, 40),
+        ]) as any,
+      )
+      .mockResolvedValueOnce(doneTask as any)
+      .mockResolvedValueOnce(snapshotPage([]) as any);
+    api.post.mockResolvedValueOnce({ _id: ID.task } as any);
+
+    await h.handleToolCall("manage_snapshots", {
+      operation: "create",
+      projectId: ID.project,
+      label: "pre-update",
+    });
+
+    const body = api.post.mock.calls[0][1] as any;
+    expect(body.name).toMatch(/^\[AI Backup\] v4 pre-update — /);
+  });
+
+  it("does not reuse a number after the newest backup is deleted", async () => {
+    // Both creates see an empty project — the second only because the first
+    // backup was deleted in between. Reusing v1 would make "v1" ambiguous.
+    api.get.mockResolvedValue(snapshotPage([]) as any);
+    api.get.mockResolvedValueOnce(snapshotPage([]) as any);
+    api.post.mockResolvedValue({ _id: ID.task } as any);
+
+    await h.handleToolCall("manage_snapshots", {
+      operation: "create",
+      projectId: ID.project,
+      waitForCompletion: false,
+    });
+    await h.handleToolCall("manage_snapshots", {
+      operation: "create",
+      projectId: ID.project,
+      waitForCompletion: false,
+    });
+
+    expect((api.post.mock.calls[0][1] as any).name).toMatch(
+      /^\[AI Backup\] v1 /,
+    );
+    expect((api.post.mock.calls[1][1] as any).name).toMatch(
+      /^\[AI Backup\] v2 /,
+    );
+  });
+
+  it("reports no snapshot rather than the wrong one when the name does not match", async () => {
+    api.get
+      .mockResolvedValueOnce(snapshotPage([]) as any)
+      .mockResolvedValueOnce(doneTask as any)
+      // A filter hit that is NOT the backup we just wrote.
+      .mockResolvedValueOnce(
+        snapshotPage([autoBackup(SNAP_ID.auto2, "someone else", 5)]) as any,
+      );
+    api.post.mockResolvedValueOnce({ _id: ID.task } as any);
+
+    const result = await h.handleToolCall("manage_snapshots", {
+      operation: "create",
+      projectId: ID.project,
+    });
+
+    expect(result.created).toBe(true);
+    // Binding the wrong id here would put it into the restore hint below —
+    // a restore to the wrong point in time.
+    expect(result.snapshot).toBeNull();
+    expect(result._hints.action).toContain("list");
+    expect(result._hints.action).not.toContain(SNAP_ID.auto2);
+  });
+
+  it("holds a project-settings change for a backup offer", async () => {
+    const result = await h.handleToolCall("manage_settings", {
+      operation: "set_knowledge_ai",
+      projectId: ID.project,
+      knowledgeSearchModelId: "m1",
+    });
+
+    // Project settings ARE captured in a snapshot, so this is worth offering.
+    expect(result.error).toBe("backup_not_offered");
+    expect(api.patch).not.toHaveBeenCalled();
+    expect(api.post).not.toHaveBeenCalled();
   });
 });
