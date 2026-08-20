@@ -77,11 +77,16 @@ const p2 = (n: number): string => String(n).padStart(2, "0");
  *
  * The time uses `HH-mm-ss`, NOT `HH:mm:ss`: isValidResourceName rejects `:`
  * outright, so a colon here would make every single create fail server-side.
+ *
+ * UTC, like the package names built via toISOString: local time makes the two
+ * naming schemes sort inconsistently against each other, and lets two sessions
+ * in different timezones mint byte-identical names — a collision that only ever
+ * surfaces as a generic 409 on the task, long after the fact.
  */
 export function formatBackupTimestamp(now: Date): string {
   return (
-    `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())} ` +
-    `${p2(now.getHours())}-${p2(now.getMinutes())}-${p2(now.getSeconds())}`
+    `${now.getUTCFullYear()}-${p2(now.getUTCMonth() + 1)}-${p2(now.getUTCDate())} ` +
+    `${p2(now.getUTCHours())}-${p2(now.getUTCMinutes())}-${p2(now.getUTCSeconds())}`
   );
 }
 
