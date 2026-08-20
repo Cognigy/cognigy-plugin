@@ -113,6 +113,9 @@ const DEFAULT_AGENT_IMAGE = "default-avatar:1";
 // Prefix applied to agents/flows/projects instead of deleting them.
 const DELETE_PREFIX = "DELETE_";
 
+// Cognigy resource names are capped at 200 chars (see schemas/tools.ts).
+const MAX_RESOURCE_NAME_LENGTH = 200;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -2588,10 +2591,18 @@ export class ToolHandlers {
     currentName: string | undefined,
   ): Promise<{ name: string; alreadyMarked: boolean }> {
     const name = currentName ?? "";
+    if (!name.trim()) {
+      throw new Error(
+        "Cannot mark resource for deletion: it has no name to prefix.",
+      );
+    }
     if (name.startsWith(DELETE_PREFIX)) {
       return { name, alreadyMarked: true };
     }
-    const newName = `${DELETE_PREFIX}${name}`;
+    const newName = `${DELETE_PREFIX}${name}`.slice(
+      0,
+      MAX_RESOURCE_NAME_LENGTH,
+    );
     await this.apiClient.patch(url, { name: newName });
     return { name: newName, alreadyMarked: false };
   }
@@ -2659,10 +2670,12 @@ export class ToolHandlers {
     }
 
     // Step 1: delete endpoints that reference the agent's flow
+    let endpointsChecked = false;
     if (flowId && projectId) {
       try {
         const flowRef = agent?.flowReferenceId ?? flow?.referenceId;
         if (flowRef) {
+          endpointsChecked = true;
           const limit = 100;
           let offset = 0;
           let hasMore = true;
@@ -2731,11 +2744,46 @@ export class ToolHandlers {
       });
     }
 
-    const allSucceeded =
-      failed.length === 0 && renamed.includes(`agent:${agentId}`);
+    // Compose the warning from what actually happened — never claim the
+    // agent is offline unless endpoint cleanup fully succeeded.
+    const agentRenamed = renamed.includes(`agent:${agentId}`);
+    const flowRenamed = flowId ? renamed.includes(`flow:${flowId}`) : false;
+    const endpointFailed = failed.some(
+      (f) =>
+        f.resource.startsWith("endpoint:") ||
+        f.resource.startsWith("endpoints:"),
+    );
+
+    const parts = ["Agents and flows cannot be deleted via this plugin."];
+    parts.push(
+      agentRenamed
+        ? "The agent was renamed with the DELETE_ prefix to mark it for manual deletion."
+        : "The agent could not be renamed and is NOT marked for deletion (see cascade.failed).",
+    );
+    if (flowRenamed) {
+      parts.push("Its flow was renamed with the DELETE_ prefix as well.");
+    } else if (flowId) {
+      parts.push("Its flow could not be renamed (see cascade.failed).");
+    }
+    if (endpointFailed) {
+      parts.push(
+        "Endpoint cleanup was incomplete — the agent may still be reachable (see cascade.failed).",
+      );
+    } else if (!endpointsChecked) {
+      parts.push(
+        "The agent's flow/endpoints could not be resolved, so no endpoints were deleted — the agent may still be reachable.",
+      );
+    } else if (deleted.length > 0) {
+      parts.push(
+        `${deleted.length} endpoint(s) were permanently deleted to take the agent offline.`,
+      );
+    } else {
+      parts.push("No endpoints referenced the agent's flow.");
+    }
+
     return withHints(
       {
-        markedForDeletion: allSucceeded,
+        markedForDeletion: agentRenamed,
         resourceType: "agent",
         id: agentId,
         cascade: {
@@ -2745,8 +2793,7 @@ export class ToolHandlers {
         },
       },
       {
-        warning:
-          "Agents and flows cannot be deleted via this plugin. The agent and its flow were renamed with the DELETE_ prefix to mark them for manual deletion; endpoints were permanently deleted to take the agent offline.",
+        warning: parts.join(" "),
         action: "Delete the renamed resources manually in the Cognigy UI.",
       },
     );
