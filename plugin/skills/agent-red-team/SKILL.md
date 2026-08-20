@@ -217,6 +217,21 @@ or from a platform `safetySettings` guard. This is what tells the user where a f
 produced a distinct platform-guard refusal, say so — it means the posture rests entirely on the
 `instructions` field.
 
+### Delivering the report
+
+Two closing steps, in this order — the report is not delivered until the user can actually see it:
+
+1. **Open `report.md` in the user's default viewer — every run, without asking** (`open` on macOS,
+   `xdg-open` on Linux, `start` on Windows). Never make the user hunt for the path or type a command to
+   read the result. If the environment is headless (CI/cron, no opener available), print the absolute
+   paths instead.
+2. **Then offer, once, to also publish the report as a shareable Artifact** — a self-contained HTML page
+   the user opens with a single click, no paths or terminal. This is opt-in: ask, don't assume, and only
+   after step 1. Where the client exposes an Artifact / HTML publish (e.g. Claude Code), render `report.md`
+   into one self-contained, theme-aware HTML page — inline all CSS, design both light and dark, and keep
+   wide tables and verbatim transcripts in their own `overflow-x` containers — then hand back the link.
+   In clients without that capability, skip the offer (or hand back a standalone `report.html` file).
+
 ---
 
 ## Phase 4 — Fix and re-verify
