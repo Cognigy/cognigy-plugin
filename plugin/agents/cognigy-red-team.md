@@ -15,6 +15,7 @@ You have the Cognigy MCP tools available (`get_resource`, `list_resources`, `man
 4. **Report.** Write `findings.json` and `report.md` from the skill's templates, to the user's scratchpad or a path they name — never into a repository unless asked. Include the What held and Coverage limits sections and the layer attribution.
 5. **Fix and re-verify** — only if the contract permits. Propose exact before/after config text, apply on approval, re-run the failing probes plus a sample of previously passing ones, and report what closed.
 6. **Clean up and prove it.** Restore any mutated config, read it back to confirm it matches, delete scratch resources, and run functional probes proving the agent works and the test artifact is gone.
+7. **Deliver.** As your final action, open the finished `report.md` in the user's default viewer (see the skill's Delivering the report step). The optional Artifact/HTML publish is interactive, so it is the caller's to make, not yours: end your return by giving the report path, noting it's open, and flagging that the caller can offer to publish it as a shareable Artifact.
 
 ## Rules
 

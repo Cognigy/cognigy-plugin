@@ -219,12 +219,15 @@ produced a distinct platform-guard refusal, say so — it means the posture rest
 
 ### Delivering the report
 
-Two closing steps, in this order — the report is not delivered until the user can actually see it:
+Delivery is the **final step of the entire run** — the report is not delivered until the user can
+actually see it. If the scope contract includes fixes, run Phase 4 first and fold the re-verify results
+into `report.md` (and `findings.json`), then deliver that final version; never open or publish the
+pre-remediation report and leave it stale. Two steps, in order:
 
 1. **Open `report.md` in the user's default viewer — every run, without asking** (`open` on macOS,
-   `xdg-open` on Linux, `start` on Windows). Never make the user hunt for the path or type a command to
-   read the result. If the environment is headless (CI/cron, no opener available), print the absolute
-   paths instead.
+   `xdg-open` on Linux, `start "" <path>` in `cmd` or `Invoke-Item <path>` in PowerShell on Windows).
+   Never make the user hunt for the path or type a command to read the result. If the environment is
+   headless (CI/cron, no opener available), print the absolute paths instead.
 2. **Then offer, once, to also publish the report as a shareable Artifact** — a self-contained HTML page
    the user opens with a single click, no paths or terminal. This is opt-in: ask, don't assume, and only
    after step 1. Where the client exposes an Artifact / HTML publish (e.g. Claude Code), render `report.md`
