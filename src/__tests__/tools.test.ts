@@ -1571,8 +1571,29 @@ describe("ToolHandlers v2", () => {
         "description",
         "id",
         "name",
+        "projectId",
         "referenceId",
       ]);
+      // Snapshots are project-scoped, so a caller holding only an agent id
+      // needs the project id from somewhere; internals stay stripped.
+      expect(result.projectId).toBe(ID.project);
+      expect(result).not.toHaveProperty("secret");
+      expect(result).not.toHaveProperty("__v");
+    });
+
+    it("reads projectId from the API's projectReference field", async () => {
+      api.get.mockResolvedValue({
+        _id: ID.agent,
+        name: "Agent",
+        projectReference: ID.project,
+      });
+
+      const result = await h.handleToolCall("get_resource", {
+        resourceType: "agent",
+        id: ID.agent,
+      });
+
+      expect(result.projectId).toBe(ID.project);
     });
 
     it("filters endpoint fields correctly", async () => {
@@ -3893,5 +3914,84 @@ describe("manage_snapshots", () => {
 
       expect(result._hints?.backupSuggestion).toBeUndefined();
     });
+  });
+});
+
+describe("manage_snapshots — deferred tasks", () => {
+  let api: jest.Mocked<CognigyApiClient>;
+  let h: ToolHandlers;
+
+  beforeEach(() => {
+    api = {
+      get: jest.fn(),
+      post: jest.fn(),
+      patch: jest.fn(),
+      delete: jest.fn(),
+      put: jest.fn(),
+      uploadFile: jest.fn(),
+    } as any;
+    h = new ToolHandlers(api, "https://endpoint-trial.cognigy.ai");
+  });
+
+  it("does not claim a delete succeeded when it was only queued", async () => {
+    api.get.mockResolvedValueOnce({
+      _id: "60d5ec49f1a2c8b1a4e0fa01",
+      name: "[AI Backup] backup",
+      description: "x\ncognigy-plugin:auto-backup:v1",
+      createdAt: 100,
+    } as any);
+    api.delete.mockResolvedValueOnce({ _id: ID.task } as any);
+
+    const result = await h.handleToolCall("manage_snapshots", {
+      operation: "delete",
+      projectId: ID.project,
+      snapshotId: "60d5ec49f1a2c8b1a4e0fa01",
+      waitForCompletion: false,
+    });
+
+    expect(result.deleted).toBe(false);
+    expect(result.pending).toBe(true);
+    expect(result._hints.action).toContain("read_task");
+  });
+
+  it("does not claim a create succeeded when it was only queued", async () => {
+    api.get.mockResolvedValueOnce({ items: [], total: 0 } as any);
+    api.post.mockResolvedValueOnce({ _id: ID.task } as any);
+
+    const result = await h.handleToolCall("manage_snapshots", {
+      operation: "create",
+      projectId: ID.project,
+      waitForCompletion: false,
+    });
+
+    expect(result.created).toBe(false);
+    expect(result.pending).toBe(true);
+  });
+
+  it("does not mark the session as backed up by a queued create", async () => {
+    api.get.mockResolvedValueOnce({ items: [], total: 0 } as any);
+    api.post.mockResolvedValueOnce({ _id: ID.task } as any);
+
+    await h.handleToolCall("manage_snapshots", {
+      operation: "create",
+      projectId: ID.project,
+      waitForCompletion: false,
+    });
+
+    // A backup that has not finished is not a backup, so the suggestion must
+    // still fire on the next change.
+    api.get.mockResolvedValue({
+      _id: ID.agent,
+      name: "Agent",
+      flowId: ID.flow,
+    } as any);
+    api.patch.mockResolvedValue({ _id: ID.agent } as any);
+
+    const update = await h.handleToolCall("update_ai_agent", {
+      aiAgentId: ID.agent,
+      description: "changed",
+    });
+
+    expect(update._hints?.backupSuggestion).toBeDefined();
   });
 });

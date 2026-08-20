@@ -20,11 +20,15 @@ export function withHints<T extends object>(
 const rid = (r: any): string => r._id || r.id;
 
 export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
+  // `projectId` comes from the API as `projectReference`. It is exposed here
+  // because snapshots are project-scoped: a caller holding only an agent id
+  // has no other way through this surface to find the project to back up.
   agent: (r) => ({
     id: rid(r),
     referenceId: r.referenceId,
     name: r.name,
     description: r.description,
+    projectId: r.projectReference ?? r.projectId,
     createdAt: r.createdAt,
   }),
   flow: (r) => ({

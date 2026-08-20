@@ -4887,7 +4887,7 @@ export class ToolHandlers {
     (result as any)._hints = {
       ...existing,
       backupSuggestion:
-        'This session has changed an existing agent with no backup taken. Offer once, in one short line (do not repeat the offer): ask whether the user wants a restorable backup, and if yes call manage_snapshots { operation: "create", projectId, label: "<why>" }. Mention that a snapshot covers the whole project and does not include Endpoints or Knowledge AI.',
+        'This session has changed an existing agent with no backup taken. Offer once, in one short line (do not repeat the offer): ask whether the user wants a restorable backup, and if yes call manage_snapshots { operation: "create", projectId, label: "<why>" }. If you do not have the projectId, read it from get_resource { resourceType: "agent", id: "<aiAgentId>" }, which returns it. Mention that a snapshot covers the whole project and does not include Endpoints or Knowledge AI.',
     };
     return result;
   }
@@ -5378,12 +5378,33 @@ export class ToolHandlers {
           );
         }
 
+        // waitForCompletion:false returns before the task runs, so the
+        // snapshot is NOT gone yet — same pending shape as create/restore.
+        const stillRunning = data.waitForCompletion === false || timedOut;
+        if (stillRunning) {
+          return withHints(
+            {
+              operation: "delete",
+              projectId: data.projectId,
+              snapshotId: data.snapshotId,
+              deleted: false,
+              pending: true,
+              taskId,
+              task,
+            },
+            {
+              warning:
+                "The deletion task is still running; the snapshot has not been deleted yet.",
+              action: `Poll manage_snapshots { operation: "read_task", projectId: "${data.projectId}", taskId: "${taskId}" } until it is done.`,
+            },
+          );
+        }
+
         return {
           operation: "delete",
           projectId: data.projectId,
           snapshotId: data.snapshotId,
-          deleted: !timedOut,
-          ...(timedOut ? { pending: true } : {}),
+          deleted: true,
           taskId,
           task,
         };
