@@ -1,3 +1,5 @@
+import { isAutoBackup } from "./snapshotManagement.js";
+
 export interface ResponseHints {
   hint?: string;
   warning?: string;
@@ -5,7 +7,7 @@ export interface ResponseHints {
   action?: string;
 }
 
-export function withHints<T extends Record<string, unknown>>(
+export function withHints<T extends object>(
   data: T,
   hints: ResponseHints,
 ): T & { _hints: ResponseHints } {
@@ -115,6 +117,19 @@ export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
     toolId: r.toolId ?? rid(r),
     name: r.name ?? r.label,
     toolType: r.toolType ?? r.type,
+  }),
+  // `isPluginBackup` is the deletion gate, so it belongs in every snapshot view.
+  // `hash` and `packageExpiresAt` are dropped: both only matter for downloading,
+  // which this plugin deliberately does not do (and the platform never actually
+  // assigns packageExpiresAt).
+  snapshot: (r) => ({
+    id: rid(r),
+    name: r.name,
+    description: r.description,
+    createdAt: r.createdAt,
+    createdBy: r.createdBy,
+    isPackaged: Boolean(r.isPackaged),
+    isPluginBackup: isAutoBackup(r),
   }),
 };
 

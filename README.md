@@ -8,7 +8,7 @@ A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy
 
 ## Features
 
-- **16 workflow tools** for agent creation, deployment, packaging, and voice setup
+- **17 workflow tools** for agent creation, deployment, packaging, backup, and voice setup
 - **One-call agent setup**: creates Agent + Flow + AI Agent Job Node + REST Endpoint automatically
 - **Self-improvement loop**: talk to your agent, evaluate responses, update the job description, repeat
 - **Knowledge store support**: attach RAG knowledge stores to agents as tools
@@ -38,6 +38,7 @@ A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy
 | `manage_voice_gateway` | Write | Create or configure a Voice Gateway endpoint with WebRTC for browser-based voice interaction        |
 | `manage_settings`      | Write | Manage project-level settings including voice preview and Knowledge AI configuration                |
 | `audit_voice_agent`    | Write | Audit a voice agent against the Go-Live Checklist; reports by default, applies safe fixes on demand |
+| `manage_snapshots`     | Write | Create and restore project Snapshots so agent changes can be rolled back                            |
 
 Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, flow nodes, packages, settings, LLM providers, tools, troubleshooting) ships as **skills** that load automatically when your request matches, in clients that support them (e.g. Claude Code) — see below.
 

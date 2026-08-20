@@ -111,5 +111,6 @@ Always use ALL relevant fields when configuring an agent. Do not put everything 
 - create_tool auto-provisions: flow nodes for tools. Do NOT create tool nodes manually.
 - Duplicate `toolId` values can cause empty or failed responses. Check the flow/tools before assuming the problem is the LLM or connection.
 - **Knowledge**: Always attach knowledge stores as tools (via create_tool { toolType: "knowledge" } or knowledgeStoreReferenceId on create_ai_agent). Knowledge tools give the agent a dedicated search capability. Only attach to the persona (via update_ai_agent) if the user explicitly requests persona-level knowledge.
+- **Changing an EXISTING agent**: before the first change in a session, offer the user a restorable backup with `manage_snapshots { operation: "create", projectId, label }` — see the snapshot-backups skill. Offer once, and not when creating a new agent. A snapshot covers the whole project and does not include Endpoints or Knowledge AI.
 - Use same sessionId across talk_to_agent calls for multi-turn testing
 - endpointUrl uses a different base URL (endpoint-\*.cognigy.ai), not the API URL

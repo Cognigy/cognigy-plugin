@@ -653,3 +653,46 @@ export const auditVoiceAgentSchema = z
     message: "Either aiAgentId or flowId must be provided",
     path: ["aiAgentId"],
   });
+
+// Tool 17: manage_snapshots
+//
+// `create` deliberately takes a short `label`, not a full `name`: the plugin
+// owns the name so the "[AI Backup] " marker prefix can never be omitted by the
+// caller, and so the timestamp that keeps names unique is always present.
+const snapshotTimeoutSchema = z.number().int().min(1000).max(3600000);
+
+export const manageSnapshotsSchema = z.discriminatedUnion("operation", [
+  z.object({
+    operation: z.literal("list"),
+    projectId: idSchema,
+    ...paginationSchema,
+  }),
+  z.object({
+    operation: z.literal("create"),
+    projectId: idSchema,
+    label: z.string().min(1).max(120).optional(),
+    confirmDeleteOldest: z.boolean().optional(),
+    waitForCompletion: z.boolean().optional(),
+    timeoutMs: snapshotTimeoutSchema.optional(),
+  }),
+  z.object({
+    operation: z.literal("restore"),
+    projectId: idSchema,
+    snapshotId: idSchema,
+    confirm: z.boolean().optional(),
+    waitForCompletion: z.boolean().optional(),
+    timeoutMs: snapshotTimeoutSchema.optional(),
+  }),
+  z.object({
+    operation: z.literal("delete"),
+    projectId: idSchema,
+    snapshotId: idSchema,
+    waitForCompletion: z.boolean().optional(),
+    timeoutMs: snapshotTimeoutSchema.optional(),
+  }),
+  z.object({
+    operation: z.literal("read_task"),
+    projectId: idSchema,
+    taskId: idSchema,
+  }),
+]);
