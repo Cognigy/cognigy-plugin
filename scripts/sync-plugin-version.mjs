@@ -19,8 +19,7 @@ if (!version) {
 }
 
 // Every committed manifest that carries the plugin version and/or an engine
-// pin. The Gemini extension manifest is NOT here — it is generated at release
-// time (scripts/build-gemini-extension.mjs), never committed.
+// pin.
 const FILES = [
   "plugin/.claude-plugin/plugin.json", // version + engine pin
   "plugin/.codex-plugin/plugin.json", // version

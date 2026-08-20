@@ -382,11 +382,11 @@ describe("parseFlags", () => {
     expect(f.apiKey).toBe("k");
   });
 
-  it("accepts the codex and gemini clients", () => {
+  it("accepts the codex client and dedupes repeats", () => {
     expect(
-      parseFlags(["--client", "codex", "--client=gemini", "--client", "codex"])
+      parseFlags(["--client", "codex", "--client=codex", "--client", "codex"])
         .clients,
-    ).toEqual(["codex", "gemini"]);
+    ).toEqual(["codex"]);
   });
 
   it("ignores unknown --client values", () => {
@@ -433,10 +433,18 @@ describe("parseClientSelection", () => {
   });
 
   it("handles the full four-client menu", () => {
-    const full = ["claude-code", "claude-desktop", "codex", "gemini"] as const;
-    expect(parseClientSelection("3,4", [...full])).toEqual(["codex", "gemini"]);
+    const full = [
+      "claude-code",
+      "claude-desktop",
+      "codex",
+      "antigravity",
+    ] as const;
+    expect(parseClientSelection("3,4", [...full])).toEqual([
+      "codex",
+      "antigravity",
+    ]);
     expect(parseClientSelection("4 1", [...full])).toEqual([
-      "gemini",
+      "antigravity",
       "claude-code",
     ]);
   });

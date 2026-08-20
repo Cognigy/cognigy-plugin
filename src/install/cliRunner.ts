@@ -1,5 +1,5 @@
 /**
- * Shared helpers for driving client CLIs (`claude`, `codex`, `gemini`) from
+ * Shared helpers for driving client CLIs (`claude`, `codex`, `agy`) from
  * the installer: PATH detection plus a Windows-safe spawn.
  */
 import { spawnSync } from "child_process";

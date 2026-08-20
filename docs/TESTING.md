@@ -10,7 +10,7 @@ You will need:
 - A Cognigy API base URL
 - A Cognigy API key
 - Node.js 20+
-- A supported client — Claude Code, Claude Desktop, ChatGPT + Codex, or Gemini CLI. The steps below use Claude Code.
+- A supported client — Claude Code, Claude Desktop, ChatGPT + Codex, or Antigravity. The steps below use Claude Code.
 
 ## 1. Local Dev Loop (dev — the fast path)
 
@@ -116,23 +116,6 @@ list and the `platform` tools respond (creds must exist — run `cognigy-setup
 --client codex` first or write `~/.cognigy-plugin/config.json`). The installer
 path itself: `npx -y -p @cognigy/plugin-engine@latest cognigy-setup --client codex …`,
 then check `~/.codex/config.toml` for the `[mcp_servers.cognigy]` block.
-
-### Gemini CLI
-
-Local dev loop without a release — build the extension staging dir and link it.
-Use the **currently released** engine version, not a fake one: the manifest pins
-`@cognigy/plugin-engine@<version>` and npx must be able to resolve it from the
-registry, or the platform server won't boot.
-
-```bash
-npm run build
-node scripts/build-gemini-extension.mjs "$(node -p "require('./package.json').version")"
-gemini extensions link .gemini-extension
-```
-
-Restart `gemini`; skills/context changes need a rebuild + restart. The
-release-asset path (`gemini extensions install https://github.com/Cognigy/cognigy-plugin`)
-only works against the Latest GitHub release carrying `cognigy-gemini-extension.zip`.
 
 ## 3. Run Automated Checks
 
