@@ -691,6 +691,10 @@ export const manageSnapshotsSchema = z.discriminatedUnion("operation", [
     timeoutMs: snapshotTimeoutSchema.optional(),
   }),
   z.object({
+    operation: z.literal("decline"),
+    projectId: idSchema,
+  }),
+  z.object({
     operation: z.literal("read_task"),
     projectId: idSchema,
     taskId: idSchema,

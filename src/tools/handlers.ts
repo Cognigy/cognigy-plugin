@@ -610,6 +610,10 @@ export class ToolHandlers {
    * list / render) must not trigger the offer.
    */
   private static isBackupWorthyCall(toolName: string, args: any): boolean {
+    // audit_voice_agent rewrites an existing agent's nodes and settings, but
+    // only in apply mode; its default dry-run mutates nothing.
+    if (toolName === "audit_voice_agent") return args?.apply === true;
+
     if (!ToolHandlers.BACKUP_WORTHY_TOOLS.has(toolName)) return false;
     const operation = args?.operation;
     return (
@@ -618,11 +622,34 @@ export class ToolHandlers {
     );
   }
 
-  // Session state for the backup nudge below. The plugin speaks MCP over stdio,
+  /** Whether the call targets something this session created. */
+  private targetsNewResource(args: any): boolean {
+    if (!this.resourcesCreatedThisSession.size) return false;
+    for (const key of ["aiAgentId", "flowId", "id"]) {
+      const value = args?.[key];
+      if (
+        typeof value === "string" &&
+        this.resourcesCreatedThisSession.has(value)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Session state for the backup gate below. The plugin speaks MCP over stdio,
   // which means one server process per client session — so instance lifetime is
-  // session lifetime and these two flags are exactly "this session".
+  // session lifetime and these flags are exactly "this session".
   private snapshotCreatedThisSession = false;
-  private backupNudgeIssued = false;
+  private backupDeclinedThisSession = false;
+  private backupGateTripped = false;
+  /**
+   * Agent and flow ids this session created. Changes to brand-new material are
+   * additive — there is no prior state to roll back to — so the backup gate
+   * must not hold them. Without this, cognigy-agent-builder gets held on its
+   * own step 5 (`update_ai_agent` right after `create_ai_agent`).
+   */
+  private readonly resourcesCreatedThisSession = new Set<string>();
 
   constructor(
     private apiClient: CognigyApiClient,
@@ -1455,6 +1482,11 @@ export class ToolHandlers {
       const llmStatus: "configured" | "unknown" = llmAutoAssigned
         ? "configured"
         : "unknown";
+
+      // Remember what this session minted so the backup gate leaves it alone.
+      for (const id of [agentId, agent.referenceId, flowId, flow.referenceId]) {
+        if (id) this.resourcesCreatedThisSession.add(String(id));
+      }
 
       const result: any = {
         projectId,
@@ -4870,26 +4902,43 @@ export class ToolHandlers {
   // =========================================================================
 
   /**
-   * Attach a one-time offer to back the project up before it is changed further.
-   * Same shape and spirit as withRenderSuggestion: merged into `_hints` under
-   * its own key so it can never clobber a real warning, and worded so the model
-   * asks once instead of nagging. Unlike that helper this one is backed by an
-   * instance flag, so "once per session" is enforced rather than merely
-   * requested. Purely advisory — it never blocks a mutation and costs no API
-   * call.
+   * Intercept the FIRST change to an existing agent in a session so the user
+   * gets the chance to take a backup while a backup is still worth taking.
+   *
+   * This has to happen BEFORE the handler runs. An earlier version attached an
+   * advisory hint to the RESULT instead, which could not work: by the time a
+   * result exists the change has already been made, so a snapshot taken from
+   * that hint captured the already-changed state. The offer has to interrupt,
+   * not annotate.
+   *
+   * Returns the offer to send back instead of performing the call, or null to
+   * let the call through. Deliberately trips only ONCE per session: if the
+   * client retries without creating or declining, the retry proceeds. A gate
+   * that held out for compliance could deadlock an automated subagent, and one
+   * forced pause is what "ask at the start of the session" actually needs.
    */
-  private withBackupSuggestion<T extends object>(result: T): T {
-    if (this.snapshotCreatedThisSession || this.backupNudgeIssued)
-      return result;
-    this.backupNudgeIssued = true;
+  private backupGateFor(toolName: string): any | null {
+    if (
+      this.snapshotCreatedThisSession ||
+      this.backupDeclinedThisSession ||
+      this.backupGateTripped
+    ) {
+      return null;
+    }
+    this.backupGateTripped = true;
 
-    const existing = (result as any)._hints ?? {};
-    (result as any)._hints = {
-      ...existing,
-      backupSuggestion:
-        'This session has changed an existing agent with no backup taken. Offer once, in one short line (do not repeat the offer): ask whether the user wants a restorable backup, and if yes call manage_snapshots { operation: "create", projectId, label: "<why>" }. If you do not have the projectId, read it from get_resource { resourceType: "agent", id: "<aiAgentId>" }, which returns it. Mention that a snapshot covers the whole project and does not include Endpoints or Knowledge AI.',
-    };
-    return result;
+    return withHints(
+      {
+        error: "backup_not_offered",
+        tool: toolName,
+        changed: false,
+      },
+      {
+        warning: `NOTHING WAS CHANGED. This is the first change to an existing agent in this session, and no backup exists yet — so ${toolName} was not run.`,
+        action:
+          'Ask the user, in one short line, whether they want a restorable backup first — mentioning that it covers the whole project but not Endpoints or Knowledge AI. If yes: manage_snapshots { operation: "create", projectId, label: "<why>" }. If no: manage_snapshots { operation: "decline", projectId }. Then retry this exact call. If you do not have the projectId, read it from get_resource { resourceType: "agent", id: "<aiAgentId>" }.',
+      },
+    );
   }
 
   /** Read a snapshot, or return null when the platform 404s. */
@@ -5410,6 +5459,18 @@ export class ToolHandlers {
         };
       }
 
+      // Records that the user was asked and said no, so the backup gate stops
+      // holding calls for the rest of the session. Touches no API.
+      case "decline": {
+        this.backupDeclinedThisSession = true;
+        return {
+          operation: "decline",
+          projectId: data.projectId,
+          acknowledged: true,
+          note: "No backup will be taken this session. Changes from here are not reversible through this plugin.",
+        };
+      }
+
       case "read_task": {
         const task = await this.readTask(data.taskId, data.projectId);
         return {
@@ -5430,6 +5491,20 @@ export class ToolHandlers {
     });
 
     try {
+      // Before anything mutates an existing agent, give the user one chance to
+      // take a backup. Must precede the switch — a post-hoc hint arrives after
+      // the change and is therefore useless.
+      if (
+        ToolHandlers.isBackupWorthyCall(toolName, args) &&
+        !this.targetsNewResource(args)
+      ) {
+        const gate = this.backupGateFor(toolName);
+        if (gate) {
+          logger.info(`Backup gate held ${toolName} for a backup offer`);
+          return gate;
+        }
+      }
+
       let result: any;
       switch (toolName) {
         case "create_ai_agent":
@@ -5485,13 +5560,6 @@ export class ToolHandlers {
           break;
         default:
           throw new Error(`Unknown tool: ${toolName}`);
-      }
-      // Offer a backup the first time this session changes an EXISTING agent.
-      // Done here rather than inside each handler so every return path in all
-      // five tools is covered by one rule. create_ai_agent is deliberately
-      // absent: creating is additive, so there is nothing to roll back to.
-      if (ToolHandlers.isBackupWorthyCall(toolName, args) && result) {
-        result = this.withBackupSuggestion(result);
       }
       logger.info(`Tool call successful: ${toolName}`);
       return result;

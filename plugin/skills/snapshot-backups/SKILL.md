@@ -28,19 +28,33 @@ it back. A Snapshot is an immutable copy of a **whole project**.
 
 ### Back up before changing an existing agent
 
-Do this once per session, before the first change — not before every change.
+The server enforces this once per session, so you do not have to remember it. The
+**first** attempt to change an existing agent — `update_ai_agent`, `create_tool`,
+`update_tool`, a mutating `manage_flow_nodes`, or `delete_resource` — is **held**:
+it changes nothing and returns `error: "backup_not_offered"`.
 
-1. Ask the user, in one short line, whether they want a restorable backup before you
-   start changing the agent. If the agent uses knowledge, add that Knowledge AI is
-   not covered.
-2. If they decline, proceed with the changes and do not ask again.
+When you see that error:
+
+1. Do **not** report the change as done. Nothing happened.
+2. Ask the user, in one short line, whether they want a restorable backup first. If
+   the agent uses knowledge, add that Knowledge AI is not covered.
 3. If they accept:
    - `manage_snapshots { operation: "create", projectId: "<projectId>", label: "pre-persona-update" }`
-4. Wait for it to return `created: true`. Report the snapshot name and id, then start
-   making changes.
-5. If it returns `error: "snapshot_limit_reached"`, follow *At the snapshot limit* below.
-6. If it returns `pending: true`, the backup does **not** exist yet — poll
-   `read_task` until it is done before changing anything.
+   - Wait for `created: true`.
+4. If they decline:
+   - `manage_snapshots { operation: "decline", projectId: "<projectId>" }`
+5. **Retry the held call.** It now goes through, and nothing is held for the rest of
+   the session.
+
+The gate does not fire for an agent created in this same session — there is no prior
+state to roll back to — and never for read-only operations.
+
+If you do not have the `projectId`, read it from
+`get_resource { resourceType: "agent", id: "<aiAgentId>" }`, which returns it.
+If `create` returns `error: "snapshot_limit_reached"`, follow *At the snapshot limit*
+below. If it returns `pending: true`, the backup does **not** exist yet — poll
+`read_task` until it is done before changing anything, and note that a pending
+create does not satisfy the gate.
 
 `label` is a short reason, not a name. The plugin builds the name itself as
 `[AI Backup] <label> — <timestamp>` so the backup is always identifiable and always
@@ -149,6 +163,16 @@ Optional:
 
 - `waitForCompletion`
 - `timeoutMs`
+
+### `decline`
+
+Records that the user was asked for a backup and said no, which releases the backup
+gate for the rest of the session. Touches no API and creates nothing. Only call this
+after actually asking the user.
+
+Required:
+
+- `projectId`
 
 ### `read_task`
 

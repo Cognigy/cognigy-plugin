@@ -37,6 +37,7 @@ describe("create_tool – HTTP tool path", () => {
       put: jest.fn(),
     } as any;
     h = new ToolHandlers(api, "https://endpoint-trial.cognigy.ai");
+    (h as any).backupDeclinedThisSession = true;
   });
 
   function mockFlowWithJobNode() {
@@ -387,6 +388,7 @@ describe("update_tool – HTTP child-node resolution", () => {
       put: jest.fn(),
     } as any;
     h = new ToolHandlers(api, "https://endpoint-trial.cognigy.ai");
+    (h as any).backupDeclinedThisSession = true;
   });
 
   // Real /chart/nodes responses do NOT include parentId on nodes — the tree

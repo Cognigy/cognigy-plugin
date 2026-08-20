@@ -33,6 +33,7 @@ describe("update_tool", () => {
       "https://endpoint-trial.cognigy.ai",
       "https://webchat-trial.cognigy.ai",
     );
+    (h as any).backupDeclinedThisSession = true;
   });
 
   function mockAgentWithFlow() {

@@ -24,6 +24,16 @@ const ID = {
   task2: "60d5ec49f1a2c8b1a4e0f00d",
 };
 
+/**
+ * The server holds the first change to an existing agent in a session until a
+ * backup is offered (see the "backup gate" tests). Suites that are testing some
+ * other tool are not testing that gate, so they answer it up front — exactly as
+ * a real session does once the user has replied.
+ */
+const answerBackupGate = (handlers: ToolHandlers) => {
+  (handlers as any).backupDeclinedThisSession = true;
+};
+
 describe("ToolHandlers v2", () => {
   let api: jest.Mocked<CognigyApiClient>;
   let h: ToolHandlers;
@@ -43,6 +53,7 @@ describe("ToolHandlers v2", () => {
       "",
       "https://static-trial.cognigy.ai",
     );
+    answerBackupGate(h);
   });
 
   // =========================================================================
@@ -3145,6 +3156,7 @@ describe("audit_voice_agent", () => {
       uploadFile: jest.fn(),
     } as any;
     h = new ToolHandlers(api, "https://endpoint-trial.cognigy.ai");
+    answerBackupGate(h);
   });
 
   const START_ID = "60d5ec49f1a2c8b1a4e0f0aa";
@@ -3824,64 +3836,172 @@ describe("manage_snapshots", () => {
     });
   });
 
-  describe("backup suggestion", () => {
-    const agentUpdate = () => {
-      api.get.mockResolvedValue({
-        _id: ID.agent,
-        name: "Agent",
-        referenceId: "ref-1",
-        flowId: ID.flow,
-      } as any);
-      api.patch.mockResolvedValue({ _id: ID.agent, name: "Agent" } as any);
-    };
-
-    it("offers a backup on the first change and never again", async () => {
-      agentUpdate();
-
-      const first = await h.handleToolCall("update_ai_agent", {
-        aiAgentId: ID.agent,
-        description: "new persona",
-      });
-      const second = await h.handleToolCall("update_ai_agent", {
-        aiAgentId: ID.agent,
-        description: "another change",
-      });
-
-      expect(first._hints?.backupSuggestion).toContain("manage_snapshots");
-      expect(second._hints?.backupSuggestion).toBeUndefined();
-    });
-
-    it("stays quiet once a snapshot has been created this session", async () => {
-      api.get
-        .mockResolvedValueOnce(snapshotPage([]) as any)
-        .mockResolvedValueOnce(doneTask as any)
-        .mockResolvedValueOnce(
-          snapshotPage([autoBackup(SNAP_ID.auto1, "backup", 200)]) as any,
-        );
-      api.post.mockResolvedValueOnce({ _id: ID.task } as any);
-
-      await h.handleToolCall("manage_snapshots", {
-        operation: "create",
-        projectId: ID.project,
-      });
-
-      agentUpdate();
+  describe("backup gate", () => {
+    it("holds the first change to an existing agent and changes nothing", async () => {
       const result = await h.handleToolCall("update_ai_agent", {
         aiAgentId: ID.agent,
         description: "new persona",
       });
 
-      expect(result._hints?.backupSuggestion).toBeUndefined();
+      expect(result.error).toBe("backup_not_offered");
+      expect(result.changed).toBe(false);
+      // The whole point: no API call reached the platform.
+      expect(api.patch).not.toHaveBeenCalled();
+      expect(api.post).not.toHaveBeenCalled();
+      expect(result._hints.action).toContain('operation: "create"');
+      expect(result._hints.action).toContain('operation: "decline"');
     });
 
-    it("does not offer a backup when creating a new agent", () => {
-      // Creating is additive, so there is nothing to roll back to.
+    it("lets the retry through after a snapshot is created", async () => {
+      await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        description: "new persona",
+      });
+
+      api.get
+        .mockResolvedValueOnce({ items: [], total: 0 } as any)
+        .mockResolvedValueOnce(doneTask as any)
+        .mockResolvedValueOnce(
+          snapshotPage([autoBackup(SNAP_ID.auto1, "backup", 200)]) as any,
+        );
+      api.post.mockResolvedValueOnce({ _id: ID.task } as any);
+      const created = await h.handleToolCall("manage_snapshots", {
+        operation: "create",
+        projectId: ID.project,
+      });
+      expect(created.created).toBe(true);
+
+      api.get.mockResolvedValue({
+        _id: ID.agent,
+        name: "Agent",
+        flowId: ID.flow,
+      } as any);
+      api.patch.mockResolvedValue({ _id: ID.agent, name: "Agent" } as any);
+
+      const retry = await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        description: "new persona",
+      });
+
+      expect(retry.error).toBeUndefined();
+      expect(api.patch).toHaveBeenCalled();
+    });
+
+    it("lets the retry through after the user declines", async () => {
+      await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        description: "new persona",
+      });
+
+      const declined = await h.handleToolCall("manage_snapshots", {
+        operation: "decline",
+        projectId: ID.project,
+      });
+      expect(declined.acknowledged).toBe(true);
+      // decline must never touch the API.
+      expect(api.post).not.toHaveBeenCalled();
+      expect(api.delete).not.toHaveBeenCalled();
+
+      api.get.mockResolvedValue({
+        _id: ID.agent,
+        name: "Agent",
+        flowId: ID.flow,
+      } as any);
+      api.patch.mockResolvedValue({ _id: ID.agent, name: "Agent" } as any);
+
+      const retry = await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        description: "new persona",
+      });
+
+      expect(retry.error).toBeUndefined();
+      expect(api.patch).toHaveBeenCalled();
+    });
+
+    it("holds at most once, so a blind retry cannot deadlock", async () => {
+      const first = await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        description: "a",
+      });
+      expect(first.error).toBe("backup_not_offered");
+
+      api.get.mockResolvedValue({
+        _id: ID.agent,
+        name: "Agent",
+        flowId: ID.flow,
+      } as any);
+      api.patch.mockResolvedValue({ _id: ID.agent, name: "Agent" } as any);
+
+      const second = await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        description: "a",
+      });
+      expect(second.error).toBeUndefined();
+    });
+
+    it("does not hold create_ai_agent itself", () => {
       expect(
         (ToolHandlers as any).isBackupWorthyCall("create_ai_agent", {}),
       ).toBe(false);
     });
 
-    it("does not offer a backup on a read-only flow-node operation", () => {
+    it("does not hold changes to an agent this session created", async () => {
+      // cognigy-agent-builder creates an agent then immediately refines it with
+      // update_ai_agent. There is no prior state to roll back to, so holding
+      // that call would be pure friction.
+      (h as any).resourcesCreatedThisSession.add(ID.agent);
+
+      api.get.mockResolvedValue({
+        _id: ID.agent,
+        name: "Agent",
+        flowId: ID.flow,
+      } as any);
+      api.patch.mockResolvedValue({ _id: ID.agent, name: "Agent" } as any);
+
+      const result = await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        description: "refined right after creation",
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(api.patch).toHaveBeenCalled();
+    });
+
+    it("still holds changes to a DIFFERENT, pre-existing agent", async () => {
+      (h as any).resourcesCreatedThisSession.add(ID.agent);
+
+      const result = await h.handleToolCall("update_ai_agent", {
+        aiAgentId: "60d5ec49f1a2c8b1a4e0f0ff",
+        description: "touching something older",
+      });
+
+      expect(result.error).toBe("backup_not_offered");
+      expect(api.patch).not.toHaveBeenCalled();
+    });
+
+    it("exempts a flow this session created", async () => {
+      (h as any).resourcesCreatedThisSession.add(ID.flow);
+      expect((h as any).targetsNewResource({ flowId: ID.flow })).toBe(true);
+      expect((h as any).targetsNewResource({ flowId: ID.endpoint })).toBe(
+        false,
+      );
+    });
+
+    it("does not hold a read-only flow-node operation", async () => {
+      api.get.mockResolvedValue({
+        _id: ID.node,
+        type: "say",
+        label: "Say hi",
+        config: {},
+      } as any);
+
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "get",
+        flowId: ID.flow,
+        nodeId: ID.node,
+      });
+
+      expect(result.error).toBeUndefined();
       for (const operation of ["get", "list", "render"]) {
         expect(
           (ToolHandlers as any).isBackupWorthyCall("manage_flow_nodes", {
@@ -3898,21 +4018,21 @@ describe("manage_snapshots", () => {
       }
     });
 
-    it("leaves a read-only flow-node get untouched end to end", async () => {
-      api.get.mockResolvedValue({
-        _id: ID.node,
-        type: "say",
-        label: "Say hi",
-        config: {},
-      } as any);
+    it("holds audit_voice_agent only in apply mode", () => {
+      const check = (ToolHandlers as any).isBackupWorthyCall;
+      // The default dry-run mutates nothing, so holding it would be noise.
+      expect(check("audit_voice_agent", { apply: false })).toBe(false);
+      expect(check("audit_voice_agent", {})).toBe(false);
+      // apply:true rewrites nodes and settings on an existing agent.
+      expect(check("audit_voice_agent", { apply: true })).toBe(true);
+    });
 
-      const result = await h.handleToolCall("manage_flow_nodes", {
-        operation: "get",
-        flowId: ID.flow,
-        nodeId: ID.node,
-      });
-
-      expect(result._hints?.backupSuggestion).toBeUndefined();
+    it("does not hold manage_snapshots itself", async () => {
+      expect(
+        (ToolHandlers as any).isBackupWorthyCall("manage_snapshots", {
+          operation: "create",
+        }),
+      ).toBe(false);
     });
   });
 });
@@ -3968,7 +4088,7 @@ describe("manage_snapshots — deferred tasks", () => {
     expect(result.pending).toBe(true);
   });
 
-  it("does not mark the session as backed up by a queued create", async () => {
+  it("does not let a queued create satisfy the backup gate", async () => {
     api.get.mockResolvedValueOnce({ items: [], total: 0 } as any);
     api.post.mockResolvedValueOnce({ _id: ID.task } as any);
 
@@ -3978,20 +4098,14 @@ describe("manage_snapshots — deferred tasks", () => {
       waitForCompletion: false,
     });
 
-    // A backup that has not finished is not a backup, so the suggestion must
-    // still fire on the next change.
-    api.get.mockResolvedValue({
-      _id: ID.agent,
-      name: "Agent",
-      flowId: ID.flow,
-    } as any);
-    api.patch.mockResolvedValue({ _id: ID.agent } as any);
-
+    // A backup that has not finished is not a backup, so the gate must still
+    // hold the next change rather than waving it through.
     const update = await h.handleToolCall("update_ai_agent", {
       aiAgentId: ID.agent,
       description: "changed",
     });
 
-    expect(update._hints?.backupSuggestion).toBeDefined();
+    expect(update.error).toBe("backup_not_offered");
+    expect(api.patch).not.toHaveBeenCalled();
   });
 });

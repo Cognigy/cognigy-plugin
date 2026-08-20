@@ -17,6 +17,7 @@ describe("manage_snapshots tool surface", () => {
       "create",
       "restore",
       "delete",
+      "decline",
       "read_task",
     ]);
   });
