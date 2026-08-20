@@ -1,3 +1,9 @@
+## [1.11.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.10.1...v1.11.0) (2026-08-20)
+
+### Features
+
+* **skills:** agent-red-team skill and red-team agent ([#24](https://github.com/Cognigy/cognigy-plugin/issues/24)) ([1c34fb8](https://github.com/Cognigy/cognigy-plugin/commit/1c34fb8f2c42799a9497948fd5537a7a4f9df270))
+
 ## [1.10.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.10.0...v1.10.1) (2026-08-19)
 
 ### Bug Fixes
