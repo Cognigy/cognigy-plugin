@@ -117,6 +117,9 @@ const CLIENT_LABELS: Record<Client, string> = {
 
 interface Flags {
   clients: Client[];
+  /** --client values that are not (or no longer) valid targets — kept, not
+   * silently dropped, so callers can refuse to act on them. */
+  invalidClients: string[];
   apiBaseUrl?: string;
   apiKey?: string;
 }
@@ -126,12 +129,17 @@ function isClient(v: string): v is Client {
 }
 
 export function parseFlags(argv: string[]): Flags {
-  const flags: Flags = { clients: [] };
+  const flags: Flags = { clients: [], invalidClients: [] };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const take = () => argv[++i];
     const addClient = (v: string | undefined) => {
-      if (v && isClient(v) && !flags.clients.includes(v)) flags.clients.push(v);
+      if (!v) return;
+      if (isClient(v)) {
+        if (!flags.clients.includes(v)) flags.clients.push(v);
+      } else if (!flags.invalidClients.includes(v)) {
+        flags.invalidClients.push(v);
+      }
     };
     if (arg === "--api-base-url") flags.apiBaseUrl = take();
     else if (arg.startsWith("--api-base-url="))
@@ -144,6 +152,24 @@ export function parseFlags(argv: string[]): Flags {
       addClient(arg.slice("--client=".length));
   }
   return flags;
+}
+
+/**
+ * Exit loudly on unknown --client values. Ignoring them is unsafe on
+ * uninstall: `uninstall --client gemini --yes` (a retired target) would leave
+ * the selection empty, fall through to the no-filter default, and remove the
+ * plugin from every client the user meant to keep.
+ */
+function rejectInvalidClients(invalid: string[]): void {
+  if (invalid.length === 0) return;
+  process.stderr.write(
+    `Unknown --client value(s): ${invalid.join(", ")}. Valid values: ${ALL_CLIENTS.join(", ")}.\n` +
+      (invalid.includes("gemini")
+        ? "  Gemini CLI support was removed (see docs/install/gemini-cli.md).\n" +
+          "  Remove an installed extension with: gemini extensions uninstall cognigy\n"
+        : ""),
+  );
+  process.exit(1);
 }
 
 /** Which clients look installed — used to pre-select the interactive menu. */
@@ -721,7 +747,9 @@ function runUpdate(): void {
 async function runUninstall(argv: string[]): Promise<void> {
   const purge = argv.includes("--purge");
   const assumeYes = argv.includes("--yes") || argv.includes("-y");
-  const selected = parseFlags(argv).clients;
+  const flags = parseFlags(argv);
+  rejectInvalidClients(flags.invalidClients);
+  const selected = flags.clients;
   const targets = selected.length > 0 ? selected : [...ALL_CLIENTS];
   const wants = (client: Client) => targets.includes(client);
 
@@ -899,6 +927,7 @@ async function main(): Promise<void> {
 
   const argv = rest;
   const flags = parseFlags(argv);
+  rejectInvalidClients(flags.invalidClients);
   const interactive = process.stdin.isTTY && flags.apiKey === undefined;
 
   let apiBaseUrl = flags.apiBaseUrl;

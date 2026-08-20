@@ -389,8 +389,13 @@ describe("parseFlags", () => {
     ).toEqual(["codex"]);
   });
 
-  it("ignores unknown --client values", () => {
-    expect(parseFlags(["--client", "cursor"]).clients).toEqual([]);
+  it("records unknown --client values instead of silently dropping them", () => {
+    // A dropped value is dangerous on uninstall: an empty selection falls
+    // through to "all clients". `gemini` is the live case — retired targets
+    // must fail loudly, not uninstall everything else.
+    const f = parseFlags(["--client", "cursor", "--client=gemini"]);
+    expect(f.clients).toEqual([]);
+    expect(f.invalidClients).toEqual(["cursor", "gemini"]);
   });
 
   it("accepts the other-hosts target", () => {
