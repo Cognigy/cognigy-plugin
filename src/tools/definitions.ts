@@ -512,8 +512,9 @@ Tool types:
 - send_email: Send emails. Provide toolId, description, recipient.
 - mcp: Connect to an EXTERNAL MCP (Model Context Protocol) server. ONLY use when the user explicitly asks to integrate with a specific external MCP server and provides an MCP server URL. Do NOT use for general tool requests — use "tool" or "http" instead.
 - http: Call an external HTTP API. Use when the user wants to call a specific REST/HTTP endpoint. Provide toolId, description, url, method, and optionally headers, body, preProcessCode, postProcessCode. Creates an aiAgentJobTool with child HTTP Request node (and optional pre/post-process Code nodes).
+- a2a: Delegate to a REMOTE A2A (Agent2Agent protocol) agent, exposed via its own agent card at agentBaseUrl + agentCardPath (default '.well-known/agent.json'). ONLY use for explicit multi-agent / agent-to-agent delegation requests, e.g. an orchestrator agent calling out to specialist sub-agents. The remote agent can be ANY A2A-compliant agent — an external/third-party service (use whatever base URL it publishes) or another Cognigy AI Agent you deploy yourself via manage_a2a_server. ONLY when the target is a Cognigy agent behind manage_a2a_server: use that tool's returned agentBaseUrl verbatim, NOT its endpointId's plain URL — a Cognigy a2aServer endpoint is served under a distinct '/a2a/v1/<URLToken>' path, unlike every other channel, and the plain endpoint URL silently 404s on every call.
 
-Default choice: When unsure which toolType to use, default to "tool" (general-purpose). Only use "mcp" or "http" when the user specifically mentions an external MCP server or a specific HTTP API endpoint.
+Default choice: When unsure which toolType to use, default to "tool" (general-purpose). Only use "mcp", "http", or "a2a" when the user specifically mentions an external MCP server, a specific HTTP API endpoint, or agent-to-agent delegation to another agent.
 
 IMPORTANT: Create exactly one tool per business action. If the same toolId already exists, create_tool reuses the existing tool node instead of creating a duplicate. If you need more logic for that action, reuse the same toolNodeId with manage_flow_nodes or update_tool.
 
@@ -538,9 +539,9 @@ After creating, use talk_to_agent to test.`,
         },
         toolType: {
           type: "string",
-          enum: ["tool", "knowledge", "send_email", "mcp", "http"],
+          enum: ["tool", "knowledge", "send_email", "mcp", "http", "a2a"],
           description:
-            "tool: general-purpose with custom logic (DEFAULT — use for most requests). knowledge: search a Knowledge Store. send_email: send emails. mcp: connect to an external MCP server (ONLY when user explicitly requests MCP integration with a specific server URL). http: call an external HTTP API (when user specifies a concrete API endpoint).",
+            "tool: general-purpose with custom logic (DEFAULT — use for most requests). knowledge: search a Knowledge Store. send_email: send emails. mcp: connect to an external MCP server (ONLY when user explicitly requests MCP integration with a specific server URL). http: call an external HTTP API (when user specifies a concrete API endpoint). a2a: delegate to a remote A2A (Agent2Agent) agent (ONLY for explicit agent-to-agent delegation).",
         },
         name: {
           type: "string",
@@ -590,7 +591,8 @@ After creating, use talk_to_agent to test.`,
             },
             timeout: {
               type: "number",
-              description: "Timeout in seconds (mcp only)",
+              description:
+                "Timeout in seconds. For mcp: connection timeout. For a2a: Agent Card discovery timeout (mcp, a2a only)",
             },
             url: {
               type: "string",
@@ -626,6 +628,95 @@ After creating, use talk_to_agent to test.`,
               type: "string",
               description:
                 "CognigyScript expression for the Resolve Tool Action node's answer field. Controls what value is returned to the LLM as the tool result. For http tools, default: '{{JSON.stringify(input.httprequest)}}'. For general-purpose tools, default: '{{JSON.stringify(input.result)}}'. Set this to match where your code stores the result. Must be a valid CognigyScript expression.",
+            },
+            agentBaseUrl: {
+              type: "string",
+              description:
+                "Base URL of the remote A2A agent — can be ANY A2A-compliant agent. For a third-party/external agent, use whatever base URL its own Agent Card publishes. ONLY if the remote agent is a Cognigy agent behind manage_a2a_server: use the `agentBaseUrl` field from that tool's response VERBATIM — it already has the required 'https://endpoint-<env>.cognigy.ai/a2a/v1/<URLToken>' shape; do NOT build this from the endpoint's plain URL yourself, since a2aServer is served under a distinct /a2a/v1/ path unlike other channels (a2a only)",
+            },
+            agentCardPath: {
+              type: "string",
+              description:
+                "Path to the remote agent's Agent Card, appended to agentBaseUrl for discovery. Default: '.well-known/agent.json' (a2a only)",
+            },
+            executionMode: {
+              type: "string",
+              description:
+                "How the delegated task runs, e.g. 'blocking' (wait for the remote agent's final result). Default: 'blocking' (a2a only)",
+            },
+            taskTimeout: {
+              type: "number",
+              description:
+                "Max seconds to wait for the remote agent's task to complete (a2a only)",
+            },
+            maxAutonomousTurns: {
+              type: "number",
+              description:
+                "Max back-and-forth turns the remote agent may take autonomously before returning a result (a2a only)",
+            },
+            toolFilter: {
+              type: "string",
+              enum: ["none", "whitelist", "blacklist"],
+              description:
+                "Restrict which of the remote agent's skills/tools may be invoked. Default: 'none' (no restriction) (a2a only)",
+            },
+            whitelist: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "Skill/tool names to allow when toolFilter is 'whitelist' (a2a only)",
+            },
+            blacklist: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "Skill/tool names to block when toolFilter is 'blacklist' (a2a only)",
+            },
+            authType: {
+              type: "string",
+              enum: ["none", "apiKey", "bearer", "basic", "oAuth2"],
+              description:
+                "Authentication method for calling the remote agent. Default: 'none' (a2a only)",
+            },
+            apiKeyConnection: {
+              type: "string",
+              description:
+                "Connection ID holding the API key, when authType is 'apiKey'. Connections are project-scoped — must be from the same project as the agent (a2a only)",
+            },
+            apiKeyHeader: {
+              type: "string",
+              description:
+                "Header name for the API key, when authType is 'apiKey'. Default: 'X-API-Key' (a2a only)",
+            },
+            bearerConnection: {
+              type: "string",
+              description:
+                "Connection ID holding the bearer token, when authType is 'bearer'. Connections are project-scoped — must be from the same project as the agent (a2a only)",
+            },
+            basicConnection: {
+              type: "string",
+              description:
+                "Connection ID holding basic-auth credentials, when authType is 'basic'. Connections are project-scoped — must be from the same project as the agent (a2a only)",
+            },
+            oAuth2Connection: {
+              type: "string",
+              description:
+                "Connection ID for OAuth2, when authType is 'oAuth2'. Connections are project-scoped — must be from the same project as the agent (a2a only)",
+            },
+            authForDiscovery: {
+              type: "boolean",
+              description:
+                "Whether to also apply authType when fetching the Agent Card during discovery, not just when calling tasks (a2a only)",
+            },
+            agentHeaders: {
+              type: "string",
+              description:
+                'Extra HTTP headers to send to the remote agent, as a JSON string, e.g. \'{"X-Trace-Id":"..."}\' (a2a only)',
+            },
+            cacheCard: {
+              type: "boolean",
+              description:
+                "Cache the discovered Agent Card instead of re-fetching it on every call. Default: true (a2a only)",
             },
           },
         },
@@ -665,7 +756,7 @@ After creating, use talk_to_agent to test.`,
         },
         toolType: {
           type: "string",
-          enum: ["tool", "knowledge", "send_email", "mcp", "http"],
+          enum: ["tool", "knowledge", "send_email", "mcp", "http", "a2a"],
           description:
             "Tool type hint — helps the handler know which config fields to map. Optional if only updating name.",
         },
@@ -711,7 +802,8 @@ After creating, use talk_to_agent to test.`,
             },
             timeout: {
               type: "number",
-              description: "Timeout in seconds (mcp only)",
+              description:
+                "Timeout in seconds. For mcp: connection timeout. For a2a: Agent Card discovery timeout (mcp, a2a only)",
             },
             url: {
               type: "string",
@@ -764,6 +856,90 @@ After creating, use talk_to_agent to test.`,
               type: "string",
               description:
                 "Optional 24-char hex ID of the Resolve Tool Action child node (from create_tool's childNodes.resolveNodeId). Required to update toolResponseValue when more than one Resolve Tool Action node exists in the flow.",
+            },
+            agentBaseUrl: {
+              type: "string",
+              description:
+                "Base URL of the remote A2A agent. Use manage_a2a_server's `agentBaseUrl` response field verbatim for a Cognigy agent — do not use its `endpointId`'s plain URL (a2a only)",
+            },
+            agentCardPath: {
+              type: "string",
+              description:
+                "Path to the remote agent's Agent Card, appended to agentBaseUrl (a2a only)",
+            },
+            executionMode: {
+              type: "string",
+              description: "How the delegated task runs (a2a only)",
+            },
+            taskTimeout: {
+              type: "number",
+              description:
+                "Max seconds to wait for the remote agent's task (a2a only)",
+            },
+            maxAutonomousTurns: {
+              type: "number",
+              description:
+                "Max autonomous turns the remote agent may take (a2a only)",
+            },
+            toolFilter: {
+              type: "string",
+              enum: ["none", "whitelist", "blacklist"],
+              description:
+                "Restrict which remote skills/tools may be invoked (a2a only)",
+            },
+            whitelist: {
+              type: "array",
+              items: { type: "string" },
+              description: "Skills/tools to allow (a2a only)",
+            },
+            blacklist: {
+              type: "array",
+              items: { type: "string" },
+              description: "Skills/tools to block (a2a only)",
+            },
+            authType: {
+              type: "string",
+              enum: ["none", "apiKey", "bearer", "basic", "oAuth2"],
+              description:
+                "Authentication method for calling the remote agent (a2a only)",
+            },
+            apiKeyConnection: {
+              type: "string",
+              description:
+                "Connection ID for apiKey auth. Connections are project-scoped (a2a only)",
+            },
+            apiKeyHeader: {
+              type: "string",
+              description: "Header name for the API key (a2a only)",
+            },
+            bearerConnection: {
+              type: "string",
+              description:
+                "Connection ID for bearer auth. Connections are project-scoped (a2a only)",
+            },
+            basicConnection: {
+              type: "string",
+              description:
+                "Connection ID for basic auth. Connections are project-scoped (a2a only)",
+            },
+            oAuth2Connection: {
+              type: "string",
+              description:
+                "Connection ID for OAuth2. Connections are project-scoped (a2a only)",
+            },
+            authForDiscovery: {
+              type: "boolean",
+              description:
+                "Also authenticate when fetching the Agent Card (a2a only)",
+            },
+            agentHeaders: {
+              type: "string",
+              description:
+                "Extra HTTP headers to send, as a JSON string (a2a only)",
+            },
+            cacheCard: {
+              type: "boolean",
+              description: "Cache the discovered Agent Card (a2a only)",
             },
           },
         },
@@ -1710,6 +1886,82 @@ After creating, use talk_to_agent to test.`,
           items: { type: "string" },
           description:
             'Optional list of check IDs to apply when apply is true (e.g. ["vg.barge-in-off", "agent.stream-output"]). If omitted, all auto-fixable failing checks are applied.',
+        },
+      },
+    },
+  },
+
+  // 17. manage_a2a_server
+  {
+    name: "manage_a2a_server",
+    description:
+      "Create or configure an A2A Server Endpoint. This exposes a Flow as an A2A (Agent2Agent protocol) agent that other agents — Cognigy or third-party — can discover and call, via the create_tool { toolType: 'a2a' } tool type on the calling side.\n\nCREATE vs UPDATE:\n- To create: provide projectId + flowId (+ optional name). A new a2aServer endpoint is always created.\n- To update: provide endpointId. Settings are merged with existing configuration.\n- Without endpointId, the tool never modifies existing endpoints — it always creates a new one.\n\nAGENT CARD: agentName, agentDescription, and skills together form the Agent Card that remote callers discover. Each skill needs a unique id, a name, and an optional description of what it does — this is what lets a calling orchestrator's LLM decide when to delegate to this agent.\n\nURL GOTCHA: an a2aServer endpoint is served under a distinct '/a2a/v1/<URLToken>' path — unlike every other channel (rest, webchat3, mcpServer, ...), which live directly at '<URLToken>'. The response's `agentBaseUrl` field already has this correct shape.\n\nRESPONSE HANDLING: The response contains agentBaseUrl, agentCardUrl, and liveCheck (the result of actually fetching the Agent Card right now — { reachable, agentName, skills }, { reachable: false, error }, or { skipped: true, reason } when the endpoint requires authentication). ALWAYS check liveCheck and surface it to the user — reachable: false means the agent isn't callable yet even though the config saved. Use agentBaseUrl VERBATIM (not endpointId's plain URL) when wiring create_tool { toolType: 'a2a' } on a calling agent's flow.",
+    annotations: {
+      title: "Manage A2A Server",
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    inputSchema: {
+      type: "object",
+      properties: {
+        endpointId: {
+          type: "string",
+          description:
+            "24-char hex endpoint ID. If provided, updates the existing endpoint. If omitted, creates a new endpoint.",
+        },
+        projectId: {
+          type: "string",
+          description:
+            "24-char hex project ID. Required for create, optional for update.",
+        },
+        flowId: {
+          type: "string",
+          description:
+            "Flow referenceId to connect the A2A server endpoint to. Required for create.",
+        },
+        name: {
+          type: "string",
+          description:
+            'Endpoint display name (e.g. "Flights Agent A2A Server")',
+        },
+        agentName: {
+          type: "string",
+          description:
+            "Name for this agent as shown in its Agent Card to remote callers",
+        },
+        agentDescription: {
+          type: "string",
+          description:
+            "Description for this agent's Agent Card — what it does, for a remote orchestrator's LLM to decide when to delegate to it",
+        },
+        skills: {
+          type: "array",
+          description:
+            "Skills this agent exposes in its Agent Card, e.g. [{ id: 'book-flight', name: 'book-flight', description: 'Book a flight' }]",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string", description: "Unique skill identifier" },
+              name: { type: "string", description: "Skill display name" },
+              description: {
+                type: "string",
+                description: "What this skill does",
+              },
+            },
+            required: ["id", "name"],
+          },
+        },
+        enableStreaming: {
+          type: "boolean",
+          description: "Stream partial results back to the calling agent",
+        },
+        authenticationType: {
+          type: "string",
+          enum: ["none", "apiKey"],
+          description:
+            "How callers must authenticate to this A2A server endpoint. Default: none",
         },
       },
     },

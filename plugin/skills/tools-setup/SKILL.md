@@ -1,6 +1,6 @@
 ---
 name: tools-setup
-description: "Use when creating or configuring Cognigy agent tools — choosing the tool type (tool, http, mcp, knowledge, send_email) and their configuration schemas."
+description: "Use when creating or configuring Cognigy agent tools — choosing the tool type (tool, http, mcp, knowledge, send_email, a2a) and their configuration schemas."
 ---
 
 # Adding Tools to an AI Agent
@@ -84,6 +84,26 @@ config: {
 mcpName: "my-mcp-server",
 mcpServerUrl: "https://mcp.example.com",
 timeout: 30
+}
+}
+```
+
+### a2a — Delegate to a remote A2A (Agent2Agent) agent (specialized — not for general use)
+
+⚠️ ONLY use this for explicit agent-to-agent delegation (e.g. an orchestrator agent handing off to a specialist agent). The remote agent does NOT have to be a Cognigy agent — it can be any external/third-party A2A-compliant agent; `agentBaseUrl` is then just whatever base URL that agent publishes. See the a2a-setup skill for the full workflow.
+
+GOTCHA (Cognigy-target only): if the remote agent IS a Cognigy agent deployed behind `manage_a2a_server`, `agentBaseUrl` must be that call's response `agentBaseUrl` field, used verbatim — a2aServer endpoints live under `/a2a/v1/<URLToken>`, not the plain endpoint URL. Using the wrong shape silently 404s. This gotcha does not apply to external agents.
+
+```text
+create_tool {
+aiAgentId: "...",
+toolType: "a2a",
+name: "Flights Agent",
+config: {
+agentBaseUrl: "<external agent's own base URL, or agentBaseUrl from manage_a2a_server response>",
+agentCardPath: ".well-known/agent.json",
+executionMode: "blocking",
+taskTimeout: 60
 }
 }
 ```
