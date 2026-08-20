@@ -468,6 +468,20 @@ describe("snapshot filter", () => {
     expect(unversioned.version).toBeNull();
   });
 
+  it("reports no version for a human snapshot that mimics the name", () => {
+    const result = filterResponse("snapshot", {
+      _id: "60d5ec49f1a2c8b1a4e0fa06",
+      name: "[AI Backup] v9 test",
+      description: "Written by a person, no marker here.",
+      createdAt: 1750000000,
+    });
+
+    // version 9 next to isPluginBackup false invites "restore v9" for a
+    // snapshot outside the plugin's numbering.
+    expect(result.isPluginBackup).toBe(false);
+    expect(result.version).toBeNull();
+  });
+
   it("does not mark a human snapshot", () => {
     const result = filterResponse("snapshot", {
       _id: "60d5ec49f1a2c8b1a4e0fa03",

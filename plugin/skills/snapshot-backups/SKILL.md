@@ -52,7 +52,7 @@ state to roll back to — and never for read-only operations.
 If you do not have the `projectId`, read it from
 `get_resource { resourceType: "agent", id: "<aiAgentId>" }`, which returns it.
 If `create` returns `error: "snapshot_limit_reached"`, follow *At the snapshot limit*
-below. If it returns `pending: true`, the backup does **not** exist yet — poll
+below. If it returns `error: "task_status_unknown"`, the outcome is unknown: poll `read_task` before saying anything, and do NOT create a second backup. If it returns `pending: true`, the backup does **not** exist yet — poll
 `read_task` until it is done before changing anything, and note that a pending
 create does not satisfy the gate.
 
@@ -60,6 +60,9 @@ create does not satisfy the gate.
 `[AI Backup] v<N> <label> — <timestamp>` so the backup is always identifiable and
 always uniquely named. `<N>` only counts up within a project, so you can refer to a
 backup as "v3" rather than by timestamp; `list` returns it as `version`.
+Numbers are never reused within a session, but two sessions that both start from
+the same list can mint the same number. If `list` ever shows two backups with the
+same `version`, identify the one you mean by its timestamp or id, not by "v<N>".
 
 ### Roll back to a backup
 

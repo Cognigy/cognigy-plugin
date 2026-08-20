@@ -162,7 +162,10 @@ export function summarizeSnapshot(raw: any): SnapshotSummary {
   return {
     id: snapshotId(raw),
     name: raw?.name ?? "",
-    version: parseBackupVersion(raw?.name),
+    // Guarded: a human snapshot named "[AI Backup] v9 test" is not part of the
+    // plugin's numbering, and reporting version 9 next to isPluginBackup false
+    // invites "restore v9" for a snapshot the plugin does not own.
+    version: isAutoBackup(raw) ? parseBackupVersion(raw?.name) : null,
     description: raw?.description ?? "",
     createdAt: raw?.createdAt ?? null,
     createdBy: raw?.createdBy ?? null,

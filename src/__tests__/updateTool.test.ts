@@ -2,6 +2,12 @@ import { describe, it, expect, beforeEach, jest } from "@jest/globals";
 import { CognigyApiClient } from "../api/client.js";
 import { ToolHandlers } from "../tools/handlers.js";
 
+// The backup gate holds the first change to an existing agent until the user
+// answers; suites that are not testing the gate answer it up front. The answer
+// is recorded per project — a call whose project cannot be determined falls
+// back to "answered anywhere this session".
+const PROJECT_FOR_GATE = "60d5ec49f1a2c8b1a4e0f000";
+
 const ID = {
   project: "507f1f77bcf86cd799439011",
   agent: "60d5ec49f1a2c8b1a4e0f001",
@@ -33,7 +39,7 @@ describe("update_tool", () => {
       "https://endpoint-trial.cognigy.ai",
       "https://webchat-trial.cognigy.ai",
     );
-    (h as any).backupDeclinedThisSession = true;
+    (h as any).backupDeclinedForProject.add(PROJECT_FOR_GATE);
   });
 
   function mockAgentWithFlow() {

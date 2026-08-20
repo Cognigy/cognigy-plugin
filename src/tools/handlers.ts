@@ -31,6 +31,7 @@ import {
   type VoiceCheck,
   type VoiceFix,
 } from "./voiceChecklist.js";
+import { z } from "zod";
 import * as schemas from "../schemas/tools.js";
 import {
   chartToAscii,
@@ -623,6 +624,33 @@ export class ToolHandlers {
   private static readonly MAX_SNAPSHOT_PAGES = 20;
   private static readonly TASK_POLL_INTERVAL_MS = 3000;
 
+  /**
+   * Resource types a snapshot does NOT capture. Deleting one of these is not
+   * protected by a backup at all, so holding the call would offer a rollback
+   * that does not exist — and it would be inconsistent with manage_webchat and
+   * manage_knowledge, which are exempt for exactly this reason.
+   */
+  private static readonly SNAPSHOT_EXCLUDED_RESOURCE_TYPES = new Set([
+    "endpoint",
+    "knowledge_store",
+  ]);
+
+  /**
+   * Schemas of the gated tools. The gate runs before the handler validates, so
+   * without this an INVALID first call would consume the one-shot hold: the
+   * caller sees backup_not_offered instead of its validation error, fixes the
+   * args, retries — and proceeds unprotected, because the hold is spent.
+   */
+  private static readonly GATED_TOOL_SCHEMAS: Record<string, z.ZodTypeAny> = {
+    update_ai_agent: schemas.updateAiAgentSchema,
+    create_tool: schemas.createToolSchema,
+    update_tool: schemas.updateToolSchema,
+    manage_flow_nodes: schemas.manageFlowNodesSchema,
+    delete_resource: schemas.deleteResourceSchema,
+    audit_voice_agent: schemas.auditVoiceAgentSchema,
+    manage_settings: schemas.manageSettingsSchema,
+  };
+
   /** Operations on multi-operation tools above that only READ. */
   private static readonly READ_ONLY_OPERATIONS = new Set([
     "get",
@@ -638,9 +666,21 @@ export class ToolHandlers {
   private static isBackupWorthyCall(toolName: string, args: any): boolean {
     if (!BACKUP_WORTHY_TOOLS.has(toolName)) return false;
 
+    // A call that cannot run must not consume the one-shot hold.
+    const schema = ToolHandlers.GATED_TOOL_SCHEMAS[toolName];
+    if (schema && !schema.safeParse(args).success) return false;
+
     // audit_voice_agent rewrites an existing agent's nodes and settings, but
     // only in apply mode; its default dry-run mutates nothing.
     if (toolName === "audit_voice_agent") return args?.apply === true;
+
+    // Deleting something a snapshot never contained is not backup-protectable.
+    if (
+      toolName === "delete_resource" &&
+      ToolHandlers.SNAPSHOT_EXCLUDED_RESOURCE_TYPES.has(args?.resourceType)
+    ) {
+      return false;
+    }
 
     const operation = args?.operation;
     return (
@@ -652,7 +692,9 @@ export class ToolHandlers {
   /** Whether the call targets something this session created. */
   private targetsNewResource(args: any): boolean {
     if (!this.resourcesCreatedThisSession.size) return false;
-    for (const key of ["aiAgentId", "flowId", "id"]) {
+    // projectId is matched only against ids actually recorded, so passing an
+    // EXISTING project to a later call cannot false-match its way past the gate.
+    for (const key of ["aiAgentId", "flowId", "id", "projectId"]) {
       const value = args?.[key];
       if (
         typeof value === "string" &&
@@ -666,10 +708,23 @@ export class ToolHandlers {
 
   // Session state for the backup gate below. The plugin speaks MCP over stdio,
   // which means one server process per client session — so instance lifetime is
-  // session lifetime and these flags are exactly "this session".
-  private snapshotCreatedThisSession = false;
-  private backupDeclinedThisSession = false;
+  // session lifetime and this state is exactly "this session".
+  //
+  // The answer is kept PER PROJECT: a user who declines a backup on a sandbox
+  // must still be asked before the first change to a production project. Only
+  // the anti-deadlock trip is global for calls whose project cannot be
+  // determined (see backupGateFor).
+  private readonly snapshotCreatedForProject = new Set<string>();
+  private readonly backupDeclinedForProject = new Set<string>();
+  private readonly backupGateHeldForProject = new Set<string>();
   private backupGateTripped = false;
+  /**
+   * projectId of resources seen this session, so the gate can tell which
+   * project a call like update_ai_agent { aiAgentId } belongs to WITHOUT
+   * spending an API call. Filled from reads the model already makes
+   * (list_resources / get_resource) and from what this session created.
+   */
+  private readonly projectOfResource = new Map<string, string>();
   /**
    * Agent and flow ids this session created. Changes to brand-new material are
    * additive — there is no prior state to roll back to — so the backup gate
@@ -1517,8 +1572,22 @@ export class ToolHandlers {
         : "unknown";
 
       // Remember what this session minted so the backup gate leaves it alone.
-      for (const id of [agentId, agent.referenceId, flowId, flow.referenceId]) {
+      // The project counts too when we created it: holding a change to a
+      // seconds-old project contradicts the exemption's own rationale, and a
+      // backup of it would eat one of that project's ~10 snapshot slots.
+      for (const id of [
+        agentId,
+        agent.referenceId,
+        flowId,
+        flow.referenceId,
+        ...(createdProject ? [projectId] : []),
+      ]) {
         if (id) this.resourcesCreatedThisSession.add(String(id));
+      }
+
+      // Scope the gate for later calls that name only the agent or the flow.
+      for (const resource of [agent, flow]) {
+        this.rememberProjectOf(resource, String(projectId));
       }
 
       const result: any = {
@@ -4950,21 +5019,86 @@ export class ToolHandlers {
    * that held out for compliance could deadlock an automated subagent, and one
    * forced pause is what "ask at the start of the session" actually needs.
    */
-  private backupGateFor(toolName: string): any | null {
-    if (
-      this.snapshotCreatedThisSession ||
-      this.backupDeclinedThisSession ||
-      this.backupGateTripped
-    ) {
-      return null;
+  /** Record which project a resource belongs to, for gate scoping. */
+  private rememberProjectOf(resource: any, projectId?: string): void {
+    const project = projectId ?? resource?.projectId;
+    if (typeof project !== "string" || !project) return;
+    for (const key of ["_id", "id", "referenceId"]) {
+      const value = resource?.[key];
+      if (typeof value === "string" && value) {
+        this.projectOfResource.set(value, project);
+      }
     }
-    this.backupGateTripped = true;
+  }
+
+  /**
+   * Learn resource → project links from a tool result. Reads the model makes
+   * anyway (list_resources, get_resource) are enough to scope the gate for the
+   * calls that carry no projectId of their own.
+   */
+  private learnProjectIds(result: any): void {
+    if (!result || typeof result !== "object") return;
+    const items = (result as any).items;
+    if (Array.isArray(items)) {
+      for (const item of items) this.rememberProjectOf(item);
+    }
+    this.rememberProjectOf(result);
+  }
+
+  /**
+   * The project a gated call acts on, or null when it cannot be told. Pure
+   * lookup — the gate never spends an API call to answer this.
+   */
+  private projectForCall(args: any): string | null {
+    if (typeof args?.projectId === "string" && args.projectId) {
+      return args.projectId;
+    }
+    for (const key of ["aiAgentId", "flowId", "id", "endpointId"]) {
+      const value = args?.[key];
+      if (typeof value === "string") {
+        const project = this.projectOfResource.get(value);
+        if (project) return project;
+      }
+    }
+    return null;
+  }
+
+  private backupGateFor(toolName: string, args: any): any | null {
+    const projectId = this.projectForCall(args);
+
+    if (projectId) {
+      // Answered for THIS project? Let it through. An answer given for another
+      // project says nothing about this one.
+      if (
+        this.snapshotCreatedForProject.has(projectId) ||
+        this.backupDeclinedForProject.has(projectId)
+      ) {
+        return null;
+      }
+      // Anti-deadlock: hold once per project. A client that ignores the offer
+      // and retries proceeds rather than looping forever.
+      if (this.backupGateHeldForProject.has(projectId)) return null;
+      this.backupGateHeldForProject.add(projectId);
+    } else {
+      // Project unknown (e.g. delete_resource on a resource never read this
+      // session). Fall back to session-wide state: any answer, anywhere, and
+      // one global hold.
+      if (
+        this.snapshotCreatedForProject.size ||
+        this.backupDeclinedForProject.size ||
+        this.backupGateTripped
+      ) {
+        return null;
+      }
+      this.backupGateTripped = true;
+    }
 
     return withHints(
       {
         error: "backup_not_offered",
         tool: toolName,
         changed: false,
+        ...(projectId ? { projectId } : {}),
       },
       {
         warning: `NOTHING WAS CHANGED. This is the first change to an existing agent in this session, and no backup exists yet — so ${toolName} was not run.`,
@@ -5335,10 +5469,8 @@ export class ToolHandlers {
         const all = await this.listAllSnapshots(data.projectId);
         const evaluation = evaluateSnapshotLimit(all);
         const skip = data.skip ?? 0;
-        const page = all.slice(
-          skip,
-          data.limit === undefined ? undefined : skip + data.limit,
-        );
+        const limit = data.limit ?? 100;
+        const page = all.slice(skip, skip + limit);
 
         return {
           operation: "list",
@@ -5460,7 +5592,10 @@ export class ToolHandlers {
             taskId,
             pollError!,
             {
-              created: false,
+              // NOT false: `created: false` is what every other outcome uses to
+              // mean "no backup exists, safe to retry", and a caller keying on
+              // the boolean would mint the duplicate this path exists to avoid.
+              created: null,
               name: fields.name,
               ...(freedSlot ? { deletedToFreeSlot: freedSlot } : {}),
               ...(skippedCandidates.length ? { skippedCandidates } : {}),
@@ -5535,7 +5670,7 @@ export class ToolHandlers {
         // already tells the caller to find the id with list.
         const created = matches.find((s: any) => s?.name === fields.name);
 
-        this.snapshotCreatedThisSession = true;
+        this.snapshotCreatedForProject.add(data.projectId);
 
         return withHints(
           {
@@ -5812,7 +5947,7 @@ export class ToolHandlers {
       // Records that the user was asked and said no, so the backup gate stops
       // holding calls for the rest of the session. Touches no API.
       case "decline": {
-        this.backupDeclinedThisSession = true;
+        this.backupDeclinedForProject.add(data.projectId);
         return {
           operation: "decline",
           projectId: data.projectId,
@@ -5848,7 +5983,7 @@ export class ToolHandlers {
         ToolHandlers.isBackupWorthyCall(toolName, args) &&
         !this.targetsNewResource(args)
       ) {
-        const gate = this.backupGateFor(toolName);
+        const gate = this.backupGateFor(toolName, args);
         if (gate) {
           logger.info(`Backup gate held ${toolName} for a backup offer`);
           return gate;
@@ -5911,6 +6046,11 @@ export class ToolHandlers {
         default:
           throw new Error(`Unknown tool: ${toolName}`);
       }
+      // Reads teach the gate which project a resource belongs to, so a later
+      // update_ai_agent { aiAgentId } is scoped to the right project instead of
+      // falling back to session-wide state.
+      this.learnProjectIds(result);
+
       logger.info(`Tool call successful: ${toolName}`);
       return result;
     } catch (error: any) {

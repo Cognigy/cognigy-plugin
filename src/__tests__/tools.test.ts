@@ -31,7 +31,10 @@ const ID = {
  * a real session does once the user has replied.
  */
 const answerBackupGate = (handlers: ToolHandlers) => {
-  (handlers as any).backupDeclinedThisSession = true;
+  // The answer is recorded per project; suites that touch a different project
+  // still pass, because a call whose project cannot be determined falls back to
+  // "answered anywhere this session".
+  (handlers as any).backupDeclinedForProject.add(ID.project);
 };
 
 describe("ToolHandlers v2", () => {
@@ -4020,6 +4023,7 @@ describe("manage_snapshots", () => {
         expect(
           (ToolHandlers as any).isBackupWorthyCall("manage_flow_nodes", {
             operation,
+            flowId: ID.flow,
           }),
         ).toBe(false);
       }
@@ -4027,18 +4031,31 @@ describe("manage_snapshots", () => {
         expect(
           (ToolHandlers as any).isBackupWorthyCall("manage_flow_nodes", {
             operation,
+            flowId: ID.flow,
           }),
         ).toBe(true);
       }
+      // Args that cannot pass validation must not consume the one-shot hold:
+      // the caller would see backup_not_offered instead of its validation
+      // error, and the fixed retry would then run unprotected.
+      expect(
+        (ToolHandlers as any).isBackupWorthyCall("manage_flow_nodes", {
+          operation: "create",
+        }),
+      ).toBe(false);
     });
 
     it("holds audit_voice_agent only in apply mode", () => {
       const check = (ToolHandlers as any).isBackupWorthyCall;
       // The default dry-run mutates nothing, so holding it would be noise.
-      expect(check("audit_voice_agent", { apply: false })).toBe(false);
-      expect(check("audit_voice_agent", {})).toBe(false);
+      expect(
+        check("audit_voice_agent", { aiAgentId: ID.agent, apply: false }),
+      ).toBe(false);
+      expect(check("audit_voice_agent", { aiAgentId: ID.agent })).toBe(false);
       // apply:true rewrites nodes and settings on an existing agent.
-      expect(check("audit_voice_agent", { apply: true })).toBe(true);
+      expect(
+        check("audit_voice_agent", { aiAgentId: ID.agent, apply: true }),
+      ).toBe(true);
     });
 
     it("does not hold manage_snapshots itself", async () => {
@@ -4179,6 +4196,9 @@ describe("manage_snapshots — outcome safety", () => {
     // The old wording told the model no backup existed, so a retry created a
     // duplicate that ate a snapshot slot.
     expect(result._hints.warning).not.toContain("Nothing was backed up");
+    // `created: false` means "no backup exists, safe to retry" everywhere else,
+    // so the boolean must not answer a question we cannot answer.
+    expect(result.created).toBeNull();
   });
 
   it("still reports a task the platform genuinely failed as a failure", async () => {
@@ -4467,5 +4487,133 @@ describe("manage_snapshots — versioned names", () => {
     expect(result.error).toBe("backup_not_offered");
     expect(api.patch).not.toHaveBeenCalled();
     expect(api.post).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Backup gate — scoping
+//
+// The gate answer belongs to a project, not to a session: declining on a
+// sandbox must not release the gate for a production project touched later.
+// ---------------------------------------------------------------------------
+
+describe("backup gate scoping", () => {
+  let api: jest.Mocked<CognigyApiClient>;
+  let h: ToolHandlers;
+
+  const OTHER_PROJECT = "60d5ec49f1a2c8b1a4e0fbbb";
+
+  beforeEach(() => {
+    api = {
+      get: jest.fn(),
+      post: jest.fn(),
+      patch: jest.fn(),
+      delete: jest.fn(),
+      put: jest.fn(),
+      uploadFile: jest.fn(),
+    } as any;
+    h = new ToolHandlers(api, "https://endpoint-trial.cognigy.ai");
+  });
+
+  it("does not release the gate for another project after a decline", async () => {
+    await h.handleToolCall("manage_snapshots", {
+      operation: "decline",
+      projectId: ID.project,
+    });
+
+    // Same project: the user already answered, so this runs.
+    const answered = await h.handleToolCall("manage_settings", {
+      operation: "set_knowledge_ai",
+      projectId: ID.project,
+      knowledgeSearchModelId: "m1",
+    });
+    expect(answered.error).not.toBe("backup_not_offered");
+
+    // Different project: never asked about, so it is held.
+    const held = await h.handleToolCall("manage_settings", {
+      operation: "set_knowledge_ai",
+      projectId: OTHER_PROJECT,
+      knowledgeSearchModelId: "m1",
+    });
+    expect(held.error).toBe("backup_not_offered");
+    expect(held.projectId).toBe(OTHER_PROJECT);
+  });
+
+  it("scopes a call that names only an agent, using what reads already taught it", async () => {
+    await h.handleToolCall("manage_snapshots", {
+      operation: "decline",
+      projectId: ID.project,
+    });
+
+    // A read the model makes anyway records which project the agent is in.
+    api.get.mockResolvedValueOnce({
+      _id: ID.agent,
+      name: "Prod agent",
+      projectId: OTHER_PROJECT,
+    } as any);
+    await h.handleToolCall("get_resource", {
+      resourceType: "agent",
+      id: ID.agent,
+    });
+
+    const result = await h.handleToolCall("update_ai_agent", {
+      aiAgentId: ID.agent,
+      description: "new persona",
+    });
+
+    // The decline was for a different project — this one must still be asked.
+    expect(result.error).toBe("backup_not_offered");
+    expect(api.patch).not.toHaveBeenCalled();
+  });
+
+  it("holds each project only once, so an ignoring client cannot deadlock", async () => {
+    const first = await h.handleToolCall("manage_settings", {
+      operation: "set_knowledge_ai",
+      projectId: ID.project,
+      knowledgeSearchModelId: "m1",
+    });
+    expect(first.error).toBe("backup_not_offered");
+
+    api.get.mockResolvedValue({ _id: ID.project } as any);
+    api.patch.mockResolvedValue({ _id: ID.project } as any);
+    const second = await h.handleToolCall("manage_settings", {
+      operation: "set_knowledge_ai",
+      projectId: ID.project,
+      knowledgeSearchModelId: "m1",
+    });
+    expect(second.error).not.toBe("backup_not_offered");
+  });
+
+  it("does not hold changes to a project this session created", async () => {
+    (h as any).resourcesCreatedThisSession.add(ID.project);
+
+    const result = await h.handleToolCall("manage_settings", {
+      operation: "set_knowledge_ai",
+      projectId: ID.project,
+      knowledgeSearchModelId: "m1",
+    });
+
+    // Brand-new material is additive: there is no prior state to roll back to,
+    // and a backup would eat one of the new project's snapshot slots.
+    expect(result.error).not.toBe("backup_not_offered");
+  });
+
+  it("does not hold a deletion a snapshot could not protect", async () => {
+    const check = (ToolHandlers as any).isBackupWorthyCall;
+
+    // Endpoints and Knowledge AI are not captured in a snapshot.
+    expect(
+      check("delete_resource", { resourceType: "endpoint", id: ID.endpoint }),
+    ).toBe(false);
+    expect(
+      check("delete_resource", {
+        resourceType: "knowledge_store",
+        id: ID.endpoint,
+      }),
+    ).toBe(false);
+    // Agents and flows are.
+    expect(
+      check("delete_resource", { resourceType: "agent", id: ID.agent }),
+    ).toBe(true);
   });
 });
