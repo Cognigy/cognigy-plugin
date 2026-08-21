@@ -5945,14 +5945,15 @@ export class ToolHandlers {
       }
 
       // Records that the user was asked and said no, so the backup gate stops
-      // holding calls for the rest of the session. Touches no API.
+      // holding calls FOR THIS PROJECT. Another project touched later in the
+      // same session is still held once. Touches no API.
       case "decline": {
         this.backupDeclinedForProject.add(data.projectId);
         return {
           operation: "decline",
           projectId: data.projectId,
           acknowledged: true,
-          note: "No backup will be taken this session. Changes from here are not reversible through this plugin.",
+          note: "No backup will be taken for this project. Changes to it are not reversible through this plugin. A different project touched later still gets its own backup offer.",
         };
       }
 

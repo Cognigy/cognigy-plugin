@@ -28,10 +28,11 @@ it back. A Snapshot is an immutable copy of a **whole project**.
 
 ### Back up before changing an existing agent
 
-The server enforces this once per session, so you do not have to remember it. The
-**first** attempt to change an existing agent — `update_ai_agent`, `create_tool`,
-`update_tool`, a mutating `manage_flow_nodes`, or `delete_resource` — is **held**:
-it changes nothing and returns `error: "backup_not_offered"`.
+The server enforces this **once per project**, so you do not have to remember it.
+The **first** attempt to change an existing agent in a given project —
+`update_ai_agent`, `create_tool`, `update_tool`, a mutating `manage_flow_nodes`, or
+`delete_resource` — is **held**: it changes nothing and returns
+`error: "backup_not_offered"`.
 
 When you see that error:
 
@@ -43,11 +44,17 @@ When you see that error:
    - Wait for `created: true`.
 4. If they decline:
    - `manage_snapshots { operation: "decline", projectId: "<projectId>" }`
-5. **Retry the held call.** It now goes through, and nothing is held for the rest of
-   the session.
+5. **Retry the held call.** It now goes through, and nothing else is held **for that
+   project**.
 
-The gate does not fire for an agent created in this same session — there is no prior
-state to roll back to — and never for read-only operations.
+Because the gate is per project, a later change to a **different** project can be
+held again in the same session — that is correct behaviour, not a malfunction. An
+answer given for one project says nothing about another, so ask again for the new
+one. (When the server cannot tell which project a call targets, it falls back to
+holding once for the session as a whole.)
+
+The gate does not fire for an agent or project created in this same session — there
+is no prior state to roll back to — and never for read-only operations.
 
 If you do not have the `projectId`, read it from
 `get_resource { resourceType: "agent", id: "<aiAgentId>" }`, which returns it.
@@ -176,8 +183,10 @@ Optional:
 ### `decline`
 
 Records that the user was asked for a backup and said no, which releases the backup
-gate for the rest of the session. Touches no API and creates nothing. Only call this
-after actually asking the user.
+gate **for the given project**. Another project touched later in the same session is
+still held once, and needs its own answer. Touches no API and creates nothing. Only
+call this after actually asking the user, and pass the `projectId` the held call
+targeted.
 
 Required:
 
