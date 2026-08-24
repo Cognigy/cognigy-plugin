@@ -27,6 +27,7 @@ const FILES = [
   "plugin/.codex-plugin/mcp.json", // engine pin
   "plugin/plugin.json", // version (Agent Plugins spec manifest)
   "plugin/mcp.json", // engine pin (Agent Plugins spec MCP config)
+  "plugin/.cursor-plugin/plugin.json", // version + engine pin (Cursor)
 ];
 
 for (const file of FILES) {
