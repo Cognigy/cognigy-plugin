@@ -25,6 +25,8 @@ const FILES = [
   "plugin/.claude-plugin/plugin.json", // version + engine pin
   "plugin/.codex-plugin/plugin.json", // version
   "plugin/.codex-plugin/mcp.json", // engine pin
+  "plugin/plugin.json", // version (Agent Plugins spec manifest)
+  "plugin/mcp.json", // engine pin (Agent Plugins spec MCP config)
 ];
 
 for (const file of FILES) {
