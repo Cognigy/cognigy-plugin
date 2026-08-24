@@ -1,6 +1,13 @@
 # Install for other hosts (VS Code, Cursor, …)
 
-Any host that can install a Claude-format plugin, or take a hand-written MCP server entry, can run the Cognigy plugin. The installer's job here is narrow: it supplies the credentials such a host cannot ask you for.
+Any host that implements the open [Agent Plugins](https://agent-plugins.org) standard (Cursor, Kiro, VS Code + Copilot, …), can install a Claude-format plugin, or can take a hand-written MCP server entry, can run the Cognigy plugin. The installer's job here is narrow: it supplies the credentials such a host cannot ask you for.
+
+**If your host supports the Agent Plugins standard, the two-step short version is:**
+
+1. Run the installer below (**Other hosts**) — it only writes your credentials file.
+2. Install the plugin through the host's own mechanism (marketplace, settings, or repo URL).
+
+Both steps are required, in either order. The standard's portable config deliberately carries no credentials — a plugin manifest is public, shared text, no place for an API key — so the plugin ships credential-less for these hosts and the engine reads `~/.cognigy-plugin/config.json` instead. Installing the plugin without step 1 starts the engine, but every tool call fails asking for credentials; the installer is what makes it work.
 
 |                  |                                                                                |
 | ---------------- | ------------------------------------------------------------------------------ |
@@ -20,6 +27,8 @@ npx -y -p @cognigy/plugin-engine@latest cognigy-setup --client other-hosts
 It writes your API base URL and key to `~/.cognigy-plugin/config.json` and stops. Nothing is added to any client config, so it is safe to combine with any other target.
 
 Then install the plugin in your host.
+
+**Agent Plugins hosts (Cursor, Kiro, …)** — install through the host's own plugin mechanism (marketplace or repo URL: `Cognigy/cognigy-plugin`, plugin directory `plugin/`). The host reads the standard's manifests (`plugin.json`, `skills/`, `mcp.json`) directly; no per-host files are needed. Skills load on every conformant host; agents only where the host defines them.
 
 **VS Code / Copilot** — in `settings.json`:
 
