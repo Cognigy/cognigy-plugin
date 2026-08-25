@@ -39,7 +39,7 @@ A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy
 | `manage_settings`      | Write | Manage project-level settings including voice preview and Knowledge AI configuration                |
 | `audit_voice_agent`    | Write | Audit a voice agent against the Go-Live Checklist; reports by default, applies safe fixes on demand |
 
-Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, flow nodes, packages, settings, LLM providers, tools, troubleshooting) ships as **skills** that load automatically when your request matches, in clients that support them (e.g. Claude Code) — see below.
+Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, flow nodes, packages, settings, LLM providers, tools, red-teaming, troubleshooting) ships as **skills** that load automatically when your request matches, in clients that support them (e.g. Claude Code) — see below.
 
 ## Installation
 
@@ -115,7 +115,7 @@ npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall   # remove from 
 
 Beyond the MCP tools, the plugin ships **skills** and **agents** that surface the workflows automatically:
 
-- **Skills** (`/skills`) — one per workflow (agent creation, knowledge/RAG, voice gateway, voice go-live checklist, webchat, flow nodes, packages, settings, LLM providers, tools, troubleshooting). Claude loads the matching skill automatically when your request fits.
+- **Skills** (`/skills`) — one per workflow (agent creation, knowledge/RAG, voice gateway, voice go-live checklist, webchat, flow nodes, packages, settings, LLM providers, tools, red-teaming, troubleshooting). Claude loads the matching skill automatically when your request fits. Red-teaming runs in your main session — not as a subagent — so it can agree the scope contract, get approval before applying fixes, and open the finished report for you.
 - **Agents** (`/agents`) — `cognigy-agent-builder` runs the full build-and-test loop for a new agent, and `cognigy-voice-go-live` audits a voice agent against the Go-Live Checklist and applies the safe fixes. Each runs in its own context and reports back a summary.
 
 ---
