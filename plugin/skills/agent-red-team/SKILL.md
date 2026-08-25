@@ -226,10 +226,13 @@ Mutation protocol teardown (Phase 6) and confirm cleanup before delivering. Neve
 pre-remediation report, and never deliver while a scratch mutation is still un-restored. Two steps, in
 order:
 
-1. **Open `report.md` in the user's default viewer — every run, without asking** (`open` on macOS,
-   `xdg-open` on Linux, `start "" <path>` in `cmd` or `Invoke-Item <path>` in PowerShell on Windows).
-   Never make the user hunt for the path or type a command to read the result. If the environment is
-   headless (CI/cron, no opener available), print the absolute paths instead.
+1. **Give the report's absolute path and offer to open it.** The report contains verbatim jailbreak
+   probes and responses, so don't force a window open unannounced (it can steal focus or surface that
+   content mid screen-share) — state the path and offer to open it in the user's default viewer, then
+   open it on confirmation (`open` on macOS, `xdg-open` on Linux, `start "" <path>` in `cmd` or
+   `Invoke-Item <path>` in PowerShell on Windows). Either way the user must never have to hunt for the
+   path or type a command to read the result. If the environment is headless (CI/cron, no opener
+   available), just print the absolute paths.
 2. **Then offer, once, to also publish the report as a shareable Artifact** — a page the user opens with
    a single click, no paths or terminal. This is opt-in: ask, don't assume, and only after step 1. Where
    the client exposes an Artifact / HTML publish (e.g. Claude Code), publish `report.md` as the Artifact
