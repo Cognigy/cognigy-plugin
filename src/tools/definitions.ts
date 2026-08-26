@@ -372,7 +372,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "delete_resource",
     description:
-      "Permanently delete a Cognigy resource. This cannot be undone.\n\nUse list_resources to verify the resource exists before deleting.\nSome types (endpoint) may require projectId. For 'tool' type, provide aiAgentId — the handler resolves and deletes the underlying flow node internally.\n\nAGENT DELETION: Deleting an agent is a last resort. By default (cascade: true), it cascade-deletes all associated resources in the correct order: endpoints → flow → agent. The Cognigy API rejects agent deletion while a referencing flow exists, so cascade is required. Set cascade: false to attempt a bare agent delete (will fail if flow still exists). The response reports every resource deleted and any failures.",
+      "Delete a Cognigy resource, or mark it for manual deletion.\n\nPROTECTED TYPES — flow, project, agent are NEVER hard-deleted. Instead they are renamed with a DELETE_ prefix (e.g. 'DELETE_My Flow') to mark them for manual deletion in the Cognigy UI. The response reports markedForDeletion: true and the new name. Idempotent: an already-marked resource is left unchanged (alreadyMarked: true).\n\nAGENT 'DELETION': By default (cascade: true) the agent's endpoints are DEACTIVATED (active: false — reversible in the Cognigy UI) to take the agent offline, then its companion flow and the agent itself are renamed with the DELETE_ prefix. Set cascade: false to rename only the agent and leave endpoints/flow untouched. The response reports what was deactivated, renamed, and any failures. Note: because the agent still exists (renamed), re-running create_ai_agent with the original name creates a NEW agent.\n\nFLOW 'DELETION' also deactivates every endpoint referencing the flow before renaming it. PROJECT 'deletion' renames only — flows, endpoints and agents inside the project remain live; the response warning says so.\n\nOTHER TYPES (endpoint, llm_model, knowledge_store, function, tool) are permanently deleted — this cannot be undone. Use list_resources to verify the resource exists before deleting. Some types (endpoint) may require projectId. For 'tool' type, provide aiAgentId — the handler resolves and deletes the underlying flow node internally.",
     annotations: {
       title: "Delete Resource",
       readOnlyHint: false,
@@ -388,13 +388,15 @@ export const tools: ToolDefinition[] = [
           enum: [
             "agent",
             "flow",
+            "project",
             "endpoint",
             "llm_model",
             "knowledge_store",
             "function",
             "tool",
           ],
-          description: "Type of resource to delete",
+          description:
+            "Type of resource to delete (flow/project/agent are renamed with a DELETE_ prefix instead of being deleted)",
         },
         id: {
           type: "string",
@@ -412,7 +414,7 @@ export const tools: ToolDefinition[] = [
         cascade: {
           type: "boolean",
           description:
-            "Agent deletion only. If true (default), cascade-deletes endpoints → flow → agent. If false, attempts bare agent delete (fails if flow still exists).",
+            "Agent deletion only. If true (default), deactivates the agent's endpoints and renames its flow and the agent with the DELETE_ prefix. If false, renames only the agent.",
         },
       },
       required: ["resourceType", "id"],

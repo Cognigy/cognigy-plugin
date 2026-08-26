@@ -117,6 +117,7 @@ export const deleteResourceSchema = z.object({
   resourceType: z.enum([
     "agent",
     "flow",
+    "project",
     "endpoint",
     "llm_model",
     "knowledge_store",

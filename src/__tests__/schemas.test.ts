@@ -513,6 +513,14 @@ describe("deleteResourceSchema", () => {
     });
     expect(result.resourceType).toBe("llm_model");
   });
+
+  it("accepts project resource type", () => {
+    const result = schemas.deleteResourceSchema.parse({
+      resourceType: "project",
+      id: VALID_ID,
+    });
+    expect(result.resourceType).toBe("project");
+  });
 });
 
 describe("createToolSchema", () => {

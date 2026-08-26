@@ -110,6 +110,12 @@ import {
 
 const DEFAULT_AGENT_IMAGE = "default-avatar:1";
 
+// Prefix applied to agents/flows/projects instead of deleting them.
+const DELETE_PREFIX = "DELETE_";
+
+// Cognigy resource names are capped at 200 chars (see schemas/tools.ts).
+const MAX_RESOURCE_NAME_LENGTH = 200;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -2600,18 +2606,39 @@ export class ToolHandlers {
       return { deleted: true, resourceType: "tool", id };
     }
 
-    // Agent deletion requires cascade: endpoints → flow → agent.
-    // The Cognigy API rejects agent deletion while referencing resources exist.
+    // Agents, flows and projects are never hard-deleted — they are renamed
+    // with the DELETE_ prefix to mark them for manual deletion.
     if (resourceType === "agent") {
       if (cascade === false) {
-        await this.apiClient.delete(`/v2.0/aiagents/${id}`);
-        return { deleted: true, resourceType, id };
+        const agent: any = await this.apiClient.get(`/v2.0/aiagents/${id}`);
+        const rename = await this.renameForDeletion(
+          `/v2.0/aiagents/${id}`,
+          agent?.name,
+          `agent ${id}`,
+        );
+        return withHints(
+          {
+            markedForDeletion: true,
+            alreadyMarked: rename.alreadyMarked || undefined,
+            resourceType,
+            id,
+            name: rename.name,
+          },
+          {
+            warning:
+              "Agents cannot be deleted via this plugin. The agent was renamed to mark it for manual deletion; its endpoints and flow were left untouched (cascade: false).",
+            action: "Delete the agent manually in the Cognigy UI.",
+          },
+        );
       }
-      return this.cascadeDeleteAgent(id);
+      return this.softDeleteAgent(id);
+    }
+
+    if (resourceType === "flow" || resourceType === "project") {
+      return this.markForDeletion(resourceType, id);
     }
 
     const deleteMap: Record<string, string> = {
-      flow: `/v2.0/flows/${id}`,
       endpoint: `/v2.0/endpoints/${id}`,
       llm_model: `/v2.0/largelanguagemodels/${id}`,
       knowledge_store: `/v2.0/knowledgestores/${id}`,
@@ -2626,18 +2653,209 @@ export class ToolHandlers {
   }
 
   /**
-   * Cascade-delete an AI Agent and all resources provisioned alongside it:
-   * 1. Resolve the agent's flow
-   * 2. Delete every endpoint pointing at that flow
-   * 3. Delete the flow itself
-   * 4. Delete the agent resource
+   * Rename a resource to DELETE_<name> to mark it for manual deletion.
+   * Idempotent: an already-prefixed name is left unchanged.
    */
-  private async cascadeDeleteAgent(agentId: string): Promise<any> {
-    const deleted: string[] = [];
+  private async renameForDeletion(
+    url: string,
+    currentName: string | undefined,
+    resource: string,
+  ): Promise<{ name: string; alreadyMarked: boolean }> {
+    const name = currentName ?? "";
+    if (!name.trim()) {
+      throw new Error(
+        `Cannot mark ${resource} for deletion: it has no name to prefix.`,
+      );
+    }
+    if (name.startsWith(DELETE_PREFIX)) {
+      return { name, alreadyMarked: true };
+    }
+    const newName = `${DELETE_PREFIX}${name}`.slice(
+      0,
+      MAX_RESOURCE_NAME_LENGTH,
+    );
+    await this.apiClient.patch(url, { name: newName });
+    return { name: newName, alreadyMarked: false };
+  }
+
+  /**
+   * Deactivate (active: false) every endpoint that references a flow, so the
+   * flow stops serving traffic. Reversible in the Cognigy UI — endpoints are
+   * never deleted here. `checked: false` means enumeration never ran, so
+   * endpoints may still be live.
+   */
+  private async deactivateEndpointsForFlow(
+    projectId: string,
+    flowId: string,
+    flowReferenceId: string | undefined,
+  ): Promise<{
+    deactivated: string[];
+    failed: { resource: string; error: string }[];
+    checked: boolean;
+  }> {
+    const deactivated: string[] = [];
+    const failed: { resource: string; error: string }[] = [];
+
+    if (!flowReferenceId) {
+      return { deactivated, failed, checked: false };
+    }
+
+    try {
+      const limit = 100;
+      let offset = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const eps: any = await this.apiClient.get("/v2.0/endpoints", {
+          params: { projectId, limit, offset },
+        });
+        const epItems = eps.items ?? eps;
+        if (!Array.isArray(epItems) || epItems.length === 0) {
+          break;
+        }
+
+        for (const ep of epItems) {
+          if (ep.flowId === flowReferenceId || ep.flowId === flowId) {
+            const epId = ep._id || ep.id;
+            try {
+              await this.apiClient.patch(`/v2.0/endpoints/${epId}`, {
+                active: false,
+              });
+              deactivated.push(`endpoint:${epId}`);
+            } catch (e: any) {
+              failed.push({
+                resource: `endpoint:${epId}`,
+                error: e.message ?? String(e),
+              });
+            }
+          }
+        }
+
+        if (epItems.length < limit) {
+          hasMore = false;
+        } else {
+          offset += limit;
+        }
+      }
+    } catch (e: any) {
+      failed.push({
+        resource: `endpoints:list:${projectId}`,
+        error: e?.message ?? String(e),
+      });
+    }
+
+    return { deactivated, failed, checked: true };
+  }
+
+  /**
+   * Flows and projects cannot be deleted via the plugin — rename them to
+   * DELETE_<name> so a human can delete them manually in the Cognigy UI.
+   * Flows are also taken offline first by deactivating their endpoints;
+   * projects are rename-only (everything inside stays live).
+   */
+  private async markForDeletion(
+    resourceType: "flow" | "project",
+    id: string,
+  ): Promise<any> {
+    const url =
+      resourceType === "flow" ? `/v2.0/flows/${id}` : `/v2.0/projects/${id}`;
+    const current: any = await this.apiClient.get(url);
+
+    let endpoints: {
+      deactivated: string[];
+      failed: { resource: string; error: string }[];
+      checked: boolean;
+    } | null = null;
+    if (resourceType === "flow") {
+      const projectId =
+        current?.projectId ??
+        current?.projectReference ??
+        current?.project?._id ??
+        current?.project?.id;
+      endpoints = projectId
+        ? await this.deactivateEndpointsForFlow(
+            projectId,
+            id,
+            current?.referenceId,
+          )
+        : { deactivated: [], failed: [], checked: false };
+    }
+
+    const rename = await this.renameForDeletion(
+      url,
+      current?.name,
+      `${resourceType} ${id}`,
+    );
+
+    const parts = [
+      `${resourceType === "flow" ? "Flows" : "Projects"} cannot be deleted via this plugin. ${
+        rename.alreadyMarked
+          ? `The ${resourceType} is already marked for manual deletion as "${rename.name}".`
+          : `The ${resourceType} was renamed to "${rename.name}" to mark it for manual deletion.`
+      }`,
+    ];
+    if (endpoints) {
+      if (endpoints.failed.length > 0) {
+        parts.push(
+          "Endpoint deactivation was incomplete — the flow may still be reachable via its endpoints (see cascade.failed).",
+        );
+      } else if (!endpoints.checked) {
+        parts.push(
+          "The flow's endpoints could not be enumerated — the flow may still be reachable via its endpoints.",
+        );
+      } else if (endpoints.deactivated.length > 0) {
+        parts.push(
+          `${endpoints.deactivated.length} endpoint(s) referencing the flow were deactivated (reversible in the Cognigy UI) to take it offline.`,
+        );
+      } else {
+        parts.push("No endpoints referenced the flow.");
+      }
+    }
+    if (resourceType === "project") {
+      parts.push(
+        "The rename takes nothing offline: flows, endpoints and agents inside the project remain live and reachable. Deactivate or delete them individually if the project must stop serving traffic.",
+      );
+    }
+
+    return withHints(
+      {
+        markedForDeletion: true,
+        alreadyMarked: rename.alreadyMarked || undefined,
+        resourceType,
+        id,
+        name: rename.name,
+        cascade: endpoints
+          ? {
+              deactivated: endpoints.deactivated,
+              failed:
+                endpoints.failed.length > 0 ? endpoints.failed : undefined,
+            }
+          : undefined,
+      },
+      {
+        warning: parts.join(" "),
+        action: `Delete the ${resourceType} manually in the Cognigy UI when appropriate.`,
+      },
+    );
+  }
+
+  /**
+   * Soft-delete an AI Agent. Nothing is hard-deleted:
+   * 1. Resolve the agent's flow
+   * 2. Deactivate every endpoint pointing at that flow (takes the agent
+   *    offline; reversible in the Cognigy UI)
+   * 3. Rename the flow to DELETE_<name>
+   * 4. Rename the agent to DELETE_<name>
+   */
+  private async softDeleteAgent(agentId: string): Promise<any> {
+    const deactivated: string[] = [];
+    const renamed: string[] = [];
     const failed: { resource: string; error: string }[] = [];
 
     const resolved = await resolveFlowForAgent(this.apiClient, agentId);
-    const agent = resolved?.agent;
+    const agent: any =
+      resolved?.agent ??
+      (await this.apiClient.get(`/v2.0/aiagents/${agentId}`));
     const flowId = resolved?.flowId;
     const projectId =
       agent?.projectReference ??
@@ -2645,63 +2863,42 @@ export class ToolHandlers {
       agent?.project?._id ??
       agent?.project?.id;
 
-    // Step 1: delete endpoints that reference the agent's flow
-    if (flowId && projectId) {
+    let flow: any;
+    if (flowId) {
       try {
-        const flowRef =
-          agent?.flowReferenceId ??
-          ((await this.apiClient.get(`/v2.0/flows/${flowId}`)) as any)
-            .referenceId;
-        if (flowRef) {
-          const limit = 100;
-          let offset = 0;
-          let hasMore = true;
-
-          while (hasMore) {
-            const eps: any = await this.apiClient.get("/v2.0/endpoints", {
-              params: { projectId, limit, offset },
-            });
-            const epItems = eps.items ?? eps;
-            if (!Array.isArray(epItems) || epItems.length === 0) {
-              break;
-            }
-
-            for (const ep of epItems) {
-              if (ep.flowId === flowRef || ep.flowId === flowId) {
-                const epId = ep._id || ep.id;
-                try {
-                  await this.apiClient.delete(`/v2.0/endpoints/${epId}`);
-                  deleted.push(`endpoint:${epId}`);
-                } catch (e: any) {
-                  failed.push({
-                    resource: `endpoint:${epId}`,
-                    error: e.message ?? String(e),
-                  });
-                }
-              }
-            }
-
-            if (epItems.length < limit) {
-              hasMore = false;
-            } else {
-              offset += limit;
-            }
-          }
-        }
+        flow = await this.apiClient.get(`/v2.0/flows/${flowId}`);
       } catch (e: any) {
-        // best-effort — continue with flow/agent deletion, but record partial failure
         failed.push({
-          resource: `endpoints:list:${projectId}`,
+          resource: `flow:${flowId}`,
           error: e?.message ?? String(e),
         });
       }
     }
 
-    // Step 2: delete the flow
-    if (flowId) {
+    // Step 1: deactivate endpoints that reference the agent's flow
+    let endpointsChecked = false;
+    if (flowId && projectId) {
+      const flowRef = agent?.flowReferenceId ?? flow?.referenceId;
+      const eps = await this.deactivateEndpointsForFlow(
+        projectId,
+        flowId,
+        flowRef,
+      );
+      endpointsChecked = eps.checked;
+      deactivated.push(...eps.deactivated);
+      failed.push(...eps.failed);
+    }
+
+    // Step 2: rename the flow (flows are never deleted)
+    let flowRename: { name: string; alreadyMarked: boolean } | undefined;
+    if (flowId && flow) {
       try {
-        await this.apiClient.delete(`/v2.0/flows/${flowId}`);
-        deleted.push(`flow:${flowId}`);
+        flowRename = await this.renameForDeletion(
+          `/v2.0/flows/${flowId}`,
+          flow?.name,
+          `flow ${flowId}`,
+        );
+        if (!flowRename.alreadyMarked) renamed.push(`flow:${flowId}`);
       } catch (e: any) {
         failed.push({
           resource: `flow:${flowId}`,
@@ -2710,10 +2907,15 @@ export class ToolHandlers {
       }
     }
 
-    // Step 3: delete the agent
+    // Step 3: rename the agent (agents are never deleted)
+    let agentRename: { name: string; alreadyMarked: boolean } | undefined;
     try {
-      await this.apiClient.delete(`/v2.0/aiagents/${agentId}`);
-      deleted.push(`agent:${agentId}`);
+      agentRename = await this.renameForDeletion(
+        `/v2.0/aiagents/${agentId}`,
+        agent?.name,
+        `agent ${agentId}`,
+      );
+      if (!agentRename.alreadyMarked) renamed.push(`agent:${agentId}`);
     } catch (e: any) {
       failed.push({
         resource: `agent:${agentId}`,
@@ -2721,14 +2923,66 @@ export class ToolHandlers {
       });
     }
 
-    const allSucceeded =
-      failed.length === 0 && deleted.includes(`agent:${agentId}`);
-    return {
-      deleted: allSucceeded,
-      resourceType: "agent",
-      id: agentId,
-      cascade: { deleted, failed: failed.length > 0 ? failed : undefined },
-    };
+    // Compose the warning from what actually happened — never claim the
+    // agent is offline unless endpoint deactivation fully succeeded.
+    const agentMarked = agentRename !== undefined;
+    const endpointFailed = failed.some(
+      (f) =>
+        f.resource.startsWith("endpoint:") ||
+        f.resource.startsWith("endpoints:"),
+    );
+
+    const parts = ["Agents and flows cannot be deleted via this plugin."];
+    parts.push(
+      !agentMarked
+        ? "The agent could not be renamed and is NOT marked for deletion (see cascade.failed)."
+        : agentRename?.alreadyMarked
+          ? "The agent already carried the DELETE_ prefix and was left unchanged."
+          : "The agent was renamed with the DELETE_ prefix to mark it for manual deletion.",
+    );
+    if (flowRename) {
+      parts.push(
+        flowRename.alreadyMarked
+          ? "Its flow already carried the DELETE_ prefix and was left unchanged."
+          : "Its flow was renamed with the DELETE_ prefix as well.",
+      );
+    } else if (flowId) {
+      parts.push("Its flow could not be renamed (see cascade.failed).");
+    }
+    if (endpointFailed) {
+      parts.push(
+        "Endpoint deactivation was incomplete — the agent may still be reachable (see cascade.failed).",
+      );
+    } else if (!endpointsChecked) {
+      parts.push(
+        "The agent's flow/endpoints could not be resolved, so no endpoints were deactivated — the agent may still be reachable.",
+      );
+    } else if (deactivated.length > 0) {
+      parts.push(
+        `${deactivated.length} endpoint(s) were deactivated (reversible in the Cognigy UI) to take the agent offline.`,
+      );
+    } else {
+      parts.push("No endpoints referenced the agent's flow.");
+    }
+
+    return withHints(
+      {
+        markedForDeletion: agentMarked,
+        alreadyMarked: agentRename?.alreadyMarked || undefined,
+        resourceType: "agent",
+        id: agentId,
+        name: agentRename?.name,
+        cascade: {
+          deactivated,
+          renamed,
+          failed: failed.length > 0 ? failed : undefined,
+        },
+      },
+      {
+        warning: parts.join(" "),
+        action: "Delete the renamed resources manually in the Cognigy UI.",
+      },
+    );
   }
 
   // =========================================================================

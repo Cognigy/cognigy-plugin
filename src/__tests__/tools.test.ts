@@ -1052,28 +1052,268 @@ describe("ToolHandlers v2", () => {
   // delete_resource
   // =========================================================================
   describe("delete_resource", () => {
-    it("deletes agent", async () => {
+    it("soft-deletes agent: deactivates endpoints, renames flow and agent", async () => {
       api.get
         .mockResolvedValueOnce({
           _id: ID.agent,
+          name: "My Agent",
           flowId: ID.flow,
           projectId: ID.project,
         })
-        .mockResolvedValueOnce({ referenceId: "flow-ref" })
+        .mockResolvedValueOnce({
+          referenceId: "flow-ref",
+          name: "My Agent Flow",
+        })
         .mockResolvedValueOnce({
           items: [{ _id: ID.endpoint, flowId: "flow-ref" }],
         });
-      api.delete.mockResolvedValue({});
+      api.patch.mockResolvedValue({});
 
       const result = await h.handleToolCall("delete_resource", {
         resourceType: "agent",
         id: ID.agent,
       });
 
-      expect(result.deleted).toBe(true);
-      expect(api.delete).toHaveBeenCalledWith(`/v2.0/endpoints/${ID.endpoint}`);
-      expect(api.delete).toHaveBeenCalledWith(`/v2.0/flows/${ID.flow}`);
-      expect(api.delete).toHaveBeenCalledWith(`/v2.0/aiagents/${ID.agent}`);
+      expect(result.markedForDeletion).toBe(true);
+      expect(result.name).toBe("DELETE_My Agent");
+      expect(api.delete).not.toHaveBeenCalled();
+      expect(api.patch).toHaveBeenCalledWith(`/v2.0/endpoints/${ID.endpoint}`, {
+        active: false,
+      });
+      expect(api.patch).toHaveBeenCalledWith(`/v2.0/flows/${ID.flow}`, {
+        name: "DELETE_My Agent Flow",
+      });
+      expect(api.patch).toHaveBeenCalledWith(`/v2.0/aiagents/${ID.agent}`, {
+        name: "DELETE_My Agent",
+      });
+      expect(result.cascade.deactivated).toContain(`endpoint:${ID.endpoint}`);
+      expect(result.cascade.renamed).toEqual(
+        expect.arrayContaining([`flow:${ID.flow}`, `agent:${ID.agent}`]),
+      );
+    });
+
+    it("renames only the agent when cascade is false", async () => {
+      api.get.mockResolvedValueOnce({ _id: ID.agent, name: "My Agent" });
+      api.patch.mockResolvedValue({});
+
+      const result = await h.handleToolCall("delete_resource", {
+        resourceType: "agent",
+        id: ID.agent,
+        cascade: false,
+      });
+
+      expect(result.markedForDeletion).toBe(true);
+      expect(api.patch).toHaveBeenCalledWith(`/v2.0/aiagents/${ID.agent}`, {
+        name: "DELETE_My Agent",
+      });
+      expect(api.delete).not.toHaveBeenCalled();
+    });
+
+    it("marks flow for deletion by renaming instead of deleting", async () => {
+      api.get.mockResolvedValueOnce({ _id: ID.flow, name: "My Flow" });
+      api.patch.mockResolvedValue({});
+
+      const result = await h.handleToolCall("delete_resource", {
+        resourceType: "flow",
+        id: ID.flow,
+      });
+
+      expect(result.markedForDeletion).toBe(true);
+      expect(result.name).toBe("DELETE_My Flow");
+      expect(api.patch).toHaveBeenCalledWith(`/v2.0/flows/${ID.flow}`, {
+        name: "DELETE_My Flow",
+      });
+      expect(api.delete).not.toHaveBeenCalled();
+      // no projectId on the flow → endpoints could not be enumerated
+      expect(result._hints.warning).toMatch(/may still be reachable/i);
+    });
+
+    it("deactivates endpoints referencing the flow before renaming it", async () => {
+      api.get
+        .mockResolvedValueOnce({
+          _id: ID.flow,
+          name: "My Flow",
+          projectId: ID.project,
+          referenceId: "flow-ref",
+        })
+        .mockResolvedValueOnce({
+          items: [
+            { _id: ID.endpoint, flowId: "flow-ref" },
+            { _id: ID.agent, flowId: "other-flow" },
+          ],
+        });
+      api.patch.mockResolvedValue({});
+
+      const result = await h.handleToolCall("delete_resource", {
+        resourceType: "flow",
+        id: ID.flow,
+      });
+
+      expect(result.markedForDeletion).toBe(true);
+      expect(api.delete).not.toHaveBeenCalled();
+      expect(api.patch).toHaveBeenCalledWith(`/v2.0/endpoints/${ID.endpoint}`, {
+        active: false,
+      });
+      expect(api.patch).not.toHaveBeenCalledWith(
+        `/v2.0/endpoints/${ID.agent}`,
+        expect.anything(),
+      );
+      expect(result.cascade.deactivated).toEqual([`endpoint:${ID.endpoint}`]);
+      expect(result._hints.warning).toMatch(/deactivated/i);
+    });
+
+    it("marks project for deletion by renaming instead of deleting", async () => {
+      api.get.mockResolvedValueOnce({ _id: ID.project, name: "My Project" });
+      api.patch.mockResolvedValue({});
+
+      const result = await h.handleToolCall("delete_resource", {
+        resourceType: "project",
+        id: ID.project,
+      });
+
+      expect(result.markedForDeletion).toBe(true);
+      expect(result.name).toBe("DELETE_My Project");
+      expect(api.patch).toHaveBeenCalledWith(`/v2.0/projects/${ID.project}`, {
+        name: "DELETE_My Project",
+      });
+      expect(api.delete).not.toHaveBeenCalled();
+    });
+
+    it("does not double-prefix an already marked flow", async () => {
+      api.get.mockResolvedValueOnce({ _id: ID.flow, name: "DELETE_My Flow" });
+
+      const result = await h.handleToolCall("delete_resource", {
+        resourceType: "flow",
+        id: ID.flow,
+      });
+
+      expect(result.markedForDeletion).toBe(true);
+      expect(result.alreadyMarked).toBe(true);
+      expect(result.name).toBe("DELETE_My Flow");
+      expect(api.patch).not.toHaveBeenCalled();
+      expect(api.delete).not.toHaveBeenCalled();
+    });
+
+    it("still marks the agent but reports incomplete cleanup when an endpoint deactivation fails", async () => {
+      api.get
+        .mockResolvedValueOnce({
+          _id: ID.agent,
+          name: "My Agent",
+          flowId: ID.flow,
+          projectId: ID.project,
+        })
+        .mockResolvedValueOnce({
+          referenceId: "flow-ref",
+          name: "My Agent Flow",
+        })
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.endpoint, flowId: "flow-ref" }],
+        });
+      api.patch.mockImplementation(((url: string) =>
+        url.startsWith("/v2.0/endpoints/")
+          ? Promise.reject(new Error("endpoint deactivate failed"))
+          : Promise.resolve({})) as any);
+
+      const result = await h.handleToolCall("delete_resource", {
+        resourceType: "agent",
+        id: ID.agent,
+      });
+
+      expect(result.markedForDeletion).toBe(true);
+      expect(result.cascade.failed).toEqual([
+        expect.objectContaining({ resource: `endpoint:${ID.endpoint}` }),
+      ]);
+      expect(result._hints.warning).not.toMatch(/were deactivated .* offline/i);
+      expect(result._hints.warning).toMatch(/may still be reachable/i);
+    });
+
+    it("reports the agent as not marked when the agent rename fails", async () => {
+      api.get
+        .mockResolvedValueOnce({
+          _id: ID.agent,
+          name: "My Agent",
+          flowId: ID.flow,
+          projectId: ID.project,
+        })
+        .mockResolvedValueOnce({
+          referenceId: "flow-ref",
+          name: "My Agent Flow",
+        })
+        .mockResolvedValueOnce({ items: [] });
+      api.patch.mockImplementation(((url: string) =>
+        url.startsWith("/v2.0/aiagents/")
+          ? Promise.reject(new Error("rename failed"))
+          : Promise.resolve({})) as any);
+
+      const result = await h.handleToolCall("delete_resource", {
+        resourceType: "agent",
+        id: ID.agent,
+      });
+
+      expect(result.markedForDeletion).toBe(false);
+      expect(result.cascade.failed).toEqual([
+        expect.objectContaining({ resource: `agent:${ID.agent}` }),
+      ]);
+      expect(result._hints.warning).toMatch(/not marked for deletion/i);
+    });
+
+    it("does not claim endpoints were deleted when no flow can be resolved", async () => {
+      api.get.mockResolvedValue({ _id: ID.agent, name: "My Agent" });
+      api.patch.mockResolvedValue({});
+
+      const result = await h.handleToolCall("delete_resource", {
+        resourceType: "agent",
+        id: ID.agent,
+      });
+
+      expect(result.markedForDeletion).toBe(true);
+      expect(api.delete).not.toHaveBeenCalled();
+      expect(result._hints.warning).toMatch(/no endpoints were deactivated/i);
+      expect(result._hints.warning).toMatch(/may still be reachable/i);
+    });
+
+    it("does not report an already-marked agent as renamed again", async () => {
+      api.get.mockResolvedValue({ _id: ID.agent, name: "DELETE_My Agent" });
+
+      const result = await h.handleToolCall("delete_resource", {
+        resourceType: "agent",
+        id: ID.agent,
+      });
+
+      expect(result.markedForDeletion).toBe(true);
+      expect(result.alreadyMarked).toBe(true);
+      expect(result.name).toBe("DELETE_My Agent");
+      expect(result.cascade.renamed).toEqual([]);
+      expect(api.patch).not.toHaveBeenCalled();
+    });
+
+    it("refuses to mark a flow whose name is empty, identifying the resource", async () => {
+      api.get.mockResolvedValueOnce({ _id: ID.flow, name: "   " });
+
+      await expect(
+        h.handleToolCall("delete_resource", {
+          resourceType: "flow",
+          id: ID.flow,
+        }),
+      ).rejects.toThrow(`flow ${ID.flow}`);
+      expect(api.patch).not.toHaveBeenCalled();
+    });
+
+    it("truncates the DELETE_-prefixed name to the 200-char limit", async () => {
+      const longName = "x".repeat(200);
+      api.get.mockResolvedValueOnce({ _id: ID.flow, name: longName });
+      api.patch.mockResolvedValue({});
+
+      const result = await h.handleToolCall("delete_resource", {
+        resourceType: "flow",
+        id: ID.flow,
+      });
+
+      const expectedName = `DELETE_${longName}`.slice(0, 200);
+      expect(result.markedForDeletion).toBe(true);
+      expect(api.patch).toHaveBeenCalledWith(`/v2.0/flows/${ID.flow}`, {
+        name: expectedName,
+      });
     });
 
     it("deletes tool by resolving agent flow", async () => {
@@ -1100,14 +1340,8 @@ describe("ToolHandlers v2", () => {
       expect(result.error).toContain("aiAgentId");
     });
 
-    it("deletes each resource type", async () => {
-      const types = [
-        "flow",
-        "endpoint",
-        "llm_model",
-        "knowledge_store",
-        "function",
-      ];
+    it("hard-deletes each non-protected resource type", async () => {
+      const types = ["endpoint", "llm_model", "knowledge_store", "function"];
       for (const t of types) {
         api.delete.mockResolvedValueOnce({});
         const result = await h.handleToolCall("delete_resource", {
