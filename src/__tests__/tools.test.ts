@@ -410,6 +410,39 @@ describe("ToolHandlers v2", () => {
       );
     });
 
+    it("uses unique names for auto-created connections", async () => {
+      api.post
+        .mockResolvedValueOnce({
+          _id: "conn1",
+          referenceId: "conn-ref-uuid-1",
+        })
+        .mockResolvedValueOnce(mockLlm)
+        .mockResolvedValueOnce(mockTestSuccess)
+        .mockResolvedValueOnce({
+          _id: "conn2",
+          referenceId: "conn-ref-uuid-2",
+        })
+        .mockResolvedValueOnce(mockLlm)
+        .mockResolvedValueOnce(mockTestSuccess);
+
+      const args = {
+        projectId: ID.project,
+        provider: "openAI",
+        modelType: "gpt-4o",
+        apiKey: "sk-test",
+      };
+      await h.handleToolCall("setup_llm", args);
+      await h.handleToolCall("setup_llm", args);
+
+      const connectionNames = api.post.mock.calls
+        .filter((call: any[]) => call[0] === "/v2.0/connections")
+        .map((call: any[]) => call[1].name);
+      expect(connectionNames).toHaveLength(2);
+      expect(connectionNames[0]).toMatch(/^openAI - auto - /);
+      expect(connectionNames[1]).toMatch(/^openAI - auto - /);
+      expect(connectionNames[0]).not.toBe(connectionNames[1]);
+    });
+
     it("creates LLM directly when connectionId provided", async () => {
       const llmWithExistingConn = {
         ...mockLlm,

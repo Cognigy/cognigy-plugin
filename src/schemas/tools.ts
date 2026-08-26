@@ -85,6 +85,17 @@ export const setupLlmSchema = z
             "Provider 'openAICompatible' requires modelType 'custom-model' (chat) or 'custom-embedding-model' (embedding). Put the provider's model name in customModel instead.",
         });
       }
+      if (
+        data.modelType === "custom-embedding-model" &&
+        data.apiType !== undefined
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["apiType"],
+          message:
+            "apiType is only supported for chat models; omit it when modelType is 'custom-embedding-model'.",
+        });
+      }
     } else {
       for (const field of [
         "baseCustomUrl",

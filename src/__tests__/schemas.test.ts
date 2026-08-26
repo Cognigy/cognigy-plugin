@@ -246,6 +246,20 @@ describe("setupLlmSchema", () => {
     expect(result.modelType).toBe("custom-embedding-model");
   });
 
+  it("rejects apiType for openAICompatible embedding models", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "openAICompatible",
+        modelType: "custom-embedding-model",
+        customModel: "bge-large-en-v1.5",
+        baseCustomUrl: "https://llm.example.com/v1",
+        apiType: "responses",
+        apiKey: "key-123",
+      }),
+    ).toThrow(/apiType is only supported for chat models/);
+  });
+
   it("rejects openAICompatible without baseCustomUrl", () => {
     expect(() =>
       schemas.setupLlmSchema.parse({

@@ -159,7 +159,7 @@ export const tools: ToolDefinition[] = [
         name: {
           type: "string",
           description:
-            "Display name for the LLM resource (defaults to modelType if omitted)",
+            "Display name for the LLM resource. If omitted, defaults to customModel for openAICompatible providers and modelType for all other providers.",
         },
         apiKey: {
           type: "string",

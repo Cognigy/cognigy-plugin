@@ -1718,7 +1718,7 @@ export class ToolHandlers {
       try {
         const connection: any = await this.apiClient.post("/v2.0/connections", {
           projectId: data.projectId,
-          name: `${data.provider} - auto`,
+          name: `${data.provider} - auto - ${randomUUID()}`,
           type: PROVIDER_CONNECTION_TYPE[data.provider] ?? data.provider,
           extension: "@cognigy/generative-ai-provider",
           fields: { apiKey: data.apiKey },
