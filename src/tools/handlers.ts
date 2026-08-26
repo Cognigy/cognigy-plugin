@@ -596,15 +596,14 @@ async function resolveEndpointLocaleId(
     if (Array.isArray(items))
       locales = items.filter(
         (l: any) =>
-          !l?.projectReference || String(l.projectReference) === projectId,
+          (!l?.projectReference || String(l.projectReference) === projectId) &&
+          typeof l?.referenceId === "string" &&
+          l.referenceId.length > 0,
       );
   } catch {
     return undefined;
   }
   if (locales.length === 0) return undefined;
-
-  const refOf = (locale: any): string | undefined =>
-    locale?.referenceId ?? locale?._id ?? locale?.id;
 
   // Prefer the flow's locale — only worth the extra calls when the project
   // actually has more than one to choose from.
@@ -634,11 +633,11 @@ async function resolveEndpointLocaleId(
           String(l._id ?? l.id) === String(flowLocale) ||
           l.referenceId === flowLocale,
       );
-      if (match) return refOf(match);
+      if (match) return match.referenceId;
     }
   }
 
-  return refOf(locales.find((l: any) => l.primary) ?? locales[0]);
+  return (locales.find((l: any) => l.primary) ?? locales[0]).referenceId;
 }
 
 /**

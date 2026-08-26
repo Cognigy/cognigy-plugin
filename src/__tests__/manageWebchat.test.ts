@@ -222,6 +222,59 @@ describe("manage_webchat", () => {
     );
   });
 
+  it("ignores locale records without a referenceId", async () => {
+    api.get
+      .mockResolvedValueOnce({
+        items: [
+          {
+            _id: "60d5ec49f1a2c8b1a4e0f0ab",
+            primary: true,
+            projectReference: ID.project,
+          },
+          mockLocales.items[0],
+        ],
+      })
+      .mockResolvedValueOnce(mockEndpoint);
+    api.post.mockResolvedValueOnce({ _id: ID.endpoint });
+
+    await h.handleToolCall("manage_webchat", {
+      projectId: ID.project,
+      flowId: ID.flow,
+    });
+
+    expect(api.post).toHaveBeenCalledWith(
+      "/v2.0/endpoints",
+      expect.objectContaining({
+        localeId: mockLocales.items[0].referenceId,
+      }),
+    );
+  });
+
+  it("omits localeId when no locale has a referenceId", async () => {
+    api.get
+      .mockResolvedValueOnce({
+        items: [
+          {
+            _id: "60d5ec49f1a2c8b1a4e0f0ab",
+            primary: true,
+            projectReference: ID.project,
+          },
+        ],
+      })
+      .mockResolvedValueOnce(mockEndpoint);
+    api.post.mockResolvedValueOnce({ _id: ID.endpoint });
+
+    await h.handleToolCall("manage_webchat", {
+      projectId: ID.project,
+      flowId: ID.flow,
+    });
+
+    expect(api.post).toHaveBeenCalledWith(
+      "/v2.0/endpoints",
+      expect.not.objectContaining({ localeId: expect.anything() }),
+    );
+  });
+
   it("builds correct demoWebchatUrl and configUrl", async () => {
     api.get
       .mockResolvedValueOnce(mockEndpoint) // full fetch
