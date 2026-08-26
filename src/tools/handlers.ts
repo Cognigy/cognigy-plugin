@@ -2719,7 +2719,11 @@ export class ToolHandlers {
     );
 
     const parts = [
-      `${resourceType === "flow" ? "Flows" : "Projects"} cannot be deleted via this plugin. The ${resourceType} was renamed to "${rename.name}" to mark it for manual deletion.`,
+      `${resourceType === "flow" ? "Flows" : "Projects"} cannot be deleted via this plugin. ${
+        rename.alreadyMarked
+          ? `The ${resourceType} is already marked for manual deletion as "${rename.name}".`
+          : `The ${resourceType} was renamed to "${rename.name}" to mark it for manual deletion.`
+      }`,
     ];
     if (endpoints) {
       if (endpoints.failed.length > 0) {
@@ -2817,16 +2821,15 @@ export class ToolHandlers {
     }
 
     // Step 2: rename the flow (flows are never deleted)
-    let flowMarked = false;
+    let flowRename: { name: string; alreadyMarked: boolean } | undefined;
     if (flowId && flow) {
       try {
-        const r = await this.renameForDeletion(
+        flowRename = await this.renameForDeletion(
           `/v2.0/flows/${flowId}`,
           flow?.name,
           `flow ${flowId}`,
         );
-        flowMarked = true;
-        if (!r.alreadyMarked) renamed.push(`flow:${flowId}`);
+        if (!flowRename.alreadyMarked) renamed.push(`flow:${flowId}`);
       } catch (e: any) {
         failed.push({
           resource: `flow:${flowId}`,
@@ -2862,12 +2865,18 @@ export class ToolHandlers {
 
     const parts = ["Agents and flows cannot be deleted via this plugin."];
     parts.push(
-      agentMarked
-        ? "The agent was renamed with the DELETE_ prefix to mark it for manual deletion."
-        : "The agent could not be renamed and is NOT marked for deletion (see cascade.failed).",
+      !agentMarked
+        ? "The agent could not be renamed and is NOT marked for deletion (see cascade.failed)."
+        : agentRename?.alreadyMarked
+          ? "The agent already carried the DELETE_ prefix and was left unchanged."
+          : "The agent was renamed with the DELETE_ prefix to mark it for manual deletion.",
     );
-    if (flowMarked) {
-      parts.push("Its flow was renamed with the DELETE_ prefix as well.");
+    if (flowRename) {
+      parts.push(
+        flowRename.alreadyMarked
+          ? "Its flow already carried the DELETE_ prefix and was left unchanged."
+          : "Its flow was renamed with the DELETE_ prefix as well.",
+      );
     } else if (flowId) {
       parts.push("Its flow could not be renamed (see cascade.failed).");
     }
