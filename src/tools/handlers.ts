@@ -572,6 +572,75 @@ async function resolveFlowForAgent(
 }
 
 /**
+ * Resolve the value to store in `endpoint.localeId` when creating an endpoint.
+ *
+ * `localeId` must be a locale *referenceId* (a UUID): the Endpoint Editor
+ * matches its locale dropdown on `referenceId`, and an endpoint with an empty
+ * or wrong `localeId` leaves "Open Demo Webchat" / "Open Demo Widget"
+ * permanently disabled (the editor never backfills an empty value).
+ */
+async function resolveEndpointLocaleId(
+  apiClient: CognigyApiClient,
+  projectId: string,
+  flowId?: string,
+): Promise<string | undefined> {
+  let locales: any[] = [];
+  try {
+    const resp: any = await apiClient.get("/v2.0/locales", {
+      params: { projectId, limit: 100 },
+    });
+    const items = resp?.items ?? resp;
+    // `/v2.0/locales` silently widens to EVERY project the key can see when
+    // `projectId` is not one of them (e.g. a snapshot id) — never pick a
+    // foreign project's locale.
+    if (Array.isArray(items))
+      locales = items.filter(
+        (l: any) =>
+          (!l?.projectReference || String(l.projectReference) === projectId) &&
+          typeof l?.referenceId === "string" &&
+          l.referenceId.length > 0,
+      );
+  } catch {
+    return undefined;
+  }
+  if (locales.length === 0) return undefined;
+
+  // Prefer the flow's locale — only worth the extra calls when the project
+  // actually has more than one to choose from.
+  if (flowId && locales.length > 1) {
+    let flow: any = null;
+    try {
+      if (/^[0-9a-f]{24}$/i.test(flowId)) {
+        flow = await apiClient.get(`/v2.0/flows/${flowId}`);
+      } else {
+        const flows: any = await apiClient.get("/v2.0/flows", {
+          params: { projectId, limit: 100 },
+        });
+        const items = flows?.items ?? flows;
+        const match = (Array.isArray(items) ? items : []).find(
+          (f: any) => f.referenceId === flowId,
+        );
+        const mongoId = match?._id ?? match?.id;
+        if (mongoId) flow = await apiClient.get(`/v2.0/flows/${mongoId}`);
+      }
+    } catch {
+      // fall through to the primary locale
+    }
+    const flowLocale = flow?.localeReference;
+    if (flowLocale) {
+      const match = locales.find(
+        (l: any) =>
+          String(l._id ?? l.id) === String(flowLocale) ||
+          l.referenceId === flowLocale,
+      );
+      if (match) return match.referenceId;
+    }
+  }
+
+  return (locales.find((l: any) => l.primary) ?? locales[0]).referenceId;
+}
+
+/**
  * Thrown when the PLATFORM reported the task as failed/cancelled — i.e. the
  * operation itself definitively did not happen. Everything else that can go
  * wrong while polling (network blip, 5xx after the client's retries, a task
@@ -4049,15 +4118,11 @@ export class ToolHandlers {
         );
       }
 
-      let localeId: string | undefined;
-      try {
-        const flow: any = await this.apiClient.get(
-          `/v2.0/flows/${data.flowId}`,
-        );
-        localeId = flow?.localeReference;
-      } catch {
-        // Non-critical
-      }
+      const localeId = await resolveEndpointLocaleId(
+        this.apiClient,
+        data.projectId,
+        data.flowId,
+      );
 
       const createPayload: any = {
         projectId: data.projectId,
@@ -4289,29 +4354,12 @@ export class ToolHandlers {
         );
       }
 
-      // Resolve locale — try flow first, fall back to project's primary locale
-      let localeId: string | undefined;
-      try {
-        const flow: any = await this.apiClient.get(
-          `/v2.0/flows/${data.flowId}`,
-        );
-        localeId = flow?.localeReference;
-      } catch {
-        // Fall through to project locale
-      }
-      if (!localeId) {
-        try {
-          const locales: any = await this.apiClient.get("/v2.0/locales", {
-            params: { projectId: data.projectId },
-          });
-          const items = locales?.items ?? locales;
-          if (Array.isArray(items) && items.length > 0) {
-            localeId = items[0].referenceId ?? items[0]._id;
-          }
-        } catch {
-          // Non-critical — endpoint will be created without locale
-        }
-      }
+      // Resolve locale — the flow's when the project has several, else primary
+      const localeId = await resolveEndpointLocaleId(
+        this.apiClient,
+        data.projectId,
+        data.flowId,
+      );
 
       // Step 1: Create voiceGateway2 endpoint
       const createPayload: any = {
