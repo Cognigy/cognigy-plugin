@@ -18,31 +18,11 @@ A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy
 - **Built-in docs lookup**: bundles the official [Cognigy documentation](https://docs.cognigy.com) MCP server — your assistant searches and reads the docs before answering platform questions, instead of guessing from training data
 - Built-in rate limiting, Zod input validation, and RFC 7807 error responses
 
-## Tools
-
-| Tool                   | Type  | Description                                                                                         |
-| ---------------------- | ----- | --------------------------------------------------------------------------------------------------- |
-| `create_ai_agent`      | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint                  |
-| `update_ai_agent`      | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature)                         |
-| `setup_llm`            | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation          |
-| `talk_to_agent`        | Write | Send a message to an AI Agent and get its response                                                  |
-| `list_resources`       | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more                           |
-| `get_resource`         | Read  | Get detailed information about a single resource                                                    |
-| `delete_resource`      | Write | Permanently delete a resource                                                                       |
-| `manage_knowledge`     | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG                         |
-| `create_tool`          | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node                                     |
-| `update_tool`          | Write | Update an existing tool node's configuration                                                        |
-| `manage_webchat`       | Write | Create or configure a Webchat v3 endpoint for website deployment                                    |
-| `manage_flow_nodes`    | Write | Create, update, delete, or list flow nodes for conversation logic                                   |
-| `manage_packages`      | Write | List exportable resources, upload, inspect, import, export, and download Cognigy package zip files  |
-| `manage_voice_gateway` | Write | Create or configure a Voice Gateway endpoint with WebRTC for browser-based voice interaction        |
-| `manage_settings`      | Write | Manage project-level settings including voice preview and Knowledge AI configuration                |
-| `audit_voice_agent`    | Write | Audit a voice agent against the Go-Live Checklist; reports by default, applies safe fixes on demand |
-| `manage_snapshots`     | Write | Create and restore project Snapshots so agent changes can be rolled back                            |
-
-Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, flow nodes, packages, settings, LLM providers, tools, troubleshooting) ships as **skills** that load automatically when your request matches, in clients that support them (e.g. Claude Code) — see below.
-
 ## Installation
+
+**Two steps.** Step 1 is the same for every client. Step 2 is where you check what your client still needs from you — for most clients that's nothing, but the answer is in the table, so look your client up rather than assuming.
+
+### Step 1 — run the installer
 
 One installer covers every client. Run it, pick your client(s), enter your Cognigy API base URL (Enter for the trial default) and API key (masked as you type), then restart the client.
 
@@ -66,9 +46,9 @@ Already have [Node.js 20+](https://nodejs.org)? Skip the bootstrap:
 npx -y -p @cognigy/plugin-engine@latest cognigy-setup
 ```
 
-### Per-client guides
+### Step 2 — check your client's row
 
-What each client gets, and what (if anything) you finish by hand — full instructions, Windows notes, and troubleshooting in each guide:
+The installer wires your credentials everywhere and installs the plugin wherever it can, but two clients need one manual step from you. Find your client below and do what **Extra step after the installer** says — **None** means step 1 finished the job. Each guide has the full instructions, Windows notes, how to verify it worked, and troubleshooting.
 
 | Client                                                                    | Tools | Skills | Agents | Extra step after the installer        | Auto-updates             |
 | ------------------------------------------------------------------------- | ----- | ------ | ------ | ------------------------------------- | ------------------------ |
@@ -118,18 +98,6 @@ Beyond the MCP tools, the plugin ships **skills** and **agents** that surface th
 
 - **Skills** (`/skills`) — one per workflow (agent creation, knowledge/RAG, voice gateway, voice go-live checklist, webchat, flow nodes, packages, settings, LLM providers, tools, troubleshooting). Claude loads the matching skill automatically when your request fits.
 - **Agents** (`/agents`) — `cognigy-agent-builder` runs the full build-and-test loop for a new agent, and `cognigy-voice-go-live` audits a voice agent against the Go-Live Checklist and applies the safe fixes. Each runs in its own context and reports back a summary.
-
----
-
-## What It Does
-
-Create a complete AI Agent in one tool call, then iterate and improve through conversation:
-
-1. **Create** → AI Agent + Flow + Job Node + Endpoint (automatic)
-2. **Test** → Talk to your agent via REST endpoint
-3. **Improve** → Update persona, guardrails, job description, tools
-4. **Test Again** → Compare responses and iterate
-5. **Deploy** → Publish to Webchat or create a Voice Gateway endpoint with one call
 
 ## Configuration
 
@@ -268,6 +236,30 @@ model must exist in the target project first, either by import or by creating it
 For knowledge workflows, the MCP should import the full required source-project model set
 in one pass, reuse shared connections only once, and try the imported same-project model
 IDs before falling back to `setup_llm`.
+
+## Tools
+
+| Tool                   | Type  | Description                                                                                         |
+| ---------------------- | ----- | --------------------------------------------------------------------------------------------------- |
+| `create_ai_agent`      | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint                  |
+| `update_ai_agent`      | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature)                         |
+| `setup_llm`            | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation          |
+| `talk_to_agent`        | Write | Send a message to an AI Agent and get its response                                                  |
+| `list_resources`       | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more                           |
+| `get_resource`         | Read  | Get detailed information about a single resource                                                    |
+| `delete_resource`      | Write | Permanently delete a resource                                                                       |
+| `manage_knowledge`     | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG                         |
+| `create_tool`          | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node                                     |
+| `update_tool`          | Write | Update an existing tool node's configuration                                                        |
+| `manage_webchat`       | Write | Create or configure a Webchat v3 endpoint for website deployment                                    |
+| `manage_flow_nodes`    | Write | Create, update, delete, or list flow nodes for conversation logic                                   |
+| `manage_packages`      | Write | List exportable resources, upload, inspect, import, export, and download Cognigy package zip files  |
+| `manage_voice_gateway` | Write | Create or configure a Voice Gateway endpoint with WebRTC for browser-based voice interaction        |
+| `manage_settings`      | Write | Manage project-level settings including voice preview and Knowledge AI configuration                |
+| `audit_voice_agent`    | Write | Audit a voice agent against the Go-Live Checklist; reports by default, applies safe fixes on demand |
+| `manage_snapshots`     | Write | Create and restore project Snapshots so agent changes can be rolled back                            |
+
+Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, flow nodes, packages, settings, LLM providers, tools, troubleshooting) ships as **skills** that load automatically when your request matches, in clients that support them (e.g. Claude Code) — see the **Skills** column in the client table under [Installation](#installation).
 
 ## Security
 
