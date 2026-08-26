@@ -1,3 +1,15 @@
+## [1.13.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.12.0...v1.13.0) (2026-08-26)
+
+### Features
+
+* **plugin:** ship Agent Plugins spec 1.0.0 manifests ([#34](https://github.com/Cognigy/cognigy-plugin/issues/34)) [skip ci] ([0440782](https://github.com/Cognigy/cognigy-plugin/commit/04407822fd31a44ba1b6ae150556bc0af78a3c1c)), closes [#35](https://github.com/Cognigy/cognigy-plugin/issues/35)
+* **skills:** run red-teaming in the main session and deliver the report ([#33](https://github.com/Cognigy/cognigy-plugin/issues/33)) ([8258c91](https://github.com/Cognigy/cognigy-plugin/commit/8258c91b911199abe133da22c60b6a5c49a61f1c))
+* **tools:** rename flows/projects/agents with DELETE_ prefix instead of deleting ([#21](https://github.com/Cognigy/cognigy-plugin/issues/21)) [skip ci] ([044df44](https://github.com/Cognigy/cognigy-plugin/commit/044df44807f6dcbf6d306aa0eacdf4425e6bf0cb))
+
+### Bug Fixes
+
+* **endpoints:** store the locale referenceId in localeId on endpoint creation ([#37](https://github.com/Cognigy/cognigy-plugin/issues/37)) [skip ci] ([132f22b](https://github.com/Cognigy/cognigy-plugin/commit/132f22bef0cc509b2178b18aa9f32c483045f0a8))
+
 ## [1.12.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.11.0...v1.12.0) (2026-08-21)
 
 ### Features
