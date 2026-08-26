@@ -35,6 +35,19 @@ describe("manage_webchat", () => {
     );
   });
 
+  // `/v2.0/locales` shape — endpoint.localeId must become the locale's
+  // referenceId, never its Mongo _id.
+  const mockLocales = {
+    items: [
+      {
+        _id: "60d5ec49f1a2c8b1a4e0f0aa",
+        referenceId: "8f2b1c14-1c62-4c1e-9d1f-1a2b3c4d5e6f",
+        primary: true,
+        projectReference: ID.project,
+      },
+    ],
+  };
+
   const mockEndpoint = {
     _id: ID.endpoint,
     name: "Webchat",
@@ -45,7 +58,7 @@ describe("manage_webchat", () => {
 
   it("creates new webchat endpoint when projectId and flowId provided", async () => {
     api.get
-      .mockResolvedValueOnce({ localeReference: "en-US" }) // flow locale
+      .mockResolvedValueOnce(mockLocales) // project locales
       .mockResolvedValueOnce(mockEndpoint); // re-fetch after create
     api.post.mockResolvedValueOnce({ _id: ID.endpoint });
 
@@ -86,7 +99,7 @@ describe("manage_webchat", () => {
 
   it("creates new endpoint even when existing webchat3 endpoints exist in project", async () => {
     api.get
-      .mockResolvedValueOnce({ localeReference: "en-US" }) // flow locale
+      .mockResolvedValueOnce(mockLocales) // project locales
       .mockResolvedValueOnce(mockEndpoint); // re-fetch after create
     api.post.mockResolvedValueOnce({ _id: ID.endpoint });
 
@@ -155,7 +168,7 @@ describe("manage_webchat", () => {
   });
 
   it("returns error when creation fails", async () => {
-    api.get.mockResolvedValueOnce({ localeReference: "en-US" });
+    api.get.mockResolvedValueOnce(mockLocales);
     api.post.mockRejectedValueOnce(new Error("Quota exceeded"));
 
     const result = await h.handleToolCall("manage_webchat", {
@@ -168,7 +181,7 @@ describe("manage_webchat", () => {
 
   it("handles settings patch failure on create (partial success)", async () => {
     api.get
-      .mockResolvedValueOnce({ localeReference: "en-US" }) // flow locale
+      .mockResolvedValueOnce(mockLocales) // project locales
       .mockResolvedValueOnce(mockEndpoint); // re-fetch after create
     api.post.mockResolvedValueOnce({ _id: ID.endpoint });
     api.patch.mockRejectedValueOnce(new Error("Settings validation failed"));
@@ -182,6 +195,31 @@ describe("manage_webchat", () => {
     expect(result.created).toBe(true);
     expect(result._hints).toBeDefined();
     expect(result._hints.warning).toContain("settings failed to apply");
+  });
+
+  // Regression: an endpoint created with an empty or Mongo-id localeId leaves
+  // "Open Demo Webchat" permanently disabled in the Cognigy UI.
+  it("creates the endpoint with the locale's referenceId as localeId", async () => {
+    api.get
+      .mockResolvedValueOnce(mockLocales) // project locales
+      .mockResolvedValueOnce(mockEndpoint); // re-fetch after create
+    api.post.mockResolvedValueOnce({ _id: ID.endpoint });
+
+    await h.handleToolCall("manage_webchat", {
+      projectId: ID.project,
+      flowId: "52a8fd93-4bb8-4b73-9b01-6350a7f364b8", // flow referenceId (UUID)
+    });
+
+    // The referenceId must never hit GET /v2.0/flows/{id} — it 400s there.
+    expect(api.get).not.toHaveBeenCalledWith(
+      "/v2.0/flows/52a8fd93-4bb8-4b73-9b01-6350a7f364b8",
+    );
+    expect(api.post).toHaveBeenCalledWith(
+      "/v2.0/endpoints",
+      expect.objectContaining({
+        localeId: mockLocales.items[0].referenceId,
+      }),
+    );
   });
 
   it("builds correct demoWebchatUrl and configUrl", async () => {

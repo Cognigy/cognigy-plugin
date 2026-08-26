@@ -2749,7 +2749,16 @@ describe("ToolHandlers v2", () => {
       api.post.mockResolvedValueOnce(mockCreated);
       // GET after create
       api.get
-        .mockResolvedValueOnce({ localeReference: "loc-123" }) // flow lookup
+        .mockResolvedValueOnce({
+          items: [
+            {
+              _id: "60d5ec49f1a2c8b1a4e0f0aa",
+              referenceId: "loc-123",
+              primary: true,
+              projectReference: ID.project,
+            },
+          ],
+        }) // project locales
         .mockResolvedValueOnce(mockEndpoint) // after POST
         .mockResolvedValueOnce({ ...mockEndpoint, webrtcClient: true }); // after PATCH
       // PATCH to provision WebRTC
@@ -2902,7 +2911,16 @@ describe("ToolHandlers v2", () => {
 
       api.post.mockResolvedValueOnce(mockCreated);
       api.get
-        .mockResolvedValueOnce({ localeReference: "loc-123" }) // flow
+        .mockResolvedValueOnce({
+          items: [
+            {
+              _id: "60d5ec49f1a2c8b1a4e0f0aa",
+              referenceId: "loc-123",
+              primary: true,
+              projectReference: ID.project,
+            },
+          ],
+        }) // project locales
         .mockResolvedValueOnce(mockCreated); // after POST
       api.patch.mockRejectedValueOnce(new Error("WebRTC provision failed"));
 
