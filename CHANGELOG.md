@@ -1,3 +1,9 @@
+## [1.12.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.11.0...v1.12.0) (2026-08-21)
+
+### Features
+
+* **snapshots:** add manage_snapshots for backup and rollback ([#31](https://github.com/Cognigy/cognigy-plugin/issues/31)) ([1892215](https://github.com/Cognigy/cognigy-plugin/commit/1892215bcf6488a3a01def43e9e4194aa7ecc2c9))
+
 ## [1.11.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.10.1...v1.11.0) (2026-08-20)
 
 ### Features

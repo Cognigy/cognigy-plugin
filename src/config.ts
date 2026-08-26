@@ -108,7 +108,7 @@ function deriveWebchatBaseUrl(apiBaseUrl: string): string {
  *
  * `userConfig` is a Claude Code extension to the plugin manifest: Claude Code
  * prompts for the values and substitutes them into `mcpServers.*.env`. Hosts
- * that only implement the portable subset (VS Code / Copilot, Cursor, …) copy
+ * that only implement the portable subset (VS Code / Copilot, Kiro, …) copy
  * the manifest text through verbatim, so the engine receives the literal
  * "${user_config.cognigy_api_key}". Those strings are non-empty, which means
  * that without this check they (a) reach axios as a real base URL and fail with

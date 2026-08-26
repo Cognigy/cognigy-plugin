@@ -1,6 +1,15 @@
-# Install for other hosts (VS Code, Cursor, …)
+# Install for other hosts (VS Code, Kiro, …)
 
-Any host that can install a Claude-format plugin, or take a hand-written MCP server entry, can run the Cognigy plugin. The installer's job here is narrow: it supplies the credentials such a host cannot ask you for.
+Any host that implements the open [Agent Plugins](https://agent-plugins.org) standard (Kiro, VS Code + Copilot, …), can install a Claude-format plugin, or can take a hand-written MCP server entry, can run the Cognigy plugin. The installer's job here is narrow: it supplies the credentials such a host cannot ask you for.
+
+> **Using Cursor?** Cursor collects the credentials itself, so it needs no installer — see [cursor.md](cursor.md) instead.
+
+**The two-step short version is:**
+
+1. Run the installer below (**Other hosts**) — it only writes your credentials file.
+2. Install the plugin through the host's own mechanism (marketplace, settings, or repo URL).
+
+Both steps are required, in either order. The standard's portable config deliberately carries no credentials — a plugin manifest is public, shared text, no place for an API key — so the plugin ships credential-less for these hosts and the engine reads `~/.cognigy-plugin/config.json` instead. Installing the plugin without step 1 starts the engine, but every tool call fails asking for credentials; the installer is what makes it work.
 
 |                  |                                                                                |
 | ---------------- | ------------------------------------------------------------------------------ |
@@ -20,6 +29,8 @@ npx -y -p @cognigy/plugin-engine@latest cognigy-setup --client other-hosts
 It writes your API base URL and key to `~/.cognigy-plugin/config.json` and stops. Nothing is added to any client config, so it is safe to combine with any other target.
 
 Then install the plugin in your host.
+
+**Agent Plugins hosts (Kiro, …)** — install through the host's own plugin mechanism (marketplace or repo URL: `Cognigy/cognigy-plugin`, plugin directory `plugin/`). The host reads the standard's manifests (`plugin.json`, `skills/`, `mcp.json`) directly; no per-host files are needed. Skills load on every conformant host; agents only where the host defines them.
 
 **VS Code / Copilot** — in `settings.json`:
 
@@ -42,9 +53,11 @@ Leave the server's `env` empty; the credentials file covers it. The `cognigy-eng
 
 ## Credentials — leave the plugin's own fields alone
 
-`userConfig` — the plugin-manifest extension that prompts for an API key and substitutes it into the server's environment — is implemented by **Claude Code only**. Every other host copies the manifest text through verbatim, so the engine receives the literal string `${user_config.cognigy_api_key}`.
+`userConfig` — the plugin-manifest extension that prompts for an API key and substitutes it into the server's environment — is implemented by **Claude Code only**. Every other host on this page copies the manifest text through verbatim, so the engine receives the literal string `${user_config.cognigy_api_key}`.
 
 The engine treats a value that is nothing but a `${...}` placeholder as **unset** and reads `~/.cognigy-plugin/config.json` instead. That is why the installer writes the file, and why you should ignore any credential fields the host shows for this plugin — filling them in changes nothing on a host that cannot expand them.
+
+Cursor is the exception: it has its own user-config mechanism (`variables`) that really does reach the server's environment, which is why it gets [its own guide](cursor.md) and skips the installer.
 
 ## Updating
 

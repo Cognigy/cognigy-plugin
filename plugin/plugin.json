@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "cognigy",
+  "version": "1.12.0",
+  "description": "NiCE Cognigy Plugin — create, test, and manage AI Agents on the NiCE Cognigy platform",
+  "author": {
+    "name": "Cognigy",
+    "url": "https://www.cognigy.com"
+  },
+  "homepage": "https://www.cognigy.com",
+  "repository": "https://github.com/Cognigy/cognigy-plugin",
+  "license": "MIT",
+  "keywords": ["cognigy", "ai-agents", "conversational-ai", "mcp", "llm"]
+}

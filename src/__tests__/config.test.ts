@@ -232,7 +232,7 @@ describe("loadConfig", () => {
   });
 
   // Hosts that don't implement the `userConfig` manifest extension (VS Code,
-  // Cursor, …) pass "${user_config.cognigy_api_key}" through verbatim. Those
+  // Kiro, …) pass "${user_config.cognigy_api_key}" through verbatim. Those
   // strings are non-empty, so without this handling they both masquerade as
   // real credentials and shadow the on-disk fallback.
   describe("unexpanded userConfig placeholders", () => {
