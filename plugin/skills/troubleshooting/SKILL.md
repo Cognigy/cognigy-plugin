@@ -51,4 +51,4 @@ description: "Use when a Cognigy agent returns empty responses, a tool call or c
 
 - Verify the resource ID is a 24-char hex string (not a referenceId UUID)
 - Use list_resources to confirm the resource exists before deleting
-- Flows, projects and agents are never hard-deleted — delete_resource renames them with a DELETE_ prefix (markedForDeletion: true) so they can be deleted manually in the Cognigy UI
+- Flows, projects and agents are never hard-deleted — delete_resource renames them with a DELETE_ prefix (markedForDeletion: true) so they can be deleted manually in the Cognigy UI. Agent/flow deletion deactivates referencing endpoints (reversible); a renamed project's contents stay live.

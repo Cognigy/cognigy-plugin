@@ -20,25 +20,25 @@ A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy
 
 ## Tools
 
-| Tool                   | Type  | Description                                                                                         |
-| ---------------------- | ----- | --------------------------------------------------------------------------------------------------- |
-| `create_ai_agent`      | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint                  |
-| `update_ai_agent`      | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature)                         |
-| `setup_llm`            | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation          |
-| `talk_to_agent`        | Write | Send a message to an AI Agent and get its response                                                  |
-| `list_resources`       | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more                           |
-| `get_resource`         | Read  | Get detailed information about a single resource                                                    |
-| `delete_resource`      | Write | Delete a resource (flows/projects/agents are renamed with a DELETE\_ prefix instead)                |
-| `manage_knowledge`     | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG                         |
-| `create_tool`          | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node                                     |
-| `update_tool`          | Write | Update an existing tool node's configuration                                                        |
-| `manage_webchat`       | Write | Create or configure a Webchat v3 endpoint for website deployment                                    |
-| `manage_flow_nodes`    | Write | Create, update, delete, or list flow nodes for conversation logic                                   |
-| `manage_packages`      | Write | List exportable resources, upload, inspect, import, export, and download Cognigy package zip files  |
-| `manage_voice_gateway` | Write | Create or configure a Voice Gateway endpoint with WebRTC for browser-based voice interaction        |
-| `manage_settings`      | Write | Manage project-level settings including voice preview and Knowledge AI configuration                |
-| `audit_voice_agent`    | Write | Audit a voice agent against the Go-Live Checklist; reports by default, applies safe fixes on demand |
-| `manage_snapshots`     | Write | Create and restore project Snapshots so agent changes can be rolled back                            |
+| Tool                   | Type  | Description                                                                                                                             |
+| ---------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `create_ai_agent`      | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint                                                      |
+| `update_ai_agent`      | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature)                                                             |
+| `setup_llm`            | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation                                              |
+| `talk_to_agent`        | Write | Send a message to an AI Agent and get its response                                                                                      |
+| `list_resources`       | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more                                                               |
+| `get_resource`         | Read  | Get detailed information about a single resource                                                                                        |
+| `delete_resource`      | Write | Delete a resource (flows/projects/agents are renamed with a DELETE\_ prefix instead; agent/flow endpoints are deactivated, not deleted) |
+| `manage_knowledge`     | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG                                                             |
+| `create_tool`          | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node                                                                         |
+| `update_tool`          | Write | Update an existing tool node's configuration                                                                                            |
+| `manage_webchat`       | Write | Create or configure a Webchat v3 endpoint for website deployment                                                                        |
+| `manage_flow_nodes`    | Write | Create, update, delete, or list flow nodes for conversation logic                                                                       |
+| `manage_packages`      | Write | List exportable resources, upload, inspect, import, export, and download Cognigy package zip files                                      |
+| `manage_voice_gateway` | Write | Create or configure a Voice Gateway endpoint with WebRTC for browser-based voice interaction                                            |
+| `manage_settings`      | Write | Manage project-level settings including voice preview and Knowledge AI configuration                                                    |
+| `audit_voice_agent`    | Write | Audit a voice agent against the Go-Live Checklist; reports by default, applies safe fixes on demand                                     |
+| `manage_snapshots`     | Write | Create and restore project Snapshots so agent changes can be rolled back                                                                |
 
 Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, flow nodes, packages, settings, LLM providers, tools, troubleshooting) ships as **skills** that load automatically when your request matches, in clients that support them (e.g. Claude Code) — see below.
 
