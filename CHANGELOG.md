@@ -1,3 +1,9 @@
+## [1.14.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.13.0...v1.14.0) (2026-08-27)
+
+### Features
+
+* **tools:** support OpenAI-compatible LLM providers in setup_llm ([#20](https://github.com/Cognigy/cognigy-plugin/issues/20)) ([45170a0](https://github.com/Cognigy/cognigy-plugin/commit/45170a050d4884fa76f1115a527cb80c18a6cc1d))
+
 ## [1.13.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.12.0...v1.13.0) (2026-08-26)
 
 ### Features
