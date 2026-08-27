@@ -218,6 +218,122 @@ describe("setupLlmSchema", () => {
     });
     expect(result.dangerouslySkipConnectionTest).toBeUndefined();
   });
+
+  it("accepts a full openAICompatible input", () => {
+    const result = schemas.setupLlmSchema.parse({
+      projectId: VALID_ID,
+      provider: "openAICompatible",
+      modelType: "custom-model",
+      customModel: "llama-3.3-70b-instruct",
+      baseCustomUrl: "https://llm.example.com/v1",
+      customAuthHeader: "X-Custom-Auth",
+      apiType: "chatCompletion",
+      apiKey: "key-123",
+    });
+    expect(result.provider).toBe("openAICompatible");
+    expect(result.customModel).toBe("llama-3.3-70b-instruct");
+  });
+
+  it("accepts openAICompatible with custom-embedding-model", () => {
+    const result = schemas.setupLlmSchema.parse({
+      projectId: VALID_ID,
+      provider: "openAICompatible",
+      modelType: "custom-embedding-model",
+      customModel: "bge-large-en-v1.5",
+      baseCustomUrl: "https://llm.example.com/v1",
+      apiKey: "key-123",
+    });
+    expect(result.modelType).toBe("custom-embedding-model");
+  });
+
+  it("rejects apiType for openAICompatible embedding models", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "openAICompatible",
+        modelType: "custom-embedding-model",
+        customModel: "bge-large-en-v1.5",
+        baseCustomUrl: "https://llm.example.com/v1",
+        apiType: "responses",
+        apiKey: "key-123",
+      }),
+    ).toThrow(/apiType is only supported for chat models/);
+  });
+
+  it("rejects openAICompatible without baseCustomUrl", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "openAICompatible",
+        modelType: "custom-model",
+        customModel: "llama-3.3-70b-instruct",
+        apiKey: "key-123",
+      }),
+    ).toThrow(/baseCustomUrl/);
+  });
+
+  it("rejects openAICompatible without customModel", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "openAICompatible",
+        modelType: "custom-model",
+        baseCustomUrl: "https://llm.example.com/v1",
+        apiKey: "key-123",
+      }),
+    ).toThrow(/customModel/);
+  });
+
+  it("rejects openAICompatible with a non-custom modelType", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "openAICompatible",
+        modelType: "gpt-4o",
+        customModel: "gpt-4o",
+        baseCustomUrl: "https://llm.example.com/v1",
+        apiKey: "key-123",
+      }),
+    ).toThrow(/custom-model/);
+  });
+
+  it("rejects openAICompatible-only fields on other providers", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "openAI",
+        modelType: "gpt-4o",
+        baseCustomUrl: "https://llm.example.com/v1",
+        apiKey: "sk-abc123",
+      }),
+    ).toThrow(/openAICompatible/);
+  });
+
+  it("rejects apiType for providers without Responses API support", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "anthropic",
+        modelType: "claude-sonnet-4-0",
+        apiType: "responses",
+        apiKey: "key-123",
+      }),
+    ).toThrow(/apiType/);
+  });
+
+  it("rejects an invalid apiType value", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "openAICompatible",
+        modelType: "custom-model",
+        customModel: "llama-3.3-70b-instruct",
+        baseCustomUrl: "https://llm.example.com/v1",
+        apiType: "completions",
+        apiKey: "key-123",
+      }),
+    ).toThrow();
+  });
 });
 
 describe("talkToAgentSchema", () => {

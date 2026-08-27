@@ -126,7 +126,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "setup_llm",
     description:
-      "Create a NEW LLM resource (GPT-4, Claude, etc.) in a project. This is a LAST RESORT — only use when no existing LLM can be reused.\n\nPRECONDITION — you MUST have already completed ALL of these before calling this tool:\n1. Listed all projects: list_resources { resourceType: 'project' }\n2. Checked every other project for existing LLMs: list_resources { resourceType: 'llm_model', projectId }\n3. Attempted package reuse where another project already has a reusable LLM with connectionId\n4. Proceeding only because reuse is unavailable, transfer failed, or the user explicitly asked for a brand-new LLM\nIf you have not completed steps 1-4, STOP and do them first. Do NOT call this tool.\n\nMODEL ROLE WARNING:\n- Chat/completion models are used for AI Agents.\n- Embedding models are used for knowledge-store indexing.\n- Knowledge Search and Answer Extraction use same-project llm_model IDs accepted by the Cognigy API for that use case.\n- Do not use setup_llm as an automatic workaround for knowledgeSearchModelId failures while existing same-project candidates still exist.\n\nIMPORTANT: NEVER guess or hallucinate API keys. If creating a new LLM and no apiKey or connectionId was provided by the user, ASK for the required credentials.\n\nAfter creation, the connection is normally tested by sending a minimal probe to the provider. If this connection test runs and fails (for example, invalid credentials or model name), the model is deleted and an error is returned — this prevents broken model references from silently breaking downstream flows.\n\nIf the provider's test endpoint is unreachable or returns a non-testable status, the model is kept but a warning is returned so you know connectivity could not be fully verified.\n\nIf dangerouslySkipConnectionTest is true, the connection test is not run at all; the model is kept and the response includes a warning that no connectivity check was performed. Only use this flag when you explicitly accept the risk that the created LLM might not be callable. Never use it to bypass a missing or cross-project connection.\n\nIf isDefault is true (the default), agents in the project will automatically use this LLM. If isDefault is false, you must explicitly assign it to the agent via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: '<referenceId from this response>' } }.\n\nThe response includes the LLM's referenceId — use this value for jobConfig.llmProviderReferenceId if assigning manually.\n\nTo list existing LLMs: use list_resources { resourceType: 'llm_model', projectId }.\nTo delete: use delete_resource { resourceType: 'llm_model', id }.",
+      "Create a NEW LLM resource (GPT-4, Claude, etc.) in a project. This is a LAST RESORT — only use when no existing LLM can be reused.\n\nPRECONDITION — you MUST have already completed ALL of these before calling this tool:\n1. Listed all projects: list_resources { resourceType: 'project' }\n2. Checked every other project for existing LLMs: list_resources { resourceType: 'llm_model', projectId }\n3. Attempted package reuse where another project already has a reusable LLM with connectionId\n4. Proceeding only because reuse is unavailable, transfer failed, or the user explicitly asked for a brand-new LLM\nIf you have not completed steps 1-4, STOP and do them first. Do NOT call this tool.\n\nMODEL ROLE WARNING:\n- Chat/completion models are used for AI Agents.\n- Embedding models are used for knowledge-store indexing.\n- Knowledge Search and Answer Extraction use same-project llm_model IDs accepted by the Cognigy API for that use case.\n- Do not use setup_llm as an automatic workaround for knowledgeSearchModelId failures while existing same-project candidates still exist.\n\nOPENAI-COMPATIBLE PROVIDERS (self-hosted or third-party endpoints that speak the OpenAI API, e.g. vLLM, Hugging Face, LiteLLM, Azure AI Foundry): use provider 'openAICompatible' with modelType 'custom-model' (chat) or 'custom-embedding-model' (embedding). The actual model name goes in customModel and the endpoint in baseCustomUrl — both required. Optional: customAuthHeader (send the API key in a custom header instead of 'Authorization: Bearer'), apiType ('chatCompletion' default, or 'responses').\n\nIMPORTANT: NEVER guess or hallucinate API keys. If creating a new LLM and no apiKey or connectionId was provided by the user, ASK for the required credentials.\n\nAfter creation, the connection is normally tested by sending a minimal probe to the provider. If this connection test runs and fails (for example, invalid credentials or model name), the model is deleted and an error is returned — this prevents broken model references from silently breaking downstream flows.\n\nIf the provider's test endpoint is unreachable or returns a non-testable status, the model is kept but a warning is returned so you know connectivity could not be fully verified.\n\nIf dangerouslySkipConnectionTest is true, the connection test is not run at all; the model is kept and the response includes a warning that no connectivity check was performed. Only use this flag when you explicitly accept the risk that the created LLM might not be callable. Never use it to bypass a missing or cross-project connection.\n\nIf isDefault is true (the default), agents in the project will automatically use this LLM. If isDefault is false, you must explicitly assign it to the agent via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: '<referenceId from this response>' } }.\n\nThe response includes the LLM's referenceId — use this value for jobConfig.llmProviderReferenceId if assigning manually.\n\nTo list existing LLMs: use list_resources { resourceType: 'llm_model', projectId }.\nTo delete: use delete_resource { resourceType: 'llm_model', id }.",
     annotations: {
       title: "Setup LLM",
       readOnlyHint: false,
@@ -140,19 +140,26 @@ export const tools: ToolDefinition[] = [
         projectId: { type: "string", description: "24-char hex project ID" },
         provider: {
           type: "string",
-          enum: ["openAI", "azureOpenAI", "anthropic", "google", "mistral"],
+          enum: [
+            "openAI",
+            "azureOpenAI",
+            "anthropic",
+            "google",
+            "mistral",
+            "openAICompatible",
+          ],
           description:
-            "LLM provider (API values: 'openAI', 'azureOpenAI', 'anthropic', 'google', 'mistral').",
+            "LLM provider (API values: 'openAI', 'azureOpenAI', 'anthropic', 'google', 'mistral', 'openAICompatible'). Use 'openAICompatible' for any endpoint that speaks the OpenAI API (vLLM, Hugging Face, LiteLLM, Azure AI Foundry, ...).",
         },
         modelType: {
           type: "string",
           description:
-            "Model type string. Chat examples: 'gpt-4o', 'gpt-4o-mini', 'claude-sonnet-4-0', 'mistral-small-2503'. Embedding examples: 'text-embedding-3-small', 'text-embedding-3-large', 'text-embedding-ada-002', 'gemini-embedding-001'.",
+            "Model type string. Chat examples: 'gpt-4o', 'gpt-4o-mini', 'claude-sonnet-4-0', 'mistral-small-2503'. Embedding examples: 'text-embedding-3-small', 'text-embedding-3-large', 'text-embedding-ada-002', 'gemini-embedding-001'. For provider 'openAICompatible' this MUST be 'custom-model' (chat) or 'custom-embedding-model' (embedding); the real model name goes in customModel.",
         },
         name: {
           type: "string",
           description:
-            "Display name for the LLM resource (defaults to modelType if omitted)",
+            "Display name for the LLM resource. If omitted, defaults to customModel for openAICompatible providers and modelType for all other providers.",
         },
         apiKey: {
           type: "string",
@@ -167,6 +174,27 @@ export const tools: ToolDefinition[] = [
         isDefault: {
           type: "boolean",
           description: "Set as project default (default: true)",
+        },
+        baseCustomUrl: {
+          type: "string",
+          description:
+            "openAICompatible only (required): base URL of the OpenAI-compatible API, e.g. 'https://my-llm-host.example.com/v1'.",
+        },
+        customModel: {
+          type: "string",
+          description:
+            "openAICompatible only (required): the model name as known by the provider, e.g. 'llama-3.3-70b-instruct'.",
+        },
+        customAuthHeader: {
+          type: "string",
+          description:
+            "openAICompatible only (optional): custom HTTP header name for authentication, e.g. 'X-Custom-Auth' or 'Ocp-Apim-Subscription-Key'. When set, the API key is sent in this header instead of 'Authorization: Bearer'.",
+        },
+        apiType: {
+          type: "string",
+          enum: ["chatCompletion", "responses"],
+          description:
+            "API flavor for chat models (openAI, azureOpenAI, openAICompatible only). Default: 'chatCompletion'. Use 'responses' only if the provider supports OpenAI's Responses API.",
         },
         dangerouslySkipConnectionTest: {
           type: "boolean",

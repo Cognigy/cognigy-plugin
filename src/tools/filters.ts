@@ -76,6 +76,8 @@ export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
     modelType: r.modelType,
     connectionId: r.connectionId,
     isDefault: r.isDefault,
+    apiType: r.apiType,
+    openAICompatible: r.openAICompatible,
   }),
   knowledge_store: (r) => ({
     id: rid(r),

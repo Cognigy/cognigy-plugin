@@ -498,6 +498,7 @@ const PROVIDER_CONNECTION_TYPE: Record<string, string> = {
   anthropic: "AnthropicProvider",
   google: "GoogleVertexAIProvider",
   mistral: "MistralProvider",
+  openAICompatible: "OpenAICompatibleProvider",
 };
 
 /**
@@ -1979,7 +1980,7 @@ export class ToolHandlers {
       try {
         const connection: any = await this.apiClient.post("/v2.0/connections", {
           projectId: data.projectId,
-          name: `${data.provider} - auto`,
+          name: `${data.provider} - auto - ${randomUUID()}`,
           type: PROVIDER_CONNECTION_TYPE[data.provider] ?? data.provider,
           extension: "@cognigy/generative-ai-provider",
           fields: { apiKey: data.apiKey },
@@ -1996,7 +1997,20 @@ export class ToolHandlers {
       }
     }
 
-    const displayName = data.name || data.modelType;
+    const displayName = data.name || data.customModel || data.modelType;
+
+    // Provider-specific metadata. For openAICompatible the actual model name
+    // and endpoint live here — modelType is just "custom-model" / "custom-embedding-model".
+    const providerMeta =
+      data.provider === "openAICompatible"
+        ? {
+            customModel: data.customModel,
+            baseCustomUrl: data.baseCustomUrl,
+            ...(data.customAuthHeader
+              ? { customAuthHeader: data.customAuthHeader }
+              : {}),
+          }
+        : {};
 
     let result: any;
     try {
@@ -2007,7 +2021,8 @@ export class ToolHandlers {
         provider: data.provider,
         connectionId: connectionRefId,
         isDefault: data.isDefault ?? true,
-        [data.provider]: {},
+        ...(data.apiType ? { apiType: data.apiType } : {}),
+        [data.provider]: providerMeta,
       });
     } catch (error: any) {
       return withHints(

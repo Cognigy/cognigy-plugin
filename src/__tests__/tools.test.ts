@@ -424,6 +424,39 @@ describe("ToolHandlers v2", () => {
       );
     });
 
+    it("uses unique names for auto-created connections", async () => {
+      api.post
+        .mockResolvedValueOnce({
+          _id: "conn1",
+          referenceId: "conn-ref-uuid-1",
+        })
+        .mockResolvedValueOnce(mockLlm)
+        .mockResolvedValueOnce(mockTestSuccess)
+        .mockResolvedValueOnce({
+          _id: "conn2",
+          referenceId: "conn-ref-uuid-2",
+        })
+        .mockResolvedValueOnce(mockLlm)
+        .mockResolvedValueOnce(mockTestSuccess);
+
+      const args = {
+        projectId: ID.project,
+        provider: "openAI",
+        modelType: "gpt-4o",
+        apiKey: "sk-test",
+      };
+      await h.handleToolCall("setup_llm", args);
+      await h.handleToolCall("setup_llm", args);
+
+      const connectionNames = api.post.mock.calls
+        .filter((call: any[]) => call[0] === "/v2.0/connections")
+        .map((call: any[]) => call[1].name);
+      expect(connectionNames).toHaveLength(2);
+      expect(connectionNames[0]).toMatch(/^openAI - auto - /);
+      expect(connectionNames[1]).toMatch(/^openAI - auto - /);
+      expect(connectionNames[0]).not.toBe(connectionNames[1]);
+    });
+
     it("creates LLM directly when connectionId provided", async () => {
       const llmWithExistingConn = {
         ...mockLlm,
@@ -566,6 +599,101 @@ describe("ToolHandlers v2", () => {
 
       expect(result.error).toContain("was not found in the target project");
       expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it("creates an openAICompatible LLM with provider metadata and connection type", async () => {
+      const mockCompatLlm = {
+        _id: ID.llm,
+        referenceId: "llm-ref-uuid",
+        name: "llama-3.3-70b-instruct",
+        provider: "openAICompatible",
+        modelType: "custom-model",
+        connectionId: "conn-ref-uuid",
+        isDefault: true,
+        apiType: "chatCompletion",
+        openAICompatible: {
+          customModel: "llama-3.3-70b-instruct",
+          baseCustomUrl: "https://llm.example.com/v1",
+          customAuthHeader: "X-Custom-Auth",
+        },
+      };
+      const mockConn = { _id: "conn1", referenceId: "conn-ref-uuid" };
+      api.post
+        .mockResolvedValueOnce(mockConn)
+        .mockResolvedValueOnce(mockCompatLlm)
+        .mockResolvedValueOnce(mockTestSuccess);
+
+      const result = await h.handleToolCall("setup_llm", {
+        projectId: ID.project,
+        provider: "openAICompatible",
+        modelType: "custom-model",
+        customModel: "llama-3.3-70b-instruct",
+        baseCustomUrl: "https://llm.example.com/v1",
+        customAuthHeader: "X-Custom-Auth",
+        apiType: "chatCompletion",
+        apiKey: "key-123",
+      });
+
+      expect(api.post).toHaveBeenCalledWith(
+        "/v2.0/connections",
+        expect.objectContaining({
+          type: "OpenAICompatibleProvider",
+          extension: "@cognigy/generative-ai-provider",
+          fields: { apiKey: "key-123" },
+        }),
+      );
+      expect(api.post).toHaveBeenCalledWith(
+        "/v2.0/largelanguagemodels",
+        expect.objectContaining({
+          // Falls back to customModel, not the generic "custom-model" string
+          name: "llama-3.3-70b-instruct",
+          modelType: "custom-model",
+          provider: "openAICompatible",
+          apiType: "chatCompletion",
+          openAICompatible: {
+            customModel: "llama-3.3-70b-instruct",
+            baseCustomUrl: "https://llm.example.com/v1",
+            customAuthHeader: "X-Custom-Auth",
+          },
+        }),
+      );
+      expect(result.provider).toBe("openAICompatible");
+      expect(result.openAICompatible).toEqual({
+        customModel: "llama-3.3-70b-instruct",
+        baseCustomUrl: "https://llm.example.com/v1",
+        customAuthHeader: "X-Custom-Auth",
+      });
+      expect(result.apiType).toBe("chatCompletion");
+    });
+
+    it("omits customAuthHeader and apiType from the payload when not provided", async () => {
+      const mockConn = { _id: "conn1", referenceId: "conn-ref-uuid" };
+      api.post
+        .mockResolvedValueOnce(mockConn)
+        .mockResolvedValueOnce({
+          ...mockLlm,
+          provider: "openAICompatible",
+          modelType: "custom-model",
+        })
+        .mockResolvedValueOnce(mockTestSuccess);
+
+      await h.handleToolCall("setup_llm", {
+        projectId: ID.project,
+        provider: "openAICompatible",
+        modelType: "custom-model",
+        customModel: "llama-3.3-70b-instruct",
+        baseCustomUrl: "https://llm.example.com/v1",
+        apiKey: "key-123",
+      });
+
+      const llmPayload = api.post.mock.calls.find(
+        (call: any[]) => call[0] === "/v2.0/largelanguagemodels",
+      )?.[1];
+      expect(llmPayload.openAICompatible).toEqual({
+        customModel: "llama-3.3-70b-instruct",
+        baseCustomUrl: "https://llm.example.com/v1",
+      });
+      expect(llmPayload).not.toHaveProperty("apiType");
     });
   });
 
