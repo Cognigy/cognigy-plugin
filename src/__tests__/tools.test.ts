@@ -4336,6 +4336,60 @@ describe("manage_snapshots", () => {
       expect(second.error).toBeUndefined();
     });
 
+    it("holds ALL concurrent distinct mutations to the same project", async () => {
+      // A client may issue several mutating calls in one parallel batch. Only
+      // releasing after the first hold would let the rest mutate the project
+      // before the backup offer was ever answered.
+      const [first, second] = await Promise.all([
+        h.handleToolCall("manage_settings", {
+          operation: "set_knowledge_ai",
+          projectId: ID.project,
+          knowledgeSearchModelId: "m1",
+        }),
+        h.handleToolCall("manage_settings", {
+          operation: "set_knowledge_ai",
+          projectId: ID.project,
+          knowledgeSearchModelId: "m2",
+        }),
+      ]);
+
+      expect(first.error).toBe("backup_not_offered");
+      expect(second.error).toBe("backup_not_offered");
+      expect(api.patch).not.toHaveBeenCalled();
+      expect(api.post).not.toHaveBeenCalled();
+
+      // Once the offer is answered, the held calls run on retry.
+      await h.handleToolCall("manage_snapshots", {
+        operation: "decline",
+        projectId: ID.project,
+      });
+      api.get.mockResolvedValue({ _id: ID.project } as any);
+      api.patch.mockResolvedValue({ _id: ID.project } as any);
+      const retry = await h.handleToolCall("manage_settings", {
+        operation: "set_knowledge_ai",
+        projectId: ID.project,
+        knowledgeSearchModelId: "m2",
+      });
+      expect(retry.error).not.toBe("backup_not_offered");
+    });
+
+    it("holds concurrent distinct mutations even when the project is unknown", async () => {
+      const [first, second] = await Promise.all([
+        h.handleToolCall("update_ai_agent", {
+          aiAgentId: ID.agent,
+          description: "a",
+        }),
+        h.handleToolCall("update_ai_agent", {
+          aiAgentId: ID.agent,
+          description: "b",
+        }),
+      ]);
+
+      expect(first.error).toBe("backup_not_offered");
+      expect(second.error).toBe("backup_not_offered");
+      expect(api.patch).not.toHaveBeenCalled();
+    });
+
     it("does not hold create_ai_agent itself", () => {
       expect(
         (ToolHandlers as any).isBackupWorthyCall("create_ai_agent", {}),

@@ -788,12 +788,23 @@ export class ToolHandlers {
   //
   // The answer is kept PER PROJECT: a user who declines a backup on a sandbox
   // must still be asked before the first change to a production project. Only
-  // the anti-deadlock trip is global for calls whose project cannot be
-  // determined (see backupGateFor).
+  // the anti-deadlock hold falls back to session-wide state for calls whose
+  // project cannot be determined (see backupGateFor).
   private readonly snapshotCreatedForProject = new Set<string>();
   private readonly backupDeclinedForProject = new Set<string>();
-  private readonly backupGateHeldForProject = new Set<string>();
-  private backupGateTripped = false;
+  /**
+   * Call signatures (tool + args) the gate has already held, per project. The
+   * anti-deadlock release is keyed on the SIGNATURE, not the project: a client
+   * that ignores the offer and retries the same call proceeds, but a client
+   * that issues several DIFFERENT mutations in parallel has each of them held
+   * until the offer is answered — otherwise only the first of a concurrent
+   * burst would be held and the rest would mutate the project unprotected.
+   */
+  private readonly backupGateHeldCallsForProject = new Map<
+    string,
+    Set<string>
+  >();
+  private readonly backupGateHeldCallsWithoutProject = new Set<string>();
   /**
    * projectId of resources seen this session, so the gate can tell which
    * project a call like update_ai_agent { aiAgentId } belongs to WITHOUT
@@ -5382,6 +5393,11 @@ export class ToolHandlers {
 
   private backupGateFor(toolName: string, args: any): any | null {
     const projectId = this.projectForCall(args);
+    // Held calls are remembered by signature so a retry of a call that was
+    // already held proceeds (anti-deadlock), while a concurrent DIFFERENT
+    // mutation is held too. Marking happens synchronously, before any await,
+    // so parallel calls in one client message cannot slip past each other.
+    const signature = `${toolName} ${JSON.stringify(args ?? null)}`;
 
     if (projectId) {
       // Answered for THIS project? Let it through. An answer given for another
@@ -5392,22 +5408,25 @@ export class ToolHandlers {
       ) {
         return null;
       }
-      // Anti-deadlock: hold once per project. A client that ignores the offer
-      // and retries proceeds rather than looping forever.
-      if (this.backupGateHeldForProject.has(projectId)) return null;
-      this.backupGateHeldForProject.add(projectId);
+      // Anti-deadlock: hold each distinct call once. A client that ignores
+      // the offer and retries proceeds rather than looping forever.
+      const held = this.backupGateHeldCallsForProject.get(projectId);
+      if (held?.has(signature)) return null;
+      if (held) held.add(signature);
+      else
+        this.backupGateHeldCallsForProject.set(projectId, new Set([signature]));
     } else {
       // Project unknown (e.g. delete_resource on a resource never read this
       // session). Fall back to session-wide state: any answer, anywhere, and
-      // one global hold.
+      // one hold per distinct call.
       if (
         this.snapshotCreatedForProject.size ||
         this.backupDeclinedForProject.size ||
-        this.backupGateTripped
+        this.backupGateHeldCallsWithoutProject.has(signature)
       ) {
         return null;
       }
-      this.backupGateTripped = true;
+      this.backupGateHeldCallsWithoutProject.add(signature);
     }
 
     return withHints(
