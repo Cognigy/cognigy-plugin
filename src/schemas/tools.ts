@@ -142,6 +142,25 @@ export const talkToAgentSchema = z
     path: ["endpointUrl"],
   });
 
+/** Actor values Cognigy records in `auditEvent.performedBy.actor`. */
+export const AUDIT_ACTORS = [
+  "human",
+  "ask-ai",
+  "mcp-plugin",
+  "system",
+] as const;
+
+/** Audit event operation types (`auditEvent.type`). */
+export const AUDIT_EVENT_TYPES = [
+  "action",
+  "create",
+  "replace",
+  "patch",
+  "delete",
+  "authentication",
+  "authorization",
+] as const;
+
 // Tool 5: list_resources
 export const listResourcesSchema = z.object({
   resourceType: z.enum([
@@ -155,6 +174,7 @@ export const listResourcesSchema = z.object({
     "extension",
     "function",
     "tool",
+    "audit_event",
   ]),
   projectId: idSchema.optional(),
   aiAgentId: idSchema.optional(),
@@ -162,6 +182,13 @@ export const listResourcesSchema = z.object({
   endDate: z.string().optional(),
   channel: z.string().optional(),
   useCase: z.string().optional(),
+  // audit_event filters. `actor` and `eventType` are sent as repeatable query
+  // params (actor[]=…), which the platform supports from 2026.17.0 onwards.
+  // Named `eventType` rather than `type` so it cannot be confused with
+  // `resourceType` at the call site.
+  actor: z.array(z.enum(AUDIT_ACTORS)).nonempty().optional(),
+  eventType: z.array(z.enum(AUDIT_EVENT_TYPES)).nonempty().optional(),
+  user: z.string().min(1).optional(),
   sort: z
     .string()
     .regex(
@@ -186,6 +213,7 @@ export const getResourceSchema = z.object({
     "extension",
     "function",
     "user",
+    "audit_event",
   ]),
   id: z.string().min(1),
   projectId: idSchema.optional(),

@@ -2360,7 +2360,17 @@ export class ToolHandlers {
   // =========================================================================
   async handleListResources(args: any): Promise<any> {
     const data = schemas.listResourcesSchema.parse(args);
-    const { resourceType, projectId, aiAgentId, limit, skip, sort } = data;
+    const {
+      resourceType,
+      projectId,
+      aiAgentId,
+      limit,
+      skip,
+      sort,
+      actor,
+      eventType,
+      user,
+    } = data;
     // `sort` rides along with paging so every server-backed list endpoint gets
     // it. 'tool' builds its own params and has no server-side sort.
     const paging = {
@@ -2369,8 +2379,14 @@ export class ToolHandlers {
       ...(sort ? { sort } : {}),
     };
 
-    // Validate projectId requirement
-    if (resourceType !== "project" && resourceType !== "tool" && !projectId) {
+    // Validate projectId requirement. 'project' and 'audit_event' are
+    // organisation-scoped; 'tool' takes aiAgentId instead.
+    if (
+      resourceType !== "project" &&
+      resourceType !== "tool" &&
+      resourceType !== "audit_event" &&
+      !projectId
+    ) {
       return withHints(
         { error: `projectId is required for resourceType '${resourceType}'.` },
         {
@@ -2515,6 +2531,50 @@ export class ToolHandlers {
         total = items.length;
         break;
       }
+      case "audit_event": {
+        // Organisation-scoped, so no projectId. `actor` / `type` are sent as
+        // repeatable params (axios serialises arrays as `actor[]=…`), matching
+        // what GET /v2.0/auditevents documents. Both filters need the platform
+        // at 2026.17.0 or newer; older versions reject the array form, which
+        // the catch below turns into an actionable hint instead of a raw 400.
+        try {
+          const res: any = await this.apiClient.get("/v2.0/auditevents", {
+            params: {
+              ...paging,
+              ...(actor ? { actor } : {}),
+              ...(eventType ? { type: eventType } : {}),
+              ...(user ? { user } : {}),
+            },
+          });
+          items = res.items ?? res;
+          total = res.total;
+        } catch (error: any) {
+          if (error?.status === 400 && (actor || eventType)) {
+            return withHints(
+              { error: error.message },
+              {
+                likely_cause:
+                  "This Cognigy version predates 2026.17.0, which introduced the repeatable actor[]/type[] filters on GET /v2.0/auditevents.",
+                action:
+                  "Retry list_resources { resourceType: 'audit_event' } without actor / eventType and filter the returned items yourself.",
+              },
+            );
+          }
+          if (error?.status === 403) {
+            return withHints(
+              { error: error.message },
+              {
+                likely_cause:
+                  "Audit events are organisation-scoped; the API key's user lacks the required admin permission.",
+                action:
+                  "Use an API key belonging to a user with Admin Center access.",
+              },
+            );
+          }
+          throw error;
+        }
+        break;
+      }
       default:
         throw new Error(`Unknown resourceType: ${resourceType}`);
     }
@@ -2570,6 +2630,7 @@ export class ToolHandlers {
       // API key belongs to, so `createdBy` / `lastChangedBy` ids can be
       // attributed instead of guessed.
       user: `/v2.0/users/${id}`,
+      audit_event: `/v2.0/auditevents/${id}`,
     };
 
     const url = endpointMap[resourceType];

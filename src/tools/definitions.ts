@@ -272,7 +272,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "list_resources",
     description:
-      "List resources in a Cognigy project. Use this to discover projects, agents, flows, endpoints, LLM models, knowledge stores, conversations, extensions, functions, or tools.\n\nSet resourceType to 'project' to find projectIds (no projectId needed). 'tool' requires aiAgentId instead of projectId. All other types require projectId. For `llm_model`, you can also pass `useCase` to match the UI's use-case-filtered model dropdowns (for example `knowledgeSearch`). Packages are handled through manage_packages.\n\nUse `sort` for recency questions instead of paging through everything: `sort: 'lastChanged:desc', limit: 5` answers \"which project was touched most recently\" in one call. To attribute a change to a person, get the current user's id from get_resource { resourceType: 'user', id: 'me' } and compare it against `lastChangedBy` from get_resource { resourceType: 'project', id, raw: true } — list items omit `lastChangedBy` to save tokens.\n\nReturns a paginated list with id, name, and type-specific fields.",
+      "List resources in a Cognigy project. Use this to discover projects, agents, flows, endpoints, LLM models, knowledge stores, conversations, extensions, functions, tools, or audit events.\n\nSet resourceType to 'project' to find projectIds (no projectId needed). 'tool' requires aiAgentId instead of projectId. 'audit_event' is organisation-scoped and takes no projectId — it answers \"who changed what\" questions: `{ resourceType: 'audit_event', actor: ['mcp-plugin'], sort: 'timestamp:desc' }` lists exactly the changes this plugin made, and `actor: ['human']` the ones people made by hand. Each item carries `performedBy` for non-human actors; a missing `performedBy` means a person performed it. Needs Cognigy 2026.17.0+ and an API key with Admin Center access. All other types require projectId. For `llm_model`, you can also pass `useCase` to match the UI's use-case-filtered model dropdowns (for example `knowledgeSearch`). Packages are handled through manage_packages.\n\nUse `sort` for recency questions instead of paging through everything: `sort: 'lastChanged:desc', limit: 5` answers \"which project was touched most recently\" in one call. To attribute a change to a person, get the current user's id from get_resource { resourceType: 'user', id: 'me' } and compare it against `lastChangedBy` from get_resource { resourceType: 'project', id, raw: true } — list items omit `lastChangedBy` to save tokens.\n\nReturns a paginated list with id, name, and type-specific fields.",
     annotations: {
       title: "List Resources",
       readOnlyHint: true,
@@ -296,13 +296,14 @@ export const tools: ToolDefinition[] = [
             "extension",
             "function",
             "tool",
+            "audit_event",
           ],
           description: "Type of resource to list",
         },
         projectId: {
           type: "string",
           description:
-            "24-char hex project ID. Required for all types except 'project' and 'tool'.",
+            "24-char hex project ID. Required for all types except 'project', 'tool' and 'audit_event'.",
         },
         aiAgentId: {
           type: "string",
@@ -332,6 +333,37 @@ export const tools: ToolDefinition[] = [
           description:
             "Server-side sort as 'field:direction', e.g. 'lastChanged:desc' or 'name:asc'. Sort on any field the resource returns. Not supported for 'tool' (read from the flow chart, not a list endpoint).",
         },
+        actor: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: ["human", "ask-ai", "mcp-plugin", "system"],
+          },
+          description:
+            "audit_event only — filter by who performed the action. 'mcp-plugin' is this plugin, 'ask-ai' the Cognigy Ask AI agent, 'human' a person working in the UI or calling the API directly. Requires Cognigy 2026.17.0+.",
+        },
+        eventType: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: [
+              "action",
+              "create",
+              "replace",
+              "patch",
+              "delete",
+              "authentication",
+              "authorization",
+            ],
+          },
+          description:
+            "audit_event only — filter by operation type. Requires Cognigy 2026.17.0+.",
+        },
+        user: {
+          type: "string",
+          description:
+            "audit_event only — filter by the email of the user the action ran as.",
+        },
         limit: {
           type: "number",
           description: "Results per page (1-100, default 25)",
@@ -349,7 +381,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "get_resource",
     description:
-      "Get detailed information about a single Cognigy resource. Returns a summary view by default. Set `raw: true` for the complete unfiltered API response with all fields.\n\nUse list_resources first to find IDs. Supports all list_resources types plus 'session_state' for session context data and 'user' for accounts.\n\nresourceType 'user' with id 'me' returns the account the API key belongs to — use it before claiming a resource was changed by the user, since `createdBy` / `lastChangedBy` are opaque ids that mean nothing on their own. Pass a 24-char hex id instead of 'me' to identify another user (requires user-management permissions).",
+      "Get detailed information about a single Cognigy resource. Returns a summary view by default. Set `raw: true` for the complete unfiltered API response with all fields.\n\nUse list_resources first to find IDs. Supports all list_resources types plus 'session_state' for session context data and 'user' for accounts. 'audit_event' returns one audit event including its `performedBy` attribution.\n\nresourceType 'user' with id 'me' returns the account the API key belongs to — use it before claiming a resource was changed by the user, since `createdBy` / `lastChangedBy` are opaque ids that mean nothing on their own. Pass a 24-char hex id instead of 'me' to identify another user (requires user-management permissions).",
     annotations: {
       title: "Get Resource",
       readOnlyHint: true,
@@ -374,6 +406,7 @@ export const tools: ToolDefinition[] = [
             "extension",
             "function",
             "user",
+            "audit_event",
           ],
           description: "Type of resource to retrieve",
         },
