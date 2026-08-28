@@ -140,8 +140,32 @@ describe("audit events", () => {
     });
   });
 
+  it("prefers a populated modifiedResources over an empty chain", async () => {
+    api.get.mockResolvedValue({
+      items: [
+        rawEvent({
+          chain: [],
+          modifiedResources: [
+            { elementId: "60d5ec49f1a2c8b1a4e0f0b3", elementType: "endpoint" },
+          ],
+        }),
+      ],
+      total: 1,
+    } as never);
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "audit_event",
+    });
+
+    expect(result.items[0].modifiedResources).toEqual([
+      { elementId: "60d5ec49f1a2c8b1a4e0f0b3", elementType: "endpoint" },
+    ]);
+  });
+
   it("hints at the platform version when the array filters are rejected", async () => {
-    const error: any = new Error("Invalid query parameter");
+    const error: any = new Error(
+      "Validation failed. Field 'actor' is not allowed.",
+    );
     error.status = 400;
     api.get.mockRejectedValue(error as never);
 
@@ -150,8 +174,22 @@ describe("audit events", () => {
       actor: ["mcp-plugin"],
     });
 
-    expect(result.error).toBe("Invalid query parameter");
+    expect(result.error).toMatch(/not allowed/);
     expect(result._hints.likely_cause).toMatch(/2026\.17\.0/);
+  });
+
+  it("rethrows a 400 that is unrelated to the filters", async () => {
+    const error: any = new Error("Validation failed. Field 'sort' is invalid.");
+    error.status = 400;
+    api.get.mockRejectedValue(error as never);
+
+    await expect(
+      h.handleToolCall("list_resources", {
+        resourceType: "audit_event",
+        actor: ["mcp-plugin"],
+        sort: "nope:desc",
+      }),
+    ).rejects.toThrow(/Field 'sort' is invalid/);
   });
 
   it("hints at permissions on a 403", async () => {

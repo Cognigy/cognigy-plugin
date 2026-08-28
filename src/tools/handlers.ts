@@ -2549,7 +2549,14 @@ export class ToolHandlers {
           items = res.items ?? res;
           total = res.total;
         } catch (error: any) {
-          if (error?.status === 400 && (actor || eventType)) {
+          // Only a 400 that names one of the two filters gets the version
+          // hint. Any other 400 (a rejected sort field, a bad cursor) is a
+          // real error and must not be dressed up as a version problem.
+          const rejectsFilter =
+            error?.status === 400 &&
+            (actor || eventType) &&
+            /\b(actor|type)\b/i.test(String(error.message ?? ""));
+          if (rejectsFilter) {
             return withHints(
               { error: error.message },
               {

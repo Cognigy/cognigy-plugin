@@ -155,9 +155,14 @@ export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
         }
       : {}),
     // The live API returns the modification chain as `chain`, even though the
-    // REST docs name the field `modifiedResources` — accept either.
+    // REST docs name the field `modifiedResources` — accept either. `chain`
+    // only wins when it actually carries entries, so an empty `chain: []`
+    // alongside a populated `modifiedResources` cannot drop the chain.
     ...(() => {
-      const chain = Array.isArray(r.chain) ? r.chain : r.modifiedResources;
+      const chain =
+        Array.isArray(r.chain) && r.chain.length
+          ? r.chain
+          : r.modifiedResources;
       return Array.isArray(chain) && chain.length
         ? {
             modifiedResources: chain.map((m: any) => ({
