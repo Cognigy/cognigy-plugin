@@ -7,10 +7,20 @@ import axios, {
 } from "axios";
 import FormData from "form-data";
 import { logger } from "../utils/logger.js";
+import {
+  ACTOR_CONTEXT_HEADER,
+  getActorContextHeader,
+} from "../utils/actorContext.js";
 
 export interface CognigyApiClientConfig {
   baseUrl: string;
   apiKey: string;
+  /**
+   * Declare plugin-performed actions as `mcp-plugin` in Cognigy's audit events.
+   * Defaults to true; the `COGNIGY_DISABLE_AUDIT_ATTRIBUTION` env var turns it
+   * off for anyone who does not want the plugin named in their audit log.
+   */
+  auditAttribution?: boolean;
 }
 
 const MAX_RETRIES = 3;
@@ -37,9 +47,11 @@ function isRetryable(error: AxiosError): boolean {
 export class CognigyApiClient {
   private client: AxiosInstance;
   private apiKey: string;
+  private auditAttribution: boolean;
 
   constructor(config: CognigyApiClientConfig) {
     this.apiKey = config.apiKey;
+    this.auditAttribution = config.auditAttribution !== false;
     this.client = axios.create({
       baseURL: config.baseUrl,
       headers: {
@@ -52,6 +64,16 @@ export class CognigyApiClient {
     this.client.interceptors.request.use(
       (reqConfig) => {
         reqConfig.headers["X-API-Key"] = this.apiKey;
+        // Attribute this write to the plugin in Cognigy's audit events. Set
+        // here rather than per call site so every platform request is covered,
+        // including uploadFile's own headers object. Absent outside a tool
+        // call, which leaves the request byte-identical to before.
+        if (this.auditAttribution) {
+          const actorContext = getActorContextHeader();
+          if (actorContext) {
+            reqConfig.headers[ACTOR_CONTEXT_HEADER] = actorContext;
+          }
+        }
         logger.debug(
           `API Request: ${reqConfig.method?.toUpperCase()} ${reqConfig.url}`,
         );

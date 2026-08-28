@@ -15,6 +15,11 @@ export interface Config {
   serverName: string;
   serverVersion: string;
   logLevel: "debug" | "info" | "warn" | "error";
+  /**
+   * Whether to declare plugin-performed actions as the `mcp-plugin` actor in
+   * Cognigy's audit events (see utils/actorContext.ts). On by default.
+   */
+  auditAttribution: boolean;
   rateLimit: {
     maxRequests: number;
     windowMs: number;
@@ -143,6 +148,13 @@ function placeholderHint(raw: string | undefined): string {
 
 const VALID_LOG_LEVELS = new Set<string>(["debug", "info", "warn", "error"]);
 
+/** True for the usual affirmative env spellings. */
+function isEnvFlagSet(value: string | undefined): boolean {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
 function parseIntWithDefault(
   envVar: string | undefined,
   defaultValue: number,
@@ -225,6 +237,12 @@ export function loadConfig(): Config {
       }
       return raw as Config["logLevel"];
     })(),
+    // Opt-out only: attributing the plugin in a customer's audit log is the
+    // desirable default, but it changes what gets recorded, so leave an escape
+    // hatch.
+    auditAttribution: !isEnvFlagSet(
+      process.env.COGNIGY_DISABLE_AUDIT_ATTRIBUTION,
+    ),
     rateLimit: {
       maxRequests: parseIntWithDefault(
         process.env.RATE_LIMIT_MAX_REQUESTS,
