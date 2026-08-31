@@ -26,15 +26,28 @@ describe("normalizeToolParameters", () => {
     expect(parsed.type).toBe("object");
   });
 
-  it("preserves an explicit additionalProperties value", () => {
+  it("preserves an explicit additionalProperties: true but warns about strict models", () => {
     const raw = JSON.stringify({
       type: "object",
       properties: { a: { type: "string", description: "x" } },
       required: ["a"],
       additionalProperties: true,
     });
-    const parsed = JSON.parse(normalizeToolParameters(raw).parameters);
-    expect(parsed.additionalProperties).toBe(true);
+    const { parameters, warnings } = normalizeToolParameters(raw);
+    expect(JSON.parse(parameters).additionalProperties).toBe(true);
+    expect(warnings.join(" ")).toMatch(/"additionalProperties": true/);
+  });
+
+  it("hard-fails on a non-boolean additionalProperties value", () => {
+    const raw = JSON.stringify({
+      type: "object",
+      properties: { a: { type: "string", description: "x" } },
+      required: ["a"],
+      additionalProperties: "false",
+    });
+    expect(() => normalizeToolParameters(raw)).toThrow(
+      /"additionalProperties" must be the boolean false/,
+    );
   });
 
   it("hard-fails on unparseable JSON with a corrective message", () => {
@@ -57,6 +70,17 @@ describe("normalizeToolParameters", () => {
     });
     expect(() => normalizeToolParameters(raw)).toThrow(
       /confirmationCode: missing "description"/,
+    );
+  });
+
+  it("hard-fails on an empty type array", () => {
+    const raw = JSON.stringify({
+      type: "object",
+      properties: { n: { type: [], description: "count" } },
+      required: ["n"],
+    });
+    expect(() => normalizeToolParameters(raw)).toThrow(
+      /"type" is an empty array/,
     );
   });
 
@@ -121,6 +145,34 @@ describe("normalizeToolParameters", () => {
     });
     const parsed = JSON.parse(normalizeToolParameters(raw).parameters);
     expect(parsed.properties.address.additionalProperties).toBe(false);
+  });
+
+  it("infers type object for a nested property that only defines properties", () => {
+    const raw = JSON.stringify({
+      type: "object",
+      properties: {
+        address: {
+          description: "Postal address",
+          properties: {
+            street: { type: "string", description: "Street" },
+          },
+          required: ["street"],
+        },
+      },
+      required: ["address"],
+    });
+    const parsed = JSON.parse(normalizeToolParameters(raw).parameters);
+    expect(parsed.properties.address.type).toBe("object");
+    expect(parsed.properties.address.additionalProperties).toBe(false);
+  });
+
+  it("hard-fails a property with neither type nor properties/enum/const/composition", () => {
+    const raw = JSON.stringify({
+      type: "object",
+      properties: { a: { description: "no type at all" } },
+      required: ["a"],
+    });
+    expect(() => normalizeToolParameters(raw)).toThrow(/a: missing "type"/);
   });
 
   it("hard-fails a nested property missing a description", () => {

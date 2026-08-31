@@ -19,7 +19,8 @@
  *
  * Hard errors are aggregated and thrown so the calling LLM can correct the
  * whole schema in one retry. Mechanically safe fixes are applied silently:
- * a missing top-level `type` is inferred as "object", and
+ * a missing `type` is inferred as "object" wherever `properties` is defined
+ * (strict providers require an explicit type on every level), and
  * `additionalProperties: false` is injected wherever an object level defines
  * `properties` without it.
  */
@@ -108,10 +109,19 @@ function validateSchema(
     ctx.errors.push(`${path}: "description" must be a string`);
   }
 
+  if (schema.type === undefined && isPlainObject(schema.properties)) {
+    schema.type = "object"; // safe inference, same as at the top level
+  }
+
   // type may be a string or an array of strings (e.g. ["string","null"])
   const types: string[] = [];
   if (schema.type !== undefined) {
     const list = Array.isArray(schema.type) ? schema.type : [schema.type];
+    if (Array.isArray(schema.type) && list.length === 0) {
+      ctx.errors.push(
+        `${path}: "type" is an empty array — declare at least one of ${[...ALLOWED_TYPES].join(", ")}`,
+      );
+    }
     for (const t of list) {
       if (typeof t !== "string" || !ALLOWED_TYPES.has(t)) {
         ctx.errors.push(
@@ -187,6 +197,14 @@ function validateSchema(
         // Responses-API models (strict by default) demand it.
         if (schema.additionalProperties === undefined) {
           schema.additionalProperties = false;
+        } else if (typeof schema.additionalProperties !== "boolean") {
+          ctx.errors.push(
+            `${path}: "additionalProperties" must be the boolean false (got ${JSON.stringify(schema.additionalProperties)})`,
+          );
+        } else if (schema.additionalProperties === true) {
+          ctx.warnings.push(
+            `${path}: "additionalProperties": true — strict-mode models (OpenAI Responses API, e.g. gpt-5.x) reject any value other than false; set it to false and declare every parameter in "properties" if the target model is strict`,
+          );
         }
       }
     } else {
@@ -268,7 +286,7 @@ export function normalizeToolParameters(raw: string): NormalizedToolParameters {
     throw new Error(
       `Invalid tool parameters schema:\n- ${ctx.errors.join("\n- ")}\n` +
         `Fix the schema and retry. Contract: top level is {"type":"object","properties":{...},"required":[...]}; ` +
-        `every entry in a "properties" map needs "type" and "description"; allowed types: ${[...ALLOWED_TYPES].join(", ")}; ` +
+        `every entry in a "properties" map needs "description" and a "type" (inferred as "object" when it defines "properties"; optional only when "enum", "const", or anyOf/oneOf/allOf is used); allowed types: ${[...ALLOWED_TYPES].join(", ")}; ` +
         `"array" needs "items"; any level defining "properties" also needs a "required" array. ` +
         `Strict-mode models (OpenAI Responses API, e.g. gpt-5.x) additionally require every property key listed in "required" — make a parameter optional with a nullable type such as {"type":["string","null"]}.`,
     );
