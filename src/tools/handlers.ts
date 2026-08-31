@@ -799,6 +799,8 @@ export class ToolHandlers {
    * that issues several DIFFERENT mutations in parallel has each of them held
    * until the offer is answered — otherwise only the first of a concurrent
    * burst would be held and the rest would mutate the project unprotected.
+   * Known limitation: an IDENTICAL duplicate issued concurrently is
+   * indistinguishable from a retry by signature and is let through.
    */
   private readonly backupGateHeldCallsForProject = new Map<
     string,
@@ -5391,6 +5393,17 @@ export class ToolHandlers {
     return null;
   }
 
+  /**
+   * Once the offer is answered for a project, the answered-check in
+   * backupGateFor short-circuits before the held sets are consulted — so the
+   * accumulated signatures are dead weight and can be dropped. The
+   * without-project set is likewise never consulted once any answer exists.
+   */
+  private releaseBackupGateHolds(projectId: string): void {
+    this.backupGateHeldCallsForProject.delete(projectId);
+    this.backupGateHeldCallsWithoutProject.clear();
+  }
+
   private backupGateFor(toolName: string, args: any): any | null {
     const projectId = this.projectForCall(args);
     // Held calls are remembered by signature so a retry of a call that was
@@ -6007,6 +6020,7 @@ export class ToolHandlers {
         const created = matches.find((s: any) => s?.name === fields.name);
 
         this.snapshotCreatedForProject.add(data.projectId);
+        this.releaseBackupGateHolds(data.projectId);
 
         return withHints(
           {
@@ -6285,6 +6299,7 @@ export class ToolHandlers {
       // same session is still held once. Touches no API.
       case "decline": {
         this.backupDeclinedForProject.add(data.projectId);
+        this.releaseBackupGateHolds(data.projectId);
         return {
           operation: "decline",
           projectId: data.projectId,

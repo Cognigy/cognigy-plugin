@@ -4388,6 +4388,25 @@ describe("manage_snapshots", () => {
       expect(first.error).toBe("backup_not_offered");
       expect(second.error).toBe("backup_not_offered");
       expect(api.patch).not.toHaveBeenCalled();
+
+      // Any answer, anywhere, releases the unknown-project fallback: a retry
+      // after decline proceeds instead of being held again.
+      await h.handleToolCall("manage_snapshots", {
+        operation: "decline",
+        projectId: ID.project,
+      });
+      api.get.mockResolvedValue({
+        _id: ID.agent,
+        name: "Agent",
+        flowId: ID.flow,
+      } as any);
+      api.patch.mockResolvedValue({ _id: ID.agent, name: "Agent" } as any);
+      const retry = await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        description: "b",
+      });
+      expect(retry.error).toBeUndefined();
+      expect(api.patch).toHaveBeenCalled();
     });
 
     it("does not hold create_ai_agent itself", () => {
