@@ -1977,8 +1977,11 @@ export class ToolHandlers {
               projectId: data.projectId,
             },
             {
-              action:
-                "Import the LLM and its connection into the target project with manage_packages, or provide an apiKey / same-project connectionId.",
+              action: `Import the LLM and its connection into the target project with manage_packages, or provide ${
+                data.provider === "awsBedrock"
+                  ? "accessKeyId + secretAccessKey (or roleArn)"
+                  : "an apiKey"
+              } / a same-project connectionId.`,
             },
           );
         }

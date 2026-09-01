@@ -166,7 +166,7 @@ export const tools: ToolDefinition[] = [
         name: {
           type: "string",
           description:
-            "Display name for the LLM resource. If omitted, defaults to customModel for openAICompatible providers and modelType for all other providers.",
+            "Display name for the LLM resource. If omitted, defaults to customModel when provided (openAICompatible, or awsBedrock with modelType 'custom-model'), otherwise to modelType.",
         },
         apiKey: {
           type: "string",
