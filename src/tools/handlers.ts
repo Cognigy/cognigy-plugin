@@ -438,6 +438,21 @@ const TOOL_TYPE_MAP: Record<string, { type: string; extension: string }> = {
   http: { type: "aiAgentJobTool", extension: "@cognigy/basic-nodes" },
 };
 
+// Tool child descriptors when the parent is an LLM Prompt (llmPromptV2) node
+// instead of an AI Agent Job node. LLM Prompt only supports plain tools and
+// MCP tools (docs: node-reference/service/llm-prompt) — knowledge/send_email
+// descriptors do not exist under it. The resolve nodes (aiAgentToolAnswer,
+// aiAgentJobCallMCPTool) are shared descriptors and work in both branches
+// (verified against the live chart API).
+const LLM_PROMPT_TOOL_TYPE_MAP: Record<
+  string,
+  { type: string; extension: string }
+> = {
+  tool: { type: "llmPromptTool", extension: "@cognigy/basic-nodes" },
+  mcp: { type: "llmPromptMCPTool", extension: "@cognigy/basic-nodes" },
+  http: { type: "llmPromptTool", extension: "@cognigy/basic-nodes" },
+};
+
 const RESOLVE_NODE_MAP: Record<string, { type: string; label: string } | null> =
   {
     tool: { type: "aiAgentToolAnswer", label: "Resolve Tool Action" },
@@ -484,6 +499,9 @@ const AI_AGENT_TOOL_TYPES = new Set([
   "handoverToHumanAgentTool",
   "sendEmailTool",
   "executeWorkflowTool",
+  "llmPromptDefault",
+  "llmPromptTool",
+  "llmPromptMCPTool",
 ]);
 
 const MCP_MANAGED_TOOL_TYPES = new Set([
@@ -491,7 +509,12 @@ const MCP_MANAGED_TOOL_TYPES = new Set([
   "aiAgentJobMCPTool",
   "knowledgeTool",
   "sendEmailTool",
+  "llmPromptTool",
+  "llmPromptMCPTool",
 ]);
+
+/** Node types that can parent tool nodes, in order of preference. */
+const TOOL_PARENT_NODE_TYPES = ["aiAgentJob", "llmPromptV2"] as const;
 
 const PROVIDER_CONNECTION_TYPE: Record<string, string> = {
   openAI: "OpenAIProvider",
@@ -577,6 +600,35 @@ async function resolveFlowForAgent(
   }
 
   return null;
+}
+
+/**
+ * Resolve the flow a tool operation targets. Tools historically addressed the
+ * flow via aiAgentId; flows whose "agent" is an LLM Prompt node have no agent
+ * resource, so a direct flowId is accepted as the alternative.
+ */
+async function resolveToolFlow(
+  apiClient: CognigyApiClient,
+  aiAgentId: string | undefined,
+  flowId: string | undefined,
+): Promise<{ flowId: string } | null> {
+  if (flowId) return { flowId };
+  if (!aiAgentId) return null;
+  const resolved = await resolveFlowForAgent(apiClient, aiAgentId);
+  return resolved ? { flowId: resolved.flowId } : null;
+}
+
+/**
+ * Find the node tools attach to: the AI Agent Job node when present, else an
+ * LLM Prompt (llmPromptV2) node. aiAgentJob wins when a flow has both — the
+ * AI Agent node is always the preferred agent construct.
+ */
+function findToolParentNode(allNodes: any[]): any | undefined {
+  for (const type of TOOL_PARENT_NODE_TYPES) {
+    const match = allNodes.find((n: any) => n.type === type);
+    if (match) return match;
+  }
+  return undefined;
 }
 
 /**
@@ -1451,6 +1503,12 @@ export class ToolHandlers {
   async handleCreateAiAgent(args: any): Promise<any> {
     const data = schemas.createAiAgentSchema.parse(args);
 
+    // Explicit opt-in only: build the flow around an LLM Prompt node instead
+    // of an AI Agent resource + Job node. Never chosen by default.
+    if (data.agentNodeType === "llmPrompt") {
+      return this.createLlmPromptAgent(data);
+    }
+
     let projectId = data.projectId ?? null;
     let createdProject = false;
     let agentId: string | null = null;
@@ -1775,6 +1833,225 @@ export class ToolHandlers {
         {
           likely_cause: likelyCause,
           action,
+        },
+      );
+    }
+  }
+
+  /**
+   * create_ai_agent with agentNodeType "llmPrompt": provision project + flow +
+   * LLM Prompt (llmPromptV2) node + REST endpoint. There is NO /v2.0/aiagents
+   * resource in this mode — the "agent" is just the flow, so update_ai_agent
+   * does not apply (the prompt is edited via manage_flow_nodes update) and
+   * tools are addressed via create_tool { flowId }.
+   */
+  private async createLlmPromptAgent(
+    data: z.infer<typeof schemas.createAiAgentSchema>,
+  ): Promise<any> {
+    let projectId = data.projectId ?? null;
+    let createdProject = false;
+    let flowId: string | null = null;
+    let endpointId: string | null = null;
+
+    try {
+      // Step 0: Auto-create project if none provided
+      if (!projectId) {
+        const project: any = await this.apiClient.post("/v2.0/projects", {
+          name: data.name,
+          color: "blue",
+          locale: "en-US",
+        });
+        projectId = project._id || project.id;
+        createdProject = true;
+      }
+
+      // Step 1: Create flow
+      const flow: any = await this.apiClient.post("/v2.0/flows", {
+        projectId,
+        name: `${data.name} Flow`,
+        description: `Auto-generated flow for ${data.name}`,
+      });
+      flowId = flow._id || flow.id;
+
+      // Step 2: Find entry node (with retry)
+      const entryNode = await retryGetEntryNode(this.apiClient, flowId!);
+
+      // Step 3: Resolve the LLM up front so it can be set atomically in the
+      // create payload (no follow-up PATCH, no preview gotcha). An LLM without
+      // its connection cannot answer — the node then fails silently (default
+      // errorHandling "continue" with an empty message) — so prefer connected
+      // models over the bare isDefault flag.
+      let llmRefId: string | undefined;
+      try {
+        const llmList: any = await this.apiClient.get(
+          "/v2.0/largelanguagemodels",
+          { params: { projectId } },
+        );
+        const llmItems = llmList.items ?? llmList;
+        if (Array.isArray(llmItems) && llmItems.length > 0) {
+          const nonEmbedding = llmItems.filter(
+            (l: any) => !String(l.modelType ?? "").includes("embedding"),
+          );
+          const pool = nonEmbedding.length > 0 ? nonEmbedding : llmItems;
+          const connected = pool.filter((l: any) => l.connectionId);
+          const candidates = connected.length > 0 ? connected : pool;
+          const defaultLlm =
+            candidates.find((l: any) => l.isDefault) ?? candidates[0];
+          llmRefId = defaultLlm.referenceId ?? defaultLlm._id ?? undefined;
+        }
+      } catch (llmErr: any) {
+        logger.warn(
+          "Failed to look up an LLM for the LLM Prompt node — it will use the project default",
+          { error: llmErr.message },
+        );
+      }
+
+      // Step 4: Create the LLM Prompt node. The freeform system prompt is the
+      // node's entire persona/behavior definition.
+      const promptNode: any = await this.apiClient.post(
+        `/v2.0/flows/${flowId}/chart/nodes`,
+        {
+          mode: "append",
+          target: entryNode._id,
+          type: "llmPromptV2",
+          extension: "@cognigy/basic-nodes",
+          label: data.name,
+          config: {
+            prompt: data.systemPrompt ?? data.description ?? "",
+            storeLocation: "stream",
+            immediateOutput: true,
+            ...(llmRefId ? { llmProviderReferenceId: llmRefId } : {}),
+          },
+        },
+      );
+      const promptNodeId = promptNode._id || promptNode.id;
+
+      // Step 4a: The backend auto-creates an llmPromptDefault branch plus a
+      // placeholder "unlock_account" tool (UI preview cruft, same as for
+      // aiAgentJob). The flow is brand new, so every llmPromptTool node at
+      // this point is that placeholder. llmPromptDefault is not deletable.
+      try {
+        const nodeList: any = await this.apiClient.get(
+          `/v2.0/flows/${flowId}/chart/nodes`,
+          { params: { limit: 200 } },
+        );
+        const nodeItems = nodeList.items ?? nodeList;
+        const placeholderTools = (
+          Array.isArray(nodeItems) ? nodeItems : []
+        ).filter((n: any) => n.type === "llmPromptTool");
+        for (const placeholderTool of placeholderTools) {
+          const placeholderToolId = placeholderTool._id || placeholderTool.id;
+          if (!placeholderToolId) continue;
+          await this.apiClient.delete(
+            `/v2.0/flows/${flowId}/chart/nodes/${placeholderToolId}`,
+          );
+        }
+      } catch (placeholderCleanupError: any) {
+        logger.warn(
+          "Failed to remove backend-created placeholder tool from LLM Prompt flow",
+          { error: placeholderCleanupError.message },
+        );
+      }
+
+      // Step 5: Create REST endpoint (flow-keyed, no agent involved)
+      const endpoint: any = await this.apiClient.post("/v2.0/endpoints", {
+        projectId,
+        channel: "rest",
+        flowId: flow.referenceId,
+        name: `${data.name} REST Endpoint`,
+      });
+      endpointId = endpoint._id || endpoint.id;
+
+      const llmStatus: "configured" | "unknown" = llmRefId
+        ? "configured"
+        : "unknown";
+
+      // Remember what this session minted so the backup gate leaves it alone.
+      for (const id of [
+        flowId,
+        flow.referenceId,
+        ...(createdProject ? [projectId] : []),
+      ]) {
+        if (id) this.resourcesCreatedThisSession.add(String(id));
+      }
+      this.rememberProjectOf(flow, String(projectId));
+
+      const result: any = {
+        projectId,
+        projectCreated: createdProject,
+        agentNodeType: "llmPrompt",
+        flow: filterResponse("flow", flow),
+        promptNode: {
+          nodeId: promptNodeId,
+          type: "llmPromptV2",
+          label: data.name,
+        },
+        endpoint: filterResponse("endpoint", endpoint),
+        endpointUrl: endpoint.URLToken
+          ? `${this.endpointBaseUrl}/${endpoint.URLToken}`
+          : "URL not available",
+        llmStatus,
+      };
+
+      const usageHint = `LLM Prompt flow created — there is NO agent resource in this mode. Edit the system prompt with manage_flow_nodes { operation: "update", flowId: "${flowId}", nodeId: "${promptNodeId}", config: { prompt: "..." } } (NOT update_ai_agent). Add tools with create_tool { flowId: "${flowId}", ... }. Test with talk_to_agent { endpointUrl }. If the first reply right after creation is empty, wait a few seconds and retry with a NEW sessionId — endpoint config propagates briefly, and a session that first hit the stale config stays cached as broken.`;
+
+      if (llmStatus === "unknown") {
+        return withHints(result, {
+          hint: usageHint,
+          warning:
+            "Could not verify LLM resource in project. The LLM Prompt node will fall back to the project's default Generative AI model — if none is configured, it cannot generate responses.",
+          action: `Inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Reuse an existing LLM (with its connection) via manage_packages export/import, verify with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and only use setup_llm if no reusable LLM exists.`,
+        });
+      }
+
+      return withHints(result, { hint: usageHint });
+    } catch (error: any) {
+      const rolledBack: string[] = [];
+      const rollbackFailed: string[] = [];
+
+      if (endpointId) {
+        try {
+          await this.apiClient.delete(`/v2.0/endpoints/${endpointId}`);
+          rolledBack.push("endpoint");
+        } catch {
+          rollbackFailed.push("endpoint");
+        }
+      }
+      if (flowId) {
+        try {
+          await this.apiClient.delete(`/v2.0/flows/${flowId}`);
+          rolledBack.push("flow");
+        } catch {
+          rollbackFailed.push("flow");
+        }
+      }
+      if (createdProject && projectId) {
+        try {
+          await this.apiClient.delete(`/v2.0/projects/${projectId}`);
+          rolledBack.push("project");
+        } catch {
+          rollbackFailed.push("project");
+        }
+      }
+
+      const likelyCause =
+        rollbackFailed.length > 0
+          ? `Orchestration failed. Rolled back: [${rolledBack.join(", ")}]. FAILED to roll back: [${rollbackFailed.join(", ")}] — these are orphaned and should be deleted manually.`
+          : "Orchestration failed. All created resources were rolled back.";
+
+      return withHints(
+        {
+          failed: {
+            step: !flowId ? "flow" : !endpointId ? "endpoint" : "node",
+            error: error.message,
+          },
+        },
+        {
+          likely_cause: likelyCause,
+          action:
+            rollbackFailed.length > 0
+              ? "Delete orphaned resources with delete_resource, then retry create_ai_agent."
+              : "Read the troubleshooting guide, then retry create_ai_agent.",
         },
       );
     }
@@ -2378,6 +2655,7 @@ export class ToolHandlers {
       resourceType,
       projectId,
       aiAgentId,
+      flowId: requestedFlowId,
       limit,
       skip,
       sort,
@@ -2409,12 +2687,12 @@ export class ToolHandlers {
         },
       );
     }
-    if (resourceType === "tool" && !aiAgentId) {
+    if (resourceType === "tool" && !aiAgentId && !requestedFlowId) {
       return withHints(
-        { error: "aiAgentId is required for resourceType 'tool'." },
+        { error: "aiAgentId or flowId is required for resourceType 'tool'." },
         {
           action:
-            "Use list_resources { resourceType: 'agent', projectId } to find agents first.",
+            "Use list_resources { resourceType: 'agent', projectId } to find agents first, or pass flowId directly (LLM Prompt flows have no agent resource).",
         },
       );
     }
@@ -2516,13 +2794,18 @@ export class ToolHandlers {
         break;
       }
       case "tool": {
-        const resolved = await resolveFlowForAgent(this.apiClient, aiAgentId!);
+        const resolved = await resolveToolFlow(
+          this.apiClient,
+          aiAgentId,
+          requestedFlowId,
+        );
         if (!resolved) {
           return withHints(
             { error: "Could not find a flow associated with this agent." },
             {
               likely_cause: "Agent was not created via create_ai_agent.",
-              action: "Create the agent with create_ai_agent first.",
+              action:
+                "Create the agent with create_ai_agent first, or pass flowId directly.",
             },
           );
         }
@@ -2711,24 +2994,25 @@ export class ToolHandlers {
   // =========================================================================
   async handleDeleteResource(args: any): Promise<any> {
     const data = schemas.deleteResourceSchema.parse(args);
-    const { resourceType, id, aiAgentId, cascade } = data;
+    const { resourceType, id, aiAgentId, flowId, cascade } = data;
 
     if (resourceType === "tool") {
-      if (!aiAgentId) {
+      if (!aiAgentId && !flowId) {
         return withHints(
-          { error: "aiAgentId is required for resourceType 'tool'." },
+          { error: "aiAgentId or flowId is required for resourceType 'tool'." },
           {
             action:
-              "Provide aiAgentId so the handler can resolve the agent's flow.",
+              "Provide aiAgentId so the handler can resolve the agent's flow, or flowId directly (LLM Prompt flows have no agent resource).",
           },
         );
       }
-      const resolved = await resolveFlowForAgent(this.apiClient, aiAgentId);
+      const resolved = await resolveToolFlow(this.apiClient, aiAgentId, flowId);
       if (!resolved) {
         return withHints(
           { error: "Could not find a flow associated with this agent." },
           {
-            action: "Ensure agent was created via create_ai_agent.",
+            action:
+              "Ensure agent was created via create_ai_agent, or pass flowId directly.",
           },
         );
       }
@@ -3389,22 +3673,27 @@ export class ToolHandlers {
   async handleCreateTool(args: any): Promise<any> {
     const data = schemas.createToolSchema.parse(args);
 
-    // Step 1: Resolve the agent's flow
-    const resolved = await resolveFlowForAgent(this.apiClient, data.aiAgentId);
+    // Step 1: Resolve the target flow (via aiAgentId, or directly via flowId
+    // for LLM Prompt flows that have no agent resource)
+    const resolved = await resolveToolFlow(
+      this.apiClient,
+      data.aiAgentId,
+      data.flowId,
+    );
     if (!resolved) {
       return withHints(
         { error: "Could not find a flow associated with this agent." },
         {
           likely_cause:
-            "create_tool requires an agent created via create_ai_agent (which auto-provisions the flow).",
+            "create_tool requires an agent created via create_ai_agent (which auto-provisions the flow), or an explicit flowId.",
           action:
-            "Read the tools guide, ensure agent was created via create_ai_agent, then retry.",
+            "Read the tools guide, ensure agent was created via create_ai_agent, then retry — or pass flowId directly.",
         },
       );
     }
     const { flowId } = resolved;
 
-    // Step 2: Find the AI Agent Job Node
+    // Step 2: Find the tool parent node (AI Agent Job, or LLM Prompt)
     const nodes: any = await this.apiClient.get(
       `/v2.0/flows/${flowId}/chart/nodes`,
       {
@@ -3412,19 +3701,33 @@ export class ToolHandlers {
       },
     );
     const allNodes = nodes.items ?? nodes;
-    const jobNode = (Array.isArray(allNodes) ? allNodes : []).find(
-      (n: any) => n.type === "aiAgentJob",
-    );
+    const jobNode = findToolParentNode(Array.isArray(allNodes) ? allNodes : []);
 
     if (!jobNode) {
       return withHints(
         {
           error:
-            "No aiAgentJob node found in the flow. Tools must be children of an AI Agent Job node.",
+            "No aiAgentJob or llmPromptV2 node found in the flow. Tools must be children of an AI Agent Job node (or an LLM Prompt node).",
         },
         {
           action:
             "Ensure the agent was created via create_ai_agent (which provisions the aiAgentJob node).",
+        },
+      );
+    }
+
+    const parentIsLlmPrompt = jobNode.type === "llmPromptV2";
+    if (
+      parentIsLlmPrompt &&
+      (data.toolType === "knowledge" || data.toolType === "send_email")
+    ) {
+      return withHints(
+        {
+          error: `toolType "${data.toolType}" is not supported under an LLM Prompt node — it only supports "tool", "mcp", and "http" tools.`,
+        },
+        {
+          action:
+            "Use toolType 'tool' with custom logic nodes instead, or build the agent with an AI Agent node (create_ai_agent), which supports knowledge and send_email tools.",
         },
       );
     }
@@ -3464,14 +3767,16 @@ export class ToolHandlers {
           },
           {
             warning: `A tool with toolId "${requestedToolId}" already exists in this agent flow, so the existing tool was reused instead of creating a duplicate.`,
-            action: `Continue by adding logic inside that tool with manage_flow_nodes using parentNodeId "${duplicateToolNodeId}", or modify it with update_tool { aiAgentId: "${data.aiAgentId}", toolNodeId: "${duplicateToolNodeId}", ... }.`,
+            action: `Continue by adding logic inside that tool with manage_flow_nodes using parentNodeId "${duplicateToolNodeId}", or modify it with update_tool { ${data.aiAgentId ? `aiAgentId: "${data.aiAgentId}"` : `flowId: "${flowId}"`}, toolNodeId: "${duplicateToolNodeId}", ... }.`,
           },
         );
       }
     }
 
     // Step 3: Create the tool node
-    const mapping = TOOL_TYPE_MAP[data.toolType];
+    const mapping = parentIsLlmPrompt
+      ? LLM_PROMPT_TOOL_TYPE_MAP[data.toolType]
+      : TOOL_TYPE_MAP[data.toolType];
     if (!mapping) throw new Error(`Unknown toolType: ${data.toolType}`);
 
     const nodeConfig: any = {};
@@ -3737,14 +4042,19 @@ export class ToolHandlers {
   async handleUpdateTool(args: any): Promise<any> {
     const data = schemas.updateToolSchema.parse(args);
 
-    const resolved = await resolveFlowForAgent(this.apiClient, data.aiAgentId);
+    const resolved = await resolveToolFlow(
+      this.apiClient,
+      data.aiAgentId,
+      data.flowId,
+    );
     if (!resolved) {
       return withHints(
         { error: "Could not find a flow associated with this agent." },
         {
           likely_cause:
-            "update_tool requires an agent created via create_ai_agent.",
-          action: "Ensure agent was created via create_ai_agent, then retry.",
+            "update_tool requires an agent created via create_ai_agent, or an explicit flowId.",
+          action:
+            "Ensure agent was created via create_ai_agent, then retry — or pass flowId directly.",
         },
       );
     }
@@ -4117,10 +4427,12 @@ export class ToolHandlers {
 
         // Auto-rewrite appendChild → append for node types where appendChild
         // creates orphaned nodes (parentId: null).  This covers:
-        //   • aiAgentJobTool — so nodes land in the tool's execution chain
+        //   • aiAgentJobTool / llmPromptTool — so nodes land in the tool's
+        //     execution chain
         //   • then / else / case / default — branching children of if and switch
         const REWRITE_TYPES = new Set([
           "aiAgentJobTool",
+          "llmPromptTool",
           "then",
           "else",
           "case",
@@ -4188,6 +4500,40 @@ export class ToolHandlers {
           createdNode.parent_id ??
           (createdNode.parent &&
             (createdNode.parent._id || createdNode.parent.id));
+
+        // The backend auto-creates a placeholder "unlock_account" tool (plus a
+        // non-deletable llmPromptDefault branch) under a new LLM Prompt node —
+        // UI preview cruft the LLM would otherwise see as a real tool. A
+        // just-created node's only llmPromptTool children are placeholders.
+        if (entry.type === "llmPromptV2") {
+          try {
+            const chart: any = await this.apiClient.get(
+              `/new/v2.0/flows/${flowId}/chart`,
+            );
+            const relations = chart.relations ?? [];
+            const rel = (Array.isArray(relations) ? relations : []).find(
+              (r: any) => r.node === nodeId,
+            );
+            const childIds = new Set(rel?.children ?? []);
+            const chartNodes = chart.nodes ?? [];
+            const placeholders = (
+              Array.isArray(chartNodes) ? chartNodes : []
+            ).filter(
+              (n: any) =>
+                childIds.has(n._id || n.id) && n.type === "llmPromptTool",
+            );
+            for (const placeholder of placeholders) {
+              await this.apiClient.delete(
+                `/v2.0/flows/${flowId}/chart/nodes/${placeholder._id || placeholder.id}`,
+              );
+            }
+          } catch (placeholderCleanupError: any) {
+            logger.warn(
+              "Failed to remove backend-created placeholder tool from LLM Prompt node",
+              { error: placeholderCleanupError.message },
+            );
+          }
+        }
 
         const result = {
           nodeId,

@@ -102,6 +102,17 @@ update_ai_agent {
 
 Always use ALL relevant fields when configuring an agent. Do not put everything in `description` alone — distribute the configuration across the appropriate fields for best results.
 
+## LLM Prompt node — explicit request ONLY
+
+The AI Agent node is ALWAYS how agents are built. Cognigy also has an **LLM Prompt** node (a raw LLM call with a freeform system prompt), and the plugin supports it — but ONLY when the user explicitly asks for it by name, e.g. "create an agent using an LLM Prompt node". NEVER offer it, never fall back to it when something fails, and never ask the user to choose between the two.
+
+When (and only when) the user explicitly asked for it:
+
+- New agent: `create_ai_agent { name, agentNodeType: "llmPrompt", systemPrompt: "..." }` — provisions project + flow + LLM Prompt node + REST endpoint. There is NO agent resource in this mode.
+- `systemPrompt` is completely freeform and is the entire behavior definition — persona, job, AND guardrails all live in that one prompt, so write constraints into it explicitly.
+- Iterate with `manage_flow_nodes { operation: "update", flowId, nodeId, config: { prompt } }` — NOT update_ai_agent (there is no agent to update).
+- Tools: `create_tool { flowId, ... }` (only tool/mcp/http types). Test with `talk_to_agent { endpointUrl }`.
+
 ## Key facts
 
 - create_ai_agent auto-provisions: flow, AI Agent Job Node, REST endpoint

@@ -893,7 +893,7 @@ describe("ToolHandlers v2", () => {
       const result = await h.handleToolCall("list_resources", {
         resourceType: "tool",
       });
-      expect(result.error).toContain("aiAgentId is required");
+      expect(result.error).toContain("aiAgentId or flowId is required");
     });
 
     it("lists agents with filtered response", async () => {
@@ -1679,13 +1679,13 @@ describe("ToolHandlers v2", () => {
       expect(result.error).toContain("Could not find a flow");
     });
 
-    it("returns error when flow has no aiAgentJob node", async () => {
+    it("returns error when flow has no aiAgentJob (or llmPromptV2) node", async () => {
       api.get.mockResolvedValueOnce({ flowId: ID.flow }).mockResolvedValueOnce({
         items: [{ _id: ID.entry, isEntryPoint: true }],
       });
 
       const result = await h.handleToolCall("create_tool", baseArgs);
-      expect(result.error).toContain("No aiAgentJob node found");
+      expect(result.error).toContain("No aiAgentJob or llmPromptV2 node found");
     });
 
     it("creates a knowledge tool", async () => {

@@ -8,12 +8,23 @@ const paginationSchema = {
 };
 
 // Tool 1: create_ai_agent
-export const createAiAgentSchema = z.object({
-  projectId: idSchema.optional(),
-  name: z.string().min(1).max(200),
-  description: z.string().optional(),
-  knowledgeStoreReferenceId: z.string().optional(),
-});
+export const createAiAgentSchema = z
+  .object({
+    projectId: idSchema.optional(),
+    name: z.string().min(1).max(200),
+    description: z.string().optional(),
+    knowledgeStoreReferenceId: z.string().optional(),
+    agentNodeType: z.enum(["aiAgent", "llmPrompt"]).optional(),
+    systemPrompt: z.string().optional(),
+  })
+  .refine(
+    (d) => !(d.agentNodeType === "llmPrompt" && d.knowledgeStoreReferenceId),
+    {
+      message:
+        "knowledgeStoreReferenceId is not supported with agentNodeType 'llmPrompt' — LLM Prompt nodes only support 'tool', 'mcp', and 'http' tools.",
+      path: ["knowledgeStoreReferenceId"],
+    },
+  );
 
 // Tool 2: update_ai_agent
 export const updateAiAgentSchema = z.object({
@@ -178,6 +189,7 @@ export const listResourcesSchema = z.object({
   ]),
   projectId: idSchema.optional(),
   aiAgentId: idSchema.optional(),
+  flowId: idSchema.optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   channel: z.string().optional(),
@@ -235,6 +247,7 @@ export const deleteResourceSchema = z.object({
   id: idSchema,
   projectId: idSchema.optional(),
   aiAgentId: idSchema.optional(),
+  flowId: idSchema.optional(),
   cascade: z.boolean().optional(),
 });
 
@@ -260,40 +273,13 @@ export const manageKnowledgeSchema = z.object({
 });
 
 // Tool 9: create_tool (includes http tool type, formerly create_custom_http_tool)
-export const createToolSchema = z.object({
-  aiAgentId: idSchema,
-  toolType: z.enum(["tool", "knowledge", "send_email", "mcp", "http"]),
-  name: z.string().min(1).max(200),
-  config: z.object({
-    toolId: z.string().optional(),
-    description: z.string().optional(),
-    parameters: z.string().optional(),
-    knowledgeStoreId: z.string().optional(),
-    topK: z.number().int().min(1).max(50).optional(),
-    recipient: z.string().optional(),
-    mcpServerUrl: z.string().optional(),
-    mcpName: z.string().optional(),
-    timeout: z.number().optional(),
-    url: z.string().optional(),
-    method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
-    headers: z.record(z.string()).optional(),
-    body: z.string().optional(),
-    preProcessCode: z.string().optional(),
-    postProcessCode: z.string().optional(),
-    toolResponseValue: z.string().optional(),
-  }),
-});
-
-// Tool 10: update_tool
-export const updateToolSchema = z.object({
-  aiAgentId: idSchema,
-  toolNodeId: idSchema,
-  name: z.string().min(1).max(200).optional(),
-  toolType: z
-    .enum(["tool", "knowledge", "send_email", "mcp", "http"])
-    .optional(),
-  config: z
-    .object({
+export const createToolSchema = z
+  .object({
+    aiAgentId: idSchema.optional(),
+    flowId: idSchema.optional(),
+    toolType: z.enum(["tool", "knowledge", "send_email", "mcp", "http"]),
+    name: z.string().min(1).max(200),
+    config: z.object({
       toolId: z.string().optional(),
       description: z.string().optional(),
       parameters: z.string().optional(),
@@ -310,13 +296,52 @@ export const updateToolSchema = z.object({
       preProcessCode: z.string().optional(),
       postProcessCode: z.string().optional(),
       toolResponseValue: z.string().optional(),
-      httpNodeId: idSchema.optional(),
-      preProcessNodeId: idSchema.optional(),
-      postProcessNodeId: idSchema.optional(),
-      resolveNodeId: idSchema.optional(),
-    })
-    .optional(),
-});
+    }),
+  })
+  .refine((d) => d.aiAgentId || d.flowId, {
+    message: "Either aiAgentId or flowId must be provided",
+    path: ["aiAgentId"],
+  });
+
+// Tool 10: update_tool
+export const updateToolSchema = z
+  .object({
+    aiAgentId: idSchema.optional(),
+    flowId: idSchema.optional(),
+    toolNodeId: idSchema,
+    name: z.string().min(1).max(200).optional(),
+    toolType: z
+      .enum(["tool", "knowledge", "send_email", "mcp", "http"])
+      .optional(),
+    config: z
+      .object({
+        toolId: z.string().optional(),
+        description: z.string().optional(),
+        parameters: z.string().optional(),
+        knowledgeStoreId: z.string().optional(),
+        topK: z.number().int().min(1).max(50).optional(),
+        recipient: z.string().optional(),
+        mcpServerUrl: z.string().optional(),
+        mcpName: z.string().optional(),
+        timeout: z.number().optional(),
+        url: z.string().optional(),
+        method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
+        headers: z.record(z.string()).optional(),
+        body: z.string().optional(),
+        preProcessCode: z.string().optional(),
+        postProcessCode: z.string().optional(),
+        toolResponseValue: z.string().optional(),
+        httpNodeId: idSchema.optional(),
+        preProcessNodeId: idSchema.optional(),
+        postProcessNodeId: idSchema.optional(),
+        resolveNodeId: idSchema.optional(),
+      })
+      .optional(),
+  })
+  .refine((d) => d.aiAgentId || d.flowId, {
+    message: "Either aiAgentId or flowId must be provided",
+    path: ["aiAgentId"],
+  });
 
 // Tool 12: manage_flow_nodes
 export const manageFlowNodesSchema = z.object({

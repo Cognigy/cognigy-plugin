@@ -11,6 +11,8 @@ Use `manage_flow_nodes` to add logic nodes **inside tool branches only**. Nodes 
 
 **Voice exception — Set Session Config:** The one node that _should_ run before the AI Agent node is a `setSessionConfig` (Set Session Config) node, and only in **voice** flows. It applies per-session speech settings (barge-in, ASR, STT/TTS, input timeouts) and must be the **first** node. The `audit_voice_agent` tool checks for this and can create it by `prepend`ing before the AI Agent node. Do not add any other pre-agent nodes.
 
+**LLM Prompt exception — explicit request only:** The `llmPrompt` node (`llmPromptV2` — a raw LLM call driven by a freeform system prompt) is the one node type that legitimately lives at the **top level** of a flow, in flows that have **no AI Agent node at all**. It is supported ONLY when the user **explicitly asks for an LLM Prompt node by name**. NEVER offer it, never use it as a fallback for the AI Agent node, and never ask the user to choose between the two — the AI Agent node (via `create_ai_agent`) is always the default for anything agent-shaped. Reading and updating llmPromptV2 nodes that already exist in a flow is always fine. See the [LLM Prompt section](#llmprompt--llm-prompt-explicit-request-only) for config.
+
 ## Quick Start (tool-first workflow)
 
 ```
@@ -305,6 +307,59 @@ Call an external API.
     "type": "GET",
     "headers": { "Authorization": "Bearer {{context.apiToken}}" },
     "contextStore": "orderData"
+  }
+}
+```
+
+---
+
+### llmPrompt — LLM Prompt (explicit request ONLY)
+
+Category: service
+
+A raw LLM call driven by a **freeform system prompt** (`config.prompt`). Supports tools, streaming/storage options, image handling, and custom model options.
+
+**STEERING — read first:**
+
+- Create this node ONLY when the user explicitly asked for an "LLM Prompt" node. The AI Agent node is ALWAYS the default for agents — never offer llmPrompt as an alternative, never fall back to it, never ask the user to choose.
+- For a **new** agent built on an LLM Prompt node ("create an agent using an LLM Prompt node"), use `create_ai_agent { agentNodeType: "llmPrompt", systemPrompt }` — it provisions project + flow + node + endpoint in one call. Use `manage_flow_nodes create` only to add an llmPrompt node to an **existing** flow.
+- Unlike every other node in this guide, llmPrompt is a **top-level flow node** (placed after `start` via `mode: "append"`), not a tool-branch helper. A flow can be driven entirely by it, with no aiAgentJob node.
+- `prompt` is a fully freeform system prompt — there are no separate persona/guardrail fields like the AI Agent node has. All behavior AND all guardrails must live in the prompt text itself, so treat it with care: include explicit constraints (what the agent must never do) directly in the prompt.
+- The backend auto-creates a `llmPromptDefault` branch (not deletable) and a placeholder tool under every new llmPromptV2 node; the plugin removes the placeholder tool automatically.
+- Flows driven by an LLM Prompt node have **no agent resource**: `update_ai_agent` does not apply (update the prompt via `manage_flow_nodes update`), and tools are addressed with `create_tool { flowId }` / `update_tool { flowId }` / `list_resources { resourceType: "tool", flowId }` instead of aiAgentId. Only `tool`, `mcp`, and `http` tool types work under it (no knowledge/send_email).
+
+**Config (key fields — `get` the node for the full set):**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| prompt | string | Yes | Freeform system prompt. Supports CognigyScript and the `@cognigyRecentConversation` / `@cognigyRecentUserInputs` transcript tags (optionally with a turn limit, e.g. `@cognigyRecentConversation:3`) |
+| llmProviderReferenceId | string | No | LLM referenceId, or `"default"` for the project's Generative AI default |
+| storeLocation | string | No | `stream` (stream to output), `input`, or `context` |
+| immediateOutput | boolean | No | Output the result immediately (with `storeLocation: "stream"`) |
+| inputKey / contextKey | string | No | Where to store the result for `input`/`context` storage (default `promptResult`) |
+| chatTranscriptSteps | number | No | Previous conversation turns included in the request (default 50) |
+| usePromptMode | boolean | No | Single-prompt mode — no conversation context; prompt must be non-empty |
+| temperature / topP / maxTokens / frequencyPenalty / presencePenalty / seed | number | No | Sampling controls (samplingMethod picks `temperature` vs `topP`) |
+| responseFormat | string | No | `default`, `text`, or `json` |
+| toolChoice | string | No | `auto`, `required`, or `none` — how tools are selected |
+| useStrict | boolean | No | Strict mode for tool argument schemas |
+| processImages / transcriptImageHandling | boolean / string | No | Image attachment handling (`minify`, `drop`, `keep`) |
+| customModelOptions / customRequestOptions | object | No | Provider-specific overrides (e.g. `{ "model": "..." }`, `{ "stream": true }`) |
+| errorHandling / errorMessage / logErrorToSystem | string / string / boolean | No | `continue` (default), `stop`, or go-to error handling |
+
+**Example (only after an explicit user request):**
+
+```json
+{
+  "operation": "create",
+  "flowId": "<flowId>",
+  "nodeType": "llmPrompt",
+  "label": "Summarize Conversation",
+  "parentNodeId": "<startNodeId or preceding top-level node>",
+  "mode": "append",
+  "config": {
+    "prompt": "A user talked to a chatbot:\n@cognigyRecentConversation\n\nSummarize the conversation in two sentences.",
+    "storeLocation": "context",
+    "contextKey": "summary"
   }
 }
 ```
