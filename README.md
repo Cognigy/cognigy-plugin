@@ -109,13 +109,22 @@ The [installer](#installation) collects your **Cognigy API base URL** and **API 
 
 A value that arrives as an unexpanded `${...}` placeholder counts as missing. Hosts other than Claude Code don't implement `userConfig` and pass the manifest's `${user_config.cognigy_api_key}` through literally; treating that as a real credential would both fail the request and shadow the file fallback. The optional variables below can be set in the MCP server `env` if you need to override defaults.
 
-| Variable                  | Required | Default | Description                      |
-| ------------------------- | -------- | ------- | -------------------------------- |
-| `COGNIGY_API_BASE_URL`    | Yes      | —       | Your Cognigy API base URL        |
-| `COGNIGY_API_KEY`         | Yes      | —       | Your Cognigy API key             |
-| `LOG_LEVEL`               | No       | `info`  | `debug`, `info`, `warn`, `error` |
-| `RATE_LIMIT_MAX_REQUESTS` | No       | `100`   | Max requests per window          |
-| `RATE_LIMIT_WINDOW_MS`    | No       | `60000` | Rate limit window in ms          |
+| Variable                            | Required | Default | Description                                                    |
+| ----------------------------------- | -------- | ------- | -------------------------------------------------------------- |
+| `COGNIGY_API_BASE_URL`              | Yes      | —       | Your Cognigy API base URL                                      |
+| `COGNIGY_API_KEY`                   | Yes      | —       | Your Cognigy API key                                           |
+| `LOG_LEVEL`                         | No       | `info`  | `debug`, `info`, `warn`, `error`                               |
+| `RATE_LIMIT_MAX_REQUESTS`           | No       | `100`   | Max requests per window                                        |
+| `RATE_LIMIT_WINDOW_MS`              | No       | `60000` | Rate limit window in ms                                        |
+| `COGNIGY_DISABLE_AUDIT_ATTRIBUTION` | No       | unset   | Set to `1` to stop naming the plugin in Cognigy's audit events |
+
+### Audit attribution
+
+Everything this plugin changes is recorded in **Admin Center → Audit Events** with `performedBy.actor = "mcp-plugin"`, so plugin-made changes are distinguishable from ones people made by hand (which carry no `performedBy`). Each MCP tool call gets its own `taskId` and each engine run its own `sessionId`, so the writes of one tool call group together.
+
+Requires Cognigy.AI 2026.17.0 or newer; older versions ignore the attribution and record the action normally. The "Performed by" column in the UI is gated behind the platform's `FEATURE_ENABLE_PLATFORM_AGENT_MFE` flag, but the attribution is always recorded and always readable through `list_resources { resourceType: "audit_event", actor: ["mcp-plugin"] }`.
+
+Set `COGNIGY_DISABLE_AUDIT_ATTRIBUTION=1` to opt out; plugin actions are then recorded like any other API action.
 
 ## Usage Examples
 

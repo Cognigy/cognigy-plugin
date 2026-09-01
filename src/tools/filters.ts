@@ -133,6 +133,44 @@ export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
   // this filter did: both only matter for downloading, which this plugin
   // deliberately does not do.)
   snapshot: summarizeSnapshot,
+  // Audit events are verbose and mostly opaque ids. `performedBy` is the point
+  // of this view — it is absent on human-performed events (the platform only
+  // stores it for non-human actors), so a missing key means "a person did
+  // this", and `mcp-plugin` means this plugin did.
+  audit_event: (r) => {
+    // The live API returns the modification chain as `chain`, even though the
+    // REST docs name the field `modifiedResources` — accept either. `chain`
+    // only wins when it actually carries entries, so an empty `chain: []`
+    // alongside a populated `modifiedResources` cannot drop the chain.
+    const chain =
+      Array.isArray(r.chain) && r.chain.length ? r.chain : r.modifiedResources;
+    return {
+      id: rid(r),
+      timestamp: r.timestamp,
+      type: r.type,
+      ...(r.actionType ? { actionType: r.actionType } : {}),
+      user: r.user,
+      ...(r.performedBy
+        ? {
+            performedBy: {
+              actor: r.performedBy.actor,
+              ...(r.performedBy.taskId ? { taskId: r.performedBy.taskId } : {}),
+              ...(r.performedBy.sessionId
+                ? { sessionId: r.performedBy.sessionId }
+                : {}),
+            },
+          }
+        : {}),
+      ...(Array.isArray(chain) && chain.length
+        ? {
+            modifiedResources: chain.map((m: any) => ({
+              elementId: m.elementId,
+              elementType: m.elementType,
+            })),
+          }
+        : {}),
+    };
+  },
 };
 
 /**

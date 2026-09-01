@@ -64,6 +64,16 @@ Workflow guidance lives only as plugin skills `plugin/skills/<id>/SKILL.md` (han
 - `src/api/client.ts` `CognigyApiClient` wraps axios; `get/post/patch/delete` return `response.data` (HAL body). Retries on 429 / 5xx.
 - Base URL has no `/new` prefix; the server mounts the modern router at both `/new` and root, so `/v2.0/...` and `/new/v2.0/...` hit the same handlers.
 
+## Audit-event attribution (cross-repo contract)
+
+Cognigy.AI 2026.17.0 ([cognigy#13652](https://github.com/Cognigy/cognigy/pull/13652)) records who performed an audited action in `auditEvent.performedBy` = `{ actor, taskId?, sessionId? }` and shows it as the "Performed by" column in Admin Center → Audit Events. `"mcp-plugin"` is a first-class actor value there — enum, Mongo partial indexes, the REST `actor[]` filter and the "MCP Plugin" UI label all ship it — so this plugin declares itself and needs no platform change.
+
+Wire contract, all of it load-bearing (`services/service-api/src/middleware/authentication.ts`): the header is **`X-Ask-AI-Context`**, a JSON object whose actor field is named **`type`**, NOT `actor` (the middleware maps `context.type` onto `performedBy.actor`), and **`taskId` is mandatory and must be a string**. Get any of it wrong — bad JSON, unknown `type`, missing/non-string `taskId` — and service-api silently degrades the request to `actor: "human"`, i.e. the write still succeeds but is recorded as if a person did it. `performedBy` is stored **only** for non-human actors, so a missing field means "a person did this".
+
+Ours lives in `src/utils/actorContext.ts`: an `AsyncLocalStorage` task id (one per MCP tool call, entered in `src/index.ts`'s `CallTool` handler — a mutable field would let concurrent calls interleave) plus a boot-time `sessionId`, injected by the single request interceptor in `src/api/client.ts` so uploads are covered too. `talk_to_agent`'s bare `axios.post(endpointUrl)` deliberately gets no header — endpoint traffic produces conversations, not audit events. `COGNIGY_DISABLE_AUDIT_ATTRIBUTION=1` opts out.
+
+Attribution is self-declared provenance, **not** a security control: service-api trusts this header from any authenticated caller (a gap the PR documents in that file; its PR body's `INTERNAL_SERVICE_TOKEN` claim is stale). Read side: `list_resources` / `get_resource` `resourceType: 'audit_event'` → `GET /v2.0/auditevents` (organisation-scoped, no `projectId`; `actor[]`/`type[]` need 2026.17.0+ — an older platform 400s on them, so the handler refetches unfiltered and applies both filters in-process rather than guessing from the error text, hinting that `total` then counts only the fetched page).
+
 ## Flow-chart model — gotchas (hard-won)
 
 Endpoints under `/v2.0/flows/{flowId}/chart`:
