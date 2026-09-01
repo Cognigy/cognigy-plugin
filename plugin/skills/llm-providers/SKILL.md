@@ -94,9 +94,9 @@ When inspecting existing models, the region and custom model id are in the `awsB
 
 ## Credential resolution
 
-- Provide apiKey — a Connection is auto-created, then the LLM resource is linked to it
+- Provide the provider's credentials — a Connection is auto-created, then the LLM resource is linked to it. For most providers that is apiKey; for awsBedrock it is accessKeyId + secretAccessKey or roleArn instead (apiKey is rejected there)
 - Provide connectionId (UUID referenceId of an existing Connection in the SAME project) to skip connection creation
-- At least one of apiKey or connectionId is required
+- Either the provider's credentials or connectionId is required
 - If the only working connection lives in another project, transfer the LLM + connection via manage_packages instead of passing that connectionId directly
 
 ## Connection validation
