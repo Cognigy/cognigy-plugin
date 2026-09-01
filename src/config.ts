@@ -15,6 +15,11 @@ export interface Config {
   serverName: string;
   serverVersion: string;
   logLevel: "debug" | "info" | "warn" | "error";
+  /**
+   * Whether to declare plugin-performed actions as the `mcp-plugin` actor in
+   * Cognigy's audit events (see utils/actorContext.ts). On by default.
+   */
+  auditAttribution: boolean;
   rateLimit: {
     maxRequests: number;
     windowMs: number;
@@ -108,7 +113,7 @@ function deriveWebchatBaseUrl(apiBaseUrl: string): string {
  *
  * `userConfig` is a Claude Code extension to the plugin manifest: Claude Code
  * prompts for the values and substitutes them into `mcpServers.*.env`. Hosts
- * that only implement the portable subset (VS Code / Copilot, Cursor, …) copy
+ * that only implement the portable subset (VS Code / Copilot, Kiro, …) copy
  * the manifest text through verbatim, so the engine receives the literal
  * "${user_config.cognigy_api_key}". Those strings are non-empty, which means
  * that without this check they (a) reach axios as a real base URL and fail with
@@ -142,6 +147,13 @@ function placeholderHint(raw: string | undefined): string {
 }
 
 const VALID_LOG_LEVELS = new Set<string>(["debug", "info", "warn", "error"]);
+
+/** True for the usual affirmative env spellings. */
+function isEnvFlagSet(value: string | undefined): boolean {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
 
 function parseIntWithDefault(
   envVar: string | undefined,
@@ -225,6 +237,12 @@ export function loadConfig(): Config {
       }
       return raw as Config["logLevel"];
     })(),
+    // Opt-out only: attributing the plugin in a customer's audit log is the
+    // desirable default, but it changes what gets recorded, so leave an escape
+    // hatch.
+    auditAttribution: !isEnvFlagSet(
+      process.env.COGNIGY_DISABLE_AUDIT_ATTRIBUTION,
+    ),
     rateLimit: {
       maxRequests: parseIntWithDefault(
         process.env.RATE_LIMIT_MAX_REQUESTS,

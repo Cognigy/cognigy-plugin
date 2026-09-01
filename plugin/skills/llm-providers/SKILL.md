@@ -1,6 +1,6 @@
 ---
 name: llm-providers
-description: "Use when configuring or choosing an LLM for a Cognigy agent — valid provider names (openAI, anthropic, azureOpenAI, google, mistral), model strings, connection types, and credential resolution."
+description: "Use when configuring or choosing an LLM for a Cognigy agent — valid provider names (openAI, anthropic, azureOpenAI, google, mistral, openAICompatible), model strings, connection types, credential resolution, and OpenAI-compatible endpoints (vLLM, Hugging Face, LiteLLM, Azure AI Foundry, self-hosted)."
 ---
 
 # LLM Provider Reference
@@ -14,6 +14,7 @@ description: "Use when configuring or choosing an LLM for a Cognigy agent — va
 | azureOpenAI | gpt-4o (deployment name)                                   | AzureOpenAIProviderV2  | Requires apiKey, may need connectionId with deployment config |
 | google      | gemini-2.0-flash, gemini-1.5-pro                           | GoogleVertexAIProvider | Requires apiKey                                               |
 | mistral     | mistral-small-2503, mistral-medium-latest                  | MistralProvider        | Requires apiKey                                               |
+| openAICompatible | custom-model, custom-embedding-model                  | OpenAICompatibleProvider | Requires apiKey + baseCustomUrl + customModel (see below)   |
 
 ## Model groups
 
@@ -27,6 +28,40 @@ description: "Use when configuring or choosing an LLM for a Cognigy agent — va
 Chat/completion models are not embedding models. `gpt-4o-mini` is a chat model, not a valid embedding-model choice for knowledge-store indexing.
 
 When using `list_resources { resourceType: "llm_model", projectId }`, inspect the returned `modelType` and select the model by its exact role. Do not infer that all LLMs are interchangeable.
+
+## OpenAI-compatible providers (openAICompatible)
+
+Use provider `openAICompatible` for ANY endpoint that speaks the OpenAI API but is not OpenAI itself: vLLM, Hugging Face, LiteLLM, Groq, Together AI, Azure AI Foundry (model router), or self-hosted deployments. Do NOT mislabel these as `openAI` — without a base URL the connection test hits api.openai.com and fails.
+
+Required parameters:
+
+- `modelType`: exactly `custom-model` (chat) or `custom-embedding-model` (embedding) — never the real model name
+- `customModel`: the model name as known by the provider, e.g. `llama-3.3-70b-instruct`
+- `baseCustomUrl`: the provider's OpenAI-compatible base URL, e.g. `https://my-llm-host.example.com/v1`
+- `apiKey` (or a same-project `connectionId`)
+
+Optional parameters:
+
+- `customAuthHeader`: custom HTTP header name for authentication (e.g. `Ocp-Apim-Subscription-Key`). When set, the API key is sent in that header instead of `Authorization: Bearer <key>`.
+- `apiType`: `chatCompletion` (default) or `responses` — only use `responses` if the provider supports OpenAI's Responses API.
+
+Example:
+
+```json
+{
+  "projectId": "<projectId>",
+  "provider": "openAICompatible",
+  "modelType": "custom-model",
+  "customModel": "llama-3.3-70b-instruct",
+  "baseCustomUrl": "https://my-llm-host.example.com/v1",
+  "apiKey": "<key>"
+}
+```
+
+Notes:
+
+- The Completions API for custom LLMs is deprecated (removal planned for Cognigy.AI 2026.24.0) — use Chat Completions or Responses.
+- When inspecting existing models via `list_resources` / `get_resource`, openAI-compatible models show `modelType: "custom-model"`; the real model name and endpoint are in the `openAICompatible` object (`customModel`, `baseCustomUrl`, `customAuthHeader`).
 
 ## Credential resolution
 

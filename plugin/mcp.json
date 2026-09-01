@@ -1,6 +1,8 @@
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
   "mcpServers": {
     "platform": {
+      "type": "stdio",
       "command": "npx",
       "args": [
         "-y",
@@ -10,7 +12,7 @@
       ]
     },
     "docs": {
-      "type": "http",
+      "type": "streamable-http",
       "url": "https://docs.cognigy.com/mcp"
     }
   }

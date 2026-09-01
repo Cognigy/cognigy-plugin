@@ -1,6 +1,6 @@
 # NiCE Cognigy Plugin
 
-> Distributed exclusively through each client's native plugin mechanism — a **plugin** on **Claude Code**, **Claude Desktop**, **ChatGPT + Codex**, and **Antigravity** — with more clients to come. Each package installs the server engine and ships skills + agents.
+> Distributed exclusively through each client's native plugin mechanism — a **plugin** on **Claude Code**, **Claude Desktop**, **ChatGPT + Codex**, and **Antigravity**, a **plugin** on **Cursor**, and an [**Agent Plugins**](https://agent-plugins.org)-standard plugin on any conformant host (**Kiro**, **VS Code + Copilot**, …) — with more clients to come. Each package installs the server engine and ships skills + agents.
 
 A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy.com) REST API. Create, test, and improve LLM-based AI Agents through a self-improvement loop — without leaving your client.
 
@@ -8,7 +8,7 @@ A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy
 
 ## Features
 
-- **16 workflow tools** for agent creation, deployment, packaging, and voice setup
+- **17 workflow tools** for agent creation, deployment, packaging, backup, and voice setup
 - **One-call agent setup**: creates Agent + Flow + AI Agent Job Node + REST Endpoint automatically
 - **Self-improvement loop**: talk to your agent, evaluate responses, update the job description, repeat
 - **Knowledge store support**: attach RAG knowledge stores to agents as tools
@@ -18,30 +18,11 @@ A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy
 - **Built-in docs lookup**: bundles the official [Cognigy documentation](https://docs.cognigy.com) MCP server — your assistant searches and reads the docs before answering platform questions, instead of guessing from training data
 - Built-in rate limiting, Zod input validation, and RFC 7807 error responses
 
-## Tools
-
-| Tool                   | Type  | Description                                                                                         |
-| ---------------------- | ----- | --------------------------------------------------------------------------------------------------- |
-| `create_ai_agent`      | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint                  |
-| `update_ai_agent`      | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature)                         |
-| `setup_llm`            | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation          |
-| `talk_to_agent`        | Write | Send a message to an AI Agent and get its response                                                  |
-| `list_resources`       | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more                           |
-| `get_resource`         | Read  | Get detailed information about a single resource                                                    |
-| `delete_resource`      | Write | Permanently delete a resource                                                                       |
-| `manage_knowledge`     | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG                         |
-| `create_tool`          | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node                                     |
-| `update_tool`          | Write | Update an existing tool node's configuration                                                        |
-| `manage_webchat`       | Write | Create or configure a Webchat v3 endpoint for website deployment                                    |
-| `manage_flow_nodes`    | Write | Create, update, delete, or list flow nodes for conversation logic                                   |
-| `manage_packages`      | Write | List exportable resources, upload, inspect, import, export, and download Cognigy package zip files  |
-| `manage_voice_gateway` | Write | Create or configure a Voice Gateway endpoint with WebRTC for browser-based voice interaction        |
-| `manage_settings`      | Write | Manage project-level settings including voice preview and Knowledge AI configuration                |
-| `audit_voice_agent`    | Write | Audit a voice agent against the Go-Live Checklist; reports by default, applies safe fixes on demand |
-
-Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, flow nodes, packages, settings, LLM providers, tools, troubleshooting) ships as **skills** that load automatically when your request matches, in clients that support them (e.g. Claude Code) — see below.
-
 ## Installation
+
+**Two steps.** Step 1 is the same for every client. Step 2 is where you check what your client still needs from you — for most clients that's nothing, but the answer is in the table, so look your client up rather than assuming.
+
+### Step 1 — run the installer
 
 One installer covers every client. Run it, pick your client(s), enter your Cognigy API base URL (Enter for the trial default) and API key (masked as you type), then restart the client.
 
@@ -65,20 +46,24 @@ Already have [Node.js 20+](https://nodejs.org)? Skip the bootstrap:
 npx -y -p @cognigy/plugin-engine@latest cognigy-setup
 ```
 
-### Per-client guides
+### Step 2 — check your client's row
 
-What each client gets, and what (if anything) you finish by hand — full instructions, Windows notes, and troubleshooting in each guide:
+The installer wires your credentials everywhere and installs the plugin wherever it can, but some clients need one manual step from you. Find your client below and do what **Extra step after the installer** says — **None** means step 1 finished the job. Each guide has the full instructions, Windows notes, how to verify it worked, and troubleshooting.
 
-| Client                                                                    | Tools | Skills | Agents | Extra step after the installer        | Auto-updates             |
-| ------------------------------------------------------------------------- | ----- | ------ | ------ | ------------------------------------- | ------------------------ |
-| **[Claude Code](docs/install/claude-code.md)** (CLI + Desktop "Code" tab) | ✅    | ✅     | ✅     | None                                  | Enable once <sup>1</sup> |
-| **[Claude Desktop chat](docs/install/claude-desktop.md)**                 | ✅    | ✅     | ✅     | Install the plugin in-app             | Automatic                |
-| **[ChatGPT + Codex](docs/install/chatgpt-codex.md)** (CLI + IDE)          | ✅    | ✅     | —      | None                                  | Automatic                |
-| **[Antigravity](docs/install/antigravity.md)** (IDE + `agy` CLI)          | ✅    | ✅     | ✅     | None                                  | Automatic                |
-| **[Other hosts](docs/install/other-hosts.md)** (VS Code, Cursor, …)       | ✅    | ✅     | ✅     | Install the plugin in the host itself | Manual <sup>2</sup>      |
+Cursor is the one client that needs no installer at all: it collects your credentials itself, so you can start at its guide and skip step 1.
+
+| Client                                                                    | Tools | Skills | Agents | Extra step after the installer           | Auto-updates             |
+| ------------------------------------------------------------------------- | ----- | ------ | ------ | ---------------------------------------- | ------------------------ |
+| **[Claude Code](docs/install/claude-code.md)** (CLI + Desktop "Code" tab) | ✅    | ✅     | ✅     | None                                     | Enable once <sup>1</sup> |
+| **[Claude Desktop chat](docs/install/claude-desktop.md)**                 | ✅    | ✅     | ✅     | Install the plugin in-app                | Automatic                |
+| **[ChatGPT + Codex](docs/install/chatgpt-codex.md)** (CLI + IDE)          | ✅    | ✅     | —      | None                                     | Automatic                |
+| **[Antigravity](docs/install/antigravity.md)** (IDE + `agy` CLI)          | ✅    | ✅     | ✅     | None                                     | Automatic                |
+| **[Cursor](docs/install/cursor.md)**                                      | ✅    | ✅     | ✅     | Install + set two variables <sup>2</sup> | Managed by Cursor        |
+| **[Other hosts](docs/install/other-hosts.md)** (VS Code, Kiro, …)         | ✅    | ✅     | ✅     | Install the plugin in the host itself    | Manual <sup>3</sup>      |
 
 <sup>1</sup> Claude Code leaves auto-update off for third-party marketplaces — turn it on once under `/plugin → Marketplaces → cognigy-plugin`.
-<sup>2</sup> The host owns the plugin version.
+<sup>2</sup> Cursor asks for the credentials itself (Plugins → Configure), so it doesn't need the installer — see its guide.
+<sup>3</sup> The host owns the plugin version.
 
 <details>
 <summary>Scripting / CI</summary>
@@ -114,20 +99,8 @@ npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall   # remove from 
 
 Beyond the MCP tools, the plugin ships **skills** and **agents** that surface the workflows automatically:
 
-- **Skills** (`/skills`) — one per workflow (agent creation, knowledge/RAG, voice gateway, voice go-live checklist, webchat, flow nodes, packages, settings, LLM providers, tools, troubleshooting). Claude loads the matching skill automatically when your request fits.
+- **Skills** (`/skills`) — one per workflow (agent creation, knowledge/RAG, voice gateway, voice go-live checklist, webchat, flow nodes, packages, settings, LLM providers, tools, red-teaming, troubleshooting). Claude loads the matching skill automatically when your request fits. Red-teaming runs in your main session — not as a subagent — so it can agree the scope contract, get approval before applying fixes, and open the finished report for you.
 - **Agents** (`/agents`) — `cognigy-agent-builder` runs the full build-and-test loop for a new agent, and `cognigy-voice-go-live` audits a voice agent against the Go-Live Checklist and applies the safe fixes. Each runs in its own context and reports back a summary.
-
----
-
-## What It Does
-
-Create a complete AI Agent in one tool call, then iterate and improve through conversation:
-
-1. **Create** → AI Agent + Flow + Job Node + Endpoint (automatic)
-2. **Test** → Talk to your agent via REST endpoint
-3. **Improve** → Update persona, guardrails, job description, tools
-4. **Test Again** → Compare responses and iterate
-5. **Deploy** → Publish to Webchat or create a Voice Gateway endpoint with one call
 
 ## Configuration
 
@@ -135,13 +108,22 @@ The [installer](#installation) collects your **Cognigy API base URL** and **API 
 
 A value that arrives as an unexpanded `${...}` placeholder counts as missing. Hosts other than Claude Code don't implement `userConfig` and pass the manifest's `${user_config.cognigy_api_key}` through literally; treating that as a real credential would both fail the request and shadow the file fallback. The optional variables below can be set in the MCP server `env` if you need to override defaults.
 
-| Variable                  | Required | Default | Description                      |
-| ------------------------- | -------- | ------- | -------------------------------- |
-| `COGNIGY_API_BASE_URL`    | Yes      | —       | Your Cognigy API base URL        |
-| `COGNIGY_API_KEY`         | Yes      | —       | Your Cognigy API key             |
-| `LOG_LEVEL`               | No       | `info`  | `debug`, `info`, `warn`, `error` |
-| `RATE_LIMIT_MAX_REQUESTS` | No       | `100`   | Max requests per window          |
-| `RATE_LIMIT_WINDOW_MS`    | No       | `60000` | Rate limit window in ms          |
+| Variable                            | Required | Default | Description                                                    |
+| ----------------------------------- | -------- | ------- | -------------------------------------------------------------- |
+| `COGNIGY_API_BASE_URL`              | Yes      | —       | Your Cognigy API base URL                                      |
+| `COGNIGY_API_KEY`                   | Yes      | —       | Your Cognigy API key                                           |
+| `LOG_LEVEL`                         | No       | `info`  | `debug`, `info`, `warn`, `error`                               |
+| `RATE_LIMIT_MAX_REQUESTS`           | No       | `100`   | Max requests per window                                        |
+| `RATE_LIMIT_WINDOW_MS`              | No       | `60000` | Rate limit window in ms                                        |
+| `COGNIGY_DISABLE_AUDIT_ATTRIBUTION` | No       | unset   | Set to `1` to stop naming the plugin in Cognigy's audit events |
+
+### Audit attribution
+
+Everything this plugin changes is recorded in **Admin Center → Audit Events** with `performedBy.actor = "mcp-plugin"`, so plugin-made changes are distinguishable from ones people made by hand (which carry no `performedBy`). Each MCP tool call gets its own `taskId` and each engine run its own `sessionId`, so the writes of one tool call group together.
+
+Requires Cognigy.AI 2026.17.0 or newer; older versions ignore the attribution and record the action normally. The "Performed by" column in the UI is gated behind the platform's `FEATURE_ENABLE_PLATFORM_AGENT_MFE` flag, but the attribution is always recorded and always readable through `list_resources { resourceType: "audit_event", actor: ["mcp-plugin"] }`.
+
+Set `COGNIGY_DISABLE_AUDIT_ATTRIBUTION=1` to opt out; plugin actions are then recorded like any other API action.
 
 ## Usage Examples
 
@@ -267,6 +249,30 @@ For knowledge workflows, the MCP should import the full required source-project 
 in one pass, reuse shared connections only once, and try the imported same-project model
 IDs before falling back to `setup_llm`.
 
+## Tools
+
+| Tool                   | Type  | Description                                                                                         |
+| ---------------------- | ----- | --------------------------------------------------------------------------------------------------- |
+| `create_ai_agent`      | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint                  |
+| `update_ai_agent`      | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature)                         |
+| `setup_llm`            | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation          |
+| `talk_to_agent`        | Write | Send a message to an AI Agent and get its response                                                  |
+| `list_resources`       | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more                           |
+| `get_resource`         | Read  | Get detailed information about a single resource                                                    |
+| `delete_resource`      | Write | Permanently delete a resource                                                                       |
+| `manage_knowledge`     | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG                         |
+| `create_tool`          | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node                                     |
+| `update_tool`          | Write | Update an existing tool node's configuration                                                        |
+| `manage_webchat`       | Write | Create or configure a Webchat v3 endpoint for website deployment                                    |
+| `manage_flow_nodes`    | Write | Create, update, delete, or list flow nodes for conversation logic                                   |
+| `manage_packages`      | Write | List exportable resources, upload, inspect, import, export, and download Cognigy package zip files  |
+| `manage_voice_gateway` | Write | Create or configure a Voice Gateway endpoint with WebRTC for browser-based voice interaction        |
+| `manage_settings`      | Write | Manage project-level settings including voice preview and Knowledge AI configuration                |
+| `audit_voice_agent`    | Write | Audit a voice agent against the Go-Live Checklist; reports by default, applies safe fixes on demand |
+| `manage_snapshots`     | Write | Create and restore project Snapshots so agent changes can be rolled back                            |
+
+Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, flow nodes, packages, settings, LLM providers, tools, troubleshooting) ships as **skills** that load automatically when your request matches, in clients that support them (e.g. Claude Code) — see the **Skills** column in the client table under [Installation](#installation).
+
 ## Security
 
 - API keys are passed via environment variables and never logged
@@ -286,7 +292,7 @@ Full privacy policy: [https://www.cognigy.com/privacy-policy](https://www.cognig
 
 ## Documentation
 
-- [docs/install/](https://github.com/Cognigy/cognigy-plugin/tree/main/docs/install) — per-client install guides ([Claude Code](docs/install/claude-code.md), [Claude Desktop](docs/install/claude-desktop.md), [ChatGPT + Codex](docs/install/chatgpt-codex.md), [Antigravity](docs/install/antigravity.md), [other hosts](docs/install/other-hosts.md))
+- [docs/install/](https://github.com/Cognigy/cognigy-plugin/tree/main/docs/install) — per-client install guides ([Claude Code](docs/install/claude-code.md), [Claude Desktop](docs/install/claude-desktop.md), [ChatGPT + Codex](docs/install/chatgpt-codex.md), [Antigravity](docs/install/antigravity.md), [Cursor](docs/install/cursor.md), [other hosts](docs/install/other-hosts.md))
 - [docs/ARCHITECTURE.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/ARCHITECTURE.md) — tool design, self-improvement loop, ID formats
 - [docs/USAGE.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/USAGE.md) — detailed usage reference
 - [docs/TESTING.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/TESTING.md) — how to test the plugin and a local engine build

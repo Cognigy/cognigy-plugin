@@ -218,6 +218,122 @@ describe("setupLlmSchema", () => {
     });
     expect(result.dangerouslySkipConnectionTest).toBeUndefined();
   });
+
+  it("accepts a full openAICompatible input", () => {
+    const result = schemas.setupLlmSchema.parse({
+      projectId: VALID_ID,
+      provider: "openAICompatible",
+      modelType: "custom-model",
+      customModel: "llama-3.3-70b-instruct",
+      baseCustomUrl: "https://llm.example.com/v1",
+      customAuthHeader: "X-Custom-Auth",
+      apiType: "chatCompletion",
+      apiKey: "key-123",
+    });
+    expect(result.provider).toBe("openAICompatible");
+    expect(result.customModel).toBe("llama-3.3-70b-instruct");
+  });
+
+  it("accepts openAICompatible with custom-embedding-model", () => {
+    const result = schemas.setupLlmSchema.parse({
+      projectId: VALID_ID,
+      provider: "openAICompatible",
+      modelType: "custom-embedding-model",
+      customModel: "bge-large-en-v1.5",
+      baseCustomUrl: "https://llm.example.com/v1",
+      apiKey: "key-123",
+    });
+    expect(result.modelType).toBe("custom-embedding-model");
+  });
+
+  it("rejects apiType for openAICompatible embedding models", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "openAICompatible",
+        modelType: "custom-embedding-model",
+        customModel: "bge-large-en-v1.5",
+        baseCustomUrl: "https://llm.example.com/v1",
+        apiType: "responses",
+        apiKey: "key-123",
+      }),
+    ).toThrow(/apiType is only supported for chat models/);
+  });
+
+  it("rejects openAICompatible without baseCustomUrl", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "openAICompatible",
+        modelType: "custom-model",
+        customModel: "llama-3.3-70b-instruct",
+        apiKey: "key-123",
+      }),
+    ).toThrow(/baseCustomUrl/);
+  });
+
+  it("rejects openAICompatible without customModel", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "openAICompatible",
+        modelType: "custom-model",
+        baseCustomUrl: "https://llm.example.com/v1",
+        apiKey: "key-123",
+      }),
+    ).toThrow(/customModel/);
+  });
+
+  it("rejects openAICompatible with a non-custom modelType", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "openAICompatible",
+        modelType: "gpt-4o",
+        customModel: "gpt-4o",
+        baseCustomUrl: "https://llm.example.com/v1",
+        apiKey: "key-123",
+      }),
+    ).toThrow(/custom-model/);
+  });
+
+  it("rejects openAICompatible-only fields on other providers", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "openAI",
+        modelType: "gpt-4o",
+        baseCustomUrl: "https://llm.example.com/v1",
+        apiKey: "sk-abc123",
+      }),
+    ).toThrow(/openAICompatible/);
+  });
+
+  it("rejects apiType for providers without Responses API support", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "anthropic",
+        modelType: "claude-sonnet-4-0",
+        apiType: "responses",
+        apiKey: "key-123",
+      }),
+    ).toThrow(/apiType/);
+  });
+
+  it("rejects an invalid apiType value", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "openAICompatible",
+        modelType: "custom-model",
+        customModel: "llama-3.3-70b-instruct",
+        baseCustomUrl: "https://llm.example.com/v1",
+        apiType: "completions",
+        apiKey: "key-123",
+      }),
+    ).toThrow();
+  });
 });
 
 describe("talkToAgentSchema", () => {
@@ -513,6 +629,14 @@ describe("deleteResourceSchema", () => {
     });
     expect(result.resourceType).toBe("llm_model");
   });
+
+  it("accepts project resource type", () => {
+    const result = schemas.deleteResourceSchema.parse({
+      resourceType: "project",
+      id: VALID_ID,
+    });
+    expect(result.resourceType).toBe("project");
+  });
 });
 
 describe("createToolSchema", () => {
@@ -791,6 +915,93 @@ describe("auditVoiceAgentSchema", () => {
   it("rejects an invalid id", () => {
     expect(() =>
       schemas.auditVoiceAgentSchema.parse({ aiAgentId: "nope" }),
+    ).toThrow();
+  });
+});
+
+describe("manageSnapshotsSchema", () => {
+  it("accepts list input", () => {
+    const result = schemas.manageSnapshotsSchema.parse({
+      operation: "list",
+      projectId: VALID_ID,
+      limit: 50,
+    });
+    expect(result.operation).toBe("list");
+  });
+
+  it("accepts create input with a label", () => {
+    const result = schemas.manageSnapshotsSchema.parse({
+      operation: "create",
+      projectId: VALID_ID,
+      label: "pre-persona-update",
+      confirmDeleteOldest: true,
+    });
+    expect(result.operation).toBe("create");
+  });
+
+  it("accepts restore input with confirm", () => {
+    const result = schemas.manageSnapshotsSchema.parse({
+      operation: "restore",
+      projectId: VALID_ID,
+      snapshotId: VALID_ID,
+      confirm: true,
+    });
+    expect(result.operation).toBe("restore");
+  });
+
+  it("accepts delete input", () => {
+    const result = schemas.manageSnapshotsSchema.parse({
+      operation: "delete",
+      projectId: VALID_ID,
+      snapshotId: VALID_ID,
+    });
+    expect(result.operation).toBe("delete");
+  });
+
+  it("accepts read_task input", () => {
+    const result = schemas.manageSnapshotsSchema.parse({
+      operation: "read_task",
+      projectId: VALID_ID,
+      taskId: VALID_ID,
+    });
+    expect(result.operation).toBe("read_task");
+  });
+
+  it("rejects restore without a snapshotId", () => {
+    expect(() =>
+      schemas.manageSnapshotsSchema.parse({
+        operation: "restore",
+        projectId: VALID_ID,
+      }),
+    ).toThrow();
+  });
+
+  it("rejects a non-hex snapshotId", () => {
+    expect(() =>
+      schemas.manageSnapshotsSchema.parse({
+        operation: "delete",
+        projectId: VALID_ID,
+        snapshotId: "not-an-id",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects an out-of-range timeoutMs", () => {
+    expect(() =>
+      schemas.manageSnapshotsSchema.parse({
+        operation: "create",
+        projectId: VALID_ID,
+        timeoutMs: 10,
+      }),
+    ).toThrow();
+  });
+
+  it("rejects an unknown operation", () => {
+    expect(() =>
+      schemas.manageSnapshotsSchema.parse({
+        operation: "download",
+        projectId: VALID_ID,
+      }),
     ).toThrow();
   });
 });

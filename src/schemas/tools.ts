@@ -34,16 +34,96 @@ export const updateAiAgentSchema = z.object({
 });
 
 // Tool 3: setup_llm
-export const setupLlmSchema = z.object({
-  projectId: idSchema,
-  provider: z.enum(["openAI", "azureOpenAI", "anthropic", "google", "mistral"]),
-  modelType: z.string().min(1),
-  name: z.string().optional(),
-  apiKey: z.string().optional(),
-  connectionId: z.string().optional(),
-  isDefault: z.boolean().optional(),
-  dangerouslySkipConnectionTest: z.boolean().optional(),
-});
+export const setupLlmSchema = z
+  .object({
+    projectId: idSchema,
+    provider: z.enum([
+      "openAI",
+      "azureOpenAI",
+      "anthropic",
+      "google",
+      "mistral",
+      "openAICompatible",
+    ]),
+    modelType: z.string().min(1),
+    name: z.string().optional(),
+    apiKey: z.string().optional(),
+    connectionId: z.string().optional(),
+    isDefault: z.boolean().optional(),
+    baseCustomUrl: z.string().url().optional(),
+    customModel: z.string().min(1).optional(),
+    customAuthHeader: z.string().min(1).optional(),
+    apiType: z.enum(["chatCompletion", "responses"]).optional(),
+    dangerouslySkipConnectionTest: z.boolean().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.provider === "openAICompatible") {
+      if (!data.baseCustomUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["baseCustomUrl"],
+          message:
+            "Provider 'openAICompatible' requires baseCustomUrl — the provider's OpenAI-compatible API base URL (e.g. https://my-llm-host.example.com/v1).",
+        });
+      }
+      if (!data.customModel) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["customModel"],
+          message:
+            "Provider 'openAICompatible' requires customModel — the model name as known by the provider (e.g. 'llama-3.3-70b-instruct').",
+        });
+      }
+      if (
+        data.modelType !== "custom-model" &&
+        data.modelType !== "custom-embedding-model"
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["modelType"],
+          message:
+            "Provider 'openAICompatible' requires modelType 'custom-model' (chat) or 'custom-embedding-model' (embedding). Put the provider's model name in customModel instead.",
+        });
+      }
+      if (
+        data.modelType === "custom-embedding-model" &&
+        data.apiType !== undefined
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["apiType"],
+          message:
+            "apiType is only supported for chat models; omit it when modelType is 'custom-embedding-model'.",
+        });
+      }
+    } else {
+      for (const field of [
+        "baseCustomUrl",
+        "customModel",
+        "customAuthHeader",
+      ] as const) {
+        if (data[field] !== undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [field],
+            message: `${field} is only supported for provider 'openAICompatible'.`,
+          });
+        }
+      }
+      if (
+        data.apiType !== undefined &&
+        data.provider !== "openAI" &&
+        data.provider !== "azureOpenAI"
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["apiType"],
+          message:
+            "apiType is only supported for providers 'openAI', 'azureOpenAI', and 'openAICompatible'.",
+        });
+      }
+    }
+  });
 
 // Tool 4: talk_to_agent
 export const talkToAgentSchema = z
@@ -62,6 +142,25 @@ export const talkToAgentSchema = z
     path: ["endpointUrl"],
   });
 
+/** Actor values Cognigy records in `auditEvent.performedBy.actor`. */
+export const AUDIT_ACTORS = [
+  "human",
+  "ask-ai",
+  "mcp-plugin",
+  "system",
+] as const;
+
+/** Audit event operation types (`auditEvent.type`). */
+export const AUDIT_EVENT_TYPES = [
+  "action",
+  "create",
+  "replace",
+  "patch",
+  "delete",
+  "authentication",
+  "authorization",
+] as const;
+
 // Tool 5: list_resources
 export const listResourcesSchema = z.object({
   resourceType: z.enum([
@@ -75,6 +174,7 @@ export const listResourcesSchema = z.object({
     "extension",
     "function",
     "tool",
+    "audit_event",
   ]),
   projectId: idSchema.optional(),
   aiAgentId: idSchema.optional(),
@@ -82,6 +182,13 @@ export const listResourcesSchema = z.object({
   endDate: z.string().optional(),
   channel: z.string().optional(),
   useCase: z.string().optional(),
+  // audit_event filters. `actor` and `eventType` are sent as repeatable query
+  // params (actor[]=…), which the platform supports from 2026.17.0 onwards.
+  // Named `eventType` rather than `type` so it cannot be confused with
+  // `resourceType` at the call site.
+  actor: z.array(z.enum(AUDIT_ACTORS)).nonempty().optional(),
+  eventType: z.array(z.enum(AUDIT_EVENT_TYPES)).nonempty().optional(),
+  user: z.string().min(1).optional(),
   sort: z
     .string()
     .regex(
@@ -106,6 +213,7 @@ export const getResourceSchema = z.object({
     "extension",
     "function",
     "user",
+    "audit_event",
   ]),
   id: z.string().min(1),
   projectId: idSchema.optional(),
@@ -117,6 +225,7 @@ export const deleteResourceSchema = z.object({
   resourceType: z.enum([
     "agent",
     "flow",
+    "project",
     "endpoint",
     "llm_model",
     "knowledge_store",
@@ -653,3 +762,50 @@ export const auditVoiceAgentSchema = z
     message: "Either aiAgentId or flowId must be provided",
     path: ["aiAgentId"],
   });
+
+// Tool 17: manage_snapshots
+//
+// `create` deliberately takes a short `label`, not a full `name`: the plugin
+// owns the name so the "[AI Backup] " marker prefix can never be omitted by the
+// caller, and so the timestamp that keeps names unique is always present.
+const snapshotTimeoutSchema = z.number().int().min(1000).max(3600000);
+
+export const manageSnapshotsSchema = z.discriminatedUnion("operation", [
+  z.object({
+    operation: z.literal("list"),
+    projectId: idSchema,
+    ...paginationSchema,
+  }),
+  z.object({
+    operation: z.literal("create"),
+    projectId: idSchema,
+    label: z.string().min(1).max(120).optional(),
+    confirmDeleteOldest: z.boolean().optional(),
+    waitForCompletion: z.boolean().optional(),
+    timeoutMs: snapshotTimeoutSchema.optional(),
+  }),
+  z.object({
+    operation: z.literal("restore"),
+    projectId: idSchema,
+    snapshotId: idSchema,
+    confirm: z.boolean().optional(),
+    waitForCompletion: z.boolean().optional(),
+    timeoutMs: snapshotTimeoutSchema.optional(),
+  }),
+  z.object({
+    operation: z.literal("delete"),
+    projectId: idSchema,
+    snapshotId: idSchema,
+    waitForCompletion: z.boolean().optional(),
+    timeoutMs: snapshotTimeoutSchema.optional(),
+  }),
+  z.object({
+    operation: z.literal("decline"),
+    projectId: idSchema,
+  }),
+  z.object({
+    operation: z.literal("read_task"),
+    projectId: idSchema,
+    taskId: idSchema,
+  }),
+]);

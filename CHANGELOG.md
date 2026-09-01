@@ -1,3 +1,44 @@
+## [1.15.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.14.0...v1.15.0) (2026-09-01)
+
+### Features
+
+* attribute plugin changes in Cognigy audit events ([#38](https://github.com/Cognigy/cognigy-plugin/issues/38)) [skip ci] ([9760d20](https://github.com/Cognigy/cognigy-plugin/commit/9760d201b3581e1dab95e409fc9f441c8750d98f)), closes [Cognigy/cognigy#13652](https://github.com/Cognigy/cognigy/issues/13652)
+
+### Bug Fixes
+
+* **tools:** hold all concurrent first-change calls behind the backup gate ([#40](https://github.com/Cognigy/cognigy-plugin/issues/40)) ([d4dcb05](https://github.com/Cognigy/cognigy-plugin/commit/d4dcb058b36ce9af930dc3c513e6269e11cd46bf))
+* **tools:** validate and normalize tool parameter schemas ([#39](https://github.com/Cognigy/cognigy-plugin/issues/39)) [skip ci] ([8c7255a](https://github.com/Cognigy/cognigy-plugin/commit/8c7255a8ed8ef95f7e32864c77d5e7aecbc4b982))
+
+## [1.14.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.13.0...v1.14.0) (2026-08-27)
+
+### Features
+
+* **tools:** support OpenAI-compatible LLM providers in setup_llm ([#20](https://github.com/Cognigy/cognigy-plugin/issues/20)) ([45170a0](https://github.com/Cognigy/cognigy-plugin/commit/45170a050d4884fa76f1115a527cb80c18a6cc1d))
+
+## [1.13.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.12.0...v1.13.0) (2026-08-26)
+
+### Features
+
+* **plugin:** ship Agent Plugins spec 1.0.0 manifests ([#34](https://github.com/Cognigy/cognigy-plugin/issues/34)) [skip ci] ([0440782](https://github.com/Cognigy/cognigy-plugin/commit/04407822fd31a44ba1b6ae150556bc0af78a3c1c)), closes [#35](https://github.com/Cognigy/cognigy-plugin/issues/35)
+* **skills:** run red-teaming in the main session and deliver the report ([#33](https://github.com/Cognigy/cognigy-plugin/issues/33)) ([8258c91](https://github.com/Cognigy/cognigy-plugin/commit/8258c91b911199abe133da22c60b6a5c49a61f1c))
+* **tools:** rename flows/projects/agents with DELETE_ prefix instead of deleting ([#21](https://github.com/Cognigy/cognigy-plugin/issues/21)) [skip ci] ([044df44](https://github.com/Cognigy/cognigy-plugin/commit/044df44807f6dcbf6d306aa0eacdf4425e6bf0cb))
+
+### Bug Fixes
+
+* **endpoints:** store the locale referenceId in localeId on endpoint creation ([#37](https://github.com/Cognigy/cognigy-plugin/issues/37)) [skip ci] ([132f22b](https://github.com/Cognigy/cognigy-plugin/commit/132f22bef0cc509b2178b18aa9f32c483045f0a8))
+
+## [1.12.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.11.0...v1.12.0) (2026-08-21)
+
+### Features
+
+* **snapshots:** add manage_snapshots for backup and rollback ([#31](https://github.com/Cognigy/cognigy-plugin/issues/31)) ([1892215](https://github.com/Cognigy/cognigy-plugin/commit/1892215bcf6488a3a01def43e9e4194aa7ecc2c9))
+
+## [1.11.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.10.1...v1.11.0) (2026-08-20)
+
+### Features
+
+* **skills:** agent-red-team skill and red-team agent ([#24](https://github.com/Cognigy/cognigy-plugin/issues/24)) ([1c34fb8](https://github.com/Cognigy/cognigy-plugin/commit/1c34fb8f2c42799a9497948fd5537a7a4f9df270))
+
 ## [1.10.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.10.0...v1.10.1) (2026-08-19)
 
 ### Bug Fixes

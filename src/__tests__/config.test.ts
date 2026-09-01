@@ -192,6 +192,30 @@ describe("loadConfig", () => {
     expect(config.rateLimit.windowMs).toBe(60000);
   });
 
+  it("enables audit attribution by default", () => {
+    process.env.COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai";
+    process.env.COGNIGY_API_KEY = "test-key";
+    delete process.env.COGNIGY_DISABLE_AUDIT_ATTRIBUTION;
+    expect(loadConfig().auditAttribution).toBe(true);
+  });
+
+  it.each(["1", "true", "TRUE", "yes"])(
+    "disables audit attribution when COGNIGY_DISABLE_AUDIT_ATTRIBUTION=%s",
+    (value) => {
+      process.env.COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai";
+      process.env.COGNIGY_API_KEY = "test-key";
+      process.env.COGNIGY_DISABLE_AUDIT_ATTRIBUTION = value;
+      expect(loadConfig().auditAttribution).toBe(false);
+    },
+  );
+
+  it("keeps audit attribution on for a falsy opt-out value", () => {
+    process.env.COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai";
+    process.env.COGNIGY_API_KEY = "test-key";
+    process.env.COGNIGY_DISABLE_AUDIT_ATTRIBUTION = "false";
+    expect(loadConfig().auditAttribution).toBe(true);
+  });
+
   describe("on-disk fallback (setup CLI)", () => {
     it("does not read the fallback file when both env vars are set", () => {
       process.env.COGNIGY_API_BASE_URL = "https://api-dev.cognigy.ai";
@@ -232,7 +256,7 @@ describe("loadConfig", () => {
   });
 
   // Hosts that don't implement the `userConfig` manifest extension (VS Code,
-  // Cursor, …) pass "${user_config.cognigy_api_key}" through verbatim. Those
+  // Kiro, …) pass "${user_config.cognigy_api_key}" through verbatim. Those
   // strings are non-empty, so without this handling they both masquerade as
   // real credentials and shadow the on-disk fallback.
   describe("unexpanded userConfig placeholders", () => {

@@ -19,6 +19,7 @@ You have the Cognigy MCP tools available (`audit_voice_agent`, `list_resources`,
 ## Rules
 
 - Read-only first: always dry-run before any `apply`.
+- The first `apply: true` in a session is HELD by the server and returns `error: "backup_not_offered"` without changing anything. Ask the caller whether they want a restorable backup, then call `manage_snapshots { operation: "create", projectId, label: "pre-voice-fixes" }` or `{ operation: "decline", projectId }`, and retry the apply. Never report fixes as applied when you got that error.
 - Only `apply` the checklist's own `autoFixable` fixes. Do not hand-craft node configs.
 - If you are unsure what a check means, consult the `voice-go-live-checklist` skill rather than guessing.
 - Your final message is a report back to the main thread — be terse and factual, lead with the outcome.

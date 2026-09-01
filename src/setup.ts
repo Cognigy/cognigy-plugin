@@ -112,7 +112,7 @@ const CLIENT_LABELS: Record<Client, string> = {
   // The IDE, the `agy` CLI and the SDK all read ~/.gemini/config, so one install
   // serves every Antigravity surface.
   antigravity: "Antigravity (IDE + agy CLI)",
-  "other-hosts": "Other hosts (VS Code, Cursor, …) — writes a local creds file",
+  "other-hosts": "Other hosts (VS Code, Kiro, …) — writes a local creds file",
 };
 
 interface Flags {
