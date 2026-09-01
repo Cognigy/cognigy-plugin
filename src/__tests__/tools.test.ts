@@ -1653,7 +1653,8 @@ describe("ToolHandlers v2", () => {
         config: {
           toolId: "my_tool",
           description: "desc",
-          parameters: '{"type":"object","properties":{"q":{"type":"string"}}}',
+          parameters:
+            '{"type":"object","properties":{"q":{"type":"string","description":"Query"}},"required":["q"]}',
         },
       });
 

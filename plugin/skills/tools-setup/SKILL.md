@@ -19,6 +19,17 @@ Tools give an AI Agent capabilities beyond conversation — calling APIs, execut
 
 Rule of thumb: each tool in an agent flow should have a unique `toolId`. If you need more logic, parameters, validation, or HTTP calls for that tool, add them inside the same tool branch instead of creating another tool with the same `toolId`.
 
+## Parameter schema rules (config.parameters)
+
+`parameters` is a JSON Schema string that Cognigy passes VERBATIM to the LLM provider. create_tool / update_tool validate it and reject violations, because a broken schema either fails every conversation turn with a provider 400 (strict models) or is silently dropped (the tool is called with no arguments). The contract:
+
+- Top level: `{"type":"object","properties":{...},"required":[...]}` — `required` is mandatory (use `[]` if nothing is required).
+- EVERY property needs `"type"` AND `"description"`. Allowed types: `string`, `number`, `integer`, `boolean`, `object`, `array`, `null`.
+- `array` properties need `"items"`. Nested objects with `"properties"` also need their own `"required"`.
+- `"additionalProperties": false` is injected automatically at every object level.
+- Strict-mode models (OpenAI Responses API, e.g. gpt-5.x, where strict is forced on): list EVERY property key in `required`; make a parameter optional with a nullable type — `{"type":["string","null"],"description":"..."}`. Non-strict providers ignore this, so it is the safe default.
+- Nested object properties and `integer` are valid at runtime but not renderable by the Cognigy UI's graphical parameter builder — the node's Parameters section then shows the raw JSON editor. That is cosmetic; prefer flat schemas when you don't need nesting.
+
 ## Tool types (create_tool)
 
 ### tool — General-purpose tool with custom logic
@@ -31,7 +42,7 @@ name: "Fetch Weather",
 config: {
 toolId: "fetch_weather",
 description: "Fetches current weather for a city",
-parameters: '{"type":"object","properties":{"city":{"type":"string"}}}',
+parameters: '{"type":"object","properties":{"city":{"type":"string","description":"City to fetch the weather for"}},"required":["city"]}',
 toolResponseValue: "{{JSON.stringify(input.result)}}"
 }
 }
@@ -133,7 +144,7 @@ name: "Get Weather",
 config: {
 toolId: "get_weather",
 description: "Fetches current weather for a location",
-parameters: '{"type":"object","properties":{"city":{"type":"string"}}}',
+parameters: '{"type":"object","properties":{"city":{"type":"string","description":"City to fetch the weather for"}},"required":["city"]}',
 url: "https://api.weather.com/v1/current?q={{input.aiAgent.toolArgs.city}}",
 method: "GET",
 headers: { "X-Api-Key": "your-api-key" },
@@ -152,7 +163,7 @@ name: "Create Order",
 config: {
 toolId: "create_order",
 description: "Creates a new order in the order management system",
-parameters: '{"type":"object","properties":{"items":{"type":"array"},"customerId":{"type":"string"}}}',
+parameters: '{"type":"object","properties":{"items":{"type":"array","description":"Ordered items","items":{"type":"string","description":"SKU of one item"}},"customerId":{"type":"string","description":"Customer identifier"}},"required":["items","customerId"]}',
 url: "https://api.example.com/orders",
 method: "POST",
 headers: { "Authorization": "Bearer {{context.apiToken}}" },
@@ -214,7 +225,7 @@ create_tool {
   config: {
     toolId: "check_order_status",
     description: "Looks up the status of a customer order",
-    parameters: '{"type":"object","properties":{"orderId":{"type":"string"}}}'
+    parameters: '{"type":"object","properties":{"orderId":{"type":"string","description":"Order number to look up"}},"required":["orderId"]}'
   }
 }
 → returns toolNodeId: "abc123..."

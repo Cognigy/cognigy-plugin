@@ -23,6 +23,7 @@ import {
   withHints,
 } from "./filters.js";
 import { buildWebchatSettings, deepMerge } from "./webchatSettings.js";
+import { normalizeToolParameters } from "./toolParameters.js";
 import { getNodeEntry, supportedNodeTypes } from "./nodeRegistry.js";
 import {
   evaluateChecks,
@@ -3461,13 +3462,16 @@ export class ToolHandlers {
     if (!mapping) throw new Error(`Unknown toolType: ${data.toolType}`);
 
     const nodeConfig: any = {};
+    let parameterWarnings: string[] = [];
     switch (data.toolType) {
       case "tool":
         if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
         if (cfg.description) nodeConfig.description = cfg.description;
         if (cfg.parameters) {
+          const normalized = normalizeToolParameters(cfg.parameters);
           nodeConfig.useParameters = true;
-          nodeConfig.parameters = cfg.parameters;
+          nodeConfig.parameters = normalized.parameters;
+          parameterWarnings = normalized.warnings;
         }
         break;
       case "knowledge":
@@ -3491,8 +3495,10 @@ export class ToolHandlers {
         if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
         if (cfg.description) nodeConfig.description = cfg.description;
         if (cfg.parameters) {
+          const normalized = normalizeToolParameters(cfg.parameters);
           nodeConfig.useParameters = true;
-          nodeConfig.parameters = cfg.parameters;
+          nodeConfig.parameters = normalized.parameters;
+          parameterWarnings = normalized.warnings;
         }
         break;
     }
@@ -3543,12 +3549,15 @@ export class ToolHandlers {
           if (resolveNodeId) createdNodeIds.push(resolveNodeId);
         }
 
-        return {
+        const created = {
           toolId: toolNodeId,
           name: data.name,
           toolType: data.toolType,
           ...(resolveNodeId ? { resolveNodeId } : {}),
         };
+        return parameterWarnings.length > 0
+          ? withHints(created, { warning: parameterWarnings.join(" ") })
+          : created;
       } catch (error: any) {
         const rolledBack: string[] = [];
         const rollbackFailed: string[] = [];
@@ -3674,7 +3683,7 @@ export class ToolHandlers {
         if (postProcessNodeId) createdNodeIds.push(postProcessNodeId);
       }
 
-      return {
+      const createdHttp = {
         toolId: toolNodeId,
         name: data.name,
         toolType: "http",
@@ -3685,6 +3694,9 @@ export class ToolHandlers {
           resolveNodeId,
         },
       };
+      return parameterWarnings.length > 0
+        ? withHints(createdHttp, { warning: parameterWarnings.join(" ") })
+        : createdHttp;
     } catch (error: any) {
       const rolledBack: string[] = [];
       const rollbackFailed: string[] = [];
@@ -3748,6 +3760,7 @@ export class ToolHandlers {
 
     // Step 1: Update the tool node itself (label and/or tool-node config)
     const patchPayload: any = {};
+    let parameterWarnings: string[] = [];
     if (data.name) patchPayload.label = data.name;
 
     if (cfg) {
@@ -3757,8 +3770,10 @@ export class ToolHandlers {
         if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
         if (cfg.description) nodeConfig.description = cfg.description;
         if (cfg.parameters) {
+          const normalized = normalizeToolParameters(cfg.parameters);
           nodeConfig.useParameters = true;
-          nodeConfig.parameters = cfg.parameters;
+          nodeConfig.parameters = normalized.parameters;
+          parameterWarnings = normalized.warnings;
         }
       }
       if (toolType === "knowledge") {
@@ -3945,13 +3960,18 @@ export class ToolHandlers {
 
     if (skippedUpdates.length > 0) {
       return withHints(response, {
-        warning: `Some updates were skipped: ${skippedUpdates.join("; ")}`,
+        warning: [
+          `Some updates were skipped: ${skippedUpdates.join("; ")}`,
+          ...parameterWarnings,
+        ].join(" "),
         action:
           "Child nodes may not exist yet. Use create_tool with http type to create the full node tree, or verify the tool structure.",
       });
     }
 
-    return response;
+    return parameterWarnings.length > 0
+      ? withHints(response, { warning: parameterWarnings.join(" ") })
+      : response;
   }
 
   // =========================================================================

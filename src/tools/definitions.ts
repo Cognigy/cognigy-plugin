@@ -628,7 +628,7 @@ After creating, use talk_to_agent to test.`,
             parameters: {
               type: "string",
               description:
-                "JSON Schema string defining tool parameters (tool, http)",
+                'JSON Schema string defining tool parameters (tool, http). Contract: top level {"type":"object","properties":{...},"required":[...]} — "required" is mandatory (use [] if none); EVERY property needs "type" AND "description"; allowed types: string, number, integer, boolean, object, array, null; "array" needs "items"; nested objects with "properties" also need "required". For strict-mode models (OpenAI Responses API, e.g. gpt-5.x) list EVERY key in "required" and mark optional params nullable, e.g. {"type":["string","null"]}. "additionalProperties":false is added automatically. Example: {"type":"object","properties":{"city":{"type":"string","description":"City name"}},"required":["city"]}',
             },
             knowledgeStoreId: {
               type: "string",
@@ -750,7 +750,7 @@ After creating, use talk_to_agent to test.`,
             parameters: {
               type: "string",
               description:
-                "JSON Schema string defining tool parameters (tool, http)",
+                'JSON Schema string defining tool parameters (tool, http). Contract: top level {"type":"object","properties":{...},"required":[...]} — "required" is mandatory (use [] if none); EVERY property needs "type" AND "description"; allowed types: string, number, integer, boolean, object, array, null; "array" needs "items"; nested objects with "properties" also need "required". For strict-mode models (OpenAI Responses API, e.g. gpt-5.x) list EVERY key in "required" and mark optional params nullable, e.g. {"type":["string","null"]}. "additionalProperties":false is added automatically. Example: {"type":"object","properties":{"city":{"type":"string","description":"City name"}},"required":["city"]}',
             },
             knowledgeStoreId: {
               type: "string",
