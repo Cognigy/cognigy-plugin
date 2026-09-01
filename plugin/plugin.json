@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "cognigy",
-  "version": "1.14.0",
+  "version": "1.15.0",
   "description": "NiCE Cognigy Plugin — create, test, and manage AI Agents on the NiCE Cognigy platform",
   "author": {
     "name": "Cognigy",

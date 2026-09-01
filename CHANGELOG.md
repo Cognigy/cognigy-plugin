@@ -1,3 +1,14 @@
+## [1.15.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.14.0...v1.15.0) (2026-09-01)
+
+### Features
+
+* attribute plugin changes in Cognigy audit events ([#38](https://github.com/Cognigy/cognigy-plugin/issues/38)) [skip ci] ([9760d20](https://github.com/Cognigy/cognigy-plugin/commit/9760d201b3581e1dab95e409fc9f441c8750d98f)), closes [Cognigy/cognigy#13652](https://github.com/Cognigy/cognigy/issues/13652)
+
+### Bug Fixes
+
+* **tools:** hold all concurrent first-change calls behind the backup gate ([#40](https://github.com/Cognigy/cognigy-plugin/issues/40)) ([d4dcb05](https://github.com/Cognigy/cognigy-plugin/commit/d4dcb058b36ce9af930dc3c513e6269e11cd46bf))
+* **tools:** validate and normalize tool parameter schemas ([#39](https://github.com/Cognigy/cognigy-plugin/issues/39)) [skip ci] ([8c7255a](https://github.com/Cognigy/cognigy-plugin/commit/8c7255a8ed8ef95f7e32864c77d5e7aecbc4b982))
+
 ## [1.14.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.13.0...v1.14.0) (2026-08-27)
 
 ### Features
