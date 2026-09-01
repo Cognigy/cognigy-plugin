@@ -1,6 +1,7 @@
 /**
- * Shared helpers for driving client CLIs (`claude`, `codex`, `gemini`) from
- * the installer: PATH detection plus a Windows-safe spawn.
+ * Shared helpers for driving client CLIs (`claude`, `codex`) from the
+ * installer: PATH detection plus a Windows-safe spawn. (Antigravity is
+ * deliberately not driven through its CLI — see src/install/antigravity.ts.)
  */
 import { spawnSync } from "child_process";
 import { quoteWinArgs } from "./npmRunner.js";

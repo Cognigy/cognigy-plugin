@@ -49,7 +49,7 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "node scripts/sync-plugin-version.mjs ${nextRelease.version} && npm publish --access public --provenance && node scripts/build-gemini-extension.mjs ${nextRelease.version}"
+        "prepareCmd": "node scripts/sync-plugin-version.mjs ${nextRelease.version} && npm publish --access public --provenance"
       }
     ],
     [
@@ -69,16 +69,6 @@
         "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
       }
     ],
-    [
-      "@semantic-release/github",
-      {
-        "assets": [
-          {
-            "path": "cognigy-gemini-extension.zip",
-            "label": "Gemini CLI extension (cognigy)"
-          }
-        ]
-      }
-    ]
+    "@semantic-release/github"
   ]
 }

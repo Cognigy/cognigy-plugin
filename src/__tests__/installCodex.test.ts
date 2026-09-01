@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "@jest/globals";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
@@ -12,12 +12,6 @@ import {
   codexHasCognigyPlugin,
   readCodexMarketplaceRef,
 } from "../install/codex.js";
-import {
-  buildGeminiInstallArgs,
-  buildGeminiUninstallArgs,
-  buildGeminiUpdateArgs,
-  installedGeminiExtensionVersion,
-} from "../install/gemini.js";
 
 const tmpDirs: string[] = [];
 function tmp(): string {
@@ -172,57 +166,5 @@ describe("readCodexMarketplaceRef", () => {
       `[marketplaces.openai-bundled]\nsource_type = "git"\nref = "main"\n`,
     );
     expect(readCodexMarketplaceRef(other)).toBe(null);
-  });
-});
-
-describe("gemini arg building", () => {
-  it("install carries --skip-settings (creds come from the creds file, never extension settings)", () => {
-    expect(buildGeminiInstallArgs()).toEqual([
-      "extensions",
-      "install",
-      "https://github.com/Cognigy/cognigy-plugin",
-      "--auto-update",
-      "--consent",
-      "--skip-settings",
-    ]);
-  });
-
-  it("update/uninstall target the extension by name", () => {
-    expect(buildGeminiUpdateArgs()).toEqual([
-      "extensions",
-      "update",
-      "cognigy",
-    ]);
-    expect(buildGeminiUninstallArgs()).toEqual([
-      "extensions",
-      "uninstall",
-      "cognigy",
-    ]);
-  });
-});
-
-describe("installedGeminiExtensionVersion", () => {
-  it("reads the version from the installed manifest", () => {
-    const extDir = join(tmp(), "cognigy");
-    mkdirSync(extDir, { recursive: true });
-    writeFileSync(
-      join(extDir, "gemini-extension.json"),
-      JSON.stringify({ name: "cognigy", version: "1.8.1" }),
-    );
-    expect(installedGeminiExtensionVersion(extDir)).toBe("1.8.1");
-  });
-
-  it("returns null for missing dir, malformed JSON, or non-string version", () => {
-    const dir = tmp();
-    expect(installedGeminiExtensionVersion(join(dir, "missing"))).toBeNull();
-    const extDir = join(dir, "cognigy");
-    mkdirSync(extDir, { recursive: true });
-    writeFileSync(join(extDir, "gemini-extension.json"), "{not json");
-    expect(installedGeminiExtensionVersion(extDir)).toBeNull();
-    writeFileSync(
-      join(extDir, "gemini-extension.json"),
-      JSON.stringify({ version: 42 }),
-    );
-    expect(installedGeminiExtensionVersion(extDir)).toBeNull();
   });
 });
