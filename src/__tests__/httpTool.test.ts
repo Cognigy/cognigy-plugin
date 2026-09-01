@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, jest } from "@jest/globals";
 import { CognigyApiClient } from "../api/client.js";
 import { ToolHandlers } from "../tools/handlers.js";
+import { STANDARD_CATCH_BLOCK } from "../tools/codeNodeValidation.js";
 
 // The backup gate holds the first change to an existing agent until the user
 // answers; suites that are not testing the gate answer it up front. The answer
@@ -21,6 +22,15 @@ const ID = {
   func: "60d5ec49f1a2c8b1a4e0f009",
   ext: "60d5ec49f1a2c8b1a4e0f00a",
 };
+
+/**
+ * Wraps a single line of Code Node logic in the standardized try/catch shape
+ * (see codeNodeValidation.ts) so fixtures satisfy the write-time enforcement
+ * this test file is not otherwise exercising.
+ */
+function wrapInStandardCatch(logic: string): string {
+  return STANDARD_CATCH_BLOCK.replace("// your script here", logic);
+}
 
 const MOCK_IDS = {
   toolNode: "aaaaaaaaaaaaaaaaaaaaa001",
@@ -163,7 +173,9 @@ describe("create_tool – HTTP tool path", () => {
     const result = await h.handleToolCall(
       "create_tool",
       baseArgs({
-        preProcessCode: "input.data = { transformed: true };",
+        preProcessCode: wrapInStandardCatch(
+          "input.data = { transformed: true };",
+        ),
       }),
     );
 
@@ -173,7 +185,9 @@ describe("create_tool – HTTP tool path", () => {
 
     const preCallBody = api.post.mock.calls[2][1];
     expect(preCallBody.type).toBe("code");
-    expect(preCallBody.config.code).toBe("input.data = { transformed: true };");
+    expect(preCallBody.config.code).toBe(
+      wrapInStandardCatch("input.data = { transformed: true };"),
+    );
     expect(preCallBody.label).toBe("My HTTP Tool - Pre-Process");
   });
 
@@ -189,7 +203,9 @@ describe("create_tool – HTTP tool path", () => {
     const result = await h.handleToolCall(
       "create_tool",
       baseArgs({
-        postProcessCode: "input.result = input.httprequest.data;",
+        postProcessCode: wrapInStandardCatch(
+          "input.result = input.httprequest.data;",
+        ),
       }),
     );
 
@@ -200,7 +216,7 @@ describe("create_tool – HTTP tool path", () => {
     const postCallBody = api.post.mock.calls[3][1];
     expect(postCallBody.type).toBe("code");
     expect(postCallBody.config.code).toBe(
-      "input.result = input.httprequest.data;",
+      wrapInStandardCatch("input.result = input.httprequest.data;"),
     );
     expect(postCallBody.label).toBe("My HTTP Tool - Post-Process");
   });
@@ -218,8 +234,8 @@ describe("create_tool – HTTP tool path", () => {
     const result = await h.handleToolCall(
       "create_tool",
       baseArgs({
-        preProcessCode: "input.pre = true;",
-        postProcessCode: "input.post = true;",
+        preProcessCode: wrapInStandardCatch("input.pre = true;"),
+        postProcessCode: wrapInStandardCatch("input.post = true;"),
       }),
     );
 
@@ -292,7 +308,7 @@ describe("create_tool – HTTP tool path", () => {
     await h.handleToolCall(
       "create_tool",
       baseArgs({
-        preProcessCode: "input.x = 1;",
+        preProcessCode: wrapInStandardCatch("input.x = 1;"),
       }),
     );
 
@@ -335,8 +351,8 @@ describe("create_tool – HTTP tool path", () => {
       config: {
         toolId: "fetch_user_posts",
         url: "https://api.example.com/posts",
-        preProcessCode: "input.x = 1;",
-        postProcessCode: "input.y = 2;",
+        preProcessCode: wrapInStandardCatch("input.x = 1;"),
+        postProcessCode: wrapInStandardCatch("input.y = 2;"),
       },
     });
 
@@ -436,13 +452,13 @@ describe("update_tool – HTTP child-node resolution", () => {
       aiAgentId: ID.agent,
       toolNodeId: MOCK_IDS.toolNode,
       toolType: "http",
-      config: { postProcessCode: "input.x = 1;" },
+      config: { postProcessCode: wrapInStandardCatch("input.x = 1;") },
     });
 
     expect(result.updatedFields).toContain("postProcessCode");
     expect(api.patch).toHaveBeenCalledWith(
       `/v2.0/flows/${ID.flow}/chart/nodes/${MOCK_IDS.postNode}`,
-      { config: { code: "input.x = 1;" } },
+      { config: { code: wrapInStandardCatch("input.x = 1;") } },
     );
   });
 
@@ -605,14 +621,14 @@ describe("update_tool – HTTP child-node resolution", () => {
       toolNodeId: MOCK_IDS.toolNode,
       toolType: "http",
       config: {
-        postProcessCode: "input.y = 2;",
+        postProcessCode: wrapInStandardCatch("input.y = 2;"),
         postProcessNodeId: MOCK_IDS.postNode,
       },
     });
 
     expect(api.patch).toHaveBeenCalledWith(
       `/v2.0/flows/${ID.flow}/chart/nodes/${MOCK_IDS.postNode}`,
-      { config: { code: "input.y = 2;" } },
+      { config: { code: wrapInStandardCatch("input.y = 2;") } },
     );
   });
 
@@ -645,7 +661,9 @@ describe("update_tool – HTTP child-node resolution", () => {
       toolNodeId: MOCK_IDS.toolNode,
       toolType: "http",
       config: {
-        postProcessCode: "input.recipes = input.httprequest.body.meals;",
+        postProcessCode: wrapInStandardCatch(
+          "input.recipes = input.httprequest.body.meals;",
+        ),
       },
     });
 
@@ -658,7 +676,11 @@ describe("update_tool – HTTP child-node resolution", () => {
         mode: "append",
         target: MOCK_IDS.httpNode,
         label: "search_recipes - Post-Process",
-        config: { code: "input.recipes = input.httprequest.body.meals;" },
+        config: {
+          code: wrapInStandardCatch(
+            "input.recipes = input.httprequest.body.meals;",
+          ),
+        },
       }),
     );
   });
@@ -690,8 +712,9 @@ describe("update_tool – HTTP child-node resolution", () => {
       toolNodeId: MOCK_IDS.toolNode,
       toolType: "http",
       config: {
-        preProcessCode:
+        preProcessCode: wrapInStandardCatch(
           'input.normalized = String(input.aiAgent.toolArgs.q || "").trim();',
+        ),
       },
     });
 
@@ -726,7 +749,7 @@ describe("update_tool – HTTP child-node resolution", () => {
       toolNodeId: MOCK_IDS.toolNode,
       toolType: "http",
       config: {
-        preProcessCode: "input.x = 1;",
+        preProcessCode: wrapInStandardCatch("input.x = 1;"),
         preProcessNodeId: "aaaaaaaaaaaaaaaaaaaaadea",
       },
     });
@@ -753,7 +776,7 @@ describe("update_tool – HTTP child-node resolution", () => {
       aiAgentId: ID.agent,
       toolNodeId: MOCK_IDS.toolNode,
       toolType: "http",
-      config: { postProcessCode: "input.x = 1;" },
+      config: { postProcessCode: wrapInStandardCatch("input.x = 1;") },
     });
 
     expect(result.updatedFields).not.toContain("postProcessCode");

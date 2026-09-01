@@ -5,6 +5,7 @@ import { join } from "path";
 import { Readable } from "stream";
 import { CognigyApiClient } from "../api/client.js";
 import { ToolHandlers } from "../tools/handlers.js";
+import { STANDARD_CATCH_BLOCK } from "../tools/codeNodeValidation.js";
 
 // Valid 24-char hex IDs for tests
 const ID = {
@@ -23,6 +24,15 @@ const ID = {
   task: "60d5ec49f1a2c8b1a4e0f00c",
   task2: "60d5ec49f1a2c8b1a4e0f00d",
 };
+
+/**
+ * Wraps a single line of Code Node logic in the standardized try/catch shape
+ * (see codeNodeValidation.ts) so fixtures satisfy the write-time enforcement
+ * this test file is not otherwise exercising.
+ */
+function wrapInStandardCatch(logic: string): string {
+  return STANDARD_CATCH_BLOCK.replace("// your script here", logic);
+}
 
 /**
  * The server holds the first change to an existing agent in a session until a
@@ -2212,7 +2222,7 @@ describe("ToolHandlers v2", () => {
         operation: "update",
         flowId: ID.flow,
         nodeId: codeNodeId,
-        config: { code: "const x: =" },
+        config: { code: wrapInStandardCatch("const x: =") },
       });
 
       expect(result.updated).toBe(true);
@@ -2237,7 +2247,7 @@ describe("ToolHandlers v2", () => {
         operation: "update",
         flowId: ID.flow,
         nodeId: codeNodeId,
-        config: { code: "input.ok = 1;" },
+        config: { code: wrapInStandardCatch("input.ok = 1;") },
       });
 
       expect(result.updated).toBe(true);
@@ -2279,13 +2289,13 @@ describe("ToolHandlers v2", () => {
         operation: "update",
         flowId: ID.flow,
         nodeId: codeNodeId,
-        config: { code: "input.ok = 1;" },
+        config: { code: wrapInStandardCatch("input.ok = 1;") },
       });
 
       const patchBody = api.patch.mock.calls[0][1];
       expect(patchBody.config).not.toHaveProperty("transpiled");
       expect(patchBody.config).not.toHaveProperty("hasError");
-      expect(patchBody.config.code).toBe("input.ok = 1;");
+      expect(patchBody.config.code).toBe(wrapInStandardCatch("input.ok = 1;"));
     });
   });
 
@@ -2335,7 +2345,7 @@ describe("ToolHandlers v2", () => {
         mode: "appendChild",
         nodeType: "code",
         label: "Process",
-        config: { code: 'input.result = "done";' },
+        config: { code: wrapInStandardCatch('input.result = "done";') },
       });
 
       expect(result.mode).toBe("append");

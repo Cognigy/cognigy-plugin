@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx eslint *)",
+      "Bash(npx tsc *)",
+      "Bash(./node_modules/.bin/eslint --version)",
+      "Bash(./node_modules/.bin/eslint src/tools/handlers.ts)",
+      "Bash(npm install *)",
+      "Bash(npm run *)"
+    ]
+  }
+}

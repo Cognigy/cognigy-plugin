@@ -207,12 +207,55 @@ Run custom **TypeScript** (a single source string — not multiple files, not HT
 
 **Runtime objects available inside the code:**
 
-| Object    | What it is                                                             |
-| --------- | ---------------------------------------------------------------------- |
-| `input`   | The current input — read/write. `input.text`, `input.data`, etc.       |
-| `context` | Session-persistent store. Read/write values that survive across turns. |
-| `profile` | The contact profile.                                                   |
-| `actions` | Helper actions, e.g. `actions.output(text, data)`, `actions.log(...)`. |
+| Object    | What it is                                                                                   |
+| --------- | --------------------------------------------------------------------------------------------- |
+| `input`   | The current input — read/write. `input.text`, `input.flowName`, `input.sessionId`, etc.       |
+| `context` | Session-persistent store. Read via `context.x`; write and delete only through `api.*` below — never assign to it directly (`context.x = value` does not persist the way Cognigy expects). |
+| `profile` | The contact profile.                                                                           |
+| `api`     | The platform API. This is the **only** supported way to mutate context/input state, log, or control flow from a Code Node — see the allowlist and rules below. (`actions.*`, e.g. `actions.output()`/`actions.log()`, is a deprecated alias and must not be used in new or edited code.) |
+
+**Required shape — every Code Node must:**
+
+1. Wrap all logic in a single top-level `try { ... } catch (error) { ... }` block.
+2. Use the standardized catch block, setting `error`, `errorMessage`, `errorFlow`, `errorNode`, `errorTime`, `errorSessionId`, `errorUserId` and reporting it via `api.addToContext("codeNode", codeNode, "simple")`:
+
+   ```javascript
+   try {
+     // your script here
+   } catch (error) {
+     let codeNode = {
+       error: true,
+       errorMessage: `${error}`,
+       errorFlow: `${input.flowName}`,
+       errorNode: `NODE NAME`, // SET TO THE NAME OF THIS NODE
+       errorTime: input.currentTime.plain,
+       errorSessionId: input.sessionId,
+       errorUserId: input.userId,
+     };
+     api.addToContext("codeNode", codeNode, "simple");
+   }
+   ```
+
+3. Only call these `api.*` methods — anything else is rejected:
+
+   ```
+   api.addToContext()        api.getContext()          api.setContext()
+   api.deleteContext()       api.removeFromContext()    api.resetContext()
+   api.say() / api.output()  api.addToInput()           api.updateProfile()
+   api.setNextNode()         api.resetNextNodes()       api.stopExecution()
+   api.log()                 api.logDebugMessage()      api.logDebugError()
+   api.setAppState()         api.handover()             api.thinkV2()
+   api.base64Encode()        api.base64Decode()         api.completeGoal()
+   api.parseCognigyScript()  api.trackAnalyticsStep()
+   ```
+
+   `api.setState()`, `api.getState()`, and `api.resetState()` were **removed** in Cognigy.AI 2026.12.0 — use Intent Conditions instead.
+
+4. Never call `api.httpRequest()`, `fetch()`, `XMLHttpRequest`, `axios`, `node-fetch`, or `require()`/`import` of an unlisted module — there is no HTTP of any kind from a Code Node. Use a dedicated HTTP Request Node in the Flow instead.
+5. Avoid browser-only APIs (`toLocaleString()`, `toLocaleDateString()`, `toLocaleTimeString()`, `Intl.*`) — they aren't available in the Code Node's Node.js runtime. Use deterministic string/date handling instead.
+6. `api.deleteContext("key")` only deletes a **top-level** key — a dot-path argument (e.g. `api.deleteContext("temp.latencyStart")`) fails silently and leaves the key in place. For a nested key, use `delete context.temp.latencyStart;` or `api.removeFromContext("temp.latencyStart", null, "simple")` instead.
+
+`manage_flow_nodes` validates a Code Node's `code` against items 1–5 before writing it — a violation is rejected with the specific problem and, for the try/catch shape, the exact template to use. Items 6 (and a few other style checks: `var` usage, direct `context.x =` assignment, approaching the platform's line/API-call limits) come back as non-blocking warnings on the response instead of a rejection.
 
 **Config:**
 | Field | Type | Required | Description |
@@ -238,7 +281,7 @@ Then send the full new `code` string on `update` (config is merged; `code` is re
   "nodeType": "code",
   "label": "Format Response",
   "config": {
-    "code": "const items = context.cartItems || [];\ninput.cartSummary = items.map((i: { name: string; price: number }) => `${i.name}: $${i.price}`).join('\\n');"
+    "code": "try {\n  const items = context.cartItems || [];\n  const summary = items.map((i: { name: string; price: number }) => `${i.name}: $${i.price}`).join('\\n');\n  api.addToContext(\"cartSummary\", summary, \"simple\");\n} catch (error) {\n  let codeNode = {\n    error: true,\n    errorMessage: `${error}`,\n    errorFlow: `${input.flowName}`,\n    errorNode: `Format Response`,\n    errorTime: input.currentTime.plain,\n    errorSessionId: input.sessionId,\n    errorUserId: input.userId\n  };\n  api.addToContext(\"codeNode\", codeNode, \"simple\");\n}"
   }
 }
 ```

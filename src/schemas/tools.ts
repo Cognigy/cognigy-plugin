@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validateCodeNode } from "../tools/codeNodeValidation.js";
 
 const idSchema = z.string().regex(/^[a-f0-9]{24}$/, "Must be a 24-char hex ID");
 
@@ -6,6 +7,29 @@ const paginationSchema = {
   limit: z.number().int().min(1).max(100).optional(),
   skip: z.number().int().min(0).optional(),
 };
+
+/**
+ * Runs the shared Code Node validator against a config field and, if it
+ * reports blocking errors, raises a Zod issue at that field's path. Warnings
+ * are not raised here — they don't block the write; they're surfaced by the
+ * handler after a successful create/update instead. No-ops when the field is
+ * undefined (the caller isn't setting/changing this code).
+ */
+function refineCodeField(
+  ctx: z.RefinementCtx,
+  code: string | undefined,
+  path: (string | number)[],
+) {
+  if (code === undefined) return;
+  const result = validateCodeNode(code);
+  if (result.errors.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path,
+      message: result.errors.join(" "),
+    });
+  }
+}
 
 // Tool 1: create_ai_agent
 export const createAiAgentSchema = z.object({
@@ -260,40 +284,12 @@ export const manageKnowledgeSchema = z.object({
 });
 
 // Tool 9: create_tool (includes http tool type, formerly create_custom_http_tool)
-export const createToolSchema = z.object({
-  aiAgentId: idSchema,
-  toolType: z.enum(["tool", "knowledge", "send_email", "mcp", "http"]),
-  name: z.string().min(1).max(200),
-  config: z.object({
-    toolId: z.string().optional(),
-    description: z.string().optional(),
-    parameters: z.string().optional(),
-    knowledgeStoreId: z.string().optional(),
-    topK: z.number().int().min(1).max(50).optional(),
-    recipient: z.string().optional(),
-    mcpServerUrl: z.string().optional(),
-    mcpName: z.string().optional(),
-    timeout: z.number().optional(),
-    url: z.string().optional(),
-    method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
-    headers: z.record(z.string()).optional(),
-    body: z.string().optional(),
-    preProcessCode: z.string().optional(),
-    postProcessCode: z.string().optional(),
-    toolResponseValue: z.string().optional(),
-  }),
-});
-
-// Tool 10: update_tool
-export const updateToolSchema = z.object({
-  aiAgentId: idSchema,
-  toolNodeId: idSchema,
-  name: z.string().min(1).max(200).optional(),
-  toolType: z
-    .enum(["tool", "knowledge", "send_email", "mcp", "http"])
-    .optional(),
-  config: z
-    .object({
+export const createToolSchema = z
+  .object({
+    aiAgentId: idSchema,
+    toolType: z.enum(["tool", "knowledge", "send_email", "mcp", "http"]),
+    name: z.string().min(1).max(200),
+    config: z.object({
       toolId: z.string().optional(),
       description: z.string().optional(),
       parameters: z.string().optional(),
@@ -310,31 +306,93 @@ export const updateToolSchema = z.object({
       preProcessCode: z.string().optional(),
       postProcessCode: z.string().optional(),
       toolResponseValue: z.string().optional(),
-      httpNodeId: idSchema.optional(),
-      preProcessNodeId: idSchema.optional(),
-      postProcessNodeId: idSchema.optional(),
-      resolveNodeId: idSchema.optional(),
-    })
-    .optional(),
-});
+    }),
+  })
+  .superRefine((data, ctx) => {
+    refineCodeField(ctx, data.config.preProcessCode, [
+      "config",
+      "preProcessCode",
+    ]);
+    refineCodeField(ctx, data.config.postProcessCode, [
+      "config",
+      "postProcessCode",
+    ]);
+  });
+
+// Tool 10: update_tool
+export const updateToolSchema = z
+  .object({
+    aiAgentId: idSchema,
+    toolNodeId: idSchema,
+    name: z.string().min(1).max(200).optional(),
+    toolType: z
+      .enum(["tool", "knowledge", "send_email", "mcp", "http"])
+      .optional(),
+    config: z
+      .object({
+        toolId: z.string().optional(),
+        description: z.string().optional(),
+        parameters: z.string().optional(),
+        knowledgeStoreId: z.string().optional(),
+        topK: z.number().int().min(1).max(50).optional(),
+        recipient: z.string().optional(),
+        mcpServerUrl: z.string().optional(),
+        mcpName: z.string().optional(),
+        timeout: z.number().optional(),
+        url: z.string().optional(),
+        method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
+        headers: z.record(z.string()).optional(),
+        body: z.string().optional(),
+        preProcessCode: z.string().optional(),
+        postProcessCode: z.string().optional(),
+        toolResponseValue: z.string().optional(),
+        httpNodeId: idSchema.optional(),
+        preProcessNodeId: idSchema.optional(),
+        postProcessNodeId: idSchema.optional(),
+        resolveNodeId: idSchema.optional(),
+      })
+      .optional(),
+  })
+  .superRefine((data, ctx) => {
+    refineCodeField(ctx, data.config?.preProcessCode, [
+      "config",
+      "preProcessCode",
+    ]);
+    refineCodeField(ctx, data.config?.postProcessCode, [
+      "config",
+      "postProcessCode",
+    ]);
+  });
 
 // Tool 12: manage_flow_nodes
-export const manageFlowNodesSchema = z.object({
-  operation: z.enum(["list", "get", "create", "update", "delete", "render"]),
-  flowId: idSchema,
-  nodeId: idSchema.optional(),
-  nodeType: z.string().optional(),
-  label: z.string().min(1).max(200).optional(),
-  parentNodeId: idSchema.optional(),
-  mode: z.enum(["append", "appendChild"]).optional(),
-  config: z.record(z.any()).optional(),
-  // render operation
-  focus: z.union([idSchema, z.array(idSchema)]).optional(),
-  format: z.enum(["ascii", "mermaid", "both"]).optional(),
-  legend: z.boolean().optional(),
-  writeHtml: z.boolean().optional(),
-  openInBrowser: z.boolean().optional(),
-});
+export const manageFlowNodesSchema = z
+  .object({
+    operation: z.enum(["list", "get", "create", "update", "delete", "render"]),
+    flowId: idSchema,
+    nodeId: idSchema.optional(),
+    nodeType: z.string().optional(),
+    label: z.string().min(1).max(200).optional(),
+    parentNodeId: idSchema.optional(),
+    mode: z.enum(["append", "appendChild"]).optional(),
+    config: z.record(z.any()).optional(),
+    // render operation
+    focus: z.union([idSchema, z.array(idSchema)]).optional(),
+    format: z.enum(["ascii", "mermaid", "both"]).optional(),
+    legend: z.boolean().optional(),
+    writeHtml: z.boolean().optional(),
+    openInBrowser: z.boolean().optional(),
+  })
+  .superRefine((data, ctx) => {
+    // Standalone Code nodes created directly via manage_flow_nodes. The
+    // update path can't be checked here — the existing node's type isn't
+    // known until handlers.ts fetches it — so that half lives in handlers.ts.
+    if (data.operation === "create" && data.nodeType === "code") {
+      refineCodeField(ctx, data.config?.code as string | undefined, [
+        "config",
+        "code",
+      ]);
+    }
+  });
 
 // Tool 13: manage_packages
 const packageResourceSelectionSchema = z.object({

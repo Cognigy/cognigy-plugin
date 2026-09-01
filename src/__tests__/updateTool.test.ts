@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, jest } from "@jest/globals";
 import { CognigyApiClient } from "../api/client.js";
 import { ToolHandlers } from "../tools/handlers.js";
+import { STANDARD_CATCH_BLOCK } from "../tools/codeNodeValidation.js";
 
 // The backup gate holds the first change to an existing agent until the user
 // answers; suites that are not testing the gate answer it up front. The answer
@@ -21,6 +22,15 @@ const ID = {
   func: "60d5ec49f1a2c8b1a4e0f009",
   ext: "60d5ec49f1a2c8b1a4e0f00a",
 };
+
+/**
+ * Wraps a single line of Code Node logic in the standardized try/catch shape
+ * (see codeNodeValidation.ts) so fixtures satisfy the write-time enforcement
+ * this test file is not otherwise exercising.
+ */
+function wrapInStandardCatch(logic: string): string {
+  return STANDARD_CATCH_BLOCK.replace("// your script here", logic);
+}
 
 describe("update_tool", () => {
   let api: jest.Mocked<CognigyApiClient>;
@@ -250,14 +260,14 @@ describe("update_tool", () => {
     const result = await h.handleToolCall("update_tool", {
       aiAgentId: ID.agent,
       toolNodeId: ID.tool,
-      config: { preProcessCode: "input.newField = true;" },
+      config: { preProcessCode: wrapInStandardCatch("input.newField = true;") },
     });
 
     expect(result.updated).toBe(true);
     expect(result.updatedFields).toContain("preProcessCode");
     expect(api.patch).toHaveBeenCalledWith(
       `/v2.0/flows/${ID.flow}/chart/nodes/code-pre-001`,
-      { config: { code: "input.newField = true;" } },
+      { config: { code: wrapInStandardCatch("input.newField = true;") } },
     );
   });
 
@@ -283,14 +293,16 @@ describe("update_tool", () => {
     const result = await h.handleToolCall("update_tool", {
       aiAgentId: ID.agent,
       toolNodeId: ID.tool,
-      config: { postProcessCode: 'output.result = "done";' },
+      config: {
+        postProcessCode: wrapInStandardCatch('output.result = "done";'),
+      },
     });
 
     expect(result.updated).toBe(true);
     expect(result.updatedFields).toContain("postProcessCode");
     expect(api.patch).toHaveBeenCalledWith(
       `/v2.0/flows/${ID.flow}/chart/nodes/code-post-001`,
-      { config: { code: 'output.result = "done";' } },
+      { config: { code: wrapInStandardCatch('output.result = "done";') } },
     );
   });
 
@@ -302,7 +314,10 @@ describe("update_tool", () => {
     const result = await h.handleToolCall("update_tool", {
       aiAgentId: ID.agent,
       toolNodeId: ID.tool,
-      config: { preProcessCode: "x = 1;", postProcessCode: "y = 2;" },
+      config: {
+        preProcessCode: wrapInStandardCatch("x = 1;"),
+        postProcessCode: wrapInStandardCatch("y = 2;"),
+      },
     });
 
     expect(result._hints).toBeDefined();

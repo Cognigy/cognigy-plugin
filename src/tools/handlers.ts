@@ -26,6 +26,10 @@ import { buildWebchatSettings, deepMerge } from "./webchatSettings.js";
 import { normalizeToolParameters } from "./toolParameters.js";
 import { getNodeEntry, supportedNodeTypes } from "./nodeRegistry.js";
 import {
+  validateCodeNode,
+  STANDARD_CATCH_BLOCK,
+} from "./codeNodeValidation.js";
+import {
   evaluateChecks,
   summarize,
   nodeId as voiceNodeId,
@@ -4199,6 +4203,16 @@ export class ToolHandlers {
           configApplied: data.config ? Object.keys(data.config) : [],
         };
 
+        // Code Node content warnings (non-blocking) — the hard try/catch/
+        // allowlist/HTTP checks already ran in manageFlowNodesSchema's
+        // superRefine and would have thrown before this point. These are
+        // the softer, non-blocking signals (schema-level refinements can
+        // only reject, not warn, so this runs post-write).
+        const codeWarnings: string[] =
+          entry.type === "code" && typeof data.config?.code === "string"
+            ? validateCodeNode(data.config.code).warnings
+            : [];
+
         if (missingInitAppSession) {
           return withRenderSuggestion(
             withHints(result, {
@@ -4206,6 +4220,18 @@ export class ToolHandlers {
                 "No xApp: Init Session (initAppSession) node exists in this flow. Every xApp node needs one, and it must run before this node — it creates the session and populates input.apps.url. (This check only verifies presence, not execution order.)",
               action:
                 "Add an initAppSession node and ensure it runs before this xApp node (earlier in the same tool branch).",
+            }),
+            flowId,
+            nodeId,
+          );
+        }
+
+        if (codeWarnings.length > 0) {
+          return withRenderSuggestion(
+            withHints(result, {
+              warning: codeWarnings.join(" "),
+              action:
+                "Review the flagged pattern(s) against the cognigyCodeDev skill's Code Node rules.",
             }),
             flowId,
             nodeId,
@@ -4235,12 +4261,16 @@ export class ToolHandlers {
         }
 
         const patchPayload: any = {};
+        // Hoisted out of the `if (data.config)` block below so the
+        // post-write Code Node warnings check further down (which only
+        // fires when data.config is present anyway) can still read it.
+        let nodeType = "";
         if (data.label) patchPayload.label = data.label;
         if (data.config) {
           const existingNode: any = await this.apiClient.get(
             `/v2.0/flows/${flowId}/chart/nodes/${data.nodeId}`,
           );
-          const nodeType = existingNode?.type ?? "";
+          nodeType = existingNode?.type ?? "";
 
           // Strip server-computed, read-only fields before merging them back
           // into the PATCH. `transpiled` (a code node's compiled JS) can be
@@ -4252,6 +4282,24 @@ export class ToolHandlers {
             existingConfig.mock = { ...existingConfig.mock };
             delete existingConfig.mock.transpiled;
             delete existingConfig.mock.hasError;
+          }
+
+          // Code node updates: the node's type is only known now (fetched
+          // above), so the try/catch/allowlist/HTTP standard is enforced
+          // here rather than in the schema — same rule the schema already
+          // applies on create.
+          if (nodeType === "code" && data.config.code !== undefined) {
+            const codeCheck = validateCodeNode(data.config.code);
+            if (codeCheck.errors.length > 0) {
+              return withHints(
+                {
+                  error: `Code Node update rejected: ${codeCheck.errors.join(" ")}`,
+                },
+                {
+                  action: `Update the code to match the standard try/catch shape:\n${STANDARD_CATCH_BLOCK}`,
+                },
+              );
+            }
           }
 
           // Handle case node updates — the Cognigy API expects exactly
@@ -4326,6 +4374,14 @@ export class ToolHandlers {
           ...(data.config ? { configUpdated: Object.keys(data.config) } : {}),
         };
 
+        // Code Node content warnings (non-blocking) — the hard try/catch/
+        // allowlist/HTTP checks already ran above and would have returned
+        // before the PATCH; these are the softer, non-blocking signals.
+        const codeWarnings: string[] =
+          nodeType === "code" && typeof data.config?.code === "string"
+            ? validateCodeNode(data.config.code).warnings
+            : [];
+
         // The PATCH response echoes the input config without the server-computed
         // `hasError` (transpilation runs after the write). When code was edited,
         // read the node back to detect a transpile failure and surface it.
@@ -4349,6 +4405,19 @@ export class ToolHandlers {
             // Non-fatal — the update itself succeeded.
           }
         }
+
+        if (codeWarnings.length > 0) {
+          return withRenderSuggestion(
+            withHints(result, {
+              warning: codeWarnings.join(" "),
+              action:
+                "Review the flagged pattern(s) against the cognigyCodeDev skill's Code Node rules.",
+            }),
+            flowId,
+            data.nodeId,
+          );
+        }
+
         return withRenderSuggestion(result, flowId, data.nodeId);
       }
 

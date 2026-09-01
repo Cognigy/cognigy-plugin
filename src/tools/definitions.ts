@@ -567,7 +567,7 @@ export const tools: ToolDefinition[] = [
     name: "create_tool",
     description: `Create a tool as a child of an AI Agent's Job node. Tools extend what the agent can do.
 
-IMPORTANT — environment-specific conventions that are NOT obvious from this schema and that silently produce broken tools when missed: the wrapped HTTP response shape (input.httprequest is an object containing { result, statusCode, length }, NOT the raw response body), where LLM tool-call arguments live (input.aiAgent.toolArgs.<param>, NOT input.data), and Code-node rules (top-level return is forbidden — mutate input directly). Assuming "REST is obvious" or "Code nodes are just JS" is the most common cause of HTTP tools that fire successfully but return empty results to the LLM.
+IMPORTANT — environment-specific conventions that are NOT obvious from this schema and that silently produce broken tools when missed: the wrapped HTTP response shape (input.httprequest is an object containing { result, statusCode, length }, NOT the raw response body), where LLM tool-call arguments live (input.aiAgent.toolArgs.<param>, NOT input.data), and Code-node rules (top-level return is forbidden — mutate input directly; all logic must be wrapped in a single top-level try/catch, or the node is rejected — see preProcessCode/postProcessCode below for the required catch shape). Assuming "REST is obvious" or "Code nodes are just JS" is the most common cause of HTTP tools that fire successfully but return empty results to the LLM.
 
 Tool types:
 - tool: General-purpose tool with custom logic branch. Use this for most requests (e.g., "unlock account", "check status", "validate input"). Provide toolId, description, and optional parameters (JSON Schema). After creation, use manage_flow_nodes with parentNodeId = returned toolNodeId and mode = "appendChild" to add logic nodes (say, code, ifThenElse, httpRequest, etc.) inside the tool branch.
@@ -678,12 +678,12 @@ After creating, use talk_to_agent to test.`,
             preProcessCode: {
               type: "string",
               description:
-                "JavaScript code to run BEFORE the HTTP request. Runs in Cognigy's Code Node environment with access to input, context, actions (http only).",
+                'JavaScript code to run BEFORE the HTTP request. Runs in Cognigy\'s Code Node environment with access to input, context, actions (http only). Required shape: wrap all logic in a top-level try/catch. On catch, set { error: true, errorMessage, errorFlow, errorNode, errorTime, errorSessionId, errorUserId } and write it with api.addToContext("codeNode", ..., "simple"). Only documented api.* methods are allowed (no api.setState/getState/resetState — removed; use Intent Conditions). No HTTP calls, fetch/axios/require/import, or browser-only date APIs (toLocaleString, etc.) — code violating these is rejected before the tool is created. See the cognigyCodeDev skill for the exact template.',
             },
             postProcessCode: {
               type: "string",
               description:
-                "JavaScript code to run AFTER the HTTP response. Runs in Cognigy's Code Node environment with access to input, context, actions (http only).",
+                "JavaScript code to run AFTER the HTTP response. Runs in Cognigy's Code Node environment with access to input, context, actions (http only). Same requirements as preProcessCode — see that field's description for the required try/catch shape and disallowed patterns.",
             },
             toolResponseValue: {
               type: "string",
@@ -796,12 +796,12 @@ After creating, use talk_to_agent to test.`,
             preProcessCode: {
               type: "string",
               description:
-                "JavaScript code for the pre-process Code node (http only)",
+                "JavaScript code for the pre-process Code node (http only). Must wrap all logic in a top-level try/catch with the standard catch shape, use only documented api.* methods, and avoid HTTP/require/import and browser-only date APIs — see create_tool's preProcessCode description for the full list. Rejected before the update is applied if violated.",
             },
             postProcessCode: {
               type: "string",
               description:
-                "JavaScript code for the post-process Code node (http only)",
+                "JavaScript code for the post-process Code node (http only). Same requirements as preProcessCode.",
             },
             toolResponseValue: {
               type: "string",
@@ -839,7 +839,7 @@ After creating, use talk_to_agent to test.`,
   {
     name: "manage_flow_nodes",
     description:
-      'Manage the logic nodes inside a flow (list/get/create/update/delete) and render the flow as a diagram. Nodes are helpers that live INSIDE AI Agent tool branches: create a tool first (create_tool { toolType: "tool" }), then add nodes with parentNodeId = toolNodeId, mode = "appendChild". NEVER add standalone nodes before the AI Agent Job node. The flow-nodes skill owns the full workflow — placement, branching (ifThenElse/lookup), node config, and case values.\n\nOPERATIONS:\n- list: all nodes in a flow (id, type, label, parentId, isEntryPoint only — NO config).\n- get: one node in full incl. config (requires nodeId). Read before editing. For code nodes the config reports `hasError`; the large server-computed `transpiled` output is omitted.\n- create: add a node (requires nodeType + config). parentNodeId + mode place it — see the flow-nodes skill.\n- update: change a node\'s config or label (only provided fields change). For switch/lookup nodes, pass a `cases` array to set case values.\n- delete: remove a node.\n- render (read-only): visualize the flow. Returns an `ascii` tree (display inline in any client incl. terminal) and a `mermaid` string. Deliver the mermaid ONLY as a native Mermaid/diagram artifact — do NOT wrap it in HTML or paste it as an inline ```mermaid fence (both break the zoomable, mobile-friendly viewer). Options: focus=<nodeId|nodeId[]> highlights nodes; writeHtml writes a self-contained rich HTML graph to a local tmp file and opens it in the browser (returns htmlUrl/htmlPath — the file is already on the user\'s machine, just hand them the link). See the flow-nodes skill for details.\n\nSupported node types come from the server node registry; an unsupported nodeType returns the current list. For AI Agent tool nodes (knowledge, send_email, mcp, http) use create_tool / update_tool instead.',
+      'Manage the logic nodes inside a flow (list/get/create/update/delete) and render the flow as a diagram. Nodes are helpers that live INSIDE AI Agent tool branches: create a tool first (create_tool { toolType: "tool" }), then add nodes with parentNodeId = toolNodeId, mode = "appendChild". NEVER add standalone nodes before the AI Agent Job node. The flow-nodes skill owns the full workflow — placement, branching (ifThenElse/lookup), node config, and case values.\n\nOPERATIONS:\n- list: all nodes in a flow (id, type, label, parentId, isEntryPoint only — NO config).\n- get: one node in full incl. config (requires nodeId). Read before editing. For code nodes the config reports `hasError`; the large server-computed `transpiled` output is omitted.\n- create: add a node (requires nodeType + config). parentNodeId + mode place it — see the flow-nodes skill. For nodeType "code", config.code must wrap all logic in a top-level try/catch with the standard catch shape (error, errorMessage, errorFlow, errorNode, errorTime, errorSessionId, errorUserId, reported via api.addToContext("codeNode", ..., "simple")), use only documented api.* methods (no api.setState/getState/resetState — removed; use Intent Conditions), and avoid HTTP calls/fetch/axios/require/import and browser-only date APIs — code violating these is rejected before the node is created. Non-blocking style warnings (nested-path api.deleteContext(), direct context.x assignment, var usage, approaching line/api-call limits) are returned but do not block the write.\n- update: change a node\'s config or label (only provided fields change). For switch/lookup nodes, pass a `cases` array to set case values. For an existing "code" node, the same try/catch/allowlist/HTTP requirements as create apply to config.code and are rejected before the update is applied; the same non-blocking warnings apply.\n- delete: remove a node.\n- render (read-only): visualize the flow. Returns an `ascii` tree (display inline in any client incl. terminal) and a `mermaid` string. Deliver the mermaid ONLY as a native Mermaid/diagram artifact — do NOT wrap it in HTML or paste it as an inline ```mermaid fence (both break the zoomable, mobile-friendly viewer). Options: focus=<nodeId|nodeId[]> highlights nodes; writeHtml writes a self-contained rich HTML graph to a local tmp file and opens it in the browser (returns htmlUrl/htmlPath — the file is already on the user\'s machine, just hand them the link). See the flow-nodes skill for details.\n\nSupported node types come from the server node registry; an unsupported nodeType returns the current list. For AI Agent tool nodes (knowledge, send_email, mcp, http) use create_tool / update_tool instead.',
     annotations: {
       title: "Manage Flow Nodes",
       readOnlyHint: false,
