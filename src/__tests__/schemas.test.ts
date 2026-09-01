@@ -334,6 +334,173 @@ describe("setupLlmSchema", () => {
       }),
     ).toThrow();
   });
+
+  it("accepts awsBedrock with a named model and access keys", () => {
+    const result = schemas.setupLlmSchema.parse({
+      projectId: VALID_ID,
+      provider: "awsBedrock",
+      modelType: "amazon.nova-pro-v1:0",
+      region: "eu-central-1",
+      accessKeyId: "AKIA123",
+      secretAccessKey: "secret123",
+    });
+    expect(result.provider).toBe("awsBedrock");
+    expect(result.region).toBe("eu-central-1");
+  });
+
+  it("accepts awsBedrock with custom-model and customModel", () => {
+    const result = schemas.setupLlmSchema.parse({
+      projectId: VALID_ID,
+      provider: "awsBedrock",
+      modelType: "custom-model",
+      customModel: "anthropic.claude-sonnet-4-20250514-v1:0",
+      region: "us-east-1",
+      roleArn: "arn:aws:iam::123456789012:role/cognigy-bedrock",
+    });
+    expect(result.customModel).toBe("anthropic.claude-sonnet-4-20250514-v1:0");
+  });
+
+  it("rejects awsBedrock without region", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "awsBedrock",
+        modelType: "amazon.nova-pro-v1:0",
+        accessKeyId: "AKIA123",
+        secretAccessKey: "secret123",
+      }),
+    ).toThrow(/region/);
+  });
+
+  it("rejects awsBedrock with apiKey instead of AWS credentials", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "awsBedrock",
+        modelType: "amazon.nova-pro-v1:0",
+        region: "us-east-1",
+        apiKey: "sk-nope",
+      }),
+    ).toThrow(/accessKeyId/);
+  });
+
+  it("rejects awsBedrock with an incomplete access key pair", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "awsBedrock",
+        modelType: "amazon.nova-pro-v1:0",
+        region: "us-east-1",
+        accessKeyId: "AKIA123",
+      }),
+    ).toThrow(/secretAccessKey/);
+  });
+
+  it("rejects awsBedrock with both access keys and roleArn", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "awsBedrock",
+        modelType: "amazon.nova-pro-v1:0",
+        region: "us-east-1",
+        accessKeyId: "AKIA123",
+        secretAccessKey: "secret123",
+        roleArn: "arn:aws:iam::123456789012:role/cognigy-bedrock",
+      }),
+    ).toThrow(/roleArn/);
+  });
+
+  it("rejects awsBedrock customModel with a named modelType", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "awsBedrock",
+        modelType: "amazon.nova-pro-v1:0",
+        customModel: "amazon.nova-pro-v1:0",
+        region: "us-east-1",
+        roleArn: "arn:aws:iam::123456789012:role/cognigy-bedrock",
+      }),
+    ).toThrow(/custom-model/);
+  });
+
+  it("accepts awsBedrock with global location routing", () => {
+    const result = schemas.setupLlmSchema.parse({
+      projectId: VALID_ID,
+      provider: "awsBedrock",
+      modelType: "amazon.nova-pro-v1:0",
+      region: "eu-central-1",
+      location: "global",
+      accessKeyId: "AKIA123",
+      secretAccessKey: "secret123",
+    });
+    expect(result.location).toBe("global");
+  });
+
+  it("accepts awsBedrock with geo location routing and a geo boundary", () => {
+    const result = schemas.setupLlmSchema.parse({
+      projectId: VALID_ID,
+      provider: "awsBedrock",
+      modelType: "amazon.nova-pro-v1:0",
+      region: "eu-central-1",
+      location: "geo",
+      geo: "eu",
+      accessKeyId: "AKIA123",
+      secretAccessKey: "secret123",
+    });
+    expect(result.geo).toBe("eu");
+  });
+
+  it("rejects awsBedrock location 'geo' without a geo boundary", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "awsBedrock",
+        modelType: "amazon.nova-pro-v1:0",
+        region: "eu-central-1",
+        location: "geo",
+        accessKeyId: "AKIA123",
+        secretAccessKey: "secret123",
+      }),
+    ).toThrow(/geo/);
+  });
+
+  it("rejects awsBedrock geo without location 'geo'", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "awsBedrock",
+        modelType: "amazon.nova-pro-v1:0",
+        region: "eu-central-1",
+        geo: "eu",
+        accessKeyId: "AKIA123",
+        secretAccessKey: "secret123",
+      }),
+    ).toThrow(/location is 'geo'/);
+  });
+
+  it("rejects location on other providers", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "openAI",
+        modelType: "gpt-4o",
+        apiKey: "sk-abc123",
+        location: "global",
+      }),
+    ).toThrow(/awsBedrock/);
+  });
+
+  it("rejects AWS-only fields on other providers", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "openAI",
+        modelType: "gpt-4o",
+        apiKey: "sk-abc123",
+        region: "us-east-1",
+      }),
+    ).toThrow(/awsBedrock/);
+  });
 });
 
 describe("talkToAgentSchema", () => {

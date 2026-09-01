@@ -500,6 +500,7 @@ const PROVIDER_CONNECTION_TYPE: Record<string, string> = {
   google: "GoogleVertexAIProvider",
   mistral: "MistralProvider",
   openAICompatible: "OpenAICompatibleProvider",
+  awsBedrock: "AwsBedrockProvider",
 };
 
 /**
@@ -1930,9 +1931,19 @@ export class ToolHandlers {
   async handleSetupLlm(args: any): Promise<any> {
     const data = schemas.setupLlmSchema.parse(args);
 
-    if (!data.apiKey && !data.connectionId) {
+    const hasInlineCredentials =
+      data.provider === "awsBedrock"
+        ? Boolean((data.accessKeyId && data.secretAccessKey) || data.roleArn)
+        : Boolean(data.apiKey);
+
+    if (!hasInlineCredentials && !data.connectionId) {
       return withHints(
-        { error: "Either apiKey or connectionId must be provided." },
+        {
+          error:
+            data.provider === "awsBedrock"
+              ? "Either accessKeyId + secretAccessKey, roleArn, or connectionId must be provided."
+              : "Either apiKey or connectionId must be provided.",
+        },
         {
           action: "Read the provider guide for credential requirements.",
         },
@@ -1966,8 +1977,11 @@ export class ToolHandlers {
               projectId: data.projectId,
             },
             {
-              action:
-                "Import the LLM and its connection into the target project with manage_packages, or provide an apiKey / same-project connectionId.",
+              action: `Import the LLM and its connection into the target project with manage_packages, or provide ${
+                data.provider === "awsBedrock"
+                  ? "accessKeyId + secretAccessKey (or roleArn)"
+                  : "an apiKey"
+              } / a same-project connectionId.`,
             },
           );
         }
@@ -1989,15 +2003,29 @@ export class ToolHandlers {
       }
     }
 
-    // If apiKey is provided, auto-create a Connection first
-    if (data.apiKey && !connectionRefId) {
+    // If inline credentials are provided, auto-create a Connection first
+    if (hasInlineCredentials && !connectionRefId) {
+      let connectionType =
+        PROVIDER_CONNECTION_TYPE[data.provider] ?? data.provider;
+      let connectionFields: Record<string, string> = { apiKey: data.apiKey! };
+      if (data.provider === "awsBedrock") {
+        if (data.roleArn) {
+          connectionType = "AwsBedrockProviderIamRole";
+          connectionFields = { roleArn: data.roleArn };
+        } else {
+          connectionFields = {
+            accessKeyId: data.accessKeyId!,
+            secretAccessKey: data.secretAccessKey!,
+          };
+        }
+      }
       try {
         const connection: any = await this.apiClient.post("/v2.0/connections", {
           projectId: data.projectId,
           name: `${data.provider} - auto - ${randomUUID()}`,
-          type: PROVIDER_CONNECTION_TYPE[data.provider] ?? data.provider,
+          type: connectionType,
           extension: "@cognigy/generative-ai-provider",
-          fields: { apiKey: data.apiKey },
+          fields: connectionFields,
         });
         connectionRefId =
           connection.referenceId || connection._id || connection.id;
@@ -2005,7 +2033,7 @@ export class ToolHandlers {
         return withHints(
           { error: `Failed to create connection: ${connError.message}` },
           {
-            action: "Check API key and provider, then retry.",
+            action: "Check credentials and provider, then retry.",
           },
         );
       }
@@ -2015,6 +2043,8 @@ export class ToolHandlers {
 
     // Provider-specific metadata. For openAICompatible the actual model name
     // and endpoint live here — modelType is just "custom-model" / "custom-embedding-model".
+    // For awsBedrock the region, routing location, and optionally a custom
+    // Bedrock model id live here.
     const providerMeta =
       data.provider === "openAICompatible"
         ? {
@@ -2024,7 +2054,14 @@ export class ToolHandlers {
               ? { customAuthHeader: data.customAuthHeader }
               : {}),
           }
-        : {};
+        : data.provider === "awsBedrock"
+          ? {
+              region: data.region,
+              ...(data.location ? { location: data.location } : {}),
+              ...(data.geo ? { geo: data.geo } : {}),
+              ...(data.customModel ? { customModel: data.customModel } : {}),
+            }
+          : {};
 
     let result: any;
     try {
