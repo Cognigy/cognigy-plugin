@@ -1,3 +1,9 @@
+// The audit_event filter enums are advertised straight from the Zod schemas'
+// constants: two hand-kept copies would drift the moment the platform grows a
+// new actor value, and the LLM would then be offered a value Zod rejects (or
+// never told about one it accepts).
+import { AUDIT_ACTORS, AUDIT_EVENT_TYPES } from "../schemas/tools.js";
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -126,7 +132,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "setup_llm",
     description:
-      "Create a NEW LLM resource (GPT-4, Claude, etc.) in a project. This is a LAST RESORT — only use when no existing LLM can be reused.\n\nPRECONDITION — you MUST have already completed ALL of these before calling this tool:\n1. Listed all projects: list_resources { resourceType: 'project' }\n2. Checked every other project for existing LLMs: list_resources { resourceType: 'llm_model', projectId }\n3. Attempted package reuse where another project already has a reusable LLM with connectionId\n4. Proceeding only because reuse is unavailable, transfer failed, or the user explicitly asked for a brand-new LLM\nIf you have not completed steps 1-4, STOP and do them first. Do NOT call this tool.\n\nMODEL ROLE WARNING:\n- Chat/completion models are used for AI Agents.\n- Embedding models are used for knowledge-store indexing.\n- Knowledge Search and Answer Extraction use same-project llm_model IDs accepted by the Cognigy API for that use case.\n- Do not use setup_llm as an automatic workaround for knowledgeSearchModelId failures while existing same-project candidates still exist.\n\nOPENAI-COMPATIBLE PROVIDERS (self-hosted or third-party endpoints that speak the OpenAI API, e.g. vLLM, Hugging Face, LiteLLM, Azure AI Foundry): use provider 'openAICompatible' with modelType 'custom-model' (chat) or 'custom-embedding-model' (embedding). The actual model name goes in customModel and the endpoint in baseCustomUrl — both required. Optional: customAuthHeader (send the API key in a custom header instead of 'Authorization: Bearer'), apiType ('chatCompletion' default, or 'responses').\n\nAWS BEDROCK: use provider 'awsBedrock' with region (required) and either accessKeyId + secretAccessKey or roleArn (IAM role) — NOT apiKey. modelType is a Bedrock model id from Cognigy's supported list (e.g. 'amazon.nova-pro-v1:0', 'amazon.nova-lite-v1:0', 'amazon.titan-embed-text-v2:0' for embeddings), or 'custom-model' with the Bedrock model id in customModel.\n\nIMPORTANT: NEVER guess or hallucinate credentials. If creating a new LLM and the user provided neither the provider's credentials nor a connectionId, ASK for the required credentials. Credentials are apiKey for most providers; for awsBedrock they are accessKeyId + secretAccessKey or roleArn instead (apiKey is rejected there — do not ask for one).\n\nAfter creation, the connection is normally tested by sending a minimal probe to the provider. If this connection test runs and fails (for example, invalid credentials or model name), the model is deleted and an error is returned — this prevents broken model references from silently breaking downstream flows.\n\nIf the provider's test endpoint is unreachable or returns a non-testable status, the model is kept but a warning is returned so you know connectivity could not be fully verified.\n\nIf dangerouslySkipConnectionTest is true, the connection test is not run at all; the model is kept and the response includes a warning that no connectivity check was performed. Only use this flag when you explicitly accept the risk that the created LLM might not be callable. Never use it to bypass a missing or cross-project connection.\n\nIf isDefault is true (the default), agents in the project will automatically use this LLM. If isDefault is false, you must explicitly assign it to the agent via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: '<referenceId from this response>' } }.\n\nThe response includes the LLM's referenceId — use this value for jobConfig.llmProviderReferenceId if assigning manually.\n\nTo list existing LLMs: use list_resources { resourceType: 'llm_model', projectId }.\nTo delete: use delete_resource { resourceType: 'llm_model', id }.",
+      "Create a NEW LLM resource (GPT-4, Claude, etc.) in a project. This is a LAST RESORT — only use when no existing LLM can be reused.\n\nPRECONDITION — you MUST have already completed ALL of these before calling this tool:\n1. Listed all projects: list_resources { resourceType: 'project' }\n2. Checked every other project for existing LLMs: list_resources { resourceType: 'llm_model', projectId }\n3. Attempted package reuse where another project already has a reusable LLM with connectionId\n4. Proceeding only because reuse is unavailable, transfer failed, or the user explicitly asked for a brand-new LLM\nIf you have not completed steps 1-4, STOP and do them first. Do NOT call this tool.\n\nMODEL ROLE WARNING:\n- Chat/completion models are used for AI Agents.\n- Embedding models are used for knowledge-store indexing.\n- Knowledge Search and Answer Extraction use same-project llm_model IDs accepted by the Cognigy API for that use case.\n- Do not use setup_llm as an automatic workaround for knowledgeSearchModelId failures while existing same-project candidates still exist.\n\nOPENAI-COMPATIBLE PROVIDERS (self-hosted or third-party endpoints that speak the OpenAI API, e.g. vLLM, Hugging Face, LiteLLM, Azure AI Foundry): use provider 'openAICompatible' with modelType 'custom-model' (chat) or 'custom-embedding-model' (embedding). The actual model name goes in customModel and the endpoint in baseCustomUrl — both required. Optional: customAuthHeader (send the API key in a custom header instead of 'Authorization: Bearer'), apiType ('chatCompletion' default, or 'responses').\n\nAWS BEDROCK: use provider 'awsBedrock' with region (required) and either accessKeyId + secretAccessKey or roleArn (IAM role) — NOT apiKey. modelType is a Bedrock model id from Cognigy's supported list (e.g. 'amazon.nova-pro-v1:0', 'amazon.nova-lite-v1:0', 'amazon.titan-embed-text-v2:0' for embeddings), or 'custom-model' with the Bedrock model id or inference profile id (e.g. 'eu.anthropic.claude-sonnet-4-6') in customModel. Optional location controls inference routing: 'region' (default — requests stay in the given region), 'geo' (routed within a geographic boundary; requires geo, e.g. 'us', 'eu', 'apac'), or 'global' (routed worldwide, highest throughput).\n\nIMPORTANT: NEVER guess or hallucinate credentials. If creating a new LLM and the user provided neither the provider's credentials nor a connectionId, ASK for the required credentials. Credentials are apiKey for most providers; for awsBedrock they are accessKeyId + secretAccessKey or roleArn instead (apiKey is rejected there — do not ask for one).\n\nAfter creation, the connection is normally tested by sending a minimal probe to the provider. If this connection test runs and fails (for example, invalid credentials or model name), the model is deleted and an error is returned — this prevents broken model references from silently breaking downstream flows.\n\nIf the provider's test endpoint is unreachable or returns a non-testable status, the model is kept but a warning is returned so you know connectivity could not be fully verified.\n\nIf dangerouslySkipConnectionTest is true, the connection test is not run at all; the model is kept and the response includes a warning that no connectivity check was performed. Only use this flag when you explicitly accept the risk that the created LLM might not be callable. Never use it to bypass a missing or cross-project connection.\n\nIf isDefault is true (the default), agents in the project will automatically use this LLM. If isDefault is false, you must explicitly assign it to the agent via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: '<referenceId from this response>' } }.\n\nThe response includes the LLM's referenceId — use this value for jobConfig.llmProviderReferenceId if assigning manually.\n\nTo list existing LLMs: use list_resources { resourceType: 'llm_model', projectId }.\nTo delete: use delete_resource { resourceType: 'llm_model', id }.",
     annotations: {
       title: "Setup LLM",
       readOnlyHint: false,
@@ -160,7 +166,7 @@ export const tools: ToolDefinition[] = [
         name: {
           type: "string",
           description:
-            "Display name for the LLM resource (defaults to modelType if omitted)",
+            "Display name for the LLM resource. If omitted, defaults to customModel for openAICompatible providers and modelType for all other providers.",
         },
         apiKey: {
           type: "string",
@@ -201,6 +207,17 @@ export const tools: ToolDefinition[] = [
           type: "string",
           description:
             "awsBedrock only (required): AWS region of the Bedrock deployment, e.g. 'us-east-1' or 'eu-central-1'.",
+        },
+        location: {
+          type: "string",
+          enum: ["region", "geo", "global"],
+          description:
+            "awsBedrock only: inference-call routing. 'region' (default) keeps requests in the given region; 'geo' routes within a geographic boundary (requires geo); 'global' routes worldwide for the highest throughput.",
+        },
+        geo: {
+          type: "string",
+          description:
+            "awsBedrock only, required when location is 'geo': the geographic boundary requests may be routed within, e.g. 'us', 'eu', or 'apac'. The AWS region must lie inside this boundary.",
         },
         accessKeyId: {
           type: "string",
@@ -293,7 +310,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "list_resources",
     description:
-      "List resources in a Cognigy project. Use this to discover projects, agents, flows, endpoints, LLM models, knowledge stores, conversations, extensions, functions, or tools.\n\nSet resourceType to 'project' to find projectIds (no projectId needed). 'tool' requires aiAgentId instead of projectId. All other types require projectId. For `llm_model`, you can also pass `useCase` to match the UI's use-case-filtered model dropdowns (for example `knowledgeSearch`). Packages are handled through manage_packages.\n\nUse `sort` for recency questions instead of paging through everything: `sort: 'lastChanged:desc', limit: 5` answers \"which project was touched most recently\" in one call. To attribute a change to a person, get the current user's id from get_resource { resourceType: 'user', id: 'me' } and compare it against `lastChangedBy` from get_resource { resourceType: 'project', id, raw: true } — list items omit `lastChangedBy` to save tokens.\n\nReturns a paginated list with id, name, and type-specific fields.",
+      "List resources in a Cognigy project. Use this to discover projects, agents, flows, endpoints, LLM models, knowledge stores, conversations, extensions, functions, tools, or audit events.\n\nSet resourceType to 'project' to find projectIds (no projectId needed). 'tool' requires aiAgentId instead of projectId. 'audit_event' is organisation-scoped and takes no projectId — it answers \"who changed what\" questions: `{ resourceType: 'audit_event', actor: ['mcp-plugin'], sort: 'timestamp:desc' }` lists exactly the changes this plugin made, and `actor: ['human']` the ones people made by hand. Each item carries `performedBy` for non-human actors; a missing `performedBy` means a person performed it. Needs Cognigy 2026.17.0+ and an API key with Admin Center access. All other types require projectId. For `llm_model`, you can also pass `useCase` to match the UI's use-case-filtered model dropdowns (for example `knowledgeSearch`). Packages are handled through manage_packages.\n\nUse `sort` for recency questions instead of paging through everything: `sort: 'lastChanged:desc', limit: 5` answers \"which project was touched most recently\" in one call. To attribute a change to a person, get the current user's id from get_resource { resourceType: 'user', id: 'me' } and compare it against `lastChangedBy` from get_resource { resourceType: 'project', id, raw: true } — list items omit `lastChangedBy` to save tokens.\n\nReturns a paginated list with id, name, and type-specific fields.",
     annotations: {
       title: "List Resources",
       readOnlyHint: true,
@@ -317,13 +334,14 @@ export const tools: ToolDefinition[] = [
             "extension",
             "function",
             "tool",
+            "audit_event",
           ],
           description: "Type of resource to list",
         },
         projectId: {
           type: "string",
           description:
-            "24-char hex project ID. Required for all types except 'project' and 'tool'.",
+            "24-char hex project ID. Required for all types except 'project', 'tool' and 'audit_event'.",
         },
         aiAgentId: {
           type: "string",
@@ -353,6 +371,31 @@ export const tools: ToolDefinition[] = [
           description:
             "Server-side sort as 'field:direction', e.g. 'lastChanged:desc' or 'name:asc'. Sort on any field the resource returns. Not supported for 'tool' (read from the flow chart, not a list endpoint).",
         },
+        actor: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "string",
+            enum: [...AUDIT_ACTORS],
+          },
+          description:
+            "audit_event only — filter by who performed the action. 'mcp-plugin' is this plugin, 'ask-ai' the Cognigy Ask AI agent, 'human' a person working in the UI or calling the API directly. Filtered by the platform on Cognigy 2026.17.0+; on older versions the plugin applies it to the fetched page itself and says so.",
+        },
+        eventType: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "string",
+            enum: [...AUDIT_EVENT_TYPES],
+          },
+          description:
+            "audit_event only — filter by operation type. Filtered by the platform on Cognigy 2026.17.0+; on older versions the plugin applies it to the fetched page itself and says so.",
+        },
+        user: {
+          type: "string",
+          description:
+            "audit_event only — filter by the email of the user the action ran as.",
+        },
         limit: {
           type: "number",
           description: "Results per page (1-100, default 25)",
@@ -370,7 +413,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "get_resource",
     description:
-      "Get detailed information about a single Cognigy resource. Returns a summary view by default. Set `raw: true` for the complete unfiltered API response with all fields.\n\nUse list_resources first to find IDs. Supports all list_resources types plus 'session_state' for session context data and 'user' for accounts.\n\nresourceType 'user' with id 'me' returns the account the API key belongs to — use it before claiming a resource was changed by the user, since `createdBy` / `lastChangedBy` are opaque ids that mean nothing on their own. Pass a 24-char hex id instead of 'me' to identify another user (requires user-management permissions).",
+      "Get detailed information about a single Cognigy resource. Returns a summary view by default. Set `raw: true` for the complete unfiltered API response with all fields.\n\nUse list_resources first to find IDs. Supports all list_resources types plus 'session_state' for session context data and 'user' for accounts. 'audit_event' returns one audit event including its `performedBy` attribution.\n\nresourceType 'user' with id 'me' returns the account the API key belongs to — use it before claiming a resource was changed by the user, since `createdBy` / `lastChangedBy` are opaque ids that mean nothing on their own. Pass a 24-char hex id instead of 'me' to identify another user (requires user-management permissions).",
     annotations: {
       title: "Get Resource",
       readOnlyHint: true,
@@ -395,6 +438,7 @@ export const tools: ToolDefinition[] = [
             "extension",
             "function",
             "user",
+            "audit_event",
           ],
           description: "Type of resource to retrieve",
         },
@@ -421,7 +465,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "delete_resource",
     description:
-      "Permanently delete a Cognigy resource. This cannot be undone.\n\nUse list_resources to verify the resource exists before deleting.\nSome types (endpoint) may require projectId. For 'tool' type, provide aiAgentId — the handler resolves and deletes the underlying flow node internally.\n\nAGENT DELETION: Deleting an agent is a last resort. By default (cascade: true), it cascade-deletes all associated resources in the correct order: endpoints → flow → agent. The Cognigy API rejects agent deletion while a referencing flow exists, so cascade is required. Set cascade: false to attempt a bare agent delete (will fail if flow still exists). The response reports every resource deleted and any failures.",
+      "Delete a Cognigy resource, or mark it for manual deletion.\n\nPROTECTED TYPES — flow, project, agent are NEVER hard-deleted. Instead they are renamed with a DELETE_ prefix (e.g. 'DELETE_My Flow') to mark them for manual deletion in the Cognigy UI. The response reports markedForDeletion: true and the new name. Idempotent: an already-marked resource is left unchanged (alreadyMarked: true).\n\nAGENT 'DELETION': By default (cascade: true) the agent's endpoints are DEACTIVATED (active: false — reversible in the Cognigy UI) to take the agent offline, then its companion flow and the agent itself are renamed with the DELETE_ prefix. Set cascade: false to rename only the agent and leave endpoints/flow untouched. The response reports what was deactivated, renamed, and any failures. Note: because the agent still exists (renamed), re-running create_ai_agent with the original name creates a NEW agent.\n\nFLOW 'DELETION' also deactivates every endpoint referencing the flow before renaming it. PROJECT 'deletion' renames only — flows, endpoints and agents inside the project remain live; the response warning says so.\n\nOTHER TYPES (endpoint, llm_model, knowledge_store, function, tool) are permanently deleted — this cannot be undone. Use list_resources to verify the resource exists before deleting. Some types (endpoint) may require projectId. For 'tool' type, provide aiAgentId — the handler resolves and deletes the underlying flow node internally.",
     annotations: {
       title: "Delete Resource",
       readOnlyHint: false,
@@ -437,13 +481,15 @@ export const tools: ToolDefinition[] = [
           enum: [
             "agent",
             "flow",
+            "project",
             "endpoint",
             "llm_model",
             "knowledge_store",
             "function",
             "tool",
           ],
-          description: "Type of resource to delete",
+          description:
+            "Type of resource to delete (flow/project/agent are renamed with a DELETE_ prefix instead of being deleted)",
         },
         id: {
           type: "string",
@@ -461,7 +507,7 @@ export const tools: ToolDefinition[] = [
         cascade: {
           type: "boolean",
           description:
-            "Agent deletion only. If true (default), cascade-deletes endpoints → flow → agent. If false, attempts bare agent delete (fails if flow still exists).",
+            "Agent deletion only. If true (default), deactivates the agent's endpoints and renames its flow and the agent with the DELETE_ prefix. If false, renames only the agent.",
         },
       },
       required: ["resourceType", "id"],
@@ -614,7 +660,7 @@ After creating, use talk_to_agent to test.`,
             parameters: {
               type: "string",
               description:
-                "JSON Schema string defining tool parameters (tool, http)",
+                'JSON Schema string defining tool parameters (tool, http). Contract: top level {"type":"object","properties":{...},"required":[...]} — "required" is mandatory (use [] if none); EVERY property needs "type" AND "description"; allowed types: string, number, integer, boolean, object, array, null; "array" needs "items"; nested objects with "properties" also need "required". For strict-mode models (OpenAI Responses API, e.g. gpt-5.x) list EVERY key in "required" and mark optional params nullable, e.g. {"type":["string","null"]}. "additionalProperties":false is added automatically. Example: {"type":"object","properties":{"city":{"type":"string","description":"City name"}},"required":["city"]}',
             },
             knowledgeStoreId: {
               type: "string",
@@ -736,7 +782,7 @@ After creating, use talk_to_agent to test.`,
             parameters: {
               type: "string",
               description:
-                "JSON Schema string defining tool parameters (tool, http)",
+                'JSON Schema string defining tool parameters (tool, http). Contract: top level {"type":"object","properties":{...},"required":[...]} — "required" is mandatory (use [] if none); EVERY property needs "type" AND "description"; allowed types: string, number, integer, boolean, object, array, null; "array" needs "items"; nested objects with "properties" also need "required". For strict-mode models (OpenAI Responses API, e.g. gpt-5.x) list EVERY key in "required" and mark optional params nullable, e.g. {"type":["string","null"]}. "additionalProperties":false is added automatically. Example: {"type":"object","properties":{"city":{"type":"string","description":"City name"}},"required":["city"]}',
             },
             knowledgeStoreId: {
               type: "string",
@@ -1761,6 +1807,86 @@ After creating, use talk_to_agent to test.`,
             'Optional list of check IDs to apply when apply is true (e.g. ["vg.barge-in-off", "agent.stream-output"]). If omitted, all auto-fixable failing checks are applied.',
         },
       },
+    },
+  },
+
+  // 17. manage_snapshots
+  {
+    name: "manage_snapshots",
+    description:
+      'Create and restore Cognigy Snapshots so agent changes can be rolled back. A Snapshot is an immutable copy of a PROJECT.\n\nBACKUP OPERATIONS:\n- list: list the project\'s snapshots, flagging which ones this plugin created, plus the current count against the snapshot limit\n- create: create a backup snapshot of the project and wait for the task to finish\n- restore: roll the project back to a snapshot (reports a preflight first; only acts with confirm: true)\n- delete: delete a snapshot — ONLY snapshots this plugin created\n- decline: record that the user was asked for a backup and said no (for that projectId only — another project is asked about separately)\n- read_task: read task status for a create, restore, or delete that outlived the wait\n\nWHEN TO USE:\n- The FIRST attempt to change an existing agent in a session is HELD by the server: it changes NOTHING and returns error \"backup_not_offered\". Ask the user whether they want a backup, then call create (yes) or decline (no), then retry the held call.\n- When the user wants to undo, call restore (preflight), show the warnings, get agreement, then restore with confirm: true.\n\nSCOPE — A SNAPSHOT IS PROJECT-WIDE:\n- It captures every AI Agent, Flow, Connection, LLM, Lexicon, Extension, Function, Playbook and Locale in the project. Restoring reverts ALL of them, not just one agent.\n- It does NOT contain Endpoints, Knowledge AI (stores/sources/chunks), Intent Trainer records, analytics, contact profiles, logs, or other snapshots. A RAG agent restored from a snapshot comes back WITHOUT its knowledge. Say so before creating or restoring.\n\nRESTORE IS DESTRUCTIVE:\n- All current project resources are DELETED and recreated from the snapshot. Resource ids change, so re-list resources afterwards.\n- Endpoints survive but their locale references are rewritten; endpoints on non-primary locales need manual repair in the UI.\n- restore without confirm: true performs NO action — it returns a preflight report. Show it to the user and get explicit agreement before retrying with confirm: true.\n\nSNAPSHOT LIMIT (default 10 per project, configurable per installation):\n- create pre-checks the count. At the limit it creates NOTHING and returns error "snapshot_limit_reached" plus the oldest deletable backup.\n- Ask the user whether to free a slot, then retry with confirmDeleteOldest: true, which deletes the OLDEST plugin-created backup and then creates.\n- If no plugin-created backup exists to delete, create refuses. The plugin NEVER deletes a human-created snapshot — the user must delete one in the Cognigy UI.\n\nIDENTIFICATION:\n- Snapshots created here are named "[AI Backup] v<N> <label> — <timestamp>" and carry a marker in their description. delete accepts ONLY snapshots with both markers.\n- <N> is a version number that only ever counts up within a project, so a backup can be referred to as "v3" instead of by timestamp. list returns it as `version` (null for snapshots with no version in the name).\n\nBEHAVIOR:\n- create/restore/delete are async platform tasks. By default this tool waits for completion (waitForCompletion: true) and returns the final task state.\n- Snapshot names must be unique in a project; the timestamp in the generated name guarantees that. Pass a short `label`, never a full name.\n- Downloading, packaging and uploading snapshots are deliberately NOT supported here.\n\nOUTCOMES THAT ARE NOT YET KNOWN:\n- If a task was started but its status could not be read, the result carries error \"task_status_unknown\" and outcomeUnknown: true. The operation MAY have succeeded — do NOT report it as failed and do NOT retry it. Poll read_task with the returned taskId first. On create, `created` is null rather than false on this path, because whether the backup exists is not yet known.\n- restore and delete verify the snapshot belongs to the passed projectId. A snapshotId from another project returns error \"snapshot_project_mismatch\" and changes nothing.\n- If freeing a slot cannot be confirmed, create returns error \"eviction_incomplete\" and stops: no further backup is deleted and no snapshot is created. Poll the task in haltedOn, then list before retrying.',
+    annotations: {
+      title: "Manage Snapshots",
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    inputSchema: {
+      type: "object",
+      properties: {
+        operation: {
+          type: "string",
+          enum: ["list", "create", "restore", "delete", "decline", "read_task"],
+          description: "Snapshot operation to perform.",
+        },
+        projectId: {
+          type: "string",
+          description:
+            "24-char hex project ID the snapshot belongs to. Required for every operation.",
+        },
+        snapshotId: {
+          type: "string",
+          description:
+            "24-char hex snapshot ID. Required for restore and delete. Must belong to projectId.",
+        },
+        limit: {
+          type: "integer",
+          minimum: 1,
+          maximum: 100,
+          description:
+            "For list: how many snapshots to return (default 100). The reported count, atLimit and oldestDeletableBackup always describe the whole project, never just this page.",
+        },
+        skip: {
+          type: "integer",
+          minimum: 0,
+          description: "For list: how many snapshots to skip (default 0).",
+        },
+        taskId: {
+          type: "string",
+          description: "24-char hex task ID. Required for read_task.",
+        },
+        label: {
+          type: "string",
+          minLength: 1,
+          maxLength: 120,
+          description:
+            'Optional short label describing why the backup was taken, e.g. "pre-persona-update". Used inside the generated name; do NOT pass a full snapshot name.',
+        },
+        confirmDeleteOldest: {
+          type: "boolean",
+          description:
+            "For create at the snapshot limit: when true, delete the OLDEST plugin-created backup to free a slot, then create. Set this only after the user has explicitly agreed. Default: false.",
+        },
+        confirm: {
+          type: "boolean",
+          description:
+            "For restore: when true, actually perform the destructive restore. When false or omitted, restore only returns a preflight report and changes nothing. Set this only after the user has seen the preflight and agreed. Default: false.",
+        },
+        waitForCompletion: {
+          type: "boolean",
+          description:
+            "When true (default), wait for the create/restore/delete task to finish.",
+        },
+        timeoutMs: {
+          type: "integer",
+          minimum: 1000,
+          maximum: 3600000,
+          description:
+            "Task polling timeout in milliseconds (1000-3600000). Default: 600000. For create it is the budget for the WHOLE call, including any deletion needed to free a slot.",
+        },
+      },
+      required: ["operation", "projectId"],
     },
   },
 ];

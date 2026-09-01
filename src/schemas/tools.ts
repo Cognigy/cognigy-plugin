@@ -42,6 +42,8 @@ const SETUP_LLM_FIELD_PROVIDERS = {
   customAuthHeader: ["openAICompatible"],
   apiType: ["openAI", "azureOpenAI", "openAICompatible"],
   region: ["awsBedrock"],
+  location: ["awsBedrock"],
+  geo: ["awsBedrock"],
   accessKeyId: ["awsBedrock"],
   secretAccessKey: ["awsBedrock"],
   roleArn: ["awsBedrock"],
@@ -69,6 +71,8 @@ export const setupLlmSchema = z
     customAuthHeader: z.string().min(1).optional(),
     apiType: z.enum(["chatCompletion", "responses"]).optional(),
     region: z.string().min(1).optional(),
+    location: z.enum(["region", "geo", "global"]).optional(),
+    geo: z.string().min(1).optional(),
     accessKeyId: z.string().min(1).optional(),
     secretAccessKey: z.string().min(1).optional(),
     roleArn: z.string().min(1).optional(),
@@ -118,6 +122,17 @@ export const setupLlmSchema = z
           path: ["modelType"],
           message:
             "Provider 'openAICompatible' requires modelType 'custom-model' (chat) or 'custom-embedding-model' (embedding). Put the provider's model name in customModel instead.",
+        });
+      }
+      if (
+        data.modelType === "custom-embedding-model" &&
+        data.apiType !== undefined
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["apiType"],
+          message:
+            "apiType is only supported for chat models; omit it when modelType is 'custom-embedding-model'.",
         });
       }
     }
@@ -172,6 +187,21 @@ export const setupLlmSchema = z
             "modelType 'custom-model' requires customModel — the Bedrock model id (e.g. 'anthropic.claude-sonnet-4-20250514-v1:0').",
         });
       }
+      if (data.location === "geo" && !data.geo) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["geo"],
+          message:
+            "location 'geo' requires geo — the geographic boundary requests may be routed within (e.g. 'us', 'eu', 'apac').",
+        });
+      }
+      if (data.geo && data.location !== "geo") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["geo"],
+          message: "geo is only supported when location is 'geo'.",
+        });
+      }
     }
   });
 
@@ -192,6 +222,25 @@ export const talkToAgentSchema = z
     path: ["endpointUrl"],
   });
 
+/** Actor values Cognigy records in `auditEvent.performedBy.actor`. */
+export const AUDIT_ACTORS = [
+  "human",
+  "ask-ai",
+  "mcp-plugin",
+  "system",
+] as const;
+
+/** Audit event operation types (`auditEvent.type`). */
+export const AUDIT_EVENT_TYPES = [
+  "action",
+  "create",
+  "replace",
+  "patch",
+  "delete",
+  "authentication",
+  "authorization",
+] as const;
+
 // Tool 5: list_resources
 export const listResourcesSchema = z.object({
   resourceType: z.enum([
@@ -205,6 +254,7 @@ export const listResourcesSchema = z.object({
     "extension",
     "function",
     "tool",
+    "audit_event",
   ]),
   projectId: idSchema.optional(),
   aiAgentId: idSchema.optional(),
@@ -212,6 +262,13 @@ export const listResourcesSchema = z.object({
   endDate: z.string().optional(),
   channel: z.string().optional(),
   useCase: z.string().optional(),
+  // audit_event filters. `actor` and `eventType` are sent as repeatable query
+  // params (actor[]=…), which the platform supports from 2026.17.0 onwards.
+  // Named `eventType` rather than `type` so it cannot be confused with
+  // `resourceType` at the call site.
+  actor: z.array(z.enum(AUDIT_ACTORS)).nonempty().optional(),
+  eventType: z.array(z.enum(AUDIT_EVENT_TYPES)).nonempty().optional(),
+  user: z.string().min(1).optional(),
   sort: z
     .string()
     .regex(
@@ -236,6 +293,7 @@ export const getResourceSchema = z.object({
     "extension",
     "function",
     "user",
+    "audit_event",
   ]),
   id: z.string().min(1),
   projectId: idSchema.optional(),
@@ -247,6 +305,7 @@ export const deleteResourceSchema = z.object({
   resourceType: z.enum([
     "agent",
     "flow",
+    "project",
     "endpoint",
     "llm_model",
     "knowledge_store",
@@ -783,3 +842,50 @@ export const auditVoiceAgentSchema = z
     message: "Either aiAgentId or flowId must be provided",
     path: ["aiAgentId"],
   });
+
+// Tool 17: manage_snapshots
+//
+// `create` deliberately takes a short `label`, not a full `name`: the plugin
+// owns the name so the "[AI Backup] " marker prefix can never be omitted by the
+// caller, and so the timestamp that keeps names unique is always present.
+const snapshotTimeoutSchema = z.number().int().min(1000).max(3600000);
+
+export const manageSnapshotsSchema = z.discriminatedUnion("operation", [
+  z.object({
+    operation: z.literal("list"),
+    projectId: idSchema,
+    ...paginationSchema,
+  }),
+  z.object({
+    operation: z.literal("create"),
+    projectId: idSchema,
+    label: z.string().min(1).max(120).optional(),
+    confirmDeleteOldest: z.boolean().optional(),
+    waitForCompletion: z.boolean().optional(),
+    timeoutMs: snapshotTimeoutSchema.optional(),
+  }),
+  z.object({
+    operation: z.literal("restore"),
+    projectId: idSchema,
+    snapshotId: idSchema,
+    confirm: z.boolean().optional(),
+    waitForCompletion: z.boolean().optional(),
+    timeoutMs: snapshotTimeoutSchema.optional(),
+  }),
+  z.object({
+    operation: z.literal("delete"),
+    projectId: idSchema,
+    snapshotId: idSchema,
+    waitForCompletion: z.boolean().optional(),
+    timeoutMs: snapshotTimeoutSchema.optional(),
+  }),
+  z.object({
+    operation: z.literal("decline"),
+    projectId: idSchema,
+  }),
+  z.object({
+    operation: z.literal("read_task"),
+    projectId: idSchema,
+    taskId: idSchema,
+  }),
+]);

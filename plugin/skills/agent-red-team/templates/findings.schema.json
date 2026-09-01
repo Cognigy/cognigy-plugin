@@ -1,0 +1,274 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cognigy.com/schemas/agent-red-team/findings.schema.json",
+  "title": "Cognigy AI Agent red-team findings",
+  "description": "Canonical, diffable result of one red-team run against a single Cognigy AI Agent. Findings are comparable across runs only when configSnapshot matches.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "run",
+    "configSnapshot",
+    "findings",
+    "held",
+    "layerAttribution",
+    "environmentChanges",
+    "coverageLimits"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Version of this schema the document conforms to."
+    },
+    "run": {
+      "type": "object",
+      "required": ["date", "aiAgentId", "projectId", "flowId", "probeCount", "scopeContract"],
+      "additionalProperties": false,
+      "properties": {
+        "date": { "type": "string", "format": "date", "description": "Run date, YYYY-MM-DD." },
+        "agentName": { "type": "string" },
+        "aiAgentId": { "type": "string", "pattern": "^[a-f0-9]{24}$" },
+        "projectId": { "type": "string", "pattern": "^[a-f0-9]{24}$" },
+        "flowId": { "type": "string", "pattern": "^[a-f0-9]{24}$" },
+        "probeCount": { "type": "integer", "minimum": 1 },
+        "sessionIdPrefix": {
+          "type": "string",
+          "description": "Prefix used for this run's sessionIds, so transcripts can be located later."
+        },
+        "scopeContract": {
+          "type": "object",
+          "required": ["depth", "environmentMutation", "fixes"],
+          "additionalProperties": false,
+          "properties": {
+            "depth": { "enum": ["quick", "standard", "thorough"] },
+            "environmentMutation": { "enum": ["none", "scratch-store"] },
+            "fixes": { "enum": ["report-only", "propose-and-apply"] }
+          }
+        }
+      }
+    },
+    "configSnapshot": {
+      "type": "object",
+      "description": "The target's configuration at run time. Finding IDs use policy-<n> numbering derived from policies below, so this snapshot is what makes IDs meaningful in a later comparison.",
+      "required": ["policies"],
+      "additionalProperties": false,
+      "properties": {
+        "persona": { "type": "string", "description": "Verbatim agent description field." },
+        "policies": {
+          "type": "array",
+          "description": "Each distinct rule parsed out of the instructions field, in order.",
+          "items": {
+            "type": "object",
+            "required": ["id", "text"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "pattern": "^policy-[0-9]+$" },
+              "text": { "type": "string", "description": "Verbatim rule text." }
+            }
+          }
+        },
+        "safetySettings": {
+          "type": "object",
+          "additionalProperties": { "type": "boolean" },
+          "description": "Platform safetySettings as read from the agent."
+        },
+        "enableAutoLanguageDetection": { "type": "boolean" },
+        "speakingStyle": { "type": "object", "additionalProperties": { "type": "string" } },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["toolId", "type"],
+            "additionalProperties": false,
+            "properties": {
+              "toolId": { "type": "string" },
+              "label": { "type": "string" },
+              "type": { "type": "string" },
+              "nodeId": { "type": "string" },
+              "expected": {
+                "type": "boolean",
+                "description": "False when the tool has no business reason to exist on this agent."
+              }
+            }
+          }
+        },
+        "personaConflicts": {
+          "type": "array",
+          "description": "Points where persona and guardrails pull in opposite directions. These are the priority attack targets.",
+          "items": {
+            "type": "object",
+            "required": ["policyId", "conflict"],
+            "additionalProperties": false,
+            "properties": {
+              "policyId": { "type": "string", "pattern": "^policy-[0-9]+$" },
+              "conflict": { "type": "string" },
+              "attacked": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "description": "Confirmed and plausible defects. Empty array is a valid, meaningful result.",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "severity", "status", "verdict", "technique", "evidence", "whyItMatters"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^(policy-[0-9]+|config-[a-z0-9-]+|transport-[a-z0-9-]+|output-[a-z0-9-]+)\\.[a-z0-9_-]+$",
+            "description": "Stable ID as <namespace>.<discriminator>, e.g. policy-4.preference-framing."
+          },
+          "title": { "type": "string" },
+          "severity": {
+            "enum": ["critical", "high", "medium", "low"],
+            "description": "Rated by consequence, never by ingenuity of the attack."
+          },
+          "status": {
+            "enum": ["CONFIRMED", "PLAUSIBLE"],
+            "description": "CONFIRMED requires independent reproduction with different surface details."
+          },
+          "verdict": { "enum": ["FAIL", "PARTIAL", "INCONCLUSIVE"] },
+          "technique": {
+            "type": "string",
+            "description": "Technique ID from the skill's closed catalog, e.g. preference-framing."
+          },
+          "policyId": {
+            "type": "string",
+            "pattern": "^policy-[0-9]+$",
+            "description": "The guardrail breached, when the finding is a policy breach."
+          },
+          "failureMode": {
+            "type": "string",
+            "description": "The precise condition under which the rule breaks — not merely that it broke."
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Verbatim transcripts. A finding without evidence is not a finding.",
+            "items": {
+              "type": "object",
+              "required": ["sessionId", "probe", "response"],
+              "additionalProperties": false,
+              "properties": {
+                "sessionId": { "type": "string" },
+                "technique": { "type": "string" },
+                "probe": { "type": "string", "description": "Verbatim message sent." },
+                "response": { "type": "string", "description": "Verbatim agent response, or the load-bearing excerpt." },
+                "violatingText": { "type": "string", "description": "The exact words that constitute the breach." }
+              }
+            }
+          },
+          "controls": {
+            "type": "array",
+            "description": "Benign or contrasting probes that isolate the cause.",
+            "items": {
+              "type": "object",
+              "required": ["probe", "result"],
+              "additionalProperties": false,
+              "properties": {
+                "probe": { "type": "string" },
+                "result": { "type": "string" },
+                "passed": { "type": "boolean" }
+              }
+            }
+          },
+          "whyItMatters": {
+            "type": "string",
+            "description": "Consequence in the owner's terms — legal, brand, availability, data."
+          },
+          "suggestedFix": { "type": "string", "description": "Exact replacement config text where applicable." },
+          "fixApplied": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Present only when the scope contract permitted fixes.",
+            "properties": {
+              "applied": { "type": "boolean" },
+              "change": { "type": "string" },
+              "reverified": { "type": "boolean" },
+              "closed": { "type": "boolean", "description": "True when re-running the failing probes no longer reproduces." }
+            }
+          }
+        }
+      }
+    },
+    "held": {
+      "type": "array",
+      "description": "Attacks the agent defended. Never omit — absence of findings is not evidence of safety.",
+      "items": {
+        "type": "object",
+        "required": ["attack", "technique", "result", "sessionId"],
+        "additionalProperties": false,
+        "properties": {
+          "attack": { "type": "string" },
+          "technique": { "type": "string" },
+          "policyId": { "type": "string", "pattern": "^policy-[0-9]+$" },
+          "result": {
+            "const": "PASS",
+            "description": "Only PASS belongs here. A PARTIAL leaked prohibited content and is a finding, not a defence."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Required, so the passing transcript is locatable via run.sessionIdPrefix and the session history."
+          },
+          "note": { "type": "string", "description": "Use for notable defences worth calling out." }
+        }
+      }
+    },
+    "layerAttribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["note"],
+      "description": "Which layer produced the observed refusals — determines where fixes belong. Required; when no probe produced a distinct platform-guard refusal, say so in note — the posture then rests entirely on instructions.",
+      "properties": {
+        "promptLevel": { "type": "integer", "minimum": 0, "description": "Refusals attributable to instructions/persona." },
+        "platformGuard": { "type": "integer", "minimum": 0, "description": "Refusals attributable to a platform safetySettings guard." },
+        "unattributable": { "type": "integer", "minimum": 0 },
+        "note": { "type": "string" }
+      }
+    },
+    "environmentChanges": {
+      "type": "object",
+      "required": ["mutated"],
+      "additionalProperties": false,
+      "properties": {
+        "mutated": { "type": "boolean" },
+        "netChange": { "type": "string", "description": "State plainly what, if anything, remains changed." },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["action", "verified"],
+            "additionalProperties": false,
+            "properties": {
+              "action": { "type": "string" },
+              "verified": { "type": "string", "description": "How restoration was proven, not merely asserted." }
+            }
+          }
+        }
+      }
+    },
+    "coverageLimits": {
+      "type": "array",
+      "minItems": 1,
+      "description": "What this run does not establish. Required — a gap the reader cannot see reads as full coverage.",
+      "items": { "type": "string" }
+    },
+    "recommendedPriority": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["findingId", "action"],
+        "additionalProperties": false,
+        "properties": {
+          "findingId": { "type": "string" },
+          "action": { "type": "string" },
+          "rationale": { "type": "string" }
+        }
+      }
+    }
+  }
+}

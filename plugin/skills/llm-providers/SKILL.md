@@ -71,11 +71,16 @@ Use provider `awsBedrock` for models hosted on AWS Bedrock (Amazon Nova, Anthrop
 Required parameters:
 
 - `region`: AWS region of the Bedrock deployment, e.g. `us-east-1`
-- `modelType`: a Bedrock model id from Cognigy's supported list — chat: `amazon.nova-pro-v1:0`, `amazon.nova-lite-v1:0`, `amazon.nova-micro-v1:0`, `amazon.nova-premier-v1:0`, `amazon.nova-2-lite-v1:0`, `anthropic.claude-3-5-sonnet-20240620-v1:0`; embedding: `amazon.titan-embed-text-v2:0`. For any other Bedrock model use `custom-model` and put the model id in `customModel`.
+- `modelType`: a Bedrock model id from Cognigy's supported list — chat: `amazon.nova-pro-v1:0`, `amazon.nova-lite-v1:0`, `amazon.nova-micro-v1:0`, `amazon.nova-2-lite-v1:0`, `anthropic.claude-3-5-sonnet-20240620-v1:0`; embedding: `amazon.titan-embed-text-v2:0`. For any other Bedrock model use `custom-model` and put the model id — or an inference profile id like `eu.anthropic.claude-sonnet-4-6` — in `customModel`.
 - Credentials — one of (NOT `apiKey`):
   - `accessKeyId` + `secretAccessKey` (access-key auth → `AwsBedrockProvider` connection)
   - `roleArn` (IAM-role auth → `AwsBedrockProviderIamRole` connection)
   - `connectionId` of an existing same-project connection
+
+Optional parameters:
+
+- `location`: inference-call routing — `region` (default; requests stay in the given AWS region), `geo` (routed within a geographic boundary; requires `geo`), or `global` (routed worldwide, highest throughput, no data-residency guarantee)
+- `geo`: required when `location` is `geo` — the geographic boundary, e.g. `us`, `eu`, `apac`. The AWS region must lie inside it.
 
 Example:
 
@@ -90,7 +95,9 @@ Example:
 }
 ```
 
-When inspecting existing models, the region and custom model id are in the `awsBedrock` object of the response.
+When inspecting existing models, the region, routing location/geo, and custom model id are in the `awsBedrock` object of the response.
+
+Caveat: AWS Bedrock rejects requests with an empty or whitespace-only system prompt (HTTP 400). For AI Agents this applies only when persona, job description, AND instructions are all empty — make sure a Bedrock-backed agent has at least one of them filled.
 
 ## Credential resolution
 

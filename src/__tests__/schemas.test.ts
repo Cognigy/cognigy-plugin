@@ -246,6 +246,20 @@ describe("setupLlmSchema", () => {
     expect(result.modelType).toBe("custom-embedding-model");
   });
 
+  it("rejects apiType for openAICompatible embedding models", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "openAICompatible",
+        modelType: "custom-embedding-model",
+        customModel: "bge-large-en-v1.5",
+        baseCustomUrl: "https://llm.example.com/v1",
+        apiType: "responses",
+        apiKey: "key-123",
+      }),
+    ).toThrow(/apiType is only supported for chat models/);
+  });
+
   it("rejects openAICompatible without baseCustomUrl", () => {
     expect(() =>
       schemas.setupLlmSchema.parse({
@@ -407,6 +421,73 @@ describe("setupLlmSchema", () => {
         roleArn: "arn:aws:iam::123456789012:role/cognigy-bedrock",
       }),
     ).toThrow(/custom-model/);
+  });
+
+  it("accepts awsBedrock with global location routing", () => {
+    const result = schemas.setupLlmSchema.parse({
+      projectId: VALID_ID,
+      provider: "awsBedrock",
+      modelType: "amazon.nova-pro-v1:0",
+      region: "eu-central-1",
+      location: "global",
+      accessKeyId: "AKIA123",
+      secretAccessKey: "secret123",
+    });
+    expect(result.location).toBe("global");
+  });
+
+  it("accepts awsBedrock with geo location routing and a geo boundary", () => {
+    const result = schemas.setupLlmSchema.parse({
+      projectId: VALID_ID,
+      provider: "awsBedrock",
+      modelType: "amazon.nova-pro-v1:0",
+      region: "eu-central-1",
+      location: "geo",
+      geo: "eu",
+      accessKeyId: "AKIA123",
+      secretAccessKey: "secret123",
+    });
+    expect(result.geo).toBe("eu");
+  });
+
+  it("rejects awsBedrock location 'geo' without a geo boundary", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "awsBedrock",
+        modelType: "amazon.nova-pro-v1:0",
+        region: "eu-central-1",
+        location: "geo",
+        accessKeyId: "AKIA123",
+        secretAccessKey: "secret123",
+      }),
+    ).toThrow(/geo/);
+  });
+
+  it("rejects awsBedrock geo without location 'geo'", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "awsBedrock",
+        modelType: "amazon.nova-pro-v1:0",
+        region: "eu-central-1",
+        geo: "eu",
+        accessKeyId: "AKIA123",
+        secretAccessKey: "secret123",
+      }),
+    ).toThrow(/location is 'geo'/);
+  });
+
+  it("rejects location on other providers", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "openAI",
+        modelType: "gpt-4o",
+        apiKey: "sk-abc123",
+        location: "global",
+      }),
+    ).toThrow(/awsBedrock/);
   });
 
   it("rejects AWS-only fields on other providers", () => {
@@ -715,6 +796,14 @@ describe("deleteResourceSchema", () => {
     });
     expect(result.resourceType).toBe("llm_model");
   });
+
+  it("accepts project resource type", () => {
+    const result = schemas.deleteResourceSchema.parse({
+      resourceType: "project",
+      id: VALID_ID,
+    });
+    expect(result.resourceType).toBe("project");
+  });
 });
 
 describe("createToolSchema", () => {
@@ -993,6 +1082,93 @@ describe("auditVoiceAgentSchema", () => {
   it("rejects an invalid id", () => {
     expect(() =>
       schemas.auditVoiceAgentSchema.parse({ aiAgentId: "nope" }),
+    ).toThrow();
+  });
+});
+
+describe("manageSnapshotsSchema", () => {
+  it("accepts list input", () => {
+    const result = schemas.manageSnapshotsSchema.parse({
+      operation: "list",
+      projectId: VALID_ID,
+      limit: 50,
+    });
+    expect(result.operation).toBe("list");
+  });
+
+  it("accepts create input with a label", () => {
+    const result = schemas.manageSnapshotsSchema.parse({
+      operation: "create",
+      projectId: VALID_ID,
+      label: "pre-persona-update",
+      confirmDeleteOldest: true,
+    });
+    expect(result.operation).toBe("create");
+  });
+
+  it("accepts restore input with confirm", () => {
+    const result = schemas.manageSnapshotsSchema.parse({
+      operation: "restore",
+      projectId: VALID_ID,
+      snapshotId: VALID_ID,
+      confirm: true,
+    });
+    expect(result.operation).toBe("restore");
+  });
+
+  it("accepts delete input", () => {
+    const result = schemas.manageSnapshotsSchema.parse({
+      operation: "delete",
+      projectId: VALID_ID,
+      snapshotId: VALID_ID,
+    });
+    expect(result.operation).toBe("delete");
+  });
+
+  it("accepts read_task input", () => {
+    const result = schemas.manageSnapshotsSchema.parse({
+      operation: "read_task",
+      projectId: VALID_ID,
+      taskId: VALID_ID,
+    });
+    expect(result.operation).toBe("read_task");
+  });
+
+  it("rejects restore without a snapshotId", () => {
+    expect(() =>
+      schemas.manageSnapshotsSchema.parse({
+        operation: "restore",
+        projectId: VALID_ID,
+      }),
+    ).toThrow();
+  });
+
+  it("rejects a non-hex snapshotId", () => {
+    expect(() =>
+      schemas.manageSnapshotsSchema.parse({
+        operation: "delete",
+        projectId: VALID_ID,
+        snapshotId: "not-an-id",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects an out-of-range timeoutMs", () => {
+    expect(() =>
+      schemas.manageSnapshotsSchema.parse({
+        operation: "create",
+        projectId: VALID_ID,
+        timeoutMs: 10,
+      }),
+    ).toThrow();
+  });
+
+  it("rejects an unknown operation", () => {
+    expect(() =>
+      schemas.manageSnapshotsSchema.parse({
+        operation: "download",
+        projectId: VALID_ID,
+      }),
     ).toThrow();
   });
 });

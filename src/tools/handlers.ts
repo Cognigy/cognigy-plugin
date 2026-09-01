@@ -23,6 +23,7 @@ import {
   withHints,
 } from "./filters.js";
 import { buildWebchatSettings, deepMerge } from "./webchatSettings.js";
+import { normalizeToolParameters } from "./toolParameters.js";
 import { getNodeEntry, supportedNodeTypes } from "./nodeRegistry.js";
 import {
   evaluateChecks,
@@ -31,6 +32,7 @@ import {
   type VoiceCheck,
   type VoiceFix,
 } from "./voiceChecklist.js";
+import { z } from "zod";
 import * as schemas from "../schemas/tools.js";
 import {
   chartToAscii,
@@ -88,12 +90,32 @@ import {
   buildPackageImportPreview,
   normalizeTask,
 } from "./packageManagement.js";
+import {
+  AUTO_BACKUP_NAME_PREFIX,
+  buildAutoBackupFields,
+  buildRestorePreflight,
+  evaluateSnapshotLimit,
+  isAutoBackup,
+  nextBackupVersion,
+  RESTORE_WARNINGS,
+  SNAPSHOT_EXCLUSIONS,
+  SNAPSHOT_IN_USE_FAIL_REASON,
+  SNAPSHOT_LIMIT_FAIL_REASON,
+  summarizeSnapshot,
+  type SnapshotSummary,
+} from "./snapshotManagement.js";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const DEFAULT_AGENT_IMAGE = "default-avatar:1";
+
+// Prefix applied to agents/flows/projects instead of deleting them.
+const DELETE_PREFIX = "DELETE_";
+
+// Cognigy resource names are capped at 200 chars (see schemas/tools.ts).
+const MAX_RESOURCE_NAME_LENGTH = 200;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -558,6 +580,111 @@ async function resolveFlowForAgent(
   return null;
 }
 
+/**
+ * Resolve the value to store in `endpoint.localeId` when creating an endpoint.
+ *
+ * `localeId` must be a locale *referenceId* (a UUID): the Endpoint Editor
+ * matches its locale dropdown on `referenceId`, and an endpoint with an empty
+ * or wrong `localeId` leaves "Open Demo Webchat" / "Open Demo Widget"
+ * permanently disabled (the editor never backfills an empty value).
+ */
+async function resolveEndpointLocaleId(
+  apiClient: CognigyApiClient,
+  projectId: string,
+  flowId?: string,
+): Promise<string | undefined> {
+  let locales: any[] = [];
+  try {
+    const resp: any = await apiClient.get("/v2.0/locales", {
+      params: { projectId, limit: 100 },
+    });
+    const items = resp?.items ?? resp;
+    // `/v2.0/locales` silently widens to EVERY project the key can see when
+    // `projectId` is not one of them (e.g. a snapshot id) — never pick a
+    // foreign project's locale.
+    if (Array.isArray(items))
+      locales = items.filter(
+        (l: any) =>
+          (!l?.projectReference || String(l.projectReference) === projectId) &&
+          typeof l?.referenceId === "string" &&
+          l.referenceId.length > 0,
+      );
+  } catch {
+    return undefined;
+  }
+  if (locales.length === 0) return undefined;
+
+  // Prefer the flow's locale — only worth the extra calls when the project
+  // actually has more than one to choose from.
+  if (flowId && locales.length > 1) {
+    let flow: any = null;
+    try {
+      if (/^[0-9a-f]{24}$/i.test(flowId)) {
+        flow = await apiClient.get(`/v2.0/flows/${flowId}`);
+      } else {
+        const flows: any = await apiClient.get("/v2.0/flows", {
+          params: { projectId, limit: 100 },
+        });
+        const items = flows?.items ?? flows;
+        const match = (Array.isArray(items) ? items : []).find(
+          (f: any) => f.referenceId === flowId,
+        );
+        const mongoId = match?._id ?? match?.id;
+        if (mongoId) flow = await apiClient.get(`/v2.0/flows/${mongoId}`);
+      }
+    } catch {
+      // fall through to the primary locale
+    }
+    const flowLocale = flow?.localeReference;
+    if (flowLocale) {
+      const match = locales.find(
+        (l: any) =>
+          String(l._id ?? l.id) === String(flowLocale) ||
+          l.referenceId === flowLocale,
+      );
+      if (match) return match.referenceId;
+    }
+  }
+
+  return (locales.find((l: any) => l.primary) ?? locales[0]).referenceId;
+}
+
+/**
+ * Thrown when the PLATFORM reported the task as failed/cancelled — i.e. the
+ * operation itself definitively did not happen. Everything else that can go
+ * wrong while polling (network blip, 5xx after the client's retries, a task
+ * body we could not read) leaves the outcome UNKNOWN, and callers must not
+ * treat the two the same: a snapshot delete whose status we merely lost is
+ * still very possibly deleted.
+ */
+/**
+ * Tools that change an EXISTING agent or its project, and so warrant a backup
+ * offer. create_ai_agent is deliberately absent: creating is additive, so there
+ * is nothing to roll back to, and the same reasoning exempts setup_llm and
+ * package import. Exported so a surface test can assert every tool is
+ * classified — a new tool 18 must land here, be read-only, or be listed as an
+ * explicit exemption.
+ */
+export const BACKUP_WORTHY_TOOLS = new Set([
+  "update_ai_agent",
+  "create_tool",
+  "update_tool",
+  "manage_flow_nodes",
+  "delete_resource",
+  // Rewrites node configs and prepends flow nodes — the bulkiest single change
+  // the plugin can make. Only in apply mode; see isBackupWorthyCall.
+  "audit_voice_agent",
+  // Project settings (voice preview, Knowledge AI models) ARE snapshot-covered.
+  "manage_settings",
+]);
+
+export class TaskFailedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TaskFailedError";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // ToolHandlers
 // ---------------------------------------------------------------------------
@@ -571,7 +698,137 @@ export class ToolHandlers {
     "postProcessCode",
   ]);
   private static readonly DEFAULT_PACKAGE_TIMEOUT_MS = 600000;
+  /** Pagination guard for listAllSnapshots (100 per page). */
+  private static readonly MAX_SNAPSHOT_PAGES = 20;
   private static readonly TASK_POLL_INTERVAL_MS = 3000;
+
+  /**
+   * Resource types a snapshot does NOT capture. Deleting one of these is not
+   * protected by a backup at all, so holding the call would offer a rollback
+   * that does not exist — and it would be inconsistent with manage_webchat and
+   * manage_knowledge, which are exempt for exactly this reason.
+   */
+  private static readonly SNAPSHOT_EXCLUDED_RESOURCE_TYPES = new Set([
+    "endpoint",
+    "knowledge_store",
+  ]);
+
+  /**
+   * Schemas of the gated tools. The gate runs before the handler validates, so
+   * without this an INVALID first call would consume the one-shot hold: the
+   * caller sees backup_not_offered instead of its validation error, fixes the
+   * args, retries — and proceeds unprotected, because the hold is spent.
+   */
+  private static readonly GATED_TOOL_SCHEMAS: Record<string, z.ZodTypeAny> = {
+    update_ai_agent: schemas.updateAiAgentSchema,
+    create_tool: schemas.createToolSchema,
+    update_tool: schemas.updateToolSchema,
+    manage_flow_nodes: schemas.manageFlowNodesSchema,
+    delete_resource: schemas.deleteResourceSchema,
+    audit_voice_agent: schemas.auditVoiceAgentSchema,
+    manage_settings: schemas.manageSettingsSchema,
+  };
+
+  /** Operations on multi-operation tools above that only READ. */
+  private static readonly READ_ONLY_OPERATIONS = new Set([
+    "get",
+    "list",
+    "render",
+  ]);
+
+  /**
+   * A backup is only worth offering before something is actually changed, so a
+   * read-only operation on an otherwise-mutating tool (manage_flow_nodes get /
+   * list / render) must not trigger the offer.
+   */
+  private static isBackupWorthyCall(toolName: string, args: any): boolean {
+    if (!BACKUP_WORTHY_TOOLS.has(toolName)) return false;
+
+    // A call that cannot run must not consume the one-shot hold.
+    const schema = ToolHandlers.GATED_TOOL_SCHEMAS[toolName];
+    if (schema && !schema.safeParse(args).success) return false;
+
+    // audit_voice_agent rewrites an existing agent's nodes and settings, but
+    // only in apply mode; its default dry-run mutates nothing.
+    if (toolName === "audit_voice_agent") return args?.apply === true;
+
+    // Deleting something a snapshot never contained is not backup-protectable.
+    if (
+      toolName === "delete_resource" &&
+      ToolHandlers.SNAPSHOT_EXCLUDED_RESOURCE_TYPES.has(args?.resourceType)
+    ) {
+      return false;
+    }
+
+    const operation = args?.operation;
+    return (
+      typeof operation !== "string" ||
+      !ToolHandlers.READ_ONLY_OPERATIONS.has(operation)
+    );
+  }
+
+  /** Whether the call targets something this session created. */
+  private targetsNewResource(args: any): boolean {
+    if (!this.resourcesCreatedThisSession.size) return false;
+    // projectId is matched only against ids actually recorded, so passing an
+    // EXISTING project to a later call cannot false-match its way past the gate.
+    for (const key of ["aiAgentId", "flowId", "id", "projectId"]) {
+      const value = args?.[key];
+      if (
+        typeof value === "string" &&
+        this.resourcesCreatedThisSession.has(value)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Session state for the backup gate below. The plugin speaks MCP over stdio,
+  // which means one server process per client session — so instance lifetime is
+  // session lifetime and this state is exactly "this session".
+  //
+  // The answer is kept PER PROJECT: a user who declines a backup on a sandbox
+  // must still be asked before the first change to a production project. Only
+  // the anti-deadlock hold falls back to session-wide state for calls whose
+  // project cannot be determined (see backupGateFor).
+  private readonly snapshotCreatedForProject = new Set<string>();
+  private readonly backupDeclinedForProject = new Set<string>();
+  /**
+   * Call signatures (tool + args) the gate has already held, per project. The
+   * anti-deadlock release is keyed on the SIGNATURE, not the project: a client
+   * that ignores the offer and retries the same call proceeds, but a client
+   * that issues several DIFFERENT mutations in parallel has each of them held
+   * until the offer is answered — otherwise only the first of a concurrent
+   * burst would be held and the rest would mutate the project unprotected.
+   * Known limitation: an IDENTICAL duplicate issued concurrently is
+   * indistinguishable from a retry by signature and is let through.
+   */
+  private readonly backupGateHeldCallsForProject = new Map<
+    string,
+    Set<string>
+  >();
+  private readonly backupGateHeldCallsWithoutProject = new Set<string>();
+  /**
+   * projectId of resources seen this session, so the gate can tell which
+   * project a call like update_ai_agent { aiAgentId } belongs to WITHOUT
+   * spending an API call. Filled from reads the model already makes
+   * (list_resources / get_resource) and from what this session created.
+   */
+  private readonly projectOfResource = new Map<string, string>();
+  /**
+   * Agent and flow ids this session created. Changes to brand-new material are
+   * additive — there is no prior state to roll back to — so the backup gate
+   * must not hold them. Without this, cognigy-agent-builder gets held on its
+   * own step 5 (`update_ai_agent` right after `create_ai_agent`).
+   */
+  private readonly resourcesCreatedThisSession = new Set<string>();
+  /**
+   * Highest backup version this session handed out. Version numbers come from
+   * the project's existing backups, so without this floor a create → delete →
+   * create would reuse a number and make "restore v3" ambiguous.
+   */
+  private highestBackupVersionThisSession = 0;
 
   constructor(
     private apiClient: CognigyApiClient,
@@ -618,15 +875,15 @@ export class ToolHandlers {
     }
 
     if (task.status === "error") {
-      throw new Error(task.failReason || `Task ${taskId} failed`);
+      throw new TaskFailedError(task.failReason || `Task ${taskId} failed`);
     }
 
     if (task.status === "cancelled" || task.status === "cancelling") {
-      throw new Error(`Task ${taskId} was cancelled`);
+      throw new TaskFailedError(`Task ${taskId} was cancelled`);
     }
 
     if (task.status !== "done") {
-      throw new Error(
+      throw new TaskFailedError(
         `Task ${taskId} ended with unexpected status "${task.status}"`,
       );
     }
@@ -1405,6 +1662,25 @@ export class ToolHandlers {
         ? "configured"
         : "unknown";
 
+      // Remember what this session minted so the backup gate leaves it alone.
+      // The project counts too when we created it: holding a change to a
+      // seconds-old project contradicts the exemption's own rationale, and a
+      // backup of it would eat one of that project's ~10 snapshot slots.
+      for (const id of [
+        agentId,
+        agent.referenceId,
+        flowId,
+        flow.referenceId,
+        ...(createdProject ? [projectId] : []),
+      ]) {
+        if (id) this.resourcesCreatedThisSession.add(String(id));
+      }
+
+      // Scope the gate for later calls that name only the agent or the flow.
+      for (const resource of [agent, flow]) {
+        this.rememberProjectOf(resource, String(projectId));
+      }
+
       const result: any = {
         projectId,
         projectCreated: createdProject,
@@ -1743,7 +2019,7 @@ export class ToolHandlers {
       try {
         const connection: any = await this.apiClient.post("/v2.0/connections", {
           projectId: data.projectId,
-          name: `${data.provider} - auto`,
+          name: `${data.provider} - auto - ${randomUUID()}`,
           type: connectionType,
           extension: "@cognigy/generative-ai-provider",
           fields: connectionFields,
@@ -1764,7 +2040,8 @@ export class ToolHandlers {
 
     // Provider-specific metadata. For openAICompatible the actual model name
     // and endpoint live here — modelType is just "custom-model" / "custom-embedding-model".
-    // For awsBedrock the region (and optionally a custom Bedrock model id) live here.
+    // For awsBedrock the region, routing location, and optionally a custom
+    // Bedrock model id live here.
     const providerMeta =
       data.provider === "openAICompatible"
         ? {
@@ -1777,6 +2054,8 @@ export class ToolHandlers {
         : data.provider === "awsBedrock"
           ? {
               region: data.region,
+              ...(data.location ? { location: data.location } : {}),
+              ...(data.geo ? { geo: data.geo } : {}),
               ...(data.customModel ? { customModel: data.customModel } : {}),
             }
           : {};
@@ -2129,7 +2408,17 @@ export class ToolHandlers {
   // =========================================================================
   async handleListResources(args: any): Promise<any> {
     const data = schemas.listResourcesSchema.parse(args);
-    const { resourceType, projectId, aiAgentId, limit, skip, sort } = data;
+    const {
+      resourceType,
+      projectId,
+      aiAgentId,
+      limit,
+      skip,
+      sort,
+      actor,
+      eventType,
+      user,
+    } = data;
     // `sort` rides along with paging so every server-backed list endpoint gets
     // it. 'tool' builds its own params and has no server-side sort.
     const paging = {
@@ -2138,8 +2427,14 @@ export class ToolHandlers {
       ...(sort ? { sort } : {}),
     };
 
-    // Validate projectId requirement
-    if (resourceType !== "project" && resourceType !== "tool" && !projectId) {
+    // Validate projectId requirement. 'project' and 'audit_event' are
+    // organisation-scoped; 'tool' takes aiAgentId instead.
+    if (
+      resourceType !== "project" &&
+      resourceType !== "tool" &&
+      resourceType !== "audit_event" &&
+      !projectId
+    ) {
       return withHints(
         { error: `projectId is required for resourceType '${resourceType}'.` },
         {
@@ -2160,6 +2455,9 @@ export class ToolHandlers {
 
     let items: any[];
     let total: number | undefined;
+    // Set when the platform rejected the audit_event filters and this plugin
+    // applied them instead, so the response can say so.
+    let filteredClientSide = false;
 
     switch (resourceType) {
       case "project": {
@@ -2284,6 +2582,56 @@ export class ToolHandlers {
         total = items.length;
         break;
       }
+      case "audit_event": {
+        // Organisation-scoped, so no projectId. `actor` / `type` are sent as
+        // repeatable params (axios serialises arrays as `actor[]=…`), matching
+        // what GET /v2.0/auditevents documents. Both filters need the platform
+        // at 2026.17.0 or newer; the catch below covers older ones.
+        try {
+          const res: any = await this.apiClient.get("/v2.0/auditevents", {
+            params: {
+              ...paging,
+              ...(actor ? { actor } : {}),
+              ...(eventType ? { type: eventType } : {}),
+              ...(user ? { user } : {}),
+            },
+          });
+          items = res.items ?? res;
+          total = res.total;
+        } catch (error: any) {
+          // A 400 while either filter is set is most likely a platform older
+          // than 2026.17.0 rejecting the repeatable actor[]/type[] params.
+          // Recover by doing what the alternative would only have *told* the
+          // caller to do — refetch without the filters and apply them here —
+          // rather than sniffing the free-text error message, which misfires
+          // both ways (a rejected `sort` field reads as "type", and an old
+          // platform's 400 need not name either filter). If the refetch fails
+          // too, the 400 was about something else and the original stands.
+          if (error?.status === 400 && (actor || eventType)) {
+            let retried: any;
+            try {
+              retried = await this.apiClient.get("/v2.0/auditevents", {
+                params: { ...paging, ...(user ? { user } : {}) },
+              });
+            } catch {
+              throw error;
+            }
+            const raw = retried?.items ?? retried;
+            items = (Array.isArray(raw) ? raw : []).filter(
+              (e: any) =>
+                // `performedBy` is absent on human-performed events.
+                (!actor || actor.includes(e?.performedBy?.actor ?? "human")) &&
+                (!eventType || eventType.includes(e?.type)),
+            );
+            total = items.length;
+            filteredClientSide = true;
+            break;
+          }
+          if (error?.status === 403) return this.auditEventForbidden(error);
+          throw error;
+        }
+        break;
+      }
       default:
         throw new Error(`Unknown resourceType: ${resourceType}`);
     }
@@ -2301,6 +2649,15 @@ export class ToolHandlers {
 
     const result: any = { items: filtered, total: total ?? filtered.length };
 
+    if (filteredClientSide) {
+      return withHints(result, {
+        warning:
+          "actor / eventType were applied by this plugin, not by the platform: this Cognigy version rejected the actor[]/type[] query filters, which need 2026.17.0 or newer.",
+        action:
+          "Only the requested page was fetched and then filtered, so `total` counts matches within that page, not across the whole audit log. Raise `limit` or page through with `skip` to see more.",
+      });
+    }
+
     if (sort && resourceType === "tool") {
       return withHints(result, {
         warning:
@@ -2315,6 +2672,23 @@ export class ToolHandlers {
     }
 
     return result;
+  }
+
+  /**
+   * Audit events live above any project, so a 403 here is about the API key's
+   * user lacking Admin Center access rather than anything project-scoped —
+   * knowledge the list and get paths both need, kept in one place so they
+   * cannot drift apart.
+   */
+  private auditEventForbidden(error: any): any {
+    return withHints(
+      { error: error.message },
+      {
+        likely_cause:
+          "Audit events are organisation-scoped; the API key's user lacks the required admin permission.",
+        action: "Use an API key belonging to a user with Admin Center access.",
+      },
+    );
   }
 
   // =========================================================================
@@ -2339,12 +2713,20 @@ export class ToolHandlers {
       // API key belongs to, so `createdBy` / `lastChangedBy` ids can be
       // attributed instead of guessed.
       user: `/v2.0/users/${id}`,
+      audit_event: `/v2.0/auditevents/${id}`,
     };
 
     const url = endpointMap[resourceType];
     if (!url) throw new Error(`Unknown resourceType: ${resourceType}`);
 
-    const result = await this.apiClient.get(url);
+    let result: any;
+    try {
+      result = await this.apiClient.get(url);
+    } catch (error: any) {
+      if (resourceType === "audit_event" && error?.status === 403)
+        return this.auditEventForbidden(error);
+      throw error;
+    }
     if (raw) return result;
 
     const filtered = RESOURCE_FILTERS_GET[resourceType]
@@ -2390,18 +2772,39 @@ export class ToolHandlers {
       return { deleted: true, resourceType: "tool", id };
     }
 
-    // Agent deletion requires cascade: endpoints → flow → agent.
-    // The Cognigy API rejects agent deletion while referencing resources exist.
+    // Agents, flows and projects are never hard-deleted — they are renamed
+    // with the DELETE_ prefix to mark them for manual deletion.
     if (resourceType === "agent") {
       if (cascade === false) {
-        await this.apiClient.delete(`/v2.0/aiagents/${id}`);
-        return { deleted: true, resourceType, id };
+        const agent: any = await this.apiClient.get(`/v2.0/aiagents/${id}`);
+        const rename = await this.renameForDeletion(
+          `/v2.0/aiagents/${id}`,
+          agent?.name,
+          `agent ${id}`,
+        );
+        return withHints(
+          {
+            markedForDeletion: true,
+            alreadyMarked: rename.alreadyMarked || undefined,
+            resourceType,
+            id,
+            name: rename.name,
+          },
+          {
+            warning:
+              "Agents cannot be deleted via this plugin. The agent was renamed to mark it for manual deletion; its endpoints and flow were left untouched (cascade: false).",
+            action: "Delete the agent manually in the Cognigy UI.",
+          },
+        );
       }
-      return this.cascadeDeleteAgent(id);
+      return this.softDeleteAgent(id);
+    }
+
+    if (resourceType === "flow" || resourceType === "project") {
+      return this.markForDeletion(resourceType, id);
     }
 
     const deleteMap: Record<string, string> = {
-      flow: `/v2.0/flows/${id}`,
       endpoint: `/v2.0/endpoints/${id}`,
       llm_model: `/v2.0/largelanguagemodels/${id}`,
       knowledge_store: `/v2.0/knowledgestores/${id}`,
@@ -2416,18 +2819,209 @@ export class ToolHandlers {
   }
 
   /**
-   * Cascade-delete an AI Agent and all resources provisioned alongside it:
-   * 1. Resolve the agent's flow
-   * 2. Delete every endpoint pointing at that flow
-   * 3. Delete the flow itself
-   * 4. Delete the agent resource
+   * Rename a resource to DELETE_<name> to mark it for manual deletion.
+   * Idempotent: an already-prefixed name is left unchanged.
    */
-  private async cascadeDeleteAgent(agentId: string): Promise<any> {
-    const deleted: string[] = [];
+  private async renameForDeletion(
+    url: string,
+    currentName: string | undefined,
+    resource: string,
+  ): Promise<{ name: string; alreadyMarked: boolean }> {
+    const name = currentName ?? "";
+    if (!name.trim()) {
+      throw new Error(
+        `Cannot mark ${resource} for deletion: it has no name to prefix.`,
+      );
+    }
+    if (name.startsWith(DELETE_PREFIX)) {
+      return { name, alreadyMarked: true };
+    }
+    const newName = `${DELETE_PREFIX}${name}`.slice(
+      0,
+      MAX_RESOURCE_NAME_LENGTH,
+    );
+    await this.apiClient.patch(url, { name: newName });
+    return { name: newName, alreadyMarked: false };
+  }
+
+  /**
+   * Deactivate (active: false) every endpoint that references a flow, so the
+   * flow stops serving traffic. Reversible in the Cognigy UI — endpoints are
+   * never deleted here. `checked: false` means enumeration never ran, so
+   * endpoints may still be live.
+   */
+  private async deactivateEndpointsForFlow(
+    projectId: string,
+    flowId: string,
+    flowReferenceId: string | undefined,
+  ): Promise<{
+    deactivated: string[];
+    failed: { resource: string; error: string }[];
+    checked: boolean;
+  }> {
+    const deactivated: string[] = [];
+    const failed: { resource: string; error: string }[] = [];
+
+    if (!flowReferenceId) {
+      return { deactivated, failed, checked: false };
+    }
+
+    try {
+      const limit = 100;
+      let offset = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const eps: any = await this.apiClient.get("/v2.0/endpoints", {
+          params: { projectId, limit, offset },
+        });
+        const epItems = eps.items ?? eps;
+        if (!Array.isArray(epItems) || epItems.length === 0) {
+          break;
+        }
+
+        for (const ep of epItems) {
+          if (ep.flowId === flowReferenceId || ep.flowId === flowId) {
+            const epId = ep._id || ep.id;
+            try {
+              await this.apiClient.patch(`/v2.0/endpoints/${epId}`, {
+                active: false,
+              });
+              deactivated.push(`endpoint:${epId}`);
+            } catch (e: any) {
+              failed.push({
+                resource: `endpoint:${epId}`,
+                error: e.message ?? String(e),
+              });
+            }
+          }
+        }
+
+        if (epItems.length < limit) {
+          hasMore = false;
+        } else {
+          offset += limit;
+        }
+      }
+    } catch (e: any) {
+      failed.push({
+        resource: `endpoints:list:${projectId}`,
+        error: e?.message ?? String(e),
+      });
+    }
+
+    return { deactivated, failed, checked: true };
+  }
+
+  /**
+   * Flows and projects cannot be deleted via the plugin — rename them to
+   * DELETE_<name> so a human can delete them manually in the Cognigy UI.
+   * Flows are also taken offline first by deactivating their endpoints;
+   * projects are rename-only (everything inside stays live).
+   */
+  private async markForDeletion(
+    resourceType: "flow" | "project",
+    id: string,
+  ): Promise<any> {
+    const url =
+      resourceType === "flow" ? `/v2.0/flows/${id}` : `/v2.0/projects/${id}`;
+    const current: any = await this.apiClient.get(url);
+
+    let endpoints: {
+      deactivated: string[];
+      failed: { resource: string; error: string }[];
+      checked: boolean;
+    } | null = null;
+    if (resourceType === "flow") {
+      const projectId =
+        current?.projectId ??
+        current?.projectReference ??
+        current?.project?._id ??
+        current?.project?.id;
+      endpoints = projectId
+        ? await this.deactivateEndpointsForFlow(
+            projectId,
+            id,
+            current?.referenceId,
+          )
+        : { deactivated: [], failed: [], checked: false };
+    }
+
+    const rename = await this.renameForDeletion(
+      url,
+      current?.name,
+      `${resourceType} ${id}`,
+    );
+
+    const parts = [
+      `${resourceType === "flow" ? "Flows" : "Projects"} cannot be deleted via this plugin. ${
+        rename.alreadyMarked
+          ? `The ${resourceType} is already marked for manual deletion as "${rename.name}".`
+          : `The ${resourceType} was renamed to "${rename.name}" to mark it for manual deletion.`
+      }`,
+    ];
+    if (endpoints) {
+      if (endpoints.failed.length > 0) {
+        parts.push(
+          "Endpoint deactivation was incomplete — the flow may still be reachable via its endpoints (see cascade.failed).",
+        );
+      } else if (!endpoints.checked) {
+        parts.push(
+          "The flow's endpoints could not be enumerated — the flow may still be reachable via its endpoints.",
+        );
+      } else if (endpoints.deactivated.length > 0) {
+        parts.push(
+          `${endpoints.deactivated.length} endpoint(s) referencing the flow were deactivated (reversible in the Cognigy UI) to take it offline.`,
+        );
+      } else {
+        parts.push("No endpoints referenced the flow.");
+      }
+    }
+    if (resourceType === "project") {
+      parts.push(
+        "The rename takes nothing offline: flows, endpoints and agents inside the project remain live and reachable. Deactivate or delete them individually if the project must stop serving traffic.",
+      );
+    }
+
+    return withHints(
+      {
+        markedForDeletion: true,
+        alreadyMarked: rename.alreadyMarked || undefined,
+        resourceType,
+        id,
+        name: rename.name,
+        cascade: endpoints
+          ? {
+              deactivated: endpoints.deactivated,
+              failed:
+                endpoints.failed.length > 0 ? endpoints.failed : undefined,
+            }
+          : undefined,
+      },
+      {
+        warning: parts.join(" "),
+        action: `Delete the ${resourceType} manually in the Cognigy UI when appropriate.`,
+      },
+    );
+  }
+
+  /**
+   * Soft-delete an AI Agent. Nothing is hard-deleted:
+   * 1. Resolve the agent's flow
+   * 2. Deactivate every endpoint pointing at that flow (takes the agent
+   *    offline; reversible in the Cognigy UI)
+   * 3. Rename the flow to DELETE_<name>
+   * 4. Rename the agent to DELETE_<name>
+   */
+  private async softDeleteAgent(agentId: string): Promise<any> {
+    const deactivated: string[] = [];
+    const renamed: string[] = [];
     const failed: { resource: string; error: string }[] = [];
 
     const resolved = await resolveFlowForAgent(this.apiClient, agentId);
-    const agent = resolved?.agent;
+    const agent: any =
+      resolved?.agent ??
+      (await this.apiClient.get(`/v2.0/aiagents/${agentId}`));
     const flowId = resolved?.flowId;
     const projectId =
       agent?.projectReference ??
@@ -2435,63 +3029,42 @@ export class ToolHandlers {
       agent?.project?._id ??
       agent?.project?.id;
 
-    // Step 1: delete endpoints that reference the agent's flow
-    if (flowId && projectId) {
+    let flow: any;
+    if (flowId) {
       try {
-        const flowRef =
-          agent?.flowReferenceId ??
-          ((await this.apiClient.get(`/v2.0/flows/${flowId}`)) as any)
-            .referenceId;
-        if (flowRef) {
-          const limit = 100;
-          let offset = 0;
-          let hasMore = true;
-
-          while (hasMore) {
-            const eps: any = await this.apiClient.get("/v2.0/endpoints", {
-              params: { projectId, limit, offset },
-            });
-            const epItems = eps.items ?? eps;
-            if (!Array.isArray(epItems) || epItems.length === 0) {
-              break;
-            }
-
-            for (const ep of epItems) {
-              if (ep.flowId === flowRef || ep.flowId === flowId) {
-                const epId = ep._id || ep.id;
-                try {
-                  await this.apiClient.delete(`/v2.0/endpoints/${epId}`);
-                  deleted.push(`endpoint:${epId}`);
-                } catch (e: any) {
-                  failed.push({
-                    resource: `endpoint:${epId}`,
-                    error: e.message ?? String(e),
-                  });
-                }
-              }
-            }
-
-            if (epItems.length < limit) {
-              hasMore = false;
-            } else {
-              offset += limit;
-            }
-          }
-        }
+        flow = await this.apiClient.get(`/v2.0/flows/${flowId}`);
       } catch (e: any) {
-        // best-effort — continue with flow/agent deletion, but record partial failure
         failed.push({
-          resource: `endpoints:list:${projectId}`,
+          resource: `flow:${flowId}`,
           error: e?.message ?? String(e),
         });
       }
     }
 
-    // Step 2: delete the flow
-    if (flowId) {
+    // Step 1: deactivate endpoints that reference the agent's flow
+    let endpointsChecked = false;
+    if (flowId && projectId) {
+      const flowRef = agent?.flowReferenceId ?? flow?.referenceId;
+      const eps = await this.deactivateEndpointsForFlow(
+        projectId,
+        flowId,
+        flowRef,
+      );
+      endpointsChecked = eps.checked;
+      deactivated.push(...eps.deactivated);
+      failed.push(...eps.failed);
+    }
+
+    // Step 2: rename the flow (flows are never deleted)
+    let flowRename: { name: string; alreadyMarked: boolean } | undefined;
+    if (flowId && flow) {
       try {
-        await this.apiClient.delete(`/v2.0/flows/${flowId}`);
-        deleted.push(`flow:${flowId}`);
+        flowRename = await this.renameForDeletion(
+          `/v2.0/flows/${flowId}`,
+          flow?.name,
+          `flow ${flowId}`,
+        );
+        if (!flowRename.alreadyMarked) renamed.push(`flow:${flowId}`);
       } catch (e: any) {
         failed.push({
           resource: `flow:${flowId}`,
@@ -2500,10 +3073,15 @@ export class ToolHandlers {
       }
     }
 
-    // Step 3: delete the agent
+    // Step 3: rename the agent (agents are never deleted)
+    let agentRename: { name: string; alreadyMarked: boolean } | undefined;
     try {
-      await this.apiClient.delete(`/v2.0/aiagents/${agentId}`);
-      deleted.push(`agent:${agentId}`);
+      agentRename = await this.renameForDeletion(
+        `/v2.0/aiagents/${agentId}`,
+        agent?.name,
+        `agent ${agentId}`,
+      );
+      if (!agentRename.alreadyMarked) renamed.push(`agent:${agentId}`);
     } catch (e: any) {
       failed.push({
         resource: `agent:${agentId}`,
@@ -2511,14 +3089,66 @@ export class ToolHandlers {
       });
     }
 
-    const allSucceeded =
-      failed.length === 0 && deleted.includes(`agent:${agentId}`);
-    return {
-      deleted: allSucceeded,
-      resourceType: "agent",
-      id: agentId,
-      cascade: { deleted, failed: failed.length > 0 ? failed : undefined },
-    };
+    // Compose the warning from what actually happened — never claim the
+    // agent is offline unless endpoint deactivation fully succeeded.
+    const agentMarked = agentRename !== undefined;
+    const endpointFailed = failed.some(
+      (f) =>
+        f.resource.startsWith("endpoint:") ||
+        f.resource.startsWith("endpoints:"),
+    );
+
+    const parts = ["Agents and flows cannot be deleted via this plugin."];
+    parts.push(
+      !agentMarked
+        ? "The agent could not be renamed and is NOT marked for deletion (see cascade.failed)."
+        : agentRename?.alreadyMarked
+          ? "The agent already carried the DELETE_ prefix and was left unchanged."
+          : "The agent was renamed with the DELETE_ prefix to mark it for manual deletion.",
+    );
+    if (flowRename) {
+      parts.push(
+        flowRename.alreadyMarked
+          ? "Its flow already carried the DELETE_ prefix and was left unchanged."
+          : "Its flow was renamed with the DELETE_ prefix as well.",
+      );
+    } else if (flowId) {
+      parts.push("Its flow could not be renamed (see cascade.failed).");
+    }
+    if (endpointFailed) {
+      parts.push(
+        "Endpoint deactivation was incomplete — the agent may still be reachable (see cascade.failed).",
+      );
+    } else if (!endpointsChecked) {
+      parts.push(
+        "The agent's flow/endpoints could not be resolved, so no endpoints were deactivated — the agent may still be reachable.",
+      );
+    } else if (deactivated.length > 0) {
+      parts.push(
+        `${deactivated.length} endpoint(s) were deactivated (reversible in the Cognigy UI) to take the agent offline.`,
+      );
+    } else {
+      parts.push("No endpoints referenced the agent's flow.");
+    }
+
+    return withHints(
+      {
+        markedForDeletion: agentMarked,
+        alreadyMarked: agentRename?.alreadyMarked || undefined,
+        resourceType: "agent",
+        id: agentId,
+        name: agentRename?.name,
+        cascade: {
+          deactivated,
+          renamed,
+          failed: failed.length > 0 ? failed : undefined,
+        },
+      },
+      {
+        warning: parts.join(" "),
+        action: "Delete the renamed resources manually in the Cognigy UI.",
+      },
+    );
   }
 
   // =========================================================================
@@ -2879,13 +3509,16 @@ export class ToolHandlers {
     if (!mapping) throw new Error(`Unknown toolType: ${data.toolType}`);
 
     const nodeConfig: any = {};
+    let parameterWarnings: string[] = [];
     switch (data.toolType) {
       case "tool":
         if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
         if (cfg.description) nodeConfig.description = cfg.description;
         if (cfg.parameters) {
+          const normalized = normalizeToolParameters(cfg.parameters);
           nodeConfig.useParameters = true;
-          nodeConfig.parameters = cfg.parameters;
+          nodeConfig.parameters = normalized.parameters;
+          parameterWarnings = normalized.warnings;
         }
         break;
       case "knowledge":
@@ -2909,8 +3542,10 @@ export class ToolHandlers {
         if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
         if (cfg.description) nodeConfig.description = cfg.description;
         if (cfg.parameters) {
+          const normalized = normalizeToolParameters(cfg.parameters);
           nodeConfig.useParameters = true;
-          nodeConfig.parameters = cfg.parameters;
+          nodeConfig.parameters = normalized.parameters;
+          parameterWarnings = normalized.warnings;
         }
         break;
     }
@@ -2961,12 +3596,15 @@ export class ToolHandlers {
           if (resolveNodeId) createdNodeIds.push(resolveNodeId);
         }
 
-        return {
+        const created = {
           toolId: toolNodeId,
           name: data.name,
           toolType: data.toolType,
           ...(resolveNodeId ? { resolveNodeId } : {}),
         };
+        return parameterWarnings.length > 0
+          ? withHints(created, { warning: parameterWarnings.join(" ") })
+          : created;
       } catch (error: any) {
         const rolledBack: string[] = [];
         const rollbackFailed: string[] = [];
@@ -3092,7 +3730,7 @@ export class ToolHandlers {
         if (postProcessNodeId) createdNodeIds.push(postProcessNodeId);
       }
 
-      return {
+      const createdHttp = {
         toolId: toolNodeId,
         name: data.name,
         toolType: "http",
@@ -3103,6 +3741,9 @@ export class ToolHandlers {
           resolveNodeId,
         },
       };
+      return parameterWarnings.length > 0
+        ? withHints(createdHttp, { warning: parameterWarnings.join(" ") })
+        : createdHttp;
     } catch (error: any) {
       const rolledBack: string[] = [];
       const rollbackFailed: string[] = [];
@@ -3166,6 +3807,7 @@ export class ToolHandlers {
 
     // Step 1: Update the tool node itself (label and/or tool-node config)
     const patchPayload: any = {};
+    let parameterWarnings: string[] = [];
     if (data.name) patchPayload.label = data.name;
 
     if (cfg) {
@@ -3175,8 +3817,10 @@ export class ToolHandlers {
         if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
         if (cfg.description) nodeConfig.description = cfg.description;
         if (cfg.parameters) {
+          const normalized = normalizeToolParameters(cfg.parameters);
           nodeConfig.useParameters = true;
-          nodeConfig.parameters = cfg.parameters;
+          nodeConfig.parameters = normalized.parameters;
+          parameterWarnings = normalized.warnings;
         }
       }
       if (toolType === "knowledge") {
@@ -3363,13 +4007,18 @@ export class ToolHandlers {
 
     if (skippedUpdates.length > 0) {
       return withHints(response, {
-        warning: `Some updates were skipped: ${skippedUpdates.join("; ")}`,
+        warning: [
+          `Some updates were skipped: ${skippedUpdates.join("; ")}`,
+          ...parameterWarnings,
+        ].join(" "),
         action:
           "Child nodes may not exist yet. Use create_tool with http type to create the full node tree, or verify the tool structure.",
       });
     }
 
-    return response;
+    return parameterWarnings.length > 0
+      ? withHints(response, { warning: parameterWarnings.join(" ") })
+      : response;
   }
 
   // =========================================================================
@@ -3908,15 +4557,11 @@ export class ToolHandlers {
         );
       }
 
-      let localeId: string | undefined;
-      try {
-        const flow: any = await this.apiClient.get(
-          `/v2.0/flows/${data.flowId}`,
-        );
-        localeId = flow?.localeReference;
-      } catch {
-        // Non-critical
-      }
+      const localeId = await resolveEndpointLocaleId(
+        this.apiClient,
+        data.projectId,
+        data.flowId,
+      );
 
       const createPayload: any = {
         projectId: data.projectId,
@@ -4148,29 +4793,12 @@ export class ToolHandlers {
         );
       }
 
-      // Resolve locale — try flow first, fall back to project's primary locale
-      let localeId: string | undefined;
-      try {
-        const flow: any = await this.apiClient.get(
-          `/v2.0/flows/${data.flowId}`,
-        );
-        localeId = flow?.localeReference;
-      } catch {
-        // Fall through to project locale
-      }
-      if (!localeId) {
-        try {
-          const locales: any = await this.apiClient.get("/v2.0/locales", {
-            params: { projectId: data.projectId },
-          });
-          const items = locales?.items ?? locales;
-          if (Array.isArray(items) && items.length > 0) {
-            localeId = items[0].referenceId ?? items[0]._id;
-          }
-        } catch {
-          // Non-critical — endpoint will be created without locale
-        }
-      }
+      // Resolve locale — the flow's when the project has several, else primary
+      const localeId = await resolveEndpointLocaleId(
+        this.apiClient,
+        data.projectId,
+        data.flowId,
+      );
 
       // Step 1: Create voiceGateway2 endpoint
       const createPayload: any = {
@@ -4859,6 +5487,996 @@ export class ToolHandlers {
   }
 
   // =========================================================================
+  // Tool 17: manage_snapshots
+  // =========================================================================
+
+  /**
+   * Intercept the FIRST change to an existing agent in a session so the user
+   * gets the chance to take a backup while a backup is still worth taking.
+   *
+   * This has to happen BEFORE the handler runs. An earlier version attached an
+   * advisory hint to the RESULT instead, which could not work: by the time a
+   * result exists the change has already been made, so a snapshot taken from
+   * that hint captured the already-changed state. The offer has to interrupt,
+   * not annotate.
+   *
+   * Returns the offer to send back instead of performing the call, or null to
+   * let the call through. Deliberately trips only ONCE per session: if the
+   * client retries without creating or declining, the retry proceeds. A gate
+   * that held out for compliance could deadlock an automated subagent, and one
+   * forced pause is what "ask at the start of the session" actually needs.
+   */
+  /** Record which project a resource belongs to, for gate scoping. */
+  private rememberProjectOf(resource: any, projectId?: string): void {
+    const project = projectId ?? resource?.projectId;
+    if (typeof project !== "string" || !project) return;
+    for (const key of ["_id", "id", "referenceId"]) {
+      const value = resource?.[key];
+      if (typeof value === "string" && value) {
+        this.projectOfResource.set(value, project);
+      }
+    }
+  }
+
+  /**
+   * Learn resource → project links from a tool result. Reads the model makes
+   * anyway (list_resources, get_resource) are enough to scope the gate for the
+   * calls that carry no projectId of their own.
+   */
+  private learnProjectIds(result: any): void {
+    if (!result || typeof result !== "object") return;
+    const items = (result as any).items;
+    if (Array.isArray(items)) {
+      for (const item of items) this.rememberProjectOf(item);
+    }
+    this.rememberProjectOf(result);
+  }
+
+  /**
+   * The project a gated call acts on, or null when it cannot be told. Pure
+   * lookup — the gate never spends an API call to answer this.
+   */
+  private projectForCall(args: any): string | null {
+    if (typeof args?.projectId === "string" && args.projectId) {
+      return args.projectId;
+    }
+    for (const key of ["aiAgentId", "flowId", "id", "endpointId"]) {
+      const value = args?.[key];
+      if (typeof value === "string") {
+        const project = this.projectOfResource.get(value);
+        if (project) return project;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Once the offer is answered for a project, the answered-check in
+   * backupGateFor short-circuits before the held sets are consulted — so the
+   * accumulated signatures are dead weight and can be dropped. The
+   * without-project set is likewise never consulted once any answer exists.
+   */
+  private releaseBackupGateHolds(projectId: string): void {
+    this.backupGateHeldCallsForProject.delete(projectId);
+    this.backupGateHeldCallsWithoutProject.clear();
+  }
+
+  private backupGateFor(toolName: string, args: any): any | null {
+    const projectId = this.projectForCall(args);
+    // Held calls are remembered by signature so a retry of a call that was
+    // already held proceeds (anti-deadlock), while a concurrent DIFFERENT
+    // mutation is held too. Marking happens synchronously, before any await,
+    // so parallel calls in one client message cannot slip past each other.
+    const signature = `${toolName} ${JSON.stringify(args ?? null)}`;
+
+    if (projectId) {
+      // Answered for THIS project? Let it through. An answer given for another
+      // project says nothing about this one.
+      if (
+        this.snapshotCreatedForProject.has(projectId) ||
+        this.backupDeclinedForProject.has(projectId)
+      ) {
+        return null;
+      }
+      // Anti-deadlock: hold each distinct call once. A client that ignores
+      // the offer and retries proceeds rather than looping forever.
+      const held = this.backupGateHeldCallsForProject.get(projectId);
+      if (held?.has(signature)) return null;
+      if (held) held.add(signature);
+      else
+        this.backupGateHeldCallsForProject.set(projectId, new Set([signature]));
+    } else {
+      // Project unknown (e.g. delete_resource on a resource never read this
+      // session). Fall back to session-wide state: any answer, anywhere, and
+      // one hold per distinct call.
+      if (
+        this.snapshotCreatedForProject.size ||
+        this.backupDeclinedForProject.size ||
+        this.backupGateHeldCallsWithoutProject.has(signature)
+      ) {
+        return null;
+      }
+      this.backupGateHeldCallsWithoutProject.add(signature);
+    }
+
+    return withHints(
+      {
+        error: "backup_not_offered",
+        tool: toolName,
+        changed: false,
+        ...(projectId ? { projectId } : {}),
+      },
+      {
+        warning: `NOTHING WAS CHANGED. This is the first change to an existing agent in this session, and no backup exists yet — so ${toolName} was not run.`,
+        action:
+          'Ask the user, in one short line, whether they want a restorable backup first — mentioning that it covers the whole project but not Endpoints or Knowledge AI. If yes: manage_snapshots { operation: "create", projectId, label: "<why>" }. If no: manage_snapshots { operation: "decline", projectId }. Then retry this exact call. If you do not have the projectId, read it from get_resource { resourceType: "agent", id: "<aiAgentId>" }.',
+      },
+    );
+  }
+
+  /** Read a snapshot, or return null when the platform 404s. */
+  private async readSnapshot(snapshotId: string): Promise<any | null> {
+    try {
+      return await this.apiClient.get(`/new/v2.0/snapshots/${snapshotId}`);
+    } catch (error: any) {
+      if (error?.status === 404) return null;
+      throw error;
+    }
+  }
+
+  private async listSnapshots(
+    projectId: string,
+    params: Record<string, any> = {},
+  ): Promise<any[]> {
+    const response: any = await this.apiClient.get("/new/v2.0/snapshots", {
+      params: { projectId, limit: 100, ...params },
+    });
+    const items = response?.items ?? response;
+    return Array.isArray(items) ? items : [];
+  }
+
+  /**
+   * Every snapshot in the project, following pagination. The limit evaluation
+   * and the ownership check both have to see ALL of them: a page-sized view
+   * reports "room left" on a full project and can hide the oldest backup, which
+   * is the one we are required to evict first.
+   */
+  private async listAllSnapshots(projectId: string): Promise<any[]> {
+    const pageSize = 100;
+    const all: any[] = [];
+
+    for (let page = 0; page < ToolHandlers.MAX_SNAPSHOT_PAGES; page++) {
+      const items = await this.listSnapshots(projectId, {
+        limit: pageSize,
+        skip: page * pageSize,
+      });
+      all.push(...items);
+      if (items.length < pageSize) break;
+    }
+
+    return all;
+  }
+
+  /**
+   * restore and delete address a snapshot by id ALONE — the platform resolves
+   * the project from the snapshot itself (the restore POST carries no body), so
+   * a snapshotId belonging to another project would act on that project while
+   * every warning, preflight and hint in our response names the passed one, and
+   * waitForTask would poll the task with the wrong projectId. The snapshot
+   * object carries no project reference of its own (REST schema exposes only
+   * name/description/isPackaged/_id/hash/createdBy/createdAt), so ownership is
+   * established the only way the API allows: membership in the project's list.
+   */
+  private async snapshotBelongsToProject(
+    snapshotId: string,
+    projectId: string,
+  ): Promise<boolean> {
+    const items = await this.listAllSnapshots(projectId);
+    return items.some((s: any) => (s?._id ?? s?.id) === snapshotId);
+  }
+
+  /** Shared response for a snapshotId that is not in the passed project. */
+  private snapshotProjectMismatchResult(
+    operation: "restore" | "delete",
+    projectId: string,
+    snapshotId: string,
+    snapshot: any,
+  ): any {
+    return withHints(
+      {
+        operation,
+        error: "snapshot_project_mismatch",
+        projectId,
+        snapshotId,
+        ...(operation === "restore" ? { applied: false } : { deleted: false }),
+        snapshot: summarizeSnapshot(snapshot),
+      },
+      {
+        warning: `Snapshot "${snapshot?.name ?? snapshotId}" does not belong to project ${projectId}, so nothing was done. Acting on it would have ${operation === "restore" ? "rolled back a DIFFERENT project" : "deleted another project's snapshot"}.`,
+        action: `Confirm which project the user means, then use manage_snapshots { operation: "list", projectId: "${projectId}" } to get a snapshot id from THAT project.`,
+      },
+    );
+  }
+
+  /**
+   * Run a snapshot task to completion. Snapshot create/restore/delete all return
+   * 202 + a task id, exactly like packages, so this leans on the existing
+   * waitForTask poller. The one wrinkle: waitForTask THROWS on a failed task,
+   * but several snapshot failures are things we want to report as structured
+   * results rather than as exceptions (hitting the snapshot cap, deleting a
+   * snapshot that an endpoint is using). So catch and hand the reason back.
+   */
+  private async runSnapshotTask(
+    taskResponse: any,
+    projectId: string,
+    opts: { waitForCompletion?: boolean; timeoutMs?: number },
+  ): Promise<{
+    taskId: string;
+    task: any | null;
+    timedOut: boolean;
+    failReason: string | null;
+    pollFailed: boolean;
+    pollError: string | null;
+  }> {
+    const taskId = taskResponse?._id ?? taskResponse?.id;
+    if (!taskId) {
+      throw new Error("Snapshot operation did not return a task ID");
+    }
+
+    if (opts.waitForCompletion === false) {
+      return {
+        taskId,
+        task: null,
+        timedOut: false,
+        failReason: null,
+        pollFailed: false,
+        pollError: null,
+      };
+    }
+
+    try {
+      const { task, timedOut } = await this.waitForTask(
+        taskId,
+        projectId,
+        opts.timeoutMs ?? ToolHandlers.DEFAULT_PACKAGE_TIMEOUT_MS,
+      );
+      return {
+        taskId,
+        task: normalizeTask(task),
+        timedOut,
+        failReason: null,
+        pollFailed: false,
+        pollError: null,
+      };
+    } catch (error: any) {
+      // Only a TaskFailedError means the operation itself failed. A polling
+      // error says nothing about the operation — reporting it as a failure is
+      // what let a create claim "nothing was backed up" for a snapshot that
+      // exists, and let freeSnapshotSlot delete a second backup after the
+      // first one had already gone.
+      if (error instanceof TaskFailedError) {
+        return {
+          taskId,
+          task: null,
+          timedOut: false,
+          failReason: error.message,
+          pollFailed: false,
+          pollError: null,
+        };
+      }
+
+      return {
+        taskId,
+        task: null,
+        timedOut: false,
+        failReason: null,
+        pollFailed: true,
+        pollError: error?.message ?? "Could not read the task status",
+      };
+    }
+  }
+
+  /** Remaining budget against a shared deadline, floored at zero. */
+  private static remainingMs(deadline: number): number {
+    return Math.max(0, deadline - Date.now());
+  }
+
+  /**
+   * The task was accepted but its status could not be read. The operation may
+   * well have succeeded, so the caller must be told to poll rather than told it
+   * failed.
+   */
+  private snapshotPollFailedResult(
+    operation: "create" | "restore" | "delete",
+    projectId: string,
+    taskId: string,
+    pollError: string,
+    extra: Record<string, any> = {},
+  ): any {
+    const subject =
+      operation === "create"
+        ? "The backup may or may not exist"
+        : operation === "restore"
+          ? "The project may be mid-restore or fully restored"
+          : "The snapshot may or may not be deleted";
+
+    return withHints(
+      {
+        operation,
+        projectId,
+        error: "task_status_unknown",
+        outcomeUnknown: true,
+        taskId,
+        pollError,
+        ...extra,
+      },
+      {
+        warning: `The ${operation} task was started, but its status could not be read (${pollError}). ${subject} — do NOT assume either way.`,
+        action: `Poll manage_snapshots { operation: "read_task", projectId: "${projectId}", taskId: "${taskId}" } until it reports done or error, and only then tell the user what happened.${operation === "create" ? " Do not create another backup before that resolves — a duplicate eats a snapshot slot." : ""}`,
+      },
+    );
+  }
+
+  private snapshotLimitResult(
+    projectId: string,
+    evaluation: ReturnType<typeof evaluateSnapshotLimit>,
+    detail?: string,
+    // A slot may ALREADY have been freed before this result is built (the
+    // installation cap turned out lower than assumedMax, or a racing create
+    // took the freed slot). That deletion is irreversible, so it must appear in
+    // the response and the warning must not claim nothing was deleted.
+    eviction?: { freedSlot: SnapshotSummary | null; skippedCandidates: any[] },
+  ): any {
+    const oldest = evaluation.oldestDeletable;
+    const freedSlot = eviction?.freedSlot ?? null;
+    const evictionFields = {
+      ...(freedSlot ? { deletedToFreeSlot: freedSlot } : {}),
+      ...(eviction?.skippedCandidates?.length
+        ? { skippedCandidates: eviction.skippedCandidates }
+        : {}),
+    };
+    const nothingDeleted = freedSlot
+      ? `A backup ("${freedSlot.name}") was already permanently deleted to free a slot, but the snapshot still could not be created.`
+      : "No snapshot was created and nothing was deleted.";
+
+    if (!oldest) {
+      return withHints(
+        {
+          operation: "create",
+          error: "snapshot_limit_reached",
+          projectId,
+          created: false,
+          count: evaluation.count,
+          assumedMax: evaluation.assumedMax,
+          deletableBackups: [],
+          ...evictionFields,
+          ...(detail ? { detail } : {}),
+        },
+        {
+          warning: `The project is at its snapshot limit (${evaluation.count}) and none of the remaining snapshots were created by this plugin. ${nothingDeleted}`,
+          action:
+            "Do NOT delete any snapshot. Tell the user the plugin only ever deletes its own [AI Backup] snapshots, and ask them to delete one themselves in the Cognigy UI under Deploy > Snapshots, then retry.",
+        },
+      );
+    }
+
+    return withHints(
+      {
+        operation: "create",
+        error: "snapshot_limit_reached",
+        projectId,
+        created: false,
+        count: evaluation.count,
+        assumedMax: evaluation.assumedMax,
+        oldestDeletable: oldest,
+        deletableBackups: evaluation.deletable,
+        ...evictionFields,
+        ...(detail ? { detail } : {}),
+      },
+      {
+        warning: `The project is at its snapshot limit (${evaluation.count}). ${nothingDeleted}`,
+        action: `Ask the user whether to delete the oldest plugin-created backup ("${oldest.name}") to make room. Only if they agree, retry with manage_snapshots { operation: "create", projectId: "${projectId}", confirmDeleteOldest: true }.`,
+      },
+    );
+  }
+
+  /**
+   * Delete the oldest plugin-created backup to free a slot. A snapshot that an
+   * endpoint uses as its entrypoint cannot be deleted (the platform raises an
+   * InputOutputError that only surfaces on the task), so walk to the next-oldest
+   * candidate rather than giving up on the first refusal.
+   *
+   * Walking on is only safe when the platform DEFINITIVELY refused. If a delete
+   * timed out or its status could not be read, the snapshot may already be
+   * gone — moving to the next candidate would then destroy a second backup to
+   * free one slot. Those cases halt the loop instead.
+   *
+   * All candidates plus the create that follows share ONE deadline, so a call
+   * cannot stack N x timeoutMs.
+   */
+  private async freeSnapshotSlot(
+    projectId: string,
+    candidates: SnapshotSummary[],
+    opts: { deadline: number },
+  ): Promise<{
+    deleted: SnapshotSummary | null;
+    skipped: any[];
+    halted: {
+      kind: "timed_out" | "poll_failed" | "budget_exhausted";
+      snapshot: SnapshotSummary;
+      taskId: string | null;
+      reason: string | null;
+    } | null;
+  }> {
+    const skipped: any[] = [];
+
+    for (const candidate of candidates) {
+      if (!candidate.id) continue;
+
+      const remaining = ToolHandlers.remainingMs(opts.deadline);
+      if (remaining <= 0) {
+        return {
+          deleted: null,
+          skipped,
+          halted: {
+            kind: "budget_exhausted",
+            snapshot: candidate,
+            taskId: null,
+            reason: "No time budget left to attempt another deletion.",
+          },
+        };
+      }
+
+      const response = await this.apiClient.delete(
+        `/new/v2.0/snapshots/${candidate.id}`,
+      );
+      const { taskId, timedOut, failReason, pollFailed, pollError } =
+        await this.runSnapshotTask(response, projectId, {
+          waitForCompletion: true,
+          timeoutMs: remaining,
+        });
+
+      if (pollFailed || timedOut) {
+        return {
+          deleted: null,
+          skipped,
+          halted: {
+            kind: pollFailed ? "poll_failed" : "timed_out",
+            snapshot: candidate,
+            taskId,
+            reason: pollError,
+          },
+        };
+      }
+
+      if (!failReason) return { deleted: candidate, skipped, halted: null };
+
+      skipped.push({
+        snapshot: candidate,
+        reason: failReason,
+        ...(failReason.includes(SNAPSHOT_IN_USE_FAIL_REASON)
+          ? { inUseByEndpoint: true }
+          : {}),
+      });
+    }
+
+    return { deleted: null, skipped, halted: null };
+  }
+
+  async handleManageSnapshots(args: any): Promise<any> {
+    const data = schemas.manageSnapshotsSchema.parse(args);
+
+    switch (data.operation) {
+      case "list": {
+        // The limit view must describe the WHOLE project, never the caller's
+        // page: a paged count reads as "there is room" on a full project, and
+        // the eviction candidate we show has to really be the oldest backup.
+        // Pagination applies to the returned array only.
+        const all = await this.listAllSnapshots(data.projectId);
+        const evaluation = evaluateSnapshotLimit(all);
+        const skip = data.skip ?? 0;
+        const limit = data.limit ?? 100;
+        const page = all.slice(skip, skip + limit);
+
+        return {
+          operation: "list",
+          projectId: data.projectId,
+          count: evaluation.count,
+          assumedMax: evaluation.assumedMax,
+          atLimit: evaluation.atLimit,
+          snapshots: filterList("snapshot", page),
+          ...(page.length < evaluation.count
+            ? { shown: page.length, skip }
+            : {}),
+          oldestDeletableBackup: evaluation.oldestDeletable,
+        };
+      }
+
+      case "create": {
+        // One deadline for the whole call: every eviction attempt AND the
+        // create itself draw from it, so a single call can never stack
+        // candidates x timeoutMs.
+        const deadline =
+          Date.now() +
+          (data.timeoutMs ?? ToolHandlers.DEFAULT_PACKAGE_TIMEOUT_MS);
+        const existing = await this.listAllSnapshots(data.projectId);
+        const evaluation = evaluateSnapshotLimit(existing);
+        let freedSlot: SnapshotSummary | null = null;
+        let skippedCandidates: any[] = [];
+
+        // No deletable backup means there is nothing to confirm: report the
+        // limit rather than the "every delete failed" case, which would be
+        // misleading when nothing was ever attempted.
+        if (evaluation.atLimit) {
+          if (!data.confirmDeleteOldest || !evaluation.deletable.length) {
+            return this.snapshotLimitResult(data.projectId, evaluation);
+          }
+
+          const freed = await this.freeSnapshotSlot(
+            data.projectId,
+            evaluation.deletable,
+            { deadline },
+          );
+          freedSlot = freed.deleted;
+          skippedCandidates = freed.skipped;
+
+          // A deletion we could not confirm stops the eviction: the snapshot
+          // may already be gone, so neither claiming the slot was freed nor
+          // deleting the next backup is safe.
+          if (freed.halted) {
+            const halted = freed.halted;
+            const what =
+              halted.kind === "poll_failed"
+                ? `could not be confirmed (${halted.reason ?? "its task status could not be read"})`
+                : halted.kind === "timed_out"
+                  ? "is still running"
+                  : "was not attempted (the call ran out of time budget)";
+
+            return withHints(
+              {
+                operation: "create",
+                error: "eviction_incomplete",
+                projectId: data.projectId,
+                created: false,
+                count: evaluation.count,
+                assumedMax: evaluation.assumedMax,
+                haltedOn: halted,
+                ...(skippedCandidates.length ? { skippedCandidates } : {}),
+              },
+              {
+                warning: `Freeing a slot stopped: deleting "${halted.snapshot.name}" ${what}. That backup may or may not still exist, so no other backup was deleted and no snapshot was created.`,
+                action: halted.taskId
+                  ? `Poll manage_snapshots { operation: "read_task", projectId: "${data.projectId}", taskId: "${halted.taskId}" } until it resolves, then re-run manage_snapshots { operation: "list" } before retrying create.`
+                  : `Re-run manage_snapshots { operation: "list", projectId: "${data.projectId}" } to see the current state before retrying create.`,
+              },
+            );
+          }
+
+          if (!freedSlot) {
+            return withHints(
+              {
+                operation: "create",
+                error: "snapshot_limit_reached",
+                projectId: data.projectId,
+                created: false,
+                count: evaluation.count,
+                assumedMax: evaluation.assumedMax,
+                skippedCandidates,
+              },
+              {
+                warning:
+                  "Could not free a slot: every plugin-created backup failed to delete (a snapshot in use by an endpoint cannot be deleted).",
+                action:
+                  "Report the skippedCandidates reasons to the user and ask them to free a slot in the Cognigy UI under Deploy > Snapshots.",
+              },
+            );
+          }
+        }
+
+        const version = nextBackupVersion(
+          existing,
+          this.highestBackupVersionThisSession,
+        );
+        this.highestBackupVersionThisSession = version;
+        const fields = buildAutoBackupFields(data.label, new Date(), version);
+        const response: any = await this.apiClient.post("/new/v2.0/snapshots", {
+          projectId: data.projectId,
+          name: fields.name,
+          description: fields.description,
+        });
+
+        const { taskId, task, timedOut, failReason, pollFailed, pollError } =
+          await this.runSnapshotTask(response, data.projectId, {
+            waitForCompletion: data.waitForCompletion,
+            timeoutMs: ToolHandlers.remainingMs(deadline),
+          });
+
+        if (pollFailed) {
+          return this.snapshotPollFailedResult(
+            "create",
+            data.projectId,
+            taskId,
+            pollError!,
+            {
+              // NOT false: `created: false` is what every other outcome uses to
+              // mean "no backup exists, safe to retry", and a caller keying on
+              // the boolean would mint the duplicate this path exists to avoid.
+              created: null,
+              name: fields.name,
+              ...(freedSlot ? { deletedToFreeSlot: freedSlot } : {}),
+              ...(skippedCandidates.length ? { skippedCandidates } : {}),
+            },
+          );
+        }
+
+        // The cap is enforced inside the resources service, so a create that got
+        // past our pre-check (different installation limit, or a race) fails on
+        // the TASK rather than the POST. Translate it into the same shape the
+        // pre-check returns so the model only has one error to understand.
+        if (failReason?.includes(SNAPSHOT_LIMIT_FAIL_REASON)) {
+          const refreshed = evaluateSnapshotLimit(
+            await this.listAllSnapshots(data.projectId),
+          );
+          return this.snapshotLimitResult(
+            data.projectId,
+            refreshed,
+            failReason,
+            { freedSlot, skippedCandidates },
+          );
+        }
+
+        if (failReason) {
+          return withHints(
+            {
+              operation: "create",
+              projectId: data.projectId,
+              created: false,
+              taskId,
+              failReason,
+              ...(freedSlot ? { deletedToFreeSlot: freedSlot } : {}),
+            },
+            {
+              warning: "The snapshot creation task failed.",
+              action:
+                "Report the failReason to the user. Nothing was backed up, so do not proceed as if a backup exists.",
+            },
+          );
+        }
+
+        if (data.waitForCompletion === false || timedOut) {
+          return withHints(
+            {
+              operation: "create",
+              projectId: data.projectId,
+              created: false,
+              pending: true,
+              taskId,
+              name: fields.name,
+              task,
+              ...(freedSlot ? { deletedToFreeSlot: freedSlot } : {}),
+            },
+            {
+              warning:
+                "Snapshot creation is still running; the backup does not exist yet.",
+              action: `Poll manage_snapshots { operation: "read_task", projectId: "${data.projectId}", taskId: "${taskId}" } until it is done, then list to get the snapshot id.`,
+            },
+          );
+        }
+
+        // The create task does not carry the new snapshot's id — it is minted
+        // inside the resources controller — so resolve it by name. `filter` is a
+        // substring match on name, and the generated name carries a
+        // second-resolution timestamp, so this is unambiguous.
+        const matches = await this.listSnapshots(data.projectId, {
+          filter: fields.name,
+        });
+        // Exact match only. A near-match would put the WRONG snapshot id into
+        // the restore hint below — a restore to the wrong point in time wipes
+        // the very changes this backup was taken to protect. The null path
+        // already tells the caller to find the id with list.
+        const created = matches.find((s: any) => s?.name === fields.name);
+
+        this.snapshotCreatedForProject.add(data.projectId);
+        this.releaseBackupGateHolds(data.projectId);
+
+        return withHints(
+          {
+            operation: "create",
+            projectId: data.projectId,
+            created: true,
+            taskId,
+            snapshot: created ? summarizeSnapshot(created) : null,
+            name: fields.name,
+            notIncluded: SNAPSHOT_EXCLUSIONS,
+            ...(freedSlot ? { deletedToFreeSlot: freedSlot } : {}),
+            ...(skippedCandidates.length ? { skippedCandidates } : {}),
+          },
+          {
+            warning:
+              "This backup covers the WHOLE PROJECT but does NOT include Endpoints or Knowledge AI (stores, sources, chunks). Tell the user that, briefly, if the agent uses knowledge.",
+            action: created
+              ? `To roll back later, call manage_snapshots { operation: "restore", projectId: "${data.projectId}", snapshotId: "${summarizeSnapshot(created).id}" } for a preflight first.`
+              : 'The snapshot was created but could not be resolved by name; use manage_snapshots { operation: "list" } to find its id.',
+          },
+        );
+      }
+
+      case "restore": {
+        const snapshot = await this.readSnapshot(data.snapshotId);
+        if (!snapshot) {
+          return withHints(
+            {
+              operation: "restore",
+              error: "snapshot_not_found",
+              projectId: data.projectId,
+              snapshotId: data.snapshotId,
+              applied: false,
+            },
+            {
+              action: `Use manage_snapshots { operation: "list", projectId: "${data.projectId}" } to find valid snapshot ids.`,
+            },
+          );
+        }
+
+        if (
+          !(await this.snapshotBelongsToProject(
+            data.snapshotId,
+            data.projectId,
+          ))
+        ) {
+          return this.snapshotProjectMismatchResult(
+            "restore",
+            data.projectId,
+            data.snapshotId,
+            snapshot,
+          );
+        }
+
+        // Preflight: report and change nothing. This is the default on purpose —
+        // restore is irreversible.
+        if (!data.confirm) {
+          return withHints(buildRestorePreflight(snapshot, data.projectId), {
+            warning:
+              "PREFLIGHT ONLY — nothing has been changed. Restoring is irreversible.",
+            action: `Show the user the warnings above and get explicit agreement. Only then call manage_snapshots { operation: "restore", projectId: "${data.projectId}", snapshotId: "${data.snapshotId}", confirm: true }.`,
+          });
+        }
+
+        // No request body: the platform resolves the project from the snapshot
+        // id path param, and passing projectId here as well raises
+        // "ProjectId was specified in multiple locations".
+        const response: any = await this.apiClient.post(
+          `/new/v2.0/snapshots/${data.snapshotId}/restore`,
+        );
+
+        const { taskId, task, timedOut, failReason, pollFailed, pollError } =
+          await this.runSnapshotTask(response, data.projectId, {
+            waitForCompletion: data.waitForCompletion,
+            timeoutMs: data.timeoutMs,
+          });
+
+        if (pollFailed) {
+          return this.snapshotPollFailedResult(
+            "restore",
+            data.projectId,
+            taskId,
+            pollError!,
+            {
+              snapshotId: data.snapshotId,
+              warnings: RESTORE_WARNINGS,
+            },
+          );
+        }
+
+        if (failReason) {
+          return withHints(
+            {
+              operation: "restore",
+              projectId: data.projectId,
+              snapshotId: data.snapshotId,
+              applied: false,
+              taskId,
+              failReason,
+            },
+            {
+              warning:
+                "The restore task failed. The project may be in a partially restored state.",
+              action:
+                "Report the failReason and tell the user to check the project in the Cognigy UI before making further changes.",
+            },
+          );
+        }
+
+        if (data.waitForCompletion === false || timedOut) {
+          return withHints(
+            {
+              operation: "restore",
+              projectId: data.projectId,
+              snapshotId: data.snapshotId,
+              applied: true,
+              pending: true,
+              taskId,
+              task,
+            },
+            {
+              warning:
+                "The restore is running. The project is mid-rebuild — do not read or change resources until it finishes.",
+              action: `Poll manage_snapshots { operation: "read_task", projectId: "${data.projectId}", taskId: "${taskId}" } until it is done.`,
+            },
+          );
+        }
+
+        return withHints(
+          {
+            operation: "restore",
+            projectId: data.projectId,
+            snapshotId: data.snapshotId,
+            applied: true,
+            taskId,
+            task,
+            snapshot: summarizeSnapshot(snapshot),
+            warnings: RESTORE_WARNINGS,
+          },
+          {
+            warning:
+              "Every resource id in this project changed. Ids from earlier in this conversation are now stale.",
+            action:
+              "Re-list the project's agents and flows before doing anything else, and remind the user to check Endpoints on non-primary locales in the UI.",
+          },
+        );
+      }
+
+      case "delete": {
+        const snapshot = await this.readSnapshot(data.snapshotId);
+        if (!snapshot) {
+          return withHints(
+            {
+              operation: "delete",
+              error: "snapshot_not_found",
+              projectId: data.projectId,
+              snapshotId: data.snapshotId,
+              deleted: false,
+            },
+            {
+              action: `Use manage_snapshots { operation: "list", projectId: "${data.projectId}" } to find valid snapshot ids.`,
+            },
+          );
+        }
+
+        // The deletion gate. Only snapshots carrying BOTH plugin markers may be
+        // deleted here; a human-created snapshot is never the plugin's to remove.
+        if (!isAutoBackup(snapshot)) {
+          return withHints(
+            {
+              operation: "delete",
+              error: "not_a_plugin_backup",
+              projectId: data.projectId,
+              snapshotId: data.snapshotId,
+              deleted: false,
+              snapshot: summarizeSnapshot(snapshot),
+            },
+            {
+              warning: `"${snapshot.name}" was not created by this plugin, so the plugin will not delete it.`,
+              action: `Tell the user that only snapshots named "${AUTO_BACKUP_NAME_PREFIX}…" and created by this plugin can be deleted here, and that they can delete this one themselves in the Cognigy UI under Deploy > Snapshots.`,
+            },
+          );
+        }
+
+        if (
+          !(await this.snapshotBelongsToProject(
+            data.snapshotId,
+            data.projectId,
+          ))
+        ) {
+          return this.snapshotProjectMismatchResult(
+            "delete",
+            data.projectId,
+            data.snapshotId,
+            snapshot,
+          );
+        }
+
+        const response: any = await this.apiClient.delete(
+          `/new/v2.0/snapshots/${data.snapshotId}`,
+        );
+
+        const { taskId, task, timedOut, failReason, pollFailed, pollError } =
+          await this.runSnapshotTask(response, data.projectId, {
+            waitForCompletion: data.waitForCompletion,
+            timeoutMs: data.timeoutMs,
+          });
+
+        if (pollFailed) {
+          return this.snapshotPollFailedResult(
+            "delete",
+            data.projectId,
+            taskId,
+            pollError!,
+            { snapshotId: data.snapshotId, deleted: false },
+          );
+        }
+
+        if (failReason) {
+          const inUse = failReason.includes(SNAPSHOT_IN_USE_FAIL_REASON);
+          return withHints(
+            {
+              operation: "delete",
+              projectId: data.projectId,
+              snapshotId: data.snapshotId,
+              deleted: false,
+              taskId,
+              failReason,
+              ...(inUse ? { inUseByEndpoint: true } : {}),
+            },
+            {
+              warning: inUse
+                ? "This snapshot is deployed to an endpoint, so the platform refuses to delete it."
+                : "The snapshot deletion task failed.",
+              action: inUse
+                ? "Tell the user to point that endpoint at a different snapshot in the Cognigy UI first, then retry."
+                : "Report the failReason to the user.",
+            },
+          );
+        }
+
+        // waitForCompletion:false returns before the task runs, so the
+        // snapshot is NOT gone yet — same pending shape as create/restore.
+        const stillRunning = data.waitForCompletion === false || timedOut;
+        if (stillRunning) {
+          return withHints(
+            {
+              operation: "delete",
+              projectId: data.projectId,
+              snapshotId: data.snapshotId,
+              deleted: false,
+              pending: true,
+              taskId,
+              task,
+            },
+            {
+              warning:
+                "The deletion task is still running; the snapshot has not been deleted yet.",
+              action: `Poll manage_snapshots { operation: "read_task", projectId: "${data.projectId}", taskId: "${taskId}" } until it is done.`,
+            },
+          );
+        }
+
+        return {
+          operation: "delete",
+          projectId: data.projectId,
+          snapshotId: data.snapshotId,
+          deleted: true,
+          taskId,
+          task,
+        };
+      }
+
+      // Records that the user was asked and said no, so the backup gate stops
+      // holding calls FOR THIS PROJECT. Another project touched later in the
+      // same session is still held once. Touches no API.
+      case "decline": {
+        this.backupDeclinedForProject.add(data.projectId);
+        this.releaseBackupGateHolds(data.projectId);
+        return {
+          operation: "decline",
+          projectId: data.projectId,
+          acknowledged: true,
+          note: "No backup will be taken for this project. Changes to it are not reversible through this plugin. A different project touched later still gets its own backup offer.",
+        };
+      }
+
+      case "read_task": {
+        const task = await this.readTask(data.taskId, data.projectId);
+        return {
+          operation: "read_task",
+          projectId: data.projectId,
+          task: normalizeTask(task),
+        };
+      }
+    }
+  }
+
+  // =========================================================================
   // Main dispatcher
   // =========================================================================
   async handleToolCall(toolName: string, args: any): Promise<any> {
@@ -4867,6 +6485,20 @@ export class ToolHandlers {
     });
 
     try {
+      // Before anything mutates an existing agent, give the user one chance to
+      // take a backup. Must precede the switch — a post-hoc hint arrives after
+      // the change and is therefore useless.
+      if (
+        ToolHandlers.isBackupWorthyCall(toolName, args) &&
+        !this.targetsNewResource(args)
+      ) {
+        const gate = this.backupGateFor(toolName, args);
+        if (gate) {
+          logger.info(`Backup gate held ${toolName} for a backup offer`);
+          return gate;
+        }
+      }
+
       let result: any;
       switch (toolName) {
         case "create_ai_agent":
@@ -4917,9 +6549,17 @@ export class ToolHandlers {
         case "audit_voice_agent":
           result = await this.handleAuditVoiceAgent(args);
           break;
+        case "manage_snapshots":
+          result = await this.handleManageSnapshots(args);
+          break;
         default:
           throw new Error(`Unknown tool: ${toolName}`);
       }
+      // Reads teach the gate which project a resource belongs to, so a later
+      // update_ai_agent { aiAgentId } is scoped to the right project instead of
+      // falling back to session-wide state.
+      this.learnProjectIds(result);
+
       logger.info(`Tool call successful: ${toolName}`);
       return result;
     } catch (error: any) {
