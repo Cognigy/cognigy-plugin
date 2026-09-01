@@ -53,6 +53,10 @@ async function main() {
 
       const rateLimitKey = config.apiKey.substring(0, 10);
       if (!rateLimiter.check(rateLimitKey)) {
+        // Logged with the tool name: a rejected call never reaches the
+        // `Tool call received` line below, so without this a throttling
+        // incident would leave no trace of which tool was being hammered.
+        logger.warn(`Tool call rate limited: ${name}`);
         return {
           content: [
             {

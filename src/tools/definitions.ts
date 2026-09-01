@@ -1,3 +1,9 @@
+// The audit_event filter enums are advertised straight from the Zod schemas'
+// constants: two hand-kept copies would drift the moment the platform grows a
+// new actor value, and the LLM would then be offered a value Zod rejects (or
+// never told about one it accepts).
+import { AUDIT_ACTORS, AUDIT_EVENT_TYPES } from "../schemas/tools.js";
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -335,29 +341,23 @@ export const tools: ToolDefinition[] = [
         },
         actor: {
           type: "array",
+          minItems: 1,
           items: {
             type: "string",
-            enum: ["human", "ask-ai", "mcp-plugin", "system"],
+            enum: [...AUDIT_ACTORS],
           },
           description:
-            "audit_event only — filter by who performed the action. 'mcp-plugin' is this plugin, 'ask-ai' the Cognigy Ask AI agent, 'human' a person working in the UI or calling the API directly. Requires Cognigy 2026.17.0+.",
+            "audit_event only — filter by who performed the action. 'mcp-plugin' is this plugin, 'ask-ai' the Cognigy Ask AI agent, 'human' a person working in the UI or calling the API directly. Filtered by the platform on Cognigy 2026.17.0+; on older versions the plugin applies it to the fetched page itself and says so.",
         },
         eventType: {
           type: "array",
+          minItems: 1,
           items: {
             type: "string",
-            enum: [
-              "action",
-              "create",
-              "replace",
-              "patch",
-              "delete",
-              "authentication",
-              "authorization",
-            ],
+            enum: [...AUDIT_EVENT_TYPES],
           },
           description:
-            "audit_event only — filter by operation type. Requires Cognigy 2026.17.0+.",
+            "audit_event only — filter by operation type. Filtered by the platform on Cognigy 2026.17.0+; on older versions the plugin applies it to the fetched page itself and says so.",
         },
         user: {
           type: "string",

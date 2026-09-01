@@ -162,23 +162,91 @@ describe("audit events", () => {
     ]);
   });
 
-  it("hints at the platform version when the array filters are rejected", async () => {
+  // A platform older than 2026.17.0 rejects the repeatable actor[]/type[]
+  // params. Detection deliberately does not read the error message — which
+  // misfires both ways — so the recovery has to be behavioural: refetch
+  // unfiltered and apply the filters here.
+  it("filters client-side when the platform rejects the array filters", async () => {
     const error: any = new Error(
       "Validation failed. Field 'actor' is not allowed.",
     );
     error.status = 400;
-    api.get.mockRejectedValue(error as never);
+    api.get.mockRejectedValueOnce(error as never).mockResolvedValueOnce({
+      items: [
+        rawEvent({ performedBy: { actor: "mcp-plugin" } }),
+        rawEvent({
+          _id: "60d5ec49f1a2c8b1a4e0f0c1",
+          performedBy: { actor: "ask-ai" },
+        }),
+        // No performedBy at all: the platform stores it only for non-human
+        // actors, so this one is a person and must not match.
+        rawEvent({ _id: "60d5ec49f1a2c8b1a4e0f0c2" }),
+      ],
+      total: 3,
+    } as never);
 
     const result = await h.handleToolCall("list_resources", {
       resourceType: "audit_event",
       actor: ["mcp-plugin"],
     });
 
-    expect(result.error).toMatch(/not allowed/);
-    expect(result._hints.likely_cause).toMatch(/2026\.17\.0/);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].performedBy.actor).toBe("mcp-plugin");
+    expect(result.total).toBe(1);
+    expect(result._hints.warning).toMatch(/2026\.17\.0/);
+    // The retry drops only the rejected filters.
+    expect(api.get.mock.calls[1][1]).toMatchObject({
+      params: expect.not.objectContaining({ actor: expect.anything() }),
+    });
   });
 
-  it("rethrows a 400 that is unrelated to the filters", async () => {
+  it("matches a human actor with no performedBy when filtering client-side", async () => {
+    const error: any = new Error("Bad Request");
+    error.status = 400;
+    api.get.mockRejectedValueOnce(error as never).mockResolvedValueOnce({
+      items: [
+        rawEvent(),
+        rawEvent({
+          _id: "60d5ec49f1a2c8b1a4e0f0c3",
+          performedBy: { actor: "mcp-plugin" },
+        }),
+      ],
+      total: 2,
+    } as never);
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "audit_event",
+      actor: ["human"],
+    });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].id).toBe(EVENT_ID);
+  });
+
+  it("filters client-side on eventType too", async () => {
+    const error: any = new Error("Bad Request");
+    error.status = 400;
+    api.get.mockRejectedValueOnce(error as never).mockResolvedValueOnce({
+      items: [
+        rawEvent(),
+        rawEvent({ _id: "60d5ec49f1a2c8b1a4e0f0c4", type: "delete" }),
+      ],
+      total: 2,
+    } as never);
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "audit_event",
+      eventType: ["delete"],
+    });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].type).toBe("delete");
+  });
+
+  // The unfiltered retry is also the detection: a 400 that survives it was
+  // never about the filters (a rejected `sort` field, say), so the original
+  // error must surface untouched rather than as a version hint.
+  it("rethrows the original 400 when the unfiltered retry fails too", async () => {
     const error: any = new Error("Validation failed. Field 'sort' is invalid.");
     error.status = 400;
     api.get.mockRejectedValue(error as never);
@@ -192,6 +260,20 @@ describe("audit events", () => {
     ).rejects.toThrow(/Field 'sort' is invalid/);
   });
 
+  it("rethrows a 400 when no array filter was sent", async () => {
+    const error: any = new Error("Validation failed. Field 'sort' is invalid.");
+    error.status = 400;
+    api.get.mockRejectedValue(error as never);
+
+    await expect(
+      h.handleToolCall("list_resources", {
+        resourceType: "audit_event",
+        sort: "nope:desc",
+      }),
+    ).rejects.toThrow(/Field 'sort' is invalid/);
+    expect(api.get).toHaveBeenCalledTimes(1);
+  });
+
   it("hints at permissions on a 403", async () => {
     const error: any = new Error("Forbidden");
     error.status = 403;
@@ -199,6 +281,19 @@ describe("audit events", () => {
 
     const result = await h.handleToolCall("list_resources", {
       resourceType: "audit_event",
+    });
+
+    expect(result._hints.action).toMatch(/Admin Center/);
+  });
+
+  it("hints at permissions on a 403 from get_resource too", async () => {
+    const error: any = new Error("Forbidden");
+    error.status = 403;
+    api.get.mockRejectedValue(error as never);
+
+    const result = await h.handleToolCall("get_resource", {
+      resourceType: "audit_event",
+      id: EVENT_ID,
     });
 
     expect(result._hints.action).toMatch(/Admin Center/);

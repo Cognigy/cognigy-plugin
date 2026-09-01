@@ -2407,6 +2407,9 @@ export class ToolHandlers {
 
     let items: any[];
     let total: number | undefined;
+    // Set when the platform rejected the audit_event filters and this plugin
+    // applied them instead, so the response can say so.
+    let filteredClientSide = false;
 
     switch (resourceType) {
       case "project": {
@@ -2535,8 +2538,7 @@ export class ToolHandlers {
         // Organisation-scoped, so no projectId. `actor` / `type` are sent as
         // repeatable params (axios serialises arrays as `actor[]=…`), matching
         // what GET /v2.0/auditevents documents. Both filters need the platform
-        // at 2026.17.0 or newer; older versions reject the array form, which
-        // the catch below turns into an actionable hint instead of a raw 400.
+        // at 2026.17.0 or newer; the catch below covers older ones.
         try {
           const res: any = await this.apiClient.get("/v2.0/auditevents", {
             params: {
@@ -2549,35 +2551,35 @@ export class ToolHandlers {
           items = res.items ?? res;
           total = res.total;
         } catch (error: any) {
-          // Only a 400 that names one of the two filters gets the version
-          // hint. Any other 400 (a rejected sort field, a bad cursor) is a
-          // real error and must not be dressed up as a version problem.
-          const rejectsFilter =
-            error?.status === 400 &&
-            (actor || eventType) &&
-            /\b(actor|type)\b/i.test(String(error.message ?? ""));
-          if (rejectsFilter) {
-            return withHints(
-              { error: error.message },
-              {
-                likely_cause:
-                  "This Cognigy version predates 2026.17.0, which introduced the repeatable actor[]/type[] filters on GET /v2.0/auditevents.",
-                action:
-                  "Retry list_resources { resourceType: 'audit_event' } without actor / eventType and filter the returned items yourself.",
-              },
+          // A 400 while either filter is set is most likely a platform older
+          // than 2026.17.0 rejecting the repeatable actor[]/type[] params.
+          // Recover by doing what the alternative would only have *told* the
+          // caller to do — refetch without the filters and apply them here —
+          // rather than sniffing the free-text error message, which misfires
+          // both ways (a rejected `sort` field reads as "type", and an old
+          // platform's 400 need not name either filter). If the refetch fails
+          // too, the 400 was about something else and the original stands.
+          if (error?.status === 400 && (actor || eventType)) {
+            let retried: any;
+            try {
+              retried = await this.apiClient.get("/v2.0/auditevents", {
+                params: { ...paging, ...(user ? { user } : {}) },
+              });
+            } catch {
+              throw error;
+            }
+            const raw = retried?.items ?? retried;
+            items = (Array.isArray(raw) ? raw : []).filter(
+              (e: any) =>
+                // `performedBy` is absent on human-performed events.
+                (!actor || actor.includes(e?.performedBy?.actor ?? "human")) &&
+                (!eventType || eventType.includes(e?.type)),
             );
+            total = items.length;
+            filteredClientSide = true;
+            break;
           }
-          if (error?.status === 403) {
-            return withHints(
-              { error: error.message },
-              {
-                likely_cause:
-                  "Audit events are organisation-scoped; the API key's user lacks the required admin permission.",
-                action:
-                  "Use an API key belonging to a user with Admin Center access.",
-              },
-            );
-          }
+          if (error?.status === 403) return this.auditEventForbidden(error);
           throw error;
         }
         break;
@@ -2599,6 +2601,15 @@ export class ToolHandlers {
 
     const result: any = { items: filtered, total: total ?? filtered.length };
 
+    if (filteredClientSide) {
+      return withHints(result, {
+        warning:
+          "actor / eventType were applied by this plugin, not by the platform: this Cognigy version rejected the actor[]/type[] query filters, which need 2026.17.0 or newer.",
+        action:
+          "Only the requested page was fetched and then filtered, so `total` counts matches within that page, not across the whole audit log. Raise `limit` or page through with `skip` to see more.",
+      });
+    }
+
     if (sort && resourceType === "tool") {
       return withHints(result, {
         warning:
@@ -2613,6 +2624,23 @@ export class ToolHandlers {
     }
 
     return result;
+  }
+
+  /**
+   * Audit events live above any project, so a 403 here is about the API key's
+   * user lacking Admin Center access rather than anything project-scoped —
+   * knowledge the list and get paths both need, kept in one place so they
+   * cannot drift apart.
+   */
+  private auditEventForbidden(error: any): any {
+    return withHints(
+      { error: error.message },
+      {
+        likely_cause:
+          "Audit events are organisation-scoped; the API key's user lacks the required admin permission.",
+        action: "Use an API key belonging to a user with Admin Center access.",
+      },
+    );
   }
 
   // =========================================================================
@@ -2643,7 +2671,14 @@ export class ToolHandlers {
     const url = endpointMap[resourceType];
     if (!url) throw new Error(`Unknown resourceType: ${resourceType}`);
 
-    const result = await this.apiClient.get(url);
+    let result: any;
+    try {
+      result = await this.apiClient.get(url);
+    } catch (error: any) {
+      if (resourceType === "audit_event" && error?.status === 403)
+        return this.auditEventForbidden(error);
+      throw error;
+    }
     if (raw) return result;
 
     const filtered = RESOURCE_FILTERS_GET[resourceType]

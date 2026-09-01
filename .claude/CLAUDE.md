@@ -72,7 +72,7 @@ Wire contract, all of it load-bearing (`services/service-api/src/middleware/auth
 
 Ours lives in `src/utils/actorContext.ts`: an `AsyncLocalStorage` task id (one per MCP tool call, entered in `src/index.ts`'s `CallTool` handler — a mutable field would let concurrent calls interleave) plus a boot-time `sessionId`, injected by the single request interceptor in `src/api/client.ts` so uploads are covered too. `talk_to_agent`'s bare `axios.post(endpointUrl)` deliberately gets no header — endpoint traffic produces conversations, not audit events. `COGNIGY_DISABLE_AUDIT_ATTRIBUTION=1` opts out.
 
-Attribution is self-declared provenance, **not** a security control: service-api trusts this header from any authenticated caller (a gap the PR documents in that file; its PR body's `INTERNAL_SERVICE_TOKEN` claim is stale). Read side: `list_resources` / `get_resource` `resourceType: 'audit_event'` → `GET /v2.0/auditevents` (organisation-scoped, no `projectId`; `actor[]`/`type[]` need 2026.17.0+, hence the 400 hint in the handler).
+Attribution is self-declared provenance, **not** a security control: service-api trusts this header from any authenticated caller (a gap the PR documents in that file; its PR body's `INTERNAL_SERVICE_TOKEN` claim is stale). Read side: `list_resources` / `get_resource` `resourceType: 'audit_event'` → `GET /v2.0/auditevents` (organisation-scoped, no `projectId`; `actor[]`/`type[]` need 2026.17.0+ — an older platform 400s on them, so the handler refetches unfiltered and applies both filters in-process rather than guessing from the error text, hinting that `total` then counts only the fetched page).
 
 ## Flow-chart model — gotchas (hard-won)
 
