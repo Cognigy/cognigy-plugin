@@ -232,7 +232,7 @@ export const tools: ToolDefinition[] = [
         roleArn: {
           type: "string",
           description:
-            "awsBedrock only: IAM role ARN for role-based auth (alternative to accessKeyId + secretAccessKey), e.g. 'arn:aws:iam::123456789012:role/cognigy-bedrock'.",
+            "awsBedrock only: IAM role ARN for role-based auth (alternative to accessKeyId + secretAccessKey), e.g. 'arn:aws:iam::123456789012:role/cognigy-bedrock'. Feature-gated: the platform rejects this connection type unless IAM connections are enabled for the installation — prefer the access-key pair unless the user asked for IAM-role auth.",
         },
         dangerouslySkipConnectionTest: {
           type: "boolean",

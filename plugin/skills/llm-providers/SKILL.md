@@ -73,8 +73,8 @@ Required parameters:
 - `region`: AWS region of the Bedrock deployment, e.g. `us-east-1`
 - `modelType`: a Bedrock model id from Cognigy's supported list — chat: `amazon.nova-pro-v1:0`, `amazon.nova-lite-v1:0`, `amazon.nova-micro-v1:0`, `amazon.nova-2-lite-v1:0`, `anthropic.claude-3-5-sonnet-20240620-v1:0`; embedding: `amazon.titan-embed-text-v2:0`. For any other Bedrock model use `custom-model` and put the model id — or an inference profile id like `eu.anthropic.claude-sonnet-4-6` — in `customModel`.
 - Credentials — one of (NOT `apiKey`):
-  - `accessKeyId` + `secretAccessKey` (access-key auth → `AwsBedrockProvider` connection)
-  - `roleArn` (IAM-role auth → `AwsBedrockProviderIamRole` connection)
+  - `accessKeyId` + `secretAccessKey` (access-key auth → `AwsBedrockProvider` connection) — the standard option, works everywhere
+  - `roleArn` (IAM-role auth → `AwsBedrockProviderIamRole` connection) — feature-gated: only works when the Cognigy installation has IAM connections enabled for the organisation (`FEATURE_ENABLE_IAM_AWS_CONNECTION_WHITELIST`); otherwise connection creation is rejected with "This type is not enabled for your installation". Don't steer users here unless they asked for IAM-role auth — default to the key pair.
   - `connectionId` of an existing same-project connection
 
 Optional parameters:
