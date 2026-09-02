@@ -933,6 +933,7 @@ export class ToolHandlers {
 
   private sanitizePackageFileName(name: string): string {
     const cleaned = name
+      // eslint-disable-next-line no-control-regex -- strip control chars from file names
       .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
       .trim()
       .replace(/\s+/g, " ");
