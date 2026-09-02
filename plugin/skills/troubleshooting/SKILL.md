@@ -9,7 +9,7 @@ description: "Use when a Cognigy agent returns empty responses, a tool call or c
 
 1. Inspect the agent flow and tools first:
    - list_resources { resourceType: "tool", aiAgentId }
-   - duplicate `toolId` values can cause failed tool execution and empty responses
+   - duplicate `toolId` values can cause failed tool execution and empty responses — this is a flow issue, not an LLM or connection issue; remove the duplicate rather than reconfiguring the LLM
 2. Check LLM exists: list_resources { resourceType: "llm_model", projectId }
    If none: run setup_llm
 3. Check agent description is not empty: get_resource { resourceType: "agent", id }
@@ -35,6 +35,14 @@ description: "Use when a Cognigy agent returns empty responses, a tool call or c
 - `createdBy` / `lastChangedBy` on any resource are opaque user ids. Never assume
   one is the current user — compare it to the `id` from `user`/`me`. List
   responses omit them; read them with get_resource { ..., raw: true }.
+- Audit events answer "what did the plugin change?" / "who changed what?":
+  list_resources { resourceType: "audit_event", actor: ["mcp-plugin"], sort: "timestamp:desc" }
+  lists this plugin's changes; `actor: ["human"]` the ones people made by hand. It is
+  organisation-scoped (no projectId) and needs Cognigy 2026.17.0+ plus an API key with
+  Admin Center access. `performedBy` is set only for non-human actors — an event without
+  it was performed by a person. On older platforms the `actor` / `eventType` filters are
+  applied to the fetched page only (the result says so, and `total` then counts that page).
+  get_resource { resourceType: "audit_event", id } returns one event with its attribution.
 
 ## Finding the most recently touched resource
 
@@ -52,3 +60,5 @@ description: "Use when a Cognigy agent returns empty responses, a tool call or c
 - Verify the resource ID is a 24-char hex string (not a referenceId UUID)
 - Use list_resources to confirm the resource exists before deleting
 - Flows, projects and agents are never hard-deleted — delete_resource renames them with a DELETE_ prefix (markedForDeletion: true) so they can be deleted manually in the Cognigy UI. Agent/flow deletion deactivates referencing endpoints (reversible); a renamed project's contents stay live.
+- Marking is idempotent: an already-renamed resource returns alreadyMarked: true. Agent deletion defaults to cascade: true (deactivate endpoints, rename the companion flow, then the agent); cascade: false renames only the agent. Because the renamed agent still exists, re-running create_ai_agent with the original name creates a NEW agent.
+- endpoint, llm_model, knowledge_store, function and tool are permanently deleted — no undo. For `tool`, pass aiAgentId; the handler resolves and deletes the underlying flow node.

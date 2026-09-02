@@ -4,11 +4,15 @@
 
 {
   name: "<tool_name>",
+  // 3-6 sentences, <= 1000 chars (src/__tests__/toolSurfaceBudget.test.ts):
+  // what it does, what it does NOT do / which sibling tool to use instead,
+  // one clause per operation, what it returns, any irreversibility.
+  // No numbered procedures, prerequisites checklists or "after this call X"
+  // — that belongs in the skill (plugin/skills) or in a result _hint.
   description:
-    "<One-line summary>.\n\n" +
-    "<Detailed usage, prerequisites, parameter docs per operation.\n" +
-    "Document each operation and its required/optional params.\n" +
-    "Include examples of typical calls.>",
+    "<What it does, in one sentence>. <Negative scope or sibling tool>. " +
+    "Operations: <op_a> (<what/when>), <op_b> (<what/when>). " +
+    "Returns <fields>. <Irreversibility or precondition, if any>.",
   annotations: {
     title: "<Human Readable Title>",
     readOnlyHint: false,        // true if tool only reads data

@@ -18,7 +18,8 @@ Use `manage_flow_nodes` to add logic nodes **inside tool branches only**. Nodes 
 2. Get the flowId — from create_ai_agent response, or list_resources { resourceType: 'flow', projectId }
 3. Add a node inside the tool — manage_flow_nodes { operation: 'create', flowId, parentNodeId: '<toolNodeId>', mode: 'appendChild', nodeType: 'code', label: 'Validate Order', config: { code: '...' } }
 4. Add more nodes — manage_flow_nodes { operation: 'create', flowId, parentNodeId: '<previousNodeId>', mode: 'append', nodeType: 'say', label: 'Confirm', config: { text: 'Order processed!' } }
-5. List all nodes — manage_flow_nodes { operation: 'list', flowId }
+5. List all nodes — manage_flow_nodes { operation: 'list', flowId } (id, type, label, parentId only — no config)
+   Read one node with its config before editing — manage_flow_nodes { operation: 'get', flowId, nodeId: '<id>' }
 6. Update a node — manage_flow_nodes { operation: 'update', flowId, nodeId: '<id>', config: { text: 'Updated!' } }
 7. Delete a node — manage_flow_nodes { operation: 'delete', flowId, nodeId: '<id>' }
 ```

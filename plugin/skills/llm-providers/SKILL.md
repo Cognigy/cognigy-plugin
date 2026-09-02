@@ -5,6 +5,17 @@ description: "Use when configuring or choosing an LLM for a Cognigy agent — va
 
 # LLM Provider Reference
 
+## When to call setup_llm
+
+`setup_llm` creates a brand-new LLM resource and is a **last resort**. Before calling it, all of these must be true:
+
+1. You listed all projects (`list_resources { resourceType: "project" }`).
+2. You checked every other project for existing LLMs (`list_resources { resourceType: "llm_model", projectId }`).
+3. Where another project has a reusable LLM with a non-empty `connectionId`, you attempted to transfer it together with its connection via `manage_packages` (see the package-management skill).
+4. You are proceeding only because reuse is unavailable, the transfer failed, or the user explicitly asked for a brand-new LLM.
+
+If any step is missing, stop and do it first. To list existing LLMs use `list_resources { resourceType: "llm_model", projectId }`; to delete one use `delete_resource { resourceType: "llm_model", id }`.
+
 ## setup_llm parameters
 
 | provider    | modelType examples                                         | Connection type        | Notes                                                         |
@@ -28,6 +39,8 @@ description: "Use when configuring or choosing an LLM for a Cognigy agent — va
 Chat/completion models are not embedding models. `gpt-4o-mini` is a chat model, not a valid embedding-model choice for knowledge-store indexing.
 
 When using `list_resources { resourceType: "llm_model", projectId }`, inspect the returned `modelType` and select the model by its exact role. Do not infer that all LLMs are interchangeable.
+
+Knowledge Search and Answer Extraction (manage_settings `set_knowledge_ai`) take same-project `llm_model` referenceIds that the Cognigy API accepts for that use case — check candidates with `list_resources { resourceType: "llm_model", projectId, useCase: "knowledgeSearch" }`. Do not call `setup_llm` as an automatic workaround for a `knowledgeSearchModelId` failure while same-project candidates still exist.
 
 ## OpenAI-compatible providers (openAICompatible)
 
@@ -77,6 +90,12 @@ After creating the model, setup_llm automatically tests the connection by sendin
 - **Test passes**: the response includes `connectionTest.isCredentialsValid: true` and the provider's confirmation message.
 - **Test fails**: the model is automatically deleted to prevent broken references, and an error is returned with the provider's error message.
 - **Test endpoint unreachable**: the model is kept but a warning is returned advising manual verification.
+- **`dangerouslySkipConnectionTest: true`**: the test is not run at all; the model is kept and the response carries a warning that no connectivity check was performed.
+
+## After creation: default vs explicit assignment
+
+- `isDefault: true` (the default) makes the new LLM the project default, so AI Agents in the project use it automatically — no extra step.
+- `isDefault: false` means nothing uses it until you assign it: `update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: "<referenceId from the setup_llm response>" } }`.
 
 ## Common errors
 
