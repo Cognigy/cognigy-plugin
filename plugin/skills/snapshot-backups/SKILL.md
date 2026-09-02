@@ -108,6 +108,9 @@ installation). `create` pre-checks this and creates nothing when the project is 
 3. If `deletableBackups` is empty, **stop**. The plugin never deletes a human-created
    snapshot. Tell the user to delete one themselves in the Cognigy UI under
    **Deploy > Snapshots**, then retry.
+4. If the response is `error: "eviction_incomplete"`, freeing the slot could not be
+   confirmed and `create` stopped: no further backup was deleted and no snapshot was
+   created. Poll the task in `haltedOn` with `read_task`, then `list` before retrying.
 
 ### Delete a backup the plugin created
 
@@ -211,6 +214,15 @@ Required:
 - Identification: a plugin backup is named `[AI Backup] …` **and** carries a marker in
   its description. Both must match, which is why a human snapshot that happens to
   share the name prefix is still protected from deletion here.
+- Unknown outcomes: if a create/restore/delete task was started but its status could
+  not be read, the result carries `error: "task_status_unknown"` and
+  `outcomeUnknown: true`. The operation **may have succeeded** — do not report it as
+  failed and do not retry it. Poll `read_task` with the returned `taskId` first. On
+  `create`, `created` is `null` (not `false`) on this path, because whether the backup
+  exists is not yet known.
+- `restore` and `delete` verify the snapshot belongs to the passed `projectId`. A
+  `snapshotId` from another project returns `error: "snapshot_project_mismatch"` and
+  changes nothing.
 - Downloading, packaging and uploading snapshots are deliberately not supported. Use
   the Cognigy UI for those.
 - A snapshot deployed to an Endpoint cannot be deleted at all — the platform refuses.

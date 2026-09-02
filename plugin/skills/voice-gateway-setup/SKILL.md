@@ -59,6 +59,11 @@ This automatically:
 }
 ```
 
+Create vs update:
+
+- Omit `endpointId` → a new `voiceGateway2` endpoint is always created (`projectId` + `flowId` required). The tool never auto-detects an existing endpoint.
+- Pass `endpointId` → that endpoint is updated and the settings you pass are merged into its existing configuration; everything else is preserved. Find it first with `list_resources { resourceType: "endpoint", projectId }`.
+
 ## WebRTC Widget Themes
 
 | Theme         | Description               |
@@ -74,6 +79,8 @@ This automatically:
 | `webrtcDemoUrl`                 | Open in browser to talk to the agent — **always show this to users** |
 | `_integration.wsEndpointUrl`    | WebSocket URL for programmatic/embedded use                          |
 | `_integration.embeddingSnippet` | HTML code to embed the voice widget on a website                     |
+
+Present `webrtcDemoUrl` as a clickable link after every successful create or update — do not send the user to the Cognigy UI to find it. Mention the `_integration` fields only when the user asks about embedding or deploying to a website.
 
 ## Embedding on a Website
 
