@@ -24,7 +24,22 @@ export const createAiAgentSchema = z
         "knowledgeStoreReferenceId is not supported with agentNodeType 'llmPrompt' — LLM Prompt nodes only support 'tool', 'mcp', and 'http' tools.",
       path: ["knowledgeStoreReferenceId"],
     },
-  );
+  )
+  .refine(
+    (d) =>
+      d.agentNodeType !== "llmPrompt" ||
+      Boolean(d.systemPrompt?.trim() || d.description?.trim()),
+    {
+      message:
+        "agentNodeType 'llmPrompt' requires a systemPrompt (or description) — the prompt is the LLM Prompt node's entire persona and guardrails.",
+      path: ["systemPrompt"],
+    },
+  )
+  .refine((d) => !d.systemPrompt || d.agentNodeType === "llmPrompt", {
+    message:
+      "systemPrompt is only used with agentNodeType 'llmPrompt'. For a normal AI Agent, put the persona in description and refine it with update_ai_agent.",
+    path: ["systemPrompt"],
+  });
 
 // Tool 2: update_ai_agent
 export const updateAiAgentSchema = z.object({
@@ -277,6 +292,7 @@ export const createToolSchema = z
   .object({
     aiAgentId: idSchema.optional(),
     flowId: idSchema.optional(),
+    parentNodeId: idSchema.optional(),
     toolType: z.enum(["tool", "knowledge", "send_email", "mcp", "http"]),
     name: z.string().min(1).max(200),
     config: z.object({

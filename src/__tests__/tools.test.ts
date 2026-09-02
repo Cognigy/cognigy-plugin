@@ -1817,6 +1817,7 @@ describe("ToolHandlers v2", () => {
           {
             _id: ID.tool,
             type: "aiAgentJobTool",
+            parentId: ID.node,
             label: "unlock_account",
             config: { toolId: "unlock_account", description: "Existing tool" },
           },
@@ -1849,6 +1850,7 @@ describe("ToolHandlers v2", () => {
           {
             _id: ID.tool,
             type: "aiAgentJobTool",
+            parentId: ID.node,
             label: "unlock_account",
             config: { description: "Existing tool without explicit toolId" },
           },

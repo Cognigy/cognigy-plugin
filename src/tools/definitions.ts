@@ -289,7 +289,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "list_resources",
     description:
-      "List resources in a Cognigy project. Use this to discover projects, agents, flows, endpoints, LLM models, knowledge stores, conversations, extensions, functions, tools, or audit events.\n\nSet resourceType to 'project' to find projectIds (no projectId needed). 'tool' requires aiAgentId instead of projectId. 'audit_event' is organisation-scoped and takes no projectId — it answers \"who changed what\" questions: `{ resourceType: 'audit_event', actor: ['mcp-plugin'], sort: 'timestamp:desc' }` lists exactly the changes this plugin made, and `actor: ['human']` the ones people made by hand. Each item carries `performedBy` for non-human actors; a missing `performedBy` means a person performed it. Needs Cognigy 2026.17.0+ and an API key with Admin Center access. All other types require projectId. For `llm_model`, you can also pass `useCase` to match the UI's use-case-filtered model dropdowns (for example `knowledgeSearch`). Packages are handled through manage_packages.\n\nUse `sort` for recency questions instead of paging through everything: `sort: 'lastChanged:desc', limit: 5` answers \"which project was touched most recently\" in one call. To attribute a change to a person, get the current user's id from get_resource { resourceType: 'user', id: 'me' } and compare it against `lastChangedBy` from get_resource { resourceType: 'project', id, raw: true } — list items omit `lastChangedBy` to save tokens.\n\nReturns a paginated list with id, name, and type-specific fields.",
+      "List resources in a Cognigy project. Use this to discover projects, agents, flows, endpoints, LLM models, knowledge stores, conversations, extensions, functions, tools, or audit events.\n\nSet resourceType to 'project' to find projectIds (no projectId needed). 'tool' requires aiAgentId (or flowId, for LLM Prompt flows that have no agent resource) instead of projectId. 'audit_event' is organisation-scoped and takes no projectId — it answers \"who changed what\" questions: `{ resourceType: 'audit_event', actor: ['mcp-plugin'], sort: 'timestamp:desc' }` lists exactly the changes this plugin made, and `actor: ['human']` the ones people made by hand. Each item carries `performedBy` for non-human actors; a missing `performedBy` means a person performed it. Needs Cognigy 2026.17.0+ and an API key with Admin Center access. All other types require projectId. For `llm_model`, you can also pass `useCase` to match the UI's use-case-filtered model dropdowns (for example `knowledgeSearch`). Packages are handled through manage_packages.\n\nUse `sort` for recency questions instead of paging through everything: `sort: 'lastChanged:desc', limit: 5` answers \"which project was touched most recently\" in one call. To attribute a change to a person, get the current user's id from get_resource { resourceType: 'user', id: 'me' } and compare it against `lastChangedBy` from get_resource { resourceType: 'project', id, raw: true } — list items omit `lastChangedBy` to save tokens.\n\nReturns a paginated list with id, name, and type-specific fields.",
     annotations: {
       title: "List Resources",
       readOnlyHint: true,
@@ -625,7 +625,12 @@ ADDRESSING: Pass aiAgentId for normal agents. Pass flowId instead ONLY for a flo
         flowId: {
           type: "string",
           description:
-            "24-char hex flow ID — alternative to aiAgentId, ONLY for flows driven by an LLM Prompt node (no agent resource exists for those). Prefer aiAgentId whenever the agent has one.",
+            "24-char hex flow ID — alternative to aiAgentId, ONLY for flows driven by an LLM Prompt node (no agent resource exists for those). Prefer aiAgentId whenever the agent has one. Never pass both.",
+        },
+        parentNodeId: {
+          type: "string",
+          description:
+            "24-char hex node ID of the AI Agent Job or LLM Prompt node the tool attaches to. Only needed when the flow has more than one such node (create_tool then refuses to guess and lists the candidates).",
         },
         toolType: {
           type: "string",

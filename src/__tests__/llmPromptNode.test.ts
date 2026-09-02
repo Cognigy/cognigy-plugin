@@ -203,6 +203,51 @@ describe("LLM Prompt node support", () => {
       );
     });
 
+    it("warns when the only LLM has no connection", async () => {
+      api.post
+        .mockResolvedValueOnce({ _id: ID.flow, referenceId: "flow-uuid" })
+        .mockResolvedValueOnce({ _id: ID.node })
+        .mockResolvedValueOnce({ _id: ID.endpoint, URLToken: "abc123" });
+      api.get
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.entry, isEntryPoint: true }],
+        })
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.llm, referenceId: "lonely-ref", isDefault: true }],
+        })
+        .mockResolvedValueOnce({ items: [] });
+      api.delete.mockResolvedValue({});
+
+      const result = await h.handleToolCall("create_ai_agent", baseArgs);
+
+      expect(result.llmStatus).toBe("configured");
+      expect(result.llmConnected).toBe(false);
+      expect(result._hints.warning).toContain("no connection");
+      expect(result._hints.action).toContain("llmProviderReferenceId");
+    });
+
+    it("rejects llmPrompt mode without a systemPrompt or description", async () => {
+      await expect(
+        h.handleToolCall("create_ai_agent", {
+          projectId: ID.project,
+          name: "Prompt Agent",
+          agentNodeType: "llmPrompt",
+        }),
+      ).rejects.toThrow(/requires a systemPrompt/);
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it("rejects systemPrompt without agentNodeType llmPrompt", async () => {
+      await expect(
+        h.handleToolCall("create_ai_agent", {
+          projectId: ID.project,
+          name: "Normal Agent",
+          systemPrompt: "You are helpful.",
+        }),
+      ).rejects.toThrow(/only used with agentNodeType 'llmPrompt'/);
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
     it("reports llmStatus unknown when no LLM exists", async () => {
       api.post
         .mockResolvedValueOnce({ _id: ID.flow, referenceId: "flow-uuid" })
@@ -352,29 +397,87 @@ describe("LLM Prompt node support", () => {
       expect(api.post).not.toHaveBeenCalled();
     });
 
-    it("prefers the aiAgentJob node when a flow has both parents", async () => {
+    it("refuses to guess when a flow has both parents and no parentNodeId", async () => {
       api.get.mockResolvedValueOnce({
         items: [
           { _id: ID.node, type: "llmPromptV2" },
           { _id: ID.job, type: "aiAgentJob" },
         ],
       });
-      api.post
-        .mockResolvedValueOnce({ _id: ID.tool })
-        .mockResolvedValueOnce({ _id: ID.resolve });
 
-      await h.handleToolCall("create_tool", {
+      const result = await h.handleToolCall("create_tool", {
         flowId: ID.flow,
         toolType: "tool",
         name: "Fetch Weather",
         config: { toolId: "fetch_weather", description: "d" },
       });
 
+      expect(result.error).toContain("more than one node");
+      expect(result.candidates).toEqual([
+        expect.objectContaining({ nodeId: ID.node, type: "llmPromptV2" }),
+        expect.objectContaining({ nodeId: ID.job, type: "aiAgentJob" }),
+      ]);
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it("attaches to the parentNodeId the caller chose in a mixed flow", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [
+          { _id: ID.node, type: "llmPromptV2" },
+          { _id: ID.job, type: "aiAgentJob" },
+          // Same toolId already under the OTHER parent — not a duplicate here.
+          {
+            _id: ID.placeholder,
+            type: "aiAgentJobTool",
+            parentId: ID.job,
+            label: "fetch_weather",
+          },
+        ],
+      });
+      api.post
+        .mockResolvedValueOnce({ _id: ID.tool })
+        .mockResolvedValueOnce({ _id: ID.resolve });
+
+      const result = await h.handleToolCall("create_tool", {
+        flowId: ID.flow,
+        parentNodeId: ID.node,
+        toolType: "tool",
+        name: "Fetch Weather",
+        config: { toolId: "fetch_weather", description: "d" },
+      });
+
+      expect(result.reusedExisting).toBeUndefined();
       expect(api.post).toHaveBeenNthCalledWith(
         1,
         `/v2.0/flows/${ID.flow}/chart/nodes`,
-        expect.objectContaining({ type: "aiAgentJobTool", target: ID.job }),
+        expect.objectContaining({ type: "llmPromptTool", target: ID.node }),
       );
+    });
+
+    it("rejects both aiAgentId and flowId together", async () => {
+      await expect(
+        h.handleToolCall("create_tool", {
+          aiAgentId: ID.agent,
+          flowId: ID.flow,
+          toolType: "tool",
+          name: "Both",
+          config: { toolId: "both", description: "d" },
+        }),
+      ).rejects.toThrow(/not both/);
+    });
+
+    it("update_tool rejects knowledge config on an llmPromptTool node", async () => {
+      api.get.mockResolvedValueOnce({ _id: ID.tool, type: "llmPromptTool" });
+
+      const result = await h.handleToolCall("update_tool", {
+        flowId: ID.flow,
+        toolNodeId: ID.tool,
+        toolType: "knowledge",
+        config: { knowledgeStoreId: ID.project },
+      });
+
+      expect(result.error).toContain("not supported under an LLM Prompt");
+      expect(api.patch).not.toHaveBeenCalled();
     });
 
     it("requires aiAgentId or flowId", async () => {
