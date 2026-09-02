@@ -637,7 +637,7 @@ async function resolveToolFlow(
   apiClient: CognigyApiClient,
   aiAgentId: string | undefined,
   flowId: string | undefined,
-): Promise<{ flowId: string } | null> {
+): Promise<{ flowId: string; agent?: any } | null> {
   if (flowId && aiAgentId) {
     // Both were given — refuse rather than pick one silently: if they name
     // different flows the follow-up hints would address the wrong flow.
@@ -648,7 +648,7 @@ async function resolveToolFlow(
   if (flowId) return { flowId };
   if (!aiAgentId) return null;
   const resolved = await resolveFlowForAgent(apiClient, aiAgentId);
-  return resolved ? { flowId: resolved.flowId } : null;
+  return resolved ? { flowId: resolved.flowId, agent: resolved.agent } : null;
 }
 
 /**
@@ -1606,6 +1606,8 @@ export class ToolHandlers {
       // avatar. So we always re-send `aiAgent` alongside any config change to
       // force the backend to regenerate the proper avatar preview object.
       let llmAutoAssigned = false;
+      let llmConnected = true;
+      let llmRefId: string | undefined;
       try {
         const llmList: any = await this.apiClient.get(
           "/v2.0/largelanguagemodels",
@@ -1615,6 +1617,8 @@ export class ToolHandlers {
         );
         const picked = pickDefaultLlm(llmList);
         if (picked) {
+          llmRefId = picked.refId;
+          llmConnected = picked.connected;
           await this.apiClient.patch(
             `/v2.0/flows/${flowId}/chart/nodes/${jobNodeId}`,
             {
@@ -1740,6 +1744,16 @@ export class ToolHandlers {
           warning:
             "Could not verify LLM resource in project. Agent may not generate responses.",
           action: nextAction,
+        });
+      }
+
+      if (!llmConnected) {
+        // Assigned a real LLM, but one without a connection — the agent will
+        // answer with empty messages until the connection is fixed.
+        result.llmConnected = false;
+        return withHints(result, {
+          warning: `The AI Agent Job node was assigned LLM "${llmRefId}", but that model has no connection (no connectionId) — the agent will return empty responses until the connection is fixed.`,
+          action: `Attach a connection to that LLM, or import a connected one from another project via manage_packages export/import, then assign it with update_ai_agent { aiAgentId: "${agentId}", jobConfig: { llmProviderReferenceId: "<llm referenceId>" } }. Do not call talk_to_agent before that.`,
         });
       }
 
@@ -1879,11 +1893,11 @@ export class ToolHandlers {
         data.name,
         (id) => {
           flowId = id;
-          step = "node";
         },
       );
       const { flow, entryNode } = provisioned;
       flowId = provisioned.flowId;
+      step = "node";
 
       // Step 3: Resolve the LLM up front so it can be set atomically in the
       // create payload (no follow-up PATCH, no preview gotcha). See
@@ -1920,7 +1934,7 @@ export class ToolHandlers {
           extension: "@cognigy/basic-nodes",
           label: data.name,
           config: {
-            prompt: data.systemPrompt ?? data.description ?? "",
+            prompt: data.systemPrompt?.trim() || data.description?.trim() || "",
             storeLocation: "stream",
             immediateOutput: true,
             ...(llmRefId ? { llmProviderReferenceId: llmRefId } : {}),
@@ -2035,6 +2049,10 @@ export class ToolHandlers {
     childType: "aiAgentJobTool" | "llmPromptTool",
     preferredLocaleId?: string,
   ): Promise<void> {
+    // Without the parent id the child filters below would match unrelated
+    // nodes (e.g. every node lacking parentId) — better to leave the
+    // placeholder in place than to delete real tools.
+    if (!parentNodeId) return;
     const isPlaceholder = (n: any) =>
       n.preview === "unlock_account" ||
       n.label === "unlock_account" ||
@@ -2071,8 +2089,10 @@ export class ToolHandlers {
         const nodeItems = nodeList.items ?? nodeList;
         placeholderTools = (Array.isArray(nodeItems) ? nodeItems : []).filter(
           (n: any) =>
-            (n.parentId === parentNodeId || n.parent === parentNodeId) &&
-            isPlaceholder(n),
+            (n.parentId ??
+              n.parent_id ??
+              (n.parent && (n.parent._id || n.parent.id || n.parent))) ===
+              parentNodeId && isPlaceholder(n),
         );
       }
 
@@ -3053,6 +3073,27 @@ export class ToolHandlers {
           },
         );
       }
+      // The auto-created Default branches (aiAgentJobDefault, llmPromptDefault)
+      // show up in the tool listing but the platform refuses to delete them.
+      let node: any = null;
+      try {
+        node = await this.apiClient.get(
+          `/v2.0/flows/${resolved.flowId}/chart/nodes/${id}`,
+        );
+      } catch {
+        // Let the DELETE below produce the authoritative error.
+      }
+      if (typeof node?.type === "string" && node.type.endsWith("Default")) {
+        return withHints(
+          {
+            error: `Node ${id} is the ${node.type} branch, which the platform creates automatically and does not allow deleting.`,
+          },
+          {
+            action:
+              "Leave the Default branch in place; delete only the tool nodes you created.",
+          },
+        );
+      }
       await this.apiClient.delete(
         `/v2.0/flows/${resolved.flowId}/chart/nodes/${id}`,
       );
@@ -3758,27 +3799,54 @@ export class ToolHandlers {
           },
         );
       }
-    } else if (parentCandidates.length > 1) {
-      // A flow with several tool parents (e.g. an aiAgentJob plus an added
-      // llmPromptV2) — refuse to guess, the tool would silently land on the
-      // wrong node.
-      return withHints(
-        {
-          error:
-            "The flow has more than one node that tools can attach to; pass parentNodeId to choose.",
-          candidates: parentCandidates.map((n: any) => ({
-            nodeId: n._id || n.id,
-            type: n.type,
-            label: n.label,
-          })),
-        },
-        {
-          action:
-            "Retry create_tool with parentNodeId set to the aiAgentJob or llmPromptV2 node the tool belongs to.",
-        },
-      );
     } else {
-      jobNode = findToolParentNode(allNodes);
+      // The AI Agent Job node wins when a flow has both parent types (see
+      // findToolParentNode); only several nodes of the preferred type are
+      // ambiguous.
+      const preferred = findToolParentNode(allNodes);
+      const sameType = parentCandidates.filter(
+        (n: any) => n.type === preferred?.type,
+      );
+      if (sameType.length <= 1) {
+        jobNode = preferred;
+      } else if (
+        preferred.type === "aiAgentJob" &&
+        resolved.agent?.referenceId
+      ) {
+        // Several AI Agent Job nodes (e.g. a handover pattern) — pick the one
+        // bound to the addressed agent. The node list carries no config, so
+        // read each candidate.
+        for (const candidate of sameType) {
+          let full: any = null;
+          try {
+            full = await this.apiClient.get(
+              `/v2.0/flows/${flowId}/chart/nodes/${candidate._id || candidate.id}`,
+            );
+          } catch {
+            // Unreadable candidate — skip it.
+          }
+          if (full?.config?.aiAgent === resolved.agent.referenceId) {
+            jobNode = candidate;
+            break;
+          }
+        }
+      }
+      if (!jobNode && sameType.length > 1) {
+        return withHints(
+          {
+            error: `The flow has ${sameType.length} ${preferred.type} nodes that tools can attach to; pass parentNodeId to choose.`,
+            candidates: sameType.map((n: any) => ({
+              nodeId: n._id || n.id,
+              type: n.type,
+              label: n.label,
+            })),
+          },
+          {
+            action:
+              "Retry create_tool with parentNodeId set to the node the tool belongs to.",
+          },
+        );
+      }
     }
 
     if (!jobNode) {

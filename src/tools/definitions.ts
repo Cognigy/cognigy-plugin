@@ -330,7 +330,7 @@ export const tools: ToolDefinition[] = [
         flowId: {
           type: "string",
           description:
-            "24-char hex flow ID (tools only) — alternative to aiAgentId for flows driven by an LLM Prompt node, which have no agent resource.",
+            "24-char hex flow ID (tools only) — alternative to aiAgentId for flows driven by an LLM Prompt node, which have no agent resource. Never pass both.",
         },
         startDate: {
           type: "string",
@@ -491,7 +491,7 @@ export const tools: ToolDefinition[] = [
         flowId: {
           type: "string",
           description:
-            "24-char hex flow ID (tool type only) — alternative to aiAgentId for flows driven by an LLM Prompt node, which have no agent resource.",
+            "24-char hex flow ID (tool type only) — alternative to aiAgentId for flows driven by an LLM Prompt node, which have no agent resource. Never pass both.",
         },
         cascade: {
           type: "boolean",
@@ -753,7 +753,7 @@ ADDRESSING: Pass aiAgentId for normal agents. Pass flowId instead ONLY for a flo
         flowId: {
           type: "string",
           description:
-            "24-char hex flow ID — alternative to aiAgentId, ONLY for flows driven by an LLM Prompt node (no agent resource exists for those).",
+            "24-char hex flow ID — alternative to aiAgentId, ONLY for flows driven by an LLM Prompt node (no agent resource exists for those). Never pass both.",
         },
         toolNodeId: {
           type: "string",

@@ -2,6 +2,9 @@ import { z } from "zod";
 
 const idSchema = z.string().regex(/^[a-f0-9]{24}$/, "Must be a 24-char hex ID");
 
+const NOT_BOTH_IDS_MESSAGE =
+  "Pass either aiAgentId or flowId, not both. Use aiAgentId for a normal agent; use flowId only for a flow driven by an LLM Prompt node (which has no agent resource).";
+
 const paginationSchema = {
   limit: z.number().int().min(1).max(100).optional(),
   skip: z.number().int().min(0).optional(),
@@ -188,43 +191,48 @@ export const AUDIT_EVENT_TYPES = [
 ] as const;
 
 // Tool 5: list_resources
-export const listResourcesSchema = z.object({
-  resourceType: z.enum([
-    "project",
-    "agent",
-    "flow",
-    "endpoint",
-    "llm_model",
-    "knowledge_store",
-    "conversation",
-    "extension",
-    "function",
-    "tool",
-    "audit_event",
-  ]),
-  projectId: idSchema.optional(),
-  aiAgentId: idSchema.optional(),
-  flowId: idSchema.optional(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-  channel: z.string().optional(),
-  useCase: z.string().optional(),
-  // audit_event filters. `actor` and `eventType` are sent as repeatable query
-  // params (actor[]=…), which the platform supports from 2026.17.0 onwards.
-  // Named `eventType` rather than `type` so it cannot be confused with
-  // `resourceType` at the call site.
-  actor: z.array(z.enum(AUDIT_ACTORS)).nonempty().optional(),
-  eventType: z.array(z.enum(AUDIT_EVENT_TYPES)).nonempty().optional(),
-  user: z.string().min(1).optional(),
-  sort: z
-    .string()
-    .regex(
-      /^[A-Za-z][A-Za-z0-9_]*:(asc|desc)$/,
-      "Must be 'field:direction', e.g. 'lastChanged:desc'",
-    )
-    .optional(),
-  ...paginationSchema,
-});
+export const listResourcesSchema = z
+  .object({
+    resourceType: z.enum([
+      "project",
+      "agent",
+      "flow",
+      "endpoint",
+      "llm_model",
+      "knowledge_store",
+      "conversation",
+      "extension",
+      "function",
+      "tool",
+      "audit_event",
+    ]),
+    projectId: idSchema.optional(),
+    aiAgentId: idSchema.optional(),
+    flowId: idSchema.optional(),
+    startDate: z.string().optional(),
+    endDate: z.string().optional(),
+    channel: z.string().optional(),
+    useCase: z.string().optional(),
+    // audit_event filters. `actor` and `eventType` are sent as repeatable query
+    // params (actor[]=…), which the platform supports from 2026.17.0 onwards.
+    // Named `eventType` rather than `type` so it cannot be confused with
+    // `resourceType` at the call site.
+    actor: z.array(z.enum(AUDIT_ACTORS)).nonempty().optional(),
+    eventType: z.array(z.enum(AUDIT_EVENT_TYPES)).nonempty().optional(),
+    user: z.string().min(1).optional(),
+    sort: z
+      .string()
+      .regex(
+        /^[A-Za-z][A-Za-z0-9_]*:(asc|desc)$/,
+        "Must be 'field:direction', e.g. 'lastChanged:desc'",
+      )
+      .optional(),
+    ...paginationSchema,
+  })
+  .refine((d) => !(d.aiAgentId && d.flowId), {
+    message: NOT_BOTH_IDS_MESSAGE,
+    path: ["flowId"],
+  });
 
 // Tool 6: get_resource
 export const getResourceSchema = z.object({
@@ -248,23 +256,28 @@ export const getResourceSchema = z.object({
 });
 
 // Tool 7: delete_resource
-export const deleteResourceSchema = z.object({
-  resourceType: z.enum([
-    "agent",
-    "flow",
-    "project",
-    "endpoint",
-    "llm_model",
-    "knowledge_store",
-    "function",
-    "tool",
-  ]),
-  id: idSchema,
-  projectId: idSchema.optional(),
-  aiAgentId: idSchema.optional(),
-  flowId: idSchema.optional(),
-  cascade: z.boolean().optional(),
-});
+export const deleteResourceSchema = z
+  .object({
+    resourceType: z.enum([
+      "agent",
+      "flow",
+      "project",
+      "endpoint",
+      "llm_model",
+      "knowledge_store",
+      "function",
+      "tool",
+    ]),
+    id: idSchema,
+    projectId: idSchema.optional(),
+    aiAgentId: idSchema.optional(),
+    flowId: idSchema.optional(),
+    cascade: z.boolean().optional(),
+  })
+  .refine((d) => !(d.aiAgentId && d.flowId), {
+    message: NOT_BOTH_IDS_MESSAGE,
+    path: ["flowId"],
+  });
 
 // Tool 8: manage_knowledge
 export const manageKnowledgeSchema = z.object({
@@ -317,6 +330,10 @@ export const createToolSchema = z
   .refine((d) => d.aiAgentId || d.flowId, {
     message: "Either aiAgentId or flowId must be provided",
     path: ["aiAgentId"],
+  })
+  .refine((d) => !(d.aiAgentId && d.flowId), {
+    message: NOT_BOTH_IDS_MESSAGE,
+    path: ["flowId"],
   });
 
 // Tool 10: update_tool
@@ -357,6 +374,10 @@ export const updateToolSchema = z
   .refine((d) => d.aiAgentId || d.flowId, {
     message: "Either aiAgentId or flowId must be provided",
     path: ["aiAgentId"],
+  })
+  .refine((d) => !(d.aiAgentId && d.flowId), {
+    message: NOT_BOTH_IDS_MESSAGE,
+    path: ["flowId"],
   });
 
 // Tool 12: manage_flow_nodes

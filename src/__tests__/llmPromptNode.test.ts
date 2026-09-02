@@ -397,11 +397,37 @@ describe("LLM Prompt node support", () => {
       expect(api.post).not.toHaveBeenCalled();
     });
 
-    it("refuses to guess when a flow has both parents and no parentNodeId", async () => {
+    it("prefers the aiAgentJob node when a flow has both parents and no parentNodeId", async () => {
       api.get.mockResolvedValueOnce({
         items: [
           { _id: ID.node, type: "llmPromptV2" },
           { _id: ID.job, type: "aiAgentJob" },
+        ],
+      });
+      api.post
+        .mockResolvedValueOnce({ _id: ID.tool })
+        .mockResolvedValueOnce({ _id: ID.resolve });
+
+      const result = await h.handleToolCall("create_tool", {
+        flowId: ID.flow,
+        toolType: "tool",
+        name: "Fetch Weather",
+        config: { toolId: "fetch_weather", description: "d" },
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(api.post).toHaveBeenNthCalledWith(
+        1,
+        `/v2.0/flows/${ID.flow}/chart/nodes`,
+        expect.objectContaining({ type: "aiAgentJobTool", target: ID.job }),
+      );
+    });
+
+    it("refuses to guess between several llmPromptV2 nodes without parentNodeId", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [
+          { _id: ID.node, type: "llmPromptV2" },
+          { _id: ID.entry, type: "llmPromptV2" },
         ],
       });
 
@@ -412,12 +438,25 @@ describe("LLM Prompt node support", () => {
         config: { toolId: "fetch_weather", description: "d" },
       });
 
-      expect(result.error).toContain("more than one node");
-      expect(result.candidates).toEqual([
-        expect.objectContaining({ nodeId: ID.node, type: "llmPromptV2" }),
-        expect.objectContaining({ nodeId: ID.job, type: "aiAgentJob" }),
-      ]);
+      expect(result.error).toContain("2 llmPromptV2 nodes");
+      expect(result.candidates).toHaveLength(2);
       expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it("delete_resource refuses to delete the llmPromptDefault branch", async () => {
+      api.get.mockResolvedValueOnce({
+        _id: ID.defaultBranch,
+        type: "llmPromptDefault",
+      });
+
+      const result = await h.handleToolCall("delete_resource", {
+        resourceType: "tool",
+        id: ID.defaultBranch,
+        flowId: ID.flow,
+      });
+
+      expect(result.error).toContain("llmPromptDefault");
+      expect(api.delete).not.toHaveBeenCalled();
     });
 
     it("attaches to the parentNodeId the caller chose in a mixed flow", async () => {

@@ -97,7 +97,9 @@ describe("ToolHandlers v2", () => {
         .mockResolvedValueOnce({
           items: [{ _id: ID.entry, isEntryPoint: true }],
         })
-        .mockResolvedValueOnce({ items: [{ _id: ID.llm }] })
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.llm, connectionId: "conn-1" }],
+        })
         .mockResolvedValueOnce({ nodes: [] })
         .mockResolvedValueOnce({ items: [] });
 
