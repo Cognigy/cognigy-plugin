@@ -75,11 +75,15 @@ describe("LLM Prompt node support", () => {
         .mockResolvedValueOnce({
           items: [{ _id: ID.llm, referenceId: "llm-ref", isDefault: true }],
         })
+        // Chart read used by the placeholder cleanup: nodes + per-parent relations.
         .mockResolvedValueOnce({
-          items: [
+          nodes: [
             { _id: ID.node, type: "llmPromptV2" },
             { _id: ID.defaultBranch, type: "llmPromptDefault" },
             { _id: ID.placeholder, type: "llmPromptTool", label: "Tool" },
+          ],
+          relations: [
+            { node: ID.node, children: [ID.defaultBranch, ID.placeholder] },
           ],
         });
       api.delete.mockResolvedValue({});
@@ -455,15 +459,22 @@ describe("LLM Prompt node support", () => {
   describe("manage_flow_nodes — llmPrompt node type", () => {
     it("creates an llmPromptV2 node and cleans up the placeholder tool", async () => {
       api.post.mockResolvedValueOnce({ _id: ID.node, parentId: null });
-      api.get.mockResolvedValueOnce({
-        nodes: [
-          { _id: ID.placeholder, type: "llmPromptTool", label: "Tool" },
-          { _id: ID.defaultBranch, type: "llmPromptDefault", label: "Default" },
-        ],
-        relations: [
-          { node: ID.node, children: [ID.placeholder, ID.defaultBranch] },
-        ],
-      });
+      api.get
+        // Flow metadata — its locale scopes the chart read (relations are per-locale).
+        .mockResolvedValueOnce({ _id: ID.flow, localeReference: "loc-ref-1" })
+        .mockResolvedValueOnce({
+          nodes: [
+            { _id: ID.placeholder, type: "llmPromptTool", label: "Tool" },
+            {
+              _id: ID.defaultBranch,
+              type: "llmPromptDefault",
+              label: "Default",
+            },
+          ],
+          relations: [
+            { node: ID.node, children: [ID.placeholder, ID.defaultBranch] },
+          ],
+        });
       api.delete.mockResolvedValue({});
 
       const result = await h.handleToolCall("manage_flow_nodes", {
@@ -490,6 +501,9 @@ describe("LLM Prompt node support", () => {
           }),
         }),
       );
+      expect(api.get).toHaveBeenCalledWith(`/new/v2.0/flows/${ID.flow}/chart`, {
+        params: { preferredLocaleId: "loc-ref-1" },
+      });
       expect(api.delete).toHaveBeenCalledWith(
         `/v2.0/flows/${ID.flow}/chart/nodes/${ID.placeholder}`,
       );

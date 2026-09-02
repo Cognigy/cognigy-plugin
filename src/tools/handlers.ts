@@ -1612,66 +1612,12 @@ export class ToolHandlers {
 
       // Step 4d: Remove backend-created placeholder child tools that are only
       // used for UI preview and should not exist in Cognigy MCP flows.
-      try {
-        let placeholderTools: any[] = [];
-
-        try {
-          const chart: any = await this.apiClient.get(
-            `/new/v2.0/flows/${flowId}/chart`,
-            (flow?.localeReference ?? flow?.localeId)
-              ? {
-                  params: {
-                    preferredLocaleId: flow.localeReference ?? flow.localeId,
-                  },
-                }
-              : undefined,
-          );
-          const chartNodes = chart.nodes ?? [];
-          const chartRelations = chart.relations ?? [];
-          const jobRelation = (
-            Array.isArray(chartRelations) ? chartRelations : []
-          ).find((relation: any) => relation.node === jobNodeId);
-          const childNodeIds = new Set(jobRelation?.children ?? []);
-
-          placeholderTools = (
-            Array.isArray(chartNodes) ? chartNodes : []
-          ).filter(
-            (n: any) =>
-              childNodeIds.has(n._id || n.id) && n.preview === "unlock_account",
-          );
-        } catch {
-          // Fall back to the regular node list when the chart endpoint is not available.
-        }
-
-        if (placeholderTools.length === 0) {
-          const nodeList: any = await this.apiClient.get(
-            `/v2.0/flows/${flowId}/chart/nodes`,
-            {
-              params: { limit: 200 },
-            },
-          );
-          const nodeItems = nodeList.items ?? nodeList;
-          placeholderTools = (Array.isArray(nodeItems) ? nodeItems : []).filter(
-            (n: any) =>
-              (n.parentId === jobNodeId || n.parent === jobNodeId) &&
-              (n.label === "unlock_account" ||
-                n.config?.toolId === "unlock_account"),
-          );
-        }
-
-        for (const placeholderTool of placeholderTools) {
-          const placeholderToolId = placeholderTool._id || placeholderTool.id;
-          if (!placeholderToolId) continue;
-          await this.apiClient.delete(
-            `/v2.0/flows/${flowId}/chart/nodes/${placeholderToolId}`,
-          );
-        }
-      } catch (placeholderCleanupError: any) {
-        logger.warn(
-          "Failed to remove backend-created placeholder tool from agent flow",
-          { error: placeholderCleanupError.message },
-        );
-      }
+      await this.removePlaceholderTools(
+        flowId!,
+        jobNodeId,
+        "aiAgentJobTool",
+        flow?.localeReference ?? flow?.localeId,
+      );
 
       // Step 4e: If knowledge store provided, create a knowledge tool on the job node
       let knowledgeToolId: string | null = null;
@@ -1852,6 +1798,9 @@ export class ToolHandlers {
     let createdProject = false;
     let flowId: string | null = null;
     let endpointId: string | null = null;
+    // Which step is in flight — the node is created BEFORE the endpoint here,
+    // so the failed step cannot be derived from which ids are set.
+    let step: "project" | "flow" | "node" | "endpoint" = "project";
 
     try {
       // Step 0: Auto-create project if none provided
@@ -1866,6 +1815,7 @@ export class ToolHandlers {
       }
 
       // Step 1: Create flow
+      step = "flow";
       const flow: any = await this.apiClient.post("/v2.0/flows", {
         projectId,
         name: `${data.name} Flow`,
@@ -1874,6 +1824,7 @@ export class ToolHandlers {
       flowId = flow._id || flow.id;
 
       // Step 2: Find entry node (with retry)
+      step = "node";
       const entryNode = await retryGetEntryNode(this.apiClient, flowId!);
 
       // Step 3: Resolve the LLM up front so it can be set atomically in the
@@ -1928,32 +1879,16 @@ export class ToolHandlers {
 
       // Step 4a: The backend auto-creates an llmPromptDefault branch plus a
       // placeholder "unlock_account" tool (UI preview cruft, same as for
-      // aiAgentJob). The flow is brand new, so every llmPromptTool node at
-      // this point is that placeholder. llmPromptDefault is not deletable.
-      try {
-        const nodeList: any = await this.apiClient.get(
-          `/v2.0/flows/${flowId}/chart/nodes`,
-          { params: { limit: 200 } },
-        );
-        const nodeItems = nodeList.items ?? nodeList;
-        const placeholderTools = (
-          Array.isArray(nodeItems) ? nodeItems : []
-        ).filter((n: any) => n.type === "llmPromptTool");
-        for (const placeholderTool of placeholderTools) {
-          const placeholderToolId = placeholderTool._id || placeholderTool.id;
-          if (!placeholderToolId) continue;
-          await this.apiClient.delete(
-            `/v2.0/flows/${flowId}/chart/nodes/${placeholderToolId}`,
-          );
-        }
-      } catch (placeholderCleanupError: any) {
-        logger.warn(
-          "Failed to remove backend-created placeholder tool from LLM Prompt flow",
-          { error: placeholderCleanupError.message },
-        );
-      }
+      // aiAgentJob). llmPromptDefault is not deletable.
+      await this.removePlaceholderTools(
+        flowId!,
+        promptNodeId,
+        "llmPromptTool",
+        flow?.localeReference ?? flow?.localeId,
+      );
 
       // Step 5: Create REST endpoint (flow-keyed, no agent involved)
+      step = "endpoint";
       const endpoint: any = await this.apiClient.post("/v2.0/endpoints", {
         projectId,
         channel: "rest",
@@ -2042,7 +1977,7 @@ export class ToolHandlers {
       return withHints(
         {
           failed: {
-            step: !flowId ? "flow" : !endpointId ? "endpoint" : "node",
+            step,
             error: error.message,
           },
         },
@@ -2053,6 +1988,77 @@ export class ToolHandlers {
               ? "Delete orphaned resources with delete_resource, then retry create_ai_agent."
               : "Read the troubleshooting guide, then retry create_ai_agent.",
         },
+      );
+    }
+  }
+
+  /**
+   * Remove the placeholder "unlock_account" tool the backend auto-creates
+   * under a new tool parent (aiAgentJob / llmPromptV2) — UI preview cruft the
+   * LLM would otherwise see as a real tool. Scoped to direct children of
+   * `parentNodeId`; matched by the placeholder's preview/label/toolId, or by
+   * `childType` (a just-created parent has no other tool children yet).
+   * Reads the chart with the flow's locale when known (relations are
+   * per-locale) and falls back to the node list. Failures are non-fatal.
+   */
+  private async removePlaceholderTools(
+    flowId: string,
+    parentNodeId: string,
+    childType: "aiAgentJobTool" | "llmPromptTool",
+    preferredLocaleId?: string,
+  ): Promise<void> {
+    const isPlaceholder = (n: any) =>
+      n.preview === "unlock_account" ||
+      n.label === "unlock_account" ||
+      n.config?.toolId === "unlock_account" ||
+      n.type === childType;
+
+    try {
+      let placeholderTools: any[] = [];
+
+      try {
+        const chart: any = await this.apiClient.get(
+          `/new/v2.0/flows/${flowId}/chart`,
+          preferredLocaleId ? { params: { preferredLocaleId } } : undefined,
+        );
+        const chartNodes = chart.nodes ?? [];
+        const chartRelations = chart.relations ?? [];
+        const parentRelation = (
+          Array.isArray(chartRelations) ? chartRelations : []
+        ).find((relation: any) => relation.node === parentNodeId);
+        const childNodeIds = new Set(parentRelation?.children ?? []);
+
+        placeholderTools = (Array.isArray(chartNodes) ? chartNodes : []).filter(
+          (n: any) => childNodeIds.has(n._id || n.id) && isPlaceholder(n),
+        );
+      } catch {
+        // Fall back to the regular node list when the chart endpoint is not available.
+      }
+
+      if (placeholderTools.length === 0) {
+        const nodeList: any = await this.apiClient.get(
+          `/v2.0/flows/${flowId}/chart/nodes`,
+          { params: { limit: 200 } },
+        );
+        const nodeItems = nodeList.items ?? nodeList;
+        placeholderTools = (Array.isArray(nodeItems) ? nodeItems : []).filter(
+          (n: any) =>
+            (n.parentId === parentNodeId || n.parent === parentNodeId) &&
+            isPlaceholder(n),
+        );
+      }
+
+      for (const placeholderTool of placeholderTools) {
+        const placeholderToolId = placeholderTool._id || placeholderTool.id;
+        if (!placeholderToolId) continue;
+        await this.apiClient.delete(
+          `/v2.0/flows/${flowId}/chart/nodes/${placeholderToolId}`,
+        );
+      }
+    } catch (placeholderCleanupError: any) {
+      logger.warn(
+        "Failed to remove backend-created placeholder tool from flow",
+        { error: placeholderCleanupError.message, flowId, parentNodeId },
       );
     }
   }
@@ -3760,7 +3766,8 @@ export class ToolHandlers {
                 ? "knowledge"
                 : duplicateTool.type === "sendEmailTool"
                   ? "send_email"
-                  : duplicateTool.type === "aiAgentJobMCPTool"
+                  : duplicateTool.type === "aiAgentJobMCPTool" ||
+                      duplicateTool.type === "llmPromptMCPTool"
                     ? "mcp"
                     : data.toolType,
             reusedExisting: true,
@@ -3891,7 +3898,7 @@ export class ToolHandlers {
         }
         const action =
           rollbackFailed.length > 0
-            ? `Rollback partially failed — orphaned node IDs: [${rollbackFailed.join(", ")}]. Delete them with delete_resource { resourceType: 'tool', id, aiAgentId }, then retry.`
+            ? `Rollback partially failed — orphaned node IDs: [${rollbackFailed.join(", ")}]. Delete them with delete_resource { resourceType: 'tool', id, ${data.aiAgentId ? `aiAgentId: "${data.aiAgentId}"` : `flowId: "${flowId}"`} }, then retry.`
             : "Check tool type and config, then retry.";
         return withHints({ error: error.message }, { action });
       }
@@ -4030,7 +4037,7 @@ export class ToolHandlers {
       }
       const action =
         rollbackFailed.length > 0
-          ? `Rollback partially failed — orphaned node IDs: [${rollbackFailed.join(", ")}]. Delete them with delete_resource { resourceType: 'tool', id, aiAgentId }, then retry.`
+          ? `Rollback partially failed — orphaned node IDs: [${rollbackFailed.join(", ")}]. Delete them with delete_resource { resourceType: 'tool', id, ${data.aiAgentId ? `aiAgentId: "${data.aiAgentId}"` : `flowId: "${flowId}"`} }, then retry.`
           : "Check HTTP config and code snippets, then retry.";
       return withHints({ error: error.message }, { action });
     }
@@ -4503,36 +4510,23 @@ export class ToolHandlers {
 
         // The backend auto-creates a placeholder "unlock_account" tool (plus a
         // non-deletable llmPromptDefault branch) under a new LLM Prompt node —
-        // UI preview cruft the LLM would otherwise see as a real tool. A
-        // just-created node's only llmPromptTool children are placeholders.
+        // UI preview cruft the LLM would otherwise see as a real tool.
         if (entry.type === "llmPromptV2") {
+          let preferredLocaleId: string | undefined;
           try {
-            const chart: any = await this.apiClient.get(
-              `/new/v2.0/flows/${flowId}/chart`,
+            const flowMeta: any = await this.apiClient.get(
+              `/v2.0/flows/${flowId}`,
             );
-            const relations = chart.relations ?? [];
-            const rel = (Array.isArray(relations) ? relations : []).find(
-              (r: any) => r.node === nodeId,
-            );
-            const childIds = new Set(rel?.children ?? []);
-            const chartNodes = chart.nodes ?? [];
-            const placeholders = (
-              Array.isArray(chartNodes) ? chartNodes : []
-            ).filter(
-              (n: any) =>
-                childIds.has(n._id || n.id) && n.type === "llmPromptTool",
-            );
-            for (const placeholder of placeholders) {
-              await this.apiClient.delete(
-                `/v2.0/flows/${flowId}/chart/nodes/${placeholder._id || placeholder.id}`,
-              );
-            }
-          } catch (placeholderCleanupError: any) {
-            logger.warn(
-              "Failed to remove backend-created placeholder tool from LLM Prompt node",
-              { error: placeholderCleanupError.message },
-            );
+            preferredLocaleId = flowMeta?.localeReference ?? flowMeta?.localeId;
+          } catch {
+            // Locale is an optimization for multi-locale flows; proceed without it.
           }
+          await this.removePlaceholderTools(
+            flowId,
+            nodeId,
+            "llmPromptTool",
+            preferredLocaleId,
+          );
         }
 
         const result = {
@@ -5921,7 +5915,7 @@ export class ToolHandlers {
       {
         warning: `NOTHING WAS CHANGED. This is the first change to an existing agent in this session, and no backup exists yet — so ${toolName} was not run.`,
         action:
-          'Ask the user, in one short line, whether they want a restorable backup first — mentioning that it covers the whole project but not Endpoints or Knowledge AI. If yes: manage_snapshots { operation: "create", projectId, label: "<why>" }. If no: manage_snapshots { operation: "decline", projectId }. Then retry this exact call. If you do not have the projectId, read it from get_resource { resourceType: "agent", id: "<aiAgentId>" }.',
+          'Ask the user, in one short line, whether they want a restorable backup first — mentioning that it covers the whole project but not Endpoints or Knowledge AI. If yes: manage_snapshots { operation: "create", projectId, label: "<why>" }. If no: manage_snapshots { operation: "decline", projectId }. Then retry this exact call. If you do not have the projectId, read it from get_resource { resourceType: "agent", id: "<aiAgentId>" } — or, when the call is addressed by flowId (LLM Prompt flows have no agent resource), from get_resource { resourceType: "flow", id: "<flowId>" }.',
       },
     );
   }

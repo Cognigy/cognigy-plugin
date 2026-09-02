@@ -95,6 +95,44 @@ describe("createAiAgentSchema", () => {
       }),
     ).toThrow();
   });
+
+  it("accepts agentNodeType llmPrompt with a systemPrompt", () => {
+    const result = schemas.createAiAgentSchema.parse({
+      name: "Prompt Agent",
+      agentNodeType: "llmPrompt",
+      systemPrompt: "You are a summarizer.",
+    });
+    expect(result.agentNodeType).toBe("llmPrompt");
+    expect(result.systemPrompt).toBe("You are a summarizer.");
+  });
+
+  it("accepts agentNodeType aiAgent with a knowledge store", () => {
+    const result = schemas.createAiAgentSchema.parse({
+      name: "Agent",
+      agentNodeType: "aiAgent",
+      knowledgeStoreReferenceId: "ks-ref-123",
+    });
+    expect(result.agentNodeType).toBe("aiAgent");
+  });
+
+  it("rejects unknown agentNodeType", () => {
+    expect(() =>
+      schemas.createAiAgentSchema.parse({
+        name: "Agent",
+        agentNodeType: "somethingElse",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects knowledgeStoreReferenceId together with agentNodeType llmPrompt", () => {
+    expect(() =>
+      schemas.createAiAgentSchema.parse({
+        name: "Agent",
+        agentNodeType: "llmPrompt",
+        knowledgeStoreReferenceId: "ks-ref-123",
+      }),
+    ).toThrow(/knowledgeStoreReferenceId/);
+  });
 });
 
 describe("updateAiAgentSchema", () => {
@@ -523,6 +561,23 @@ describe("listResourcesSchema", () => {
     expect(result.resourceType).toBe("agent");
   });
 
+  it("accepts flowId for the tool resource type", () => {
+    const result = schemas.listResourcesSchema.parse({
+      resourceType: "tool",
+      flowId: VALID_ID,
+    });
+    expect(result.flowId).toBe(VALID_ID);
+  });
+
+  it("rejects an invalid flowId", () => {
+    expect(() =>
+      schemas.listResourcesSchema.parse({
+        resourceType: "tool",
+        flowId: "not-a-valid-id",
+      }),
+    ).toThrow();
+  });
+
   it("accepts llm_model useCase filter", () => {
     const result = schemas.listResourcesSchema.parse({
       resourceType: "llm_model",
@@ -637,6 +692,26 @@ describe("deleteResourceSchema", () => {
     });
     expect(result.resourceType).toBe("project");
   });
+
+  it("accepts flowId as the tool-flow address", () => {
+    const result = schemas.deleteResourceSchema.parse({
+      resourceType: "tool",
+      id: VALID_ID,
+      flowId: VALID_ID,
+    });
+    expect(result.flowId).toBe(VALID_ID);
+    expect(result.aiAgentId).toBeUndefined();
+  });
+
+  it("rejects an invalid flowId", () => {
+    expect(() =>
+      schemas.deleteResourceSchema.parse({
+        resourceType: "tool",
+        id: VALID_ID,
+        flowId: "not-a-valid-id",
+      }),
+    ).toThrow();
+  });
 });
 
 describe("createToolSchema", () => {
@@ -648,6 +723,38 @@ describe("createToolSchema", () => {
       config: { url: "https://example.com" },
     });
     expect(result.toolType).toBe("http");
+  });
+
+  it("accepts flowId instead of aiAgentId", () => {
+    const result = schemas.createToolSchema.parse({
+      flowId: VALID_ID,
+      toolType: "tool",
+      name: "My Tool",
+      config: {},
+    });
+    expect(result.flowId).toBe(VALID_ID);
+    expect(result.aiAgentId).toBeUndefined();
+  });
+
+  it("rejects when neither aiAgentId nor flowId is provided", () => {
+    expect(() =>
+      schemas.createToolSchema.parse({
+        toolType: "tool",
+        name: "My Tool",
+        config: {},
+      }),
+    ).toThrow(/aiAgentId or flowId/);
+  });
+
+  it("rejects an invalid flowId", () => {
+    expect(() =>
+      schemas.createToolSchema.parse({
+        flowId: "not-a-valid-id",
+        toolType: "tool",
+        name: "My Tool",
+        config: {},
+      }),
+    ).toThrow();
   });
 
   it("rejects invalid tool type", () => {
@@ -693,6 +800,39 @@ describe("createToolSchema", () => {
         name: "Tool",
         config: { url: "https://example.com", method: "OPTIONS" },
       }),
+    ).toThrow();
+  });
+});
+
+describe("updateToolSchema", () => {
+  it("accepts aiAgentId with toolNodeId", () => {
+    const result = schemas.updateToolSchema.parse({
+      aiAgentId: VALID_ID,
+      toolNodeId: VALID_ID,
+      name: "Renamed",
+    });
+    expect(result.aiAgentId).toBe(VALID_ID);
+  });
+
+  it("accepts flowId instead of aiAgentId", () => {
+    const result = schemas.updateToolSchema.parse({
+      flowId: VALID_ID,
+      toolNodeId: VALID_ID,
+      config: { description: "Updated" },
+    });
+    expect(result.flowId).toBe(VALID_ID);
+    expect(result.aiAgentId).toBeUndefined();
+  });
+
+  it("rejects when neither aiAgentId nor flowId is provided", () => {
+    expect(() =>
+      schemas.updateToolSchema.parse({ toolNodeId: VALID_ID }),
+    ).toThrow(/aiAgentId or flowId/);
+  });
+
+  it("rejects a missing toolNodeId", () => {
+    expect(() =>
+      schemas.updateToolSchema.parse({ flowId: VALID_ID }),
     ).toThrow();
   });
 });
