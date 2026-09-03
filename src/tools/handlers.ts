@@ -2328,11 +2328,33 @@ export class ToolHandlers {
     // regular endpoint and the caller is told it was billed. Network-level
     // failures (timeout, DNS) are not retried: they would fail on the regular
     // URL too, and a timed-out message may already have been processed.
-    const productionUrl = toProductionEndpointUrl(endpointUrl!);
     const useTestMode = data.testMode !== false;
-    let targetUrl = useTestMode
-      ? toTestModeEndpointUrl(endpointUrl!)
-      : productionUrl;
+    let productionUrl: string;
+    let targetUrl: string;
+    try {
+      productionUrl = toProductionEndpointUrl(endpointUrl!);
+      targetUrl = useTestMode
+        ? toTestModeEndpointUrl(endpointUrl!)
+        : productionUrl;
+    } catch (urlErr: any) {
+      // A caller-supplied endpointUrl is schema-validated, so this is almost
+      // always a malformed COGNIGY_ENDPOINT_BASE_URL. Return it structured
+      // instead of letting the URL parser's TypeError escape the tool.
+      return withHints(
+        {
+          error: "Endpoint URL is not a valid absolute URL.",
+          detail: urlErr?.message,
+          endpointUrl,
+          sessionId,
+        },
+        {
+          likely_cause:
+            "COGNIGY_ENDPOINT_BASE_URL is misconfigured (it must be an absolute https URL), or the endpointUrl argument is malformed.",
+          action:
+            "Check the endpoint base URL in the server configuration, or pass a full endpointUrl from list_resources { resourceType: 'endpoint' }.",
+        },
+      );
+    }
     let testModeFallback:
       | { status: number; detail: string; testModeUrl: string }
       | undefined;

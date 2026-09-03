@@ -150,6 +150,52 @@ describe("talk_to_agent — endpoint test mode", () => {
     expect(result.testModeFallback).toBeUndefined();
   });
 
+  it("returns a structured error instead of throwing when the endpoint base URL is malformed", async () => {
+    const broken = new ToolHandlers(
+      {
+        get: jest.fn(),
+        post: jest.fn(),
+        patch: jest.fn(),
+        delete: jest.fn(),
+      } as any,
+      "endpoint-trial.cognigy.ai", // no scheme → not an absolute URL
+      "",
+      "https://static-trial.cognigy.ai",
+    );
+    const api = (broken as any).apiClient;
+    api.get
+      .mockResolvedValueOnce({
+        _id: "60d5ec49f1a2c8b1a4e0f001",
+        name: "Test Agent",
+        flowId: "60d5ec49f1a2c8b1a4e0f002",
+        projectId: "507f1f77bcf86cd799439011",
+      })
+      .mockResolvedValueOnce({
+        _id: "60d5ec49f1a2c8b1a4e0f002",
+        referenceId: "ref-flow-uuid",
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            _id: "60d5ec49f1a2c8b1a4e0f003",
+            channel: "rest",
+            flowId: "60d5ec49f1a2c8b1a4e0f002",
+            URLToken: "abc123token",
+          },
+        ],
+      });
+
+    const result = await broken.handleTalkToAgent({
+      aiAgentId: "60d5ec49f1a2c8b1a4e0f001",
+      message: "Hi",
+    });
+
+    expect(post).not.toHaveBeenCalled();
+    expect(result.error).toBe("Endpoint URL is not a valid absolute URL.");
+    expect(result.endpointUrl).toBe("endpoint-trial.cognigy.ai/abc123token");
+    expect(result._hints.likely_cause).toContain("COGNIGY_ENDPOINT_BASE_URL");
+  });
+
   it("builds the test-mode URL from a resolved endpoint's URLToken", async () => {
     const api = (h as any).apiClient;
     api.get
