@@ -25,6 +25,7 @@ import {
 import { buildWebchatSettings, deepMerge } from "./webchatSettings.js";
 import { normalizeToolParameters } from "./toolParameters.js";
 import { getNodeEntry, supportedNodeTypes } from "./nodeRegistry.js";
+import { validateCodeNode } from "./codeNodeValidation.js";
 import {
   evaluateChecks,
   summarize,
@@ -3707,6 +3708,11 @@ export class ToolHandlers {
           resolveNodeId,
         },
       };
+      // Documented non-blocking Code Node problems in the pre/post-process
+      // code (blocking ones were rejected by createToolSchema).
+      for (const code of [cfg.preProcessCode, cfg.postProcessCode]) {
+        if (code) parameterWarnings.push(...validateCodeNode(code).warnings);
+      }
       return parameterWarnings.length > 0
         ? withHints(createdHttp, { warning: parameterWarnings.join(" ") })
         : createdHttp;
@@ -3971,6 +3977,15 @@ export class ToolHandlers {
       updatedFields,
     };
 
+    // Documented non-blocking Code Node problems in pre/post-process code
+    // that was actually written (blocking ones were rejected by the schema).
+    for (const field of ["preProcessCode", "postProcessCode"] as const) {
+      const code = cfg?.[field];
+      if (typeof code === "string" && updatedFields.includes(field)) {
+        parameterWarnings.push(...validateCodeNode(code).warnings);
+      }
+    }
+
     if (skippedUpdates.length > 0) {
       return withHints(response, {
         warning: [
@@ -4199,6 +4214,24 @@ export class ToolHandlers {
           configApplied: data.config ? Object.keys(data.config) : [],
         };
 
+        // Blocking Code Node problems were rejected by manageFlowNodesSchema
+        // before we got here; attach the documented non-blocking ones now.
+        const codeWarnings =
+          entry.type === "code" && typeof data.config?.code === "string"
+            ? validateCodeNode(data.config.code).warnings
+            : [];
+        if (codeWarnings.length > 0) {
+          return withRenderSuggestion(
+            withHints(result, {
+              warning: codeWarnings.join(" "),
+              action:
+                "The node was created. Fix the flagged pattern with manage_flow_nodes update if it affects this node.",
+            }),
+            flowId,
+            nodeId,
+          );
+        }
+
         if (missingInitAppSession) {
           return withRenderSuggestion(
             withHints(result, {
@@ -4236,11 +4269,38 @@ export class ToolHandlers {
 
         const patchPayload: any = {};
         if (data.label) patchPayload.label = data.label;
+        // Declared outside the `if` so the post-write Code Node warnings below
+        // can see the type fetched here.
+        let nodeType = "";
         if (data.config) {
           const existingNode: any = await this.apiClient.get(
             `/v2.0/flows/${flowId}/chart/nodes/${data.nodeId}`,
           );
-          const nodeType = existingNode?.type ?? "";
+          nodeType = existingNode?.type ?? "";
+
+          // A Code Node's type is only known now, so the platform-constraint
+          // check the schema runs on `create` runs here for `update`.
+          if (nodeType === "code" && data.config.code !== undefined) {
+            if (typeof data.config.code !== "string") {
+              return withHints(
+                {
+                  error:
+                    "config.code must be a string of TypeScript/JavaScript source.",
+                },
+                { action: "Send the full new code as a single string." },
+              );
+            }
+            const { errors } = validateCodeNode(data.config.code);
+            if (errors.length > 0) {
+              return withHints(
+                { error: `Code Node update rejected: ${errors.join(" ")}` },
+                {
+                  action:
+                    "Nothing was written. Fix the code and send the full new code string again.",
+                },
+              );
+            }
+          }
 
           // Strip server-computed, read-only fields before merging them back
           // into the PATCH. `transpiled` (a code node's compiled JS) can be
@@ -4326,6 +4386,13 @@ export class ToolHandlers {
           ...(data.config ? { configUpdated: Object.keys(data.config) } : {}),
         };
 
+        // Documented non-blocking Code Node problems (the blocking ones were
+        // rejected above, before the PATCH).
+        const codeWarnings =
+          nodeType === "code" && typeof data.config?.code === "string"
+            ? validateCodeNode(data.config.code).warnings
+            : [];
+
         // The PATCH response echoes the input config without the server-computed
         // `hasError` (transpilation runs after the write). When code was edited,
         // read the node back to detect a transpile failure and surface it.
@@ -4337,8 +4404,10 @@ export class ToolHandlers {
             if (saved?.config?.hasError) {
               return withRenderSuggestion(
                 withHints(result, {
-                  warning:
+                  warning: [
                     "Node saved, but config.hasError is true — the code failed to transpile (TypeScript/syntax error).",
+                    ...codeWarnings,
+                  ].join(" "),
                   action: "Fix the code and update again.",
                 }),
                 flowId,
@@ -4348,6 +4417,17 @@ export class ToolHandlers {
           } catch {
             // Non-fatal — the update itself succeeded.
           }
+        }
+        if (codeWarnings.length > 0) {
+          return withRenderSuggestion(
+            withHints(result, {
+              warning: codeWarnings.join(" "),
+              action:
+                "The node was updated. Fix the flagged pattern with another update if it affects this node.",
+            }),
+            flowId,
+            data.nodeId,
+          );
         }
         return withRenderSuggestion(result, flowId, data.nodeId);
       }
