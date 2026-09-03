@@ -221,7 +221,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "talk_to_agent",
     description:
-      "Send a message to a Cognigy AI Agent and get its response. Use this to test agent behavior during iterative development.\n\nTwo modes:\n1. DIRECT: Provide endpointUrl (from create_ai_agent or list_resources { resourceType: 'endpoint' }).\n2. BY AGENT: Provide aiAgentId — the tool automatically finds or creates a REST endpoint for the agent's flow.\n\nUse the same sessionId across calls for multi-turn conversations.\n\nReturns: agentResponse text and sessionId. Add verbose: true for the full raw API response.",
+      "Send a message to a Cognigy AI Agent and get its response. Use this to test agent behavior during iterative development.\n\nTwo modes:\n1. DIRECT: Provide endpointUrl (from create_ai_agent or list_resources { resourceType: 'endpoint' }).\n2. BY AGENT: Provide aiAgentId — the tool automatically finds or creates a REST endpoint for the agent's flow.\n\nUse the same sessionId across calls for multi-turn conversations.\n\nBILLING: messages are sent in Cognigy Endpoint Test Mode by default (the /test/<token> URL variant), which keeps them out of the customer's billable conversation count. Test mode is capped at 600 messages per hour per organisation, so keep automated runs (e.g. red-team probes) within that budget. If the platform rejects the test-mode URL, the message is re-sent to the regular endpoint and the response carries testMode: false, a testModeFallback object and a _hints.warning — surface that to the user, because that message was billed.\n\nReturns: agentResponse text, sessionId, the endpointUrl actually used and testMode. Add verbose: true for the full raw API response.",
     annotations: {
       title: "Talk to Agent",
       readOnlyHint: false,
@@ -268,6 +268,11 @@ export const tools: ToolDefinition[] = [
           type: "boolean",
           description:
             "If true, include the full raw API response (default: false)",
+        },
+        testMode: {
+          type: "boolean",
+          description:
+            "Send via Cognigy Endpoint Test Mode (default: true) so the message is not billed. Set false only when the user explicitly wants a real, billable production message, or after a test-mode rejection to skip the retry.",
         },
       },
       required: ["message"],

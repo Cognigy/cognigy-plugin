@@ -16,6 +16,23 @@ description: "Use when a Cognigy agent returns empty responses, a tool call or c
 4. Check endpoint is connected: get_resource { resourceType: "endpoint", id }
    Verify flowId is set and URLToken exists
 
+## talk_to_agent reports testModeFallback
+
+talk_to_agent sends through Cognigy Endpoint Test Mode (`/test/<token>`) so test
+messages are not billed. When the platform answers that URL with an HTTP error,
+the message is re-sent to the regular endpoint and the response carries
+`testMode: false`, `testModeFallback: { status, detail, testModeUrl }` and a
+`_hints.warning`. That message **was billed** — always tell the user.
+
+- 404 / 400 on the test URL: the platform predates Cognigy 4.27 or test mode is
+  disabled for this environment. Pass `testMode: false` for the rest of the run
+  to avoid a failed attempt per message.
+- 429 / 403: the 600-test-messages-per-hour budget is exhausted (it is per
+  organisation, shared by everyone testing there). Pause the run for an hour or
+  proceed with `testMode: false` only if the user accepts billable messages.
+- Network errors (timeout, DNS) never trigger the fallback; they are returned as
+  errors because the regular URL would fail the same way.
+
 ## create_ai_agent failed
 
 - The tool auto-rolls back created resources on failure. Safe to retry.

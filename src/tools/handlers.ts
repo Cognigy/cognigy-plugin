@@ -15,6 +15,10 @@ import { randomUUID } from "crypto";
 import { pathToFileURL } from "url";
 import axios from "axios";
 import { CognigyApiClient } from "../api/client.js";
+import {
+  toProductionEndpointUrl,
+  toTestModeEndpointUrl,
+} from "../utils/endpointUrl.js";
 import { logger } from "../utils/logger.js";
 import {
   filterResponse,
@@ -2316,14 +2320,53 @@ export class ToolHandlers {
     const payload: any = { userId, sessionId, text: data.message };
     if (data.data) payload.data = data.data;
 
-    try {
-      const response = await axios.post(endpointUrl!, payload, {
+    // Test mode (see utils/endpointUrl.ts) keeps plugin traffic out of the
+    // customer's billable conversation count, so it is the default. It is a
+    // pure URL variant, so the handler stays stateless: when the platform
+    // rejects the test-mode URL (older release, disabled feature, or the
+    // 600-messages-per-hour test budget), the message is re-sent to the
+    // regular endpoint and the caller is told it was billed. Network-level
+    // failures (timeout, DNS) are not retried: they would fail on the regular
+    // URL too, and a timed-out message may already have been processed.
+    const productionUrl = toProductionEndpointUrl(endpointUrl!);
+    const useTestMode = data.testMode !== false;
+    let targetUrl = useTestMode
+      ? toTestModeEndpointUrl(endpointUrl!)
+      : productionUrl;
+    let testModeFallback:
+      | { status: number; detail: string; testModeUrl: string }
+      | undefined;
+
+    const send = (url: string) =>
+      axios.post(url, payload, {
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
         timeout: 30000,
       });
+
+    try {
+      let response;
+      try {
+        response = await send(targetUrl);
+      } catch (testErr: any) {
+        const status = testErr?.response?.status;
+        if (!useTestMode || typeof status !== "number") throw testErr;
+        logger.warn(
+          `talk_to_agent: test-mode endpoint answered ${status}; falling back to the regular endpoint`,
+        );
+        testModeFallback = {
+          status,
+          detail:
+            testErr.response?.data?.error ||
+            testErr.response?.data?.message ||
+            testErr.message,
+          testModeUrl: targetUrl,
+        };
+        targetUrl = productionUrl;
+        response = await send(targetUrl);
+      }
 
       let agentResponse = response.data.text || "";
       const outputStack = response.data.outputStack || [];
@@ -2332,23 +2375,31 @@ export class ToolHandlers {
         .map((o: any) => o.text);
       if (textOutputs.length > 0) agentResponse = textOutputs.join(" ");
 
-      const result: any = { agentResponse, sessionId, endpointUrl };
+      const result: any = {
+        agentResponse,
+        sessionId,
+        endpointUrl: targetUrl,
+        testMode: useTestMode && !testModeFallback,
+      };
       if (endpointMeta.autoCreated) result.endpointAutoCreated = true;
       if (endpointMeta.resolved) result.endpointResolved = true;
+      if (testModeFallback) result.testModeFallback = testModeFallback;
 
       if (data.verbose) {
         result.rawResponse = response.data;
       }
 
+      const hints: Record<string, string> = {};
+      if (testModeFallback) {
+        hints.warning = `Test mode was rejected by the platform (HTTP ${testModeFallback.status}), so this message was sent to the regular endpoint and COUNTS as a billable conversation. Likely causes: the platform predates Cognigy 4.27 (no REST test mode), test mode is disabled for this environment, or the 600-test-messages-per-hour budget is exhausted. Tell the user. Pass testMode: false to skip the test-mode attempt for further messages in this run if the rejection persists.`;
+      }
       if (!agentResponse) {
-        return withHints(result, {
-          likely_cause:
-            "Agent returned no text. Possible causes: 1) no LLM configured, 2) empty agent description, 3) endpoint not connected to flow.",
-          action: "Read the troubleshooting guide for diagnostic steps.",
-        });
+        hints.likely_cause =
+          "Agent returned no text. Possible causes: 1) no LLM configured, 2) empty agent description, 3) endpoint not connected to flow.";
+        hints.action = "Read the troubleshooting guide for diagnostic steps.";
       }
 
-      return result;
+      return Object.keys(hints).length > 0 ? withHints(result, hints) : result;
     } catch (error: any) {
       const detail =
         error.response?.data?.error ||
@@ -2359,6 +2410,8 @@ export class ToolHandlers {
           error: `Request failed with status ${error.response?.status ?? "unknown"}`,
           detail,
           sessionId,
+          endpointUrl: targetUrl,
+          ...(testModeFallback ? { testModeFallback } : {}),
         },
         {
           likely_cause: "Endpoint URL invalid or expired.",
