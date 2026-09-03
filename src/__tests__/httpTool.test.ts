@@ -72,6 +72,22 @@ describe("create_tool – HTTP tool path", () => {
     }
   }
 
+  it("rejects preProcessCode/postProcessCode the Code Node runtime cannot run", async () => {
+    await expect(
+      h.handleToolCall(
+        "create_tool",
+        baseArgs({ preProcessCode: "const r = await api.httpRequest({});" }),
+      ),
+    ).rejects.toThrow("api.httpRequest() exists only in Cognigy Functions");
+    await expect(
+      h.handleToolCall(
+        "create_tool",
+        baseArgs({ postProcessCode: "import axios from 'axios';" }),
+      ),
+    ).rejects.toThrow("require()/import are not available");
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
   it("creates HTTP tool with basic GET request (url only)", async () => {
     mockFlowWithJobNode();
     mockPostSequence(
