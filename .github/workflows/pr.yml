@@ -40,6 +40,9 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Lint
+        run: npm run lint
+
       # Compiles the server (tsc) — catches type errors and any broken build before merge.
       - name: Build
         run: npm run build
