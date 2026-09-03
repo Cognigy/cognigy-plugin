@@ -88,6 +88,22 @@ describe("create_tool – HTTP tool path", () => {
     expect(api.post).not.toHaveBeenCalled();
   });
 
+  it("attaches documented Code Node warnings for pre/post-process code", async () => {
+    mockFlowWithJobNode();
+    mockPostSequence(
+      MOCK_IDS.toolNode,
+      MOCK_IDS.resolveNode,
+      MOCK_IDS.httpNode,
+      MOCK_IDS.postNode,
+    );
+    const result = await h.handleToolCall(
+      "create_tool",
+      baseArgs({ postProcessCode: 'api.deleteContext("temp.raw");' }),
+    );
+    expect(result.childNodes.postProcessNodeId).toBe(MOCK_IDS.postNode);
+    expect(result._hints?.warning).toContain("api.deleteContext()");
+  });
+
   it("creates HTTP tool with basic GET request (url only)", async () => {
     mockFlowWithJobNode();
     mockPostSequence(
@@ -443,6 +459,19 @@ describe("update_tool – HTTP child-node resolution", () => {
       ],
     });
   }
+
+  it("attaches documented Code Node warnings for written post-process code", async () => {
+    mockFlowAndChildren();
+    api.patch.mockResolvedValueOnce({ _id: MOCK_IDS.postNode });
+    const result = await h.handleToolCall("update_tool", {
+      aiAgentId: ID.agent,
+      toolNodeId: MOCK_IDS.toolNode,
+      toolType: "http",
+      config: { postProcessCode: 'api.deleteContext("temp.raw");' },
+    });
+    expect(result.updatedFields).toContain("postProcessCode");
+    expect(result._hints?.warning).toContain("api.deleteContext()");
+  });
 
   it("resolves post-process Code node by label prefix", async () => {
     mockFlowAndChildren();

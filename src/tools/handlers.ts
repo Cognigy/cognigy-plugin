@@ -3708,6 +3708,11 @@ export class ToolHandlers {
           resolveNodeId,
         },
       };
+      // Documented non-blocking Code Node problems in the pre/post-process
+      // code (blocking ones were rejected by createToolSchema).
+      for (const code of [cfg.preProcessCode, cfg.postProcessCode]) {
+        if (code) parameterWarnings.push(...validateCodeNode(code).warnings);
+      }
       return parameterWarnings.length > 0
         ? withHints(createdHttp, { warning: parameterWarnings.join(" ") })
         : createdHttp;
@@ -3971,6 +3976,15 @@ export class ToolHandlers {
       updated: true,
       updatedFields,
     };
+
+    // Documented non-blocking Code Node problems in pre/post-process code
+    // that was actually written (blocking ones were rejected by the schema).
+    for (const field of ["preProcessCode", "postProcessCode"] as const) {
+      const code = cfg?.[field];
+      if (typeof code === "string" && updatedFields.includes(field)) {
+        parameterWarnings.push(...validateCodeNode(code).warnings);
+      }
+    }
 
     if (skippedUpdates.length > 0) {
       return withHints(response, {

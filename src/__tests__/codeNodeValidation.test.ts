@@ -1,5 +1,8 @@
 import { describe, it, expect } from "@jest/globals";
-import { validateCodeNode } from "../tools/codeNodeValidation.js";
+import {
+  validateCodeNode,
+  stripCommentsAndStrings,
+} from "../tools/codeNodeValidation.js";
 
 describe("validateCodeNode", () => {
   describe("accepts everything the platform supports", () => {
@@ -24,6 +27,18 @@ describe("validateCodeNode", () => {
       ["Intl", "new Intl.NumberFormat('de-DE').format(1)"],
       ["no try/catch, no particular shape", "api.output('ok');"],
       ["top-level deleteContext", 'api.deleteContext("x");'],
+      [
+        "banned names inside strings",
+        'api.say("Call fetch() from the client, not require()");',
+      ],
+      [
+        "banned names inside template literals",
+        "api.say(`use ${input.text} — no XMLHttpRequest here`);",
+      ],
+      [
+        "banned names inside comments",
+        "// TODO: replace fetch() with an HTTP node\n/* api.setState('x') */\napi.say('ok');",
+      ],
     ])("%s", (_name, code) => {
       expect(validateCodeNode(code)).toEqual({ errors: [], warnings: [] });
     });
@@ -37,6 +52,14 @@ describe("validateCodeNode", () => {
       expect(errors).toHaveLength(1);
       expect(errors[0]).toContain("api.httpRequest()");
       expect(errors[0]).toContain("HTTP Request node");
+    });
+
+    it("global-qualified fetch/require", () => {
+      expect(validateCodeNode("globalThis.fetch('x');").errors).toHaveLength(1);
+      expect(validateCodeNode("window.fetch('x');").errors).toHaveLength(1);
+      expect(
+        validateCodeNode("const m = globalThis.require('x');").errors,
+      ).toHaveLength(1);
     });
 
     it("fetch and XMLHttpRequest", () => {
@@ -79,6 +102,20 @@ describe("validateCodeNode", () => {
         "const a = require('axios'); await fetch('x'); api.resetState();",
       );
       expect(errors).toHaveLength(3);
+    });
+  });
+
+  describe("stripCommentsAndStrings", () => {
+    it("blanks literal contents and comments but keeps length and lines", () => {
+      const src = 'a("x\\"y") // c\n/* m\n */ b(`t${1}`)';
+      const out = stripCommentsAndStrings(src);
+      expect(out).toHaveLength(src.length);
+      expect(out.split("\n")).toHaveLength(3);
+      expect(out).toMatch(/^a\("\s+"\)\s+\n\s+\n\s+b\(`\s+`\)$/);
+    });
+
+    it("leaves an unterminated string as-is without throwing", () => {
+      expect(() => stripCommentsAndStrings('api.say("oops')).not.toThrow();
     });
   });
 
