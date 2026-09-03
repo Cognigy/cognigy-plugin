@@ -16,6 +16,7 @@ import { pathToFileURL } from "url";
 import axios from "axios";
 import { CognigyApiClient } from "../api/client.js";
 import { logger } from "../utils/logger.js";
+import { flattenOutputStack } from "../utils/outputStack.js";
 import {
   filterResponse,
   filterList,
@@ -2325,12 +2326,7 @@ export class ToolHandlers {
         timeout: 30000,
       });
 
-      let agentResponse = response.data.text || "";
-      const outputStack = response.data.outputStack || [];
-      const textOutputs = outputStack
-        .filter((o: any) => o.text?.trim())
-        .map((o: any) => o.text);
-      if (textOutputs.length > 0) agentResponse = textOutputs.join(" ");
+      const agentResponse = flattenOutputStack(response.data);
 
       const result: any = { agentResponse, sessionId, endpointUrl };
       if (endpointMeta.autoCreated) result.endpointAutoCreated = true;
