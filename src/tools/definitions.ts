@@ -20,7 +20,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "create_ai_agent",
     description:
-      "Create a complete AI Agent with auto-provisioned flow, AI Agent Job Node, and REST endpoint. Returns everything needed for talk_to_agent.\n\nIf projectId is omitted, a new project is auto-created using the agent name.\n\nLLM SETUP (required for the agent to generate responses):\n1. Ensure the target project already has a working LLM. If another project already has one, prefer reusing the required llm_model resources together with their shared connection resource(s) via manage_packages export/import.\n2. Use setup_llm only if no reusable LLM with connectionId exists or package transfer failed.\n3. If the LLM is not set as default, assign it via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: \"<llm referenceId>\" } }.\n\nKNOWLEDGE: If knowledgeStoreReferenceId is provided, a knowledge search tool is automatically created on the agent's Job Node. This is the preferred way to give agents access to knowledge stores.\n\nReturns: agent, flow, endpoint objects, endpointUrl, llmStatus, and the projectId used. If a knowledge tool was created, it is included in the response.\nIf llmStatus is 'unknown', especially after auto-creating a new project, ensure a working LLM is reused or set up before calling talk_to_agent, and do not call talk_to_agent until a working LLM is confirmed.",
+      "Create a complete AI Agent with auto-provisioned flow, AI Agent Job Node, and REST endpoint. Returns everything needed for talk_to_agent.\n\nIf projectId is omitted, a new project is auto-created using the agent name.\n\nLLM SETUP (required for the agent to generate responses):\n1. Ensure the target project already has a working LLM. If another project already has one, prefer reusing the required llm_model resources together with their shared connection resource(s) via manage_packages export/import.\n2. Use setup_llm only if no reusable LLM with connectionId exists or package transfer failed.\n3. If the LLM is not set as default, assign it via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: \"<llm referenceId>\" } }.\n\nKNOWLEDGE: If knowledgeStoreReferenceId is provided, a knowledge search tool is automatically created on the agent's Job Node. This is the preferred way to give agents access to knowledge stores.\n\nAGENT NODE TYPE: The AI Agent node is ALWAYS the default. Set agentNodeType: 'llmPrompt' ONLY when the user EXPLICITLY asked for an LLM Prompt node (e.g. \"create an agent using an LLM Prompt node\"). NEVER offer, suggest, or fall back to it, and never ask the user whether they want it. In llmPrompt mode no agent resource exists: the flow gets an LLM Prompt (llmPromptV2) node whose freeform systemPrompt drives behavior; edit it later via manage_flow_nodes update (NOT update_ai_agent), add tools via create_tool { flowId }, and knowledgeStoreReferenceId is not supported.\n\nReturns: agent, flow, endpoint objects, endpointUrl, llmStatus, and the projectId used. If a knowledge tool was created, it is included in the response.\nIf llmStatus is 'unknown', especially after auto-creating a new project, ensure a working LLM is reused or set up before calling talk_to_agent, and do not call talk_to_agent until a working LLM is confirmed.",
     annotations: {
       title: "Create AI Agent",
       readOnlyHint: false,
@@ -48,7 +48,18 @@ export const tools: ToolDefinition[] = [
         knowledgeStoreReferenceId: {
           type: "string",
           description:
-            'Reference ID of a knowledge store to attach as a knowledge search tool on the agent (optional). This automatically creates a knowledge tool on the AI Agent Job Node. Use manage_knowledge { operation: "create_store" } first to get the store reference ID.',
+            'Reference ID of a knowledge store to attach as a knowledge search tool on the agent (optional). This automatically creates a knowledge tool on the AI Agent Job Node. Use manage_knowledge { operation: "create_store" } first to get the store reference ID. Not supported with agentNodeType "llmPrompt".',
+        },
+        agentNodeType: {
+          type: "string",
+          enum: ["aiAgent", "llmPrompt"],
+          description:
+            "Which node drives the agent. Omit (or 'aiAgent') in ALL normal cases — the AI Agent node is always the default. Pass 'llmPrompt' ONLY when the user explicitly asked for an LLM Prompt node in their own words. Never suggest or offer this option, and never ask the user about it.",
+        },
+        systemPrompt: {
+          type: "string",
+          description:
+            "llmPrompt mode only: the LLM Prompt node's freeform system prompt (config.prompt). This is the entire persona/behavior definition — there are no separate persona or guardrail fields in this mode, so include any needed guardrails in the prompt itself. Falls back to description when omitted.",
         },
       },
       required: ["name"],
@@ -278,7 +289,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "list_resources",
     description:
-      "List resources in a Cognigy project. Use this to discover projects, agents, flows, endpoints, LLM models, knowledge stores, conversations, extensions, functions, tools, or audit events.\n\nSet resourceType to 'project' to find projectIds (no projectId needed). 'tool' requires aiAgentId instead of projectId. 'audit_event' is organisation-scoped and takes no projectId — it answers \"who changed what\" questions: `{ resourceType: 'audit_event', actor: ['mcp-plugin'], sort: 'timestamp:desc' }` lists exactly the changes this plugin made, and `actor: ['human']` the ones people made by hand. Each item carries `performedBy` for non-human actors; a missing `performedBy` means a person performed it. Needs Cognigy 2026.17.0+ and an API key with Admin Center access. All other types require projectId. For `llm_model`, you can also pass `useCase` to match the UI's use-case-filtered model dropdowns (for example `knowledgeSearch`). Packages are handled through manage_packages.\n\nUse `sort` for recency questions instead of paging through everything: `sort: 'lastChanged:desc', limit: 5` answers \"which project was touched most recently\" in one call. To attribute a change to a person, get the current user's id from get_resource { resourceType: 'user', id: 'me' } and compare it against `lastChangedBy` from get_resource { resourceType: 'project', id, raw: true } — list items omit `lastChangedBy` to save tokens.\n\nReturns a paginated list with id, name, and type-specific fields.",
+      "List resources in a Cognigy project. Use this to discover projects, agents, flows, endpoints, LLM models, knowledge stores, conversations, extensions, functions, tools, or audit events.\n\nSet resourceType to 'project' to find projectIds (no projectId needed). 'tool' requires aiAgentId (or flowId, for LLM Prompt flows that have no agent resource) instead of projectId. 'audit_event' is organisation-scoped and takes no projectId — it answers \"who changed what\" questions: `{ resourceType: 'audit_event', actor: ['mcp-plugin'], sort: 'timestamp:desc' }` lists exactly the changes this plugin made, and `actor: ['human']` the ones people made by hand. Each item carries `performedBy` for non-human actors; a missing `performedBy` means a person performed it. Needs Cognigy 2026.17.0+ and an API key with Admin Center access. All other types require projectId. For `llm_model`, you can also pass `useCase` to match the UI's use-case-filtered model dropdowns (for example `knowledgeSearch`). Packages are handled through manage_packages.\n\nUse `sort` for recency questions instead of paging through everything: `sort: 'lastChanged:desc', limit: 5` answers \"which project was touched most recently\" in one call. To attribute a change to a person, get the current user's id from get_resource { resourceType: 'user', id: 'me' } and compare it against `lastChangedBy` from get_resource { resourceType: 'project', id, raw: true } — list items omit `lastChangedBy` to save tokens.\n\nReturns a paginated list with id, name, and type-specific fields.",
     annotations: {
       title: "List Resources",
       readOnlyHint: true,
@@ -315,6 +326,11 @@ export const tools: ToolDefinition[] = [
           type: "string",
           description:
             "24-char hex AI Agent ID (tools only — lists tools in the agent's flow)",
+        },
+        flowId: {
+          type: "string",
+          description:
+            "24-char hex flow ID (tools only) — alternative to aiAgentId for flows driven by an LLM Prompt node, which have no agent resource. Never pass both.",
         },
         startDate: {
           type: "string",
@@ -433,7 +449,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "delete_resource",
     description:
-      "Delete a Cognigy resource, or mark it for manual deletion.\n\nPROTECTED TYPES — flow, project, agent are NEVER hard-deleted. Instead they are renamed with a DELETE_ prefix (e.g. 'DELETE_My Flow') to mark them for manual deletion in the Cognigy UI. The response reports markedForDeletion: true and the new name. Idempotent: an already-marked resource is left unchanged (alreadyMarked: true).\n\nAGENT 'DELETION': By default (cascade: true) the agent's endpoints are DEACTIVATED (active: false — reversible in the Cognigy UI) to take the agent offline, then its companion flow and the agent itself are renamed with the DELETE_ prefix. Set cascade: false to rename only the agent and leave endpoints/flow untouched. The response reports what was deactivated, renamed, and any failures. Note: because the agent still exists (renamed), re-running create_ai_agent with the original name creates a NEW agent.\n\nFLOW 'DELETION' also deactivates every endpoint referencing the flow before renaming it. PROJECT 'deletion' renames only — flows, endpoints and agents inside the project remain live; the response warning says so.\n\nOTHER TYPES (endpoint, llm_model, knowledge_store, function, tool) are permanently deleted — this cannot be undone. Use list_resources to verify the resource exists before deleting. Some types (endpoint) may require projectId. For 'tool' type, provide aiAgentId — the handler resolves and deletes the underlying flow node internally.",
+      "Delete a Cognigy resource, or mark it for manual deletion.\n\nPROTECTED TYPES — flow, project, agent are NEVER hard-deleted. Instead they are renamed with a DELETE_ prefix (e.g. 'DELETE_My Flow') to mark them for manual deletion in the Cognigy UI. The response reports markedForDeletion: true and the new name. Idempotent: an already-marked resource is left unchanged (alreadyMarked: true).\n\nAGENT 'DELETION': By default (cascade: true) the agent's endpoints are DEACTIVATED (active: false — reversible in the Cognigy UI) to take the agent offline, then its companion flow and the agent itself are renamed with the DELETE_ prefix. Set cascade: false to rename only the agent and leave endpoints/flow untouched. The response reports what was deactivated, renamed, and any failures. Note: because the agent still exists (renamed), re-running create_ai_agent with the original name creates a NEW agent.\n\nFLOW 'DELETION' also deactivates every endpoint referencing the flow before renaming it. PROJECT 'deletion' renames only — flows, endpoints and agents inside the project remain live; the response warning says so.\n\nOTHER TYPES (endpoint, llm_model, knowledge_store, function, tool) are permanently deleted — this cannot be undone. Use list_resources to verify the resource exists before deleting. Some types (endpoint) may require projectId. For 'tool' type, provide aiAgentId — the handler resolves and deletes the underlying flow node internally (or flowId instead, for LLM Prompt flows that have no agent resource).",
     annotations: {
       title: "Delete Resource",
       readOnlyHint: false,
@@ -470,7 +486,12 @@ export const tools: ToolDefinition[] = [
         aiAgentId: {
           type: "string",
           description:
-            "24-char hex AI Agent ID (required for tool type — needed to resolve the flow)",
+            "24-char hex AI Agent ID (tool type — needed to resolve the flow; required unless flowId is provided)",
+        },
+        flowId: {
+          type: "string",
+          description:
+            "24-char hex flow ID (tool type only) — alternative to aiAgentId for flows driven by an LLM Prompt node, which have no agent resource. Never pass both.",
         },
         cascade: {
           type: "boolean",
@@ -583,7 +604,9 @@ IMPORTANT: Create exactly one tool per business action. If the same toolId alrea
 Prerequisites: Agent must exist (created via create_ai_agent).
 To list tools: list_resources { resourceType: 'tool', aiAgentId }.
 To delete: delete_resource { resourceType: 'tool', id: toolId, aiAgentId }.
-After creating, use talk_to_agent to test.`,
+After creating, use talk_to_agent to test.
+
+ADDRESSING: Pass aiAgentId for normal agents. Pass flowId instead ONLY for a flow whose agent is an LLM Prompt (llmPromptV2) node — those flows have no agent resource. Tools attach to the flow's AI Agent Job node when present, otherwise to its LLM Prompt node (which supports only toolType 'tool', 'mcp', and 'http').`,
     annotations: {
       title: "Create Tool",
       readOnlyHint: false,
@@ -597,13 +620,23 @@ After creating, use talk_to_agent to test.`,
         aiAgentId: {
           type: "string",
           description:
-            "24-char hex AI Agent ID (from create_ai_agent or list_resources { resourceType: 'agent' })",
+            "24-char hex AI Agent ID (from create_ai_agent or list_resources { resourceType: 'agent' }). Required unless flowId is provided.",
+        },
+        flowId: {
+          type: "string",
+          description:
+            "24-char hex flow ID — alternative to aiAgentId, ONLY for flows driven by an LLM Prompt node (no agent resource exists for those). Prefer aiAgentId whenever the agent has one. Never pass both.",
+        },
+        parentNodeId: {
+          type: "string",
+          description:
+            "24-char hex node ID of the AI Agent Job or LLM Prompt node the tool attaches to. Only needed when the flow has more than one such node (create_tool then refuses to guess and lists the candidates).",
         },
         toolType: {
           type: "string",
           enum: ["tool", "knowledge", "send_email", "mcp", "http"],
           description:
-            "tool: general-purpose with custom logic (DEFAULT — use for most requests). knowledge: search a Knowledge Store. send_email: send emails. mcp: connect to an external MCP server (ONLY when user explicitly requests MCP integration with a specific server URL). http: call an external HTTP API (when user specifies a concrete API endpoint).",
+            "tool: general-purpose with custom logic (DEFAULT — use for most requests). knowledge: search a Knowledge Store. send_email: send emails. mcp: connect to an external MCP server (ONLY when user explicitly requests MCP integration with a specific server URL). http: call an external HTTP API (when user specifies a concrete API endpoint). Under an LLM Prompt node only tool/mcp/http are supported.",
         },
         name: {
           type: "string",
@@ -693,7 +726,7 @@ After creating, use talk_to_agent to test.`,
           },
         },
       },
-      required: ["aiAgentId", "toolType", "name", "config"],
+      required: ["toolType", "name", "config"],
     },
   },
 
@@ -701,7 +734,7 @@ After creating, use talk_to_agent to test.`,
   {
     name: "update_tool",
     description:
-      "Update an existing tool node's configuration in an AI Agent's flow. Accepts the same config fields as create_tool.\n\nRequires: aiAgentId (to resolve the flow) and toolNodeId (the node ID from create_tool or list_resources { resourceType: 'tool', aiAgentId }).\n\nYou can update the name (display label) and/or tool-type-specific config fields. For http tools, config fields like url, method, headers, body update the child HTTP Request node, and preProcessCode/postProcessCode update the child Code nodes. If a pre-/post-process Code node does not yet exist (because the tool was originally created without that field), passing preProcessCode or postProcessCode here will provision and wire a new Code node — the same as if it had been included on create_tool. To target a specific existing Code node directly when label-based lookup is ambiguous, pass preProcessNodeId / postProcessNodeId.\n\nAfter updating, use talk_to_agent to test the changes.",
+      "Update an existing tool node's configuration in an AI Agent's flow. Accepts the same config fields as create_tool.\n\nRequires: aiAgentId (to resolve the flow) and toolNodeId (the node ID from create_tool or list_resources { resourceType: 'tool', aiAgentId }). For flows driven by an LLM Prompt node (no agent resource), pass flowId instead of aiAgentId.\n\nYou can update the name (display label) and/or tool-type-specific config fields. For http tools, config fields like url, method, headers, body update the child HTTP Request node, and preProcessCode/postProcessCode update the child Code nodes. If a pre-/post-process Code node does not yet exist (because the tool was originally created without that field), passing preProcessCode or postProcessCode here will provision and wire a new Code node — the same as if it had been included on create_tool. To target a specific existing Code node directly when label-based lookup is ambiguous, pass preProcessNodeId / postProcessNodeId.\n\nAfter updating, use talk_to_agent to test the changes.",
     annotations: {
       title: "Update Tool",
       readOnlyHint: false,
@@ -715,7 +748,12 @@ After creating, use talk_to_agent to test.`,
         aiAgentId: {
           type: "string",
           description:
-            "24-char hex AI Agent ID (from create_ai_agent or list_resources { resourceType: 'agent' })",
+            "24-char hex AI Agent ID (from create_ai_agent or list_resources { resourceType: 'agent' }). Required unless flowId is provided.",
+        },
+        flowId: {
+          type: "string",
+          description:
+            "24-char hex flow ID — alternative to aiAgentId, ONLY for flows driven by an LLM Prompt node (no agent resource exists for those). Never pass both.",
         },
         toolNodeId: {
           type: "string",
@@ -831,7 +869,7 @@ After creating, use talk_to_agent to test.`,
           },
         },
       },
-      required: ["aiAgentId", "toolNodeId"],
+      required: ["toolNodeId"],
     },
   },
 
@@ -839,7 +877,7 @@ After creating, use talk_to_agent to test.`,
   {
     name: "manage_flow_nodes",
     description:
-      'Manage the logic nodes inside a flow (list/get/create/update/delete) and render the flow as a diagram. Nodes are helpers that live INSIDE AI Agent tool branches: create a tool first (create_tool { toolType: "tool" }), then add nodes with parentNodeId = toolNodeId, mode = "appendChild". NEVER add standalone nodes before the AI Agent Job node. The flow-nodes skill owns the full workflow — placement, branching (ifThenElse/lookup), node config, and case values.\n\nOPERATIONS:\n- list: all nodes in a flow (id, type, label, parentId, isEntryPoint only — NO config).\n- get: one node in full incl. config (requires nodeId). Read before editing. For code nodes the config reports `hasError`; the large server-computed `transpiled` output is omitted.\n- create: add a node (requires nodeType + config). parentNodeId + mode place it — see the flow-nodes skill.\n- update: change a node\'s config or label (only provided fields change). For switch/lookup nodes, pass a `cases` array to set case values.\n- delete: remove a node.\n- render (read-only): visualize the flow. Returns an `ascii` tree (display inline in any client incl. terminal) and a `mermaid` string. Deliver the mermaid ONLY as a native Mermaid/diagram artifact — do NOT wrap it in HTML or paste it as an inline ```mermaid fence (both break the zoomable, mobile-friendly viewer). Options: focus=<nodeId|nodeId[]> highlights nodes; writeHtml writes a self-contained rich HTML graph to a local tmp file and opens it in the browser (returns htmlUrl/htmlPath — the file is already on the user\'s machine, just hand them the link). See the flow-nodes skill for details.\n\nSupported node types come from the server node registry; an unsupported nodeType returns the current list. For AI Agent tool nodes (knowledge, send_email, mcp, http) use create_tool / update_tool instead.',
+      'Manage the logic nodes inside a flow (list/get/create/update/delete) and render the flow as a diagram. Nodes are helpers that live INSIDE AI Agent tool branches: create a tool first (create_tool { toolType: "tool" }), then add nodes with parentNodeId = toolNodeId, mode = "appendChild". NEVER add standalone nodes before the AI Agent Job node. The flow-nodes skill owns the full workflow — placement, branching (ifThenElse/lookup), node config, and case values.\n\nOPERATIONS:\n- list: all nodes in a flow (id, type, label, parentId, isEntryPoint only — NO config).\n- get: one node in full incl. config (requires nodeId). Read before editing. For code nodes the config reports `hasError`; the large server-computed `transpiled` output is omitted.\n- create: add a node (requires nodeType + config). parentNodeId + mode place it — see the flow-nodes skill.\n- update: change a node\'s config or label (only provided fields change). For switch/lookup nodes, pass a `cases` array to set case values.\n- delete: remove a node.\n- render (read-only): visualize the flow. Returns an `ascii` tree (display inline in any client incl. terminal) and a `mermaid` string. Deliver the mermaid ONLY as a native Mermaid/diagram artifact — do NOT wrap it in HTML or paste it as an inline ```mermaid fence (both break the zoomable, mobile-friendly viewer). Options: focus=<nodeId|nodeId[]> highlights nodes; writeHtml writes a self-contained rich HTML graph to a local tmp file and opens it in the browser (returns htmlUrl/htmlPath — the file is already on the user\'s machine, just hand them the link). See the flow-nodes skill for details.\n\nSupported node types come from the server node registry; an unsupported nodeType returns the current list. For AI Agent tool nodes (knowledge, send_email, mcp, http) use create_tool / update_tool instead.\n\nLLM PROMPT EXCEPTION: the llmPrompt node type (a raw LLM call with a freeform system prompt) is a top-level flow node, not a tool-branch helper. Create one ONLY when the user explicitly asked for an LLM Prompt node — never offer it, never use it instead of the AI Agent node, and never ask the user whether they want one. Reading/updating an existing llmPromptV2 node (e.g. its config.prompt) is always fine.',
     annotations: {
       title: "Manage Flow Nodes",
       readOnlyHint: false,
