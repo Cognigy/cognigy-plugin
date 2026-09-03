@@ -203,6 +203,52 @@ describe("LLM Prompt node support", () => {
       );
     });
 
+    it("does not assign an embedding-only model list to the llmPromptV2 node", async () => {
+      api.post
+        .mockResolvedValueOnce({ _id: ID.flow, referenceId: "flow-uuid" })
+        .mockResolvedValueOnce({ _id: ID.node })
+        .mockResolvedValueOnce({ _id: ID.endpoint, URLToken: "abc123" });
+      api.get
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.entry, isEntryPoint: true }],
+        })
+        .mockResolvedValueOnce({
+          items: [
+            {
+              _id: "a".repeat(24),
+              referenceId: "embedding-default",
+              isDefault: true,
+              connectionId: "conn-1",
+              modelType: "text-embedding-ada-002",
+            },
+            {
+              _id: "b".repeat(24),
+              referenceId: "embedding-custom",
+              connectionId: "conn-2",
+              modelType: "custom-embedding-model",
+            },
+          ],
+        })
+        .mockResolvedValueOnce({ items: [] });
+      api.delete.mockResolvedValue({});
+
+      const result = await h.handleToolCall("create_ai_agent", baseArgs);
+
+      // Embedding models cannot generate text — the node must be left without
+      // an LLM rather than wired to one that can never answer.
+      const nodeCreateCall = api.post.mock.calls.find(
+        (c: any[]) => c[0] === `/v2.0/flows/${ID.flow}/chart/nodes`,
+      );
+      expect(nodeCreateCall).toBeDefined();
+      expect(nodeCreateCall![1].config).not.toHaveProperty(
+        "llmProviderReferenceId",
+      );
+      expect(result.llmStatus).toBe("unknown");
+      expect(result.llmConnected).toBeUndefined();
+      expect(result._hints.warning).toContain("Could not verify LLM resource");
+      expect(result._hints.action).toContain("manage_packages");
+    });
+
     it("warns when the only LLM has no connection", async () => {
       api.post
         .mockResolvedValueOnce({ _id: ID.flow, referenceId: "flow-uuid" })

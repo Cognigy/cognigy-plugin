@@ -934,6 +934,53 @@ describe("ToolHandlers v2", () => {
       expect(result._hints).toBeDefined();
     });
 
+    it("normalizes tool parentNodeId to a string id for every parent shape", async () => {
+      const toolB = "60d5ec49f1a2c8b1a4e0f0b1";
+      const toolC = "60d5ec49f1a2c8b1a4e0f0b2";
+      const toolD = "60d5ec49f1a2c8b1a4e0f0b3";
+      api.get.mockResolvedValueOnce({ flowId: ID.flow }).mockResolvedValueOnce({
+        items: [
+          { _id: ID.entry, isEntryPoint: true, type: "entry" },
+          { _id: ID.node, type: "aiAgentJob" },
+          {
+            _id: ID.tool,
+            type: "aiAgentJobTool",
+            label: "object_parent",
+            parent: { _id: ID.node },
+          },
+          {
+            _id: toolB,
+            type: "aiAgentJobTool",
+            label: "object_id_parent",
+            parent: { id: ID.node },
+          },
+          {
+            _id: toolC,
+            type: "knowledgeTool",
+            label: "snake_case_parent",
+            parent_id: ID.node,
+          },
+          {
+            _id: toolD,
+            type: "sendEmailTool",
+            label: "string_parent",
+            parent: ID.node,
+          },
+        ],
+      });
+
+      const result = await h.handleToolCall("list_resources", {
+        resourceType: "tool",
+        aiAgentId: ID.agent,
+      });
+
+      expect(result.items).toHaveLength(4);
+      for (const item of result.items) {
+        expect(typeof item.parentNodeId).toBe("string");
+        expect(item.parentNodeId).toBe(ID.node);
+      }
+    });
+
     it("resolves tools via agent flow (only whitelisted types)", async () => {
       api.get.mockResolvedValueOnce({ flowId: ID.flow }).mockResolvedValueOnce({
         items: [
@@ -1844,6 +1891,71 @@ describe("ToolHandlers v2", () => {
       expect(api.post).not.toHaveBeenCalled();
     });
 
+    it("reuses a duplicate toolId when the existing node's parent is an object", async () => {
+      api.get.mockResolvedValueOnce({ flowId: ID.flow }).mockResolvedValueOnce({
+        items: [
+          { _id: ID.entry, isEntryPoint: true },
+          { _id: ID.node, type: "aiAgentJob" },
+          {
+            _id: ID.tool,
+            type: "aiAgentJobTool",
+            // Some API projections return the parent as an object, not an id.
+            parent: { _id: ID.node },
+            label: "unlock_account",
+            config: { toolId: "unlock_account", description: "Existing tool" },
+          },
+        ],
+      });
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "tool",
+        name: "Unlock Account",
+        config: {
+          toolId: "unlock_account",
+          description: "Unlocks a locked user account",
+        },
+      });
+
+      expect(result.reusedExisting).toBe(true);
+      expect(result.toolId).toBe(ID.tool);
+      expect(result.toolNodeId).toBe(ID.tool);
+      expect(result.requestedToolId).toBe("unlock_account");
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it("does not treat a same-toolId tool under another parent as a duplicate", async () => {
+      const otherJob = "60d5ec49f1a2c8b1a4e0f0aa";
+      api.get.mockResolvedValueOnce({ flowId: ID.flow }).mockResolvedValueOnce({
+        items: [
+          { _id: ID.entry, isEntryPoint: true },
+          { _id: ID.node, type: "aiAgentJob" },
+          {
+            _id: ID.tool,
+            type: "aiAgentJobTool",
+            parent: { _id: otherJob },
+            label: "unlock_account",
+            config: { toolId: "unlock_account", description: "Other agent" },
+          },
+        ],
+      });
+      api.post.mockResolvedValue({ _id: "60d5ec49f1a2c8b1a4e0f0ab" });
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "tool",
+        name: "Unlock Account",
+        parentNodeId: ID.node,
+        config: {
+          toolId: "unlock_account",
+          description: "Unlocks a locked user account",
+        },
+      });
+
+      expect(result.reusedExisting).toBeUndefined();
+      expect(api.post).toHaveBeenCalled();
+    });
+
     it("reuses duplicate tool when existing node matches by label only", async () => {
       api.get.mockResolvedValueOnce({ flowId: ID.flow }).mockResolvedValueOnce({
         items: [
@@ -2599,6 +2711,58 @@ describe("ToolHandlers v2", () => {
 
       expect(result.llmStatus).toBe("unknown");
       expect(result._hints).toBeDefined();
+    });
+
+    it("returns llmStatus unknown when the project only has embedding models", async () => {
+      const mockAgent = {
+        _id: ID.agent,
+        referenceId: "ref-uuid",
+        name: "Test Agent",
+      };
+      const mockFlow = { _id: ID.flow, referenceId: "flow-uuid", name: "Flow" };
+      const mockEndpoint = {
+        _id: ID.endpoint,
+        URLToken: "xyz",
+        channel: "rest",
+      };
+
+      api.post
+        .mockResolvedValueOnce(mockAgent)
+        .mockResolvedValueOnce(mockFlow)
+        .mockResolvedValueOnce({ _id: ID.node })
+        .mockResolvedValueOnce(mockEndpoint);
+      api.get
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.entry, isEntryPoint: true }],
+        })
+        .mockResolvedValueOnce({
+          items: [
+            {
+              _id: ID.llm,
+              referenceId: "embedding-ref",
+              isDefault: true,
+              connectionId: "conn-1",
+              modelType: "text-embedding-ada-002",
+            },
+          ],
+        });
+      api.patch.mockResolvedValue({});
+
+      const result = await h.handleToolCall("create_ai_agent", {
+        projectId: ID.project,
+        name: "Test Agent",
+        description: "A test agent",
+      });
+
+      // No LLM is wired to the job node — an embedding model can't answer.
+      const llmPatch = api.patch.mock.calls.find(
+        (c: any[]) => c[1]?.config?.llmProviderReferenceId !== undefined,
+      );
+      expect(llmPatch).toBeUndefined();
+      expect(result.llmStatus).toBe("unknown");
+      expect(result.llmConnected).toBeUndefined();
+      expect(result._hints.warning).toContain("Could not verify LLM resource");
+      expect(result._hints.action).toContain("manage_packages");
     });
 
     it("returns explicit package-reuse guidance when a new project is auto-created without an LLM", async () => {

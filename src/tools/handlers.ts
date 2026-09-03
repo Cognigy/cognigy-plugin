@@ -517,22 +517,47 @@ const MCP_MANAGED_TOOL_TYPES = new Set([
 const TOOL_PARENT_NODE_TYPES = ["aiAgentJob", "llmPromptV2"] as const;
 
 /**
+ * A chart node's parent id as a plain string, whatever shape the API used
+ * for it: `parentId`, `parent_id`, a string-valued `parent`, or an
+ * object-valued `parent` carrying `_id` / `id`. Undefined for a node without
+ * a parent reference (e.g. top-level nodes, where `parentId` is null).
+ * Always compare parents through this — a raw `node.parent` may be an
+ * object, which never equals an id string.
+ */
+function nodeParentId(node: any): string | undefined {
+  if (!node) return undefined;
+  const raw =
+    node.parentId ??
+    node.parent_id ??
+    (node.parent !== null && typeof node.parent === "object"
+      ? (node.parent._id ?? node.parent.id)
+      : node.parent);
+  return raw === undefined || raw === null || raw === ""
+    ? undefined
+    : String(raw);
+}
+
+/**
  * Pick the LLM to auto-assign to a new agent node from a
  * GET /v2.0/largelanguagemodels response. An LLM without its connection
  * cannot answer — the node then fails silently (default errorHandling
- * "continue" with an empty message) — so prefer connected, non-embedding
- * models over the bare isDefault flag. `connected` tells the caller whether
- * the pick still had to fall back to a connectionless model.
+ * "continue" with an empty message) — so prefer connected models over the
+ * bare isDefault flag. Embedding models are never candidates: they cannot
+ * generate text, so a project that only has embedding models gets no pick
+ * (undefined) and the caller reports llmStatus "unknown" with the LLM setup
+ * guidance instead of wiring the node to a model that can never answer.
+ * `connected` tells the caller whether the pick still had to fall back to a
+ * connectionless model.
  */
 function pickDefaultLlm(
   llmList: any,
 ): { refId: string; connected: boolean } | undefined {
   const llmItems = llmList?.items ?? llmList;
   if (!Array.isArray(llmItems) || llmItems.length === 0) return undefined;
-  const nonEmbedding = llmItems.filter(
+  const pool = llmItems.filter(
     (l: any) => !String(l.modelType ?? "").includes("embedding"),
   );
-  const pool = nonEmbedding.length > 0 ? nonEmbedding : llmItems;
+  if (pool.length === 0) return undefined;
   const connected = pool.filter((l: any) => l.connectionId);
   const candidates = connected.length > 0 ? connected : pool;
   const chosen = candidates.find((l: any) => l.isDefault) ?? candidates[0];
@@ -2088,11 +2113,7 @@ export class ToolHandlers {
         );
         const nodeItems = nodeList.items ?? nodeList;
         placeholderTools = (Array.isArray(nodeItems) ? nodeItems : []).filter(
-          (n: any) =>
-            (n.parentId ??
-              n.parent_id ??
-              (n.parent && (n.parent._id || n.parent.id || n.parent))) ===
-              parentNodeId && isPlaceholder(n),
+          (n: any) => nodeParentId(n) === parentNodeId && isPlaceholder(n),
         );
       }
 
@@ -2878,8 +2899,9 @@ export class ToolHandlers {
             name: n.label || n.name,
             toolType: n.type,
             // Which aiAgentJob / llmPromptV2 node the tool hangs off — a flow
-            // can have more than one.
-            parentNodeId: n.parentId ?? n.parent,
+            // can have more than one. Always a string id, whichever shape
+            // the API returned the parent in.
+            parentNodeId: nodeParentId(n),
             description: n.config?.description,
             ...(n.config?.knowledgeStoreId
               ? { knowledgeStoreId: n.config.knowledgeStoreId }
@@ -3892,7 +3914,7 @@ export class ToolHandlers {
       const duplicateTool = allNodes.find(
         (node: any) =>
           MCP_MANAGED_TOOL_TYPES.has(node.type) &&
-          (node.parentId ?? node.parent) === jobNodeId &&
+          nodeParentId(node) === jobNodeId &&
           (node.config?.toolId === requestedToolId ||
             node.label === requestedToolId ||
             node.name === requestedToolId),
@@ -4671,11 +4693,7 @@ export class ToolHandlers {
         );
 
         const nodeId = createdNode._id || createdNode.id;
-        const actualParentId =
-          createdNode.parentId ??
-          createdNode.parent_id ??
-          (createdNode.parent &&
-            (createdNode.parent._id || createdNode.parent.id));
+        const actualParentId = nodeParentId(createdNode);
 
         // The backend auto-creates a placeholder "unlock_account" tool (plus a
         // non-deletable llmPromptDefault branch) under a new LLM Prompt node —
