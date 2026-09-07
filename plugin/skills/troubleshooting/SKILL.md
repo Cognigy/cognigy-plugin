@@ -42,6 +42,22 @@ description: "Use when a Cognigy agent returns empty responses, a tool call or c
   list_resources { resourceType: "project", sort: "lastChanged:desc", limit: 5 }
 - `sort` takes `field:direction` and works on any field the resource returns.
 
+## Every tool call fails with the same error, but the tool list works
+
+Suspect the network path, not the platform — listing tools makes no HTTP request,
+so a working list plus a uniformly failing call means requests are not reaching
+Cognigy.
+
+- On a corporate network, set `HTTPS_PROXY` (and `NO_PROXY` for hosts to reach
+  directly) in the MCP server `env` block. GUI clients start the engine with a
+  minimal environment and usually do not inherit shell proxy variables.
+- If the proxy inspects TLS, also set `NODE_EXTRA_CA_CERTS` to the corporate root
+  CA file, then restart the client — Node reads it only at startup. Do not set
+  `NODE_TLS_REJECT_UNAUTHORIZED=0`.
+- An error mentioning a proxy, or quoting an HTML body, came from the proxy
+  rather than from Cognigy; the quoted text is the proxy's own message.
+- `LOG_LEVEL=debug` logs the proxy actually in use at startup.
+
 ## setup_llm fails
 
 - See the llm-providers skill for valid provider and model strings

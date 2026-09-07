@@ -14,6 +14,7 @@ import { basename, dirname, isAbsolute, join } from "path";
 import { randomUUID } from "crypto";
 import { pathToFileURL } from "url";
 import axios from "axios";
+import { getProxyAxiosOptions } from "../utils/proxy.js";
 import { CognigyApiClient } from "../api/client.js";
 import { logger } from "../utils/logger.js";
 import {
@@ -2323,6 +2324,11 @@ export class ToolHandlers {
           Accept: "application/json",
         },
         timeout: 30000,
+        // Endpoint traffic does not go through CognigyApiClient, so it needs
+        // the proxy wiring of its own. Resolved per call rather than cached:
+        // the endpoint host differs from the API host and may be excluded by
+        // NO_PROXY independently.
+        ...getProxyAxiosOptions(endpointUrl!),
       });
 
       let agentResponse = response.data.text || "";

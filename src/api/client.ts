@@ -7,6 +7,8 @@ import axios, {
 } from "axios";
 import FormData from "form-data";
 import { logger } from "../utils/logger.js";
+import { getProxyAxiosOptions, redactProxyUrl } from "../utils/proxy.js";
+import { getProxyForUrl } from "proxy-from-env";
 import {
   ACTOR_CONTEXT_HEADER,
   getActorContextHeader,
@@ -44,6 +46,88 @@ function isRetryable(error: AxiosError): boolean {
   return RETRYABLE_NETWORK_CODES.has(error.code ?? "");
 }
 
+const BODY_SNIPPET_LIMIT = 300;
+
+/**
+ * Build the message for a response that came back with a body Cognigy would
+ * never send — no `detail`, no `title`. This used to collapse to a bare
+ * "API request failed", which threw away the only evidence of what actually
+ * answered: in the corporate-proxy case the responder is the proxy, returning
+ * an HTML error page, and the generic message made that indistinguishable from
+ * a platform outage. Include a trimmed snippet, and name the proxy when one is
+ * in play so the next report arrives already diagnosed.
+ *
+ * Exported for tests; not part of the client's public surface.
+ */
+export function describeUnexpectedBody(
+  data: unknown,
+  error: AxiosError,
+): string {
+  let snippet: string;
+  if (typeof data === "string") {
+    snippet = data;
+  } else if (Buffer.isBuffer(data)) {
+    snippet = data.toString("utf8");
+  } else {
+    try {
+      snippet = JSON.stringify(data);
+    } catch {
+      snippet = String(data);
+    }
+  }
+  // Collapse whitespace: HTML error pages are mostly newlines and indentation,
+  // which would otherwise eat the snippet budget before the useful text.
+  snippet = snippet.replace(/\s+/g, " ").trim();
+  if (snippet.length > BODY_SNIPPET_LIMIT) {
+    snippet = `${snippet.slice(0, BODY_SNIPPET_LIMIT)}…`;
+  }
+
+  const parts = ["API request failed"];
+  const status = error.response?.status;
+  if (status) parts.push(`(HTTP ${status})`);
+
+  let message = parts.join(" ");
+  if (snippet) {
+    message += `: the response did not come from the Cognigy API — ${snippet}`;
+  }
+
+  const proxyUrl = safeGetProxyForUrl(resolveRequestUrl(error));
+  if (proxyUrl) {
+    message +=
+      ` This request went through the proxy ${redactProxyUrl(proxyUrl)};` +
+      ` the proxy, not Cognigy, may have produced this response.` +
+      ` If the proxy inspects TLS, set NODE_EXTRA_CA_CERTS to your corporate` +
+      ` root CA file.`;
+  }
+
+  return message;
+}
+
+/**
+ * Best-effort absolute URL for the failed request. Request paths are relative
+ * to the client's `baseURL`, and `getProxyForUrl` needs an absolute URL to
+ * apply `NO_PROXY` — but neither field is guaranteed to be present or valid,
+ * and an error path must never throw an error of its own.
+ */
+function resolveRequestUrl(error: AxiosError): string {
+  const { url, baseURL } = error.config ?? {};
+  try {
+    if (url) return new URL(url, baseURL).toString();
+  } catch {
+    // Fall through to the base URL below.
+  }
+  return baseURL ?? "";
+}
+
+function safeGetProxyForUrl(targetUrl: string): string {
+  if (!targetUrl) return "";
+  try {
+    return getProxyForUrl(targetUrl);
+  } catch {
+    return "";
+  }
+}
+
 export class CognigyApiClient {
   private client: AxiosInstance;
   private apiKey: string;
@@ -59,6 +143,9 @@ export class CognigyApiClient {
         Accept: "application/json",
       },
       timeout: 30000,
+      // Every request to the platform shares one base URL, so the proxy (and
+      // any NO_PROXY exclusion) is resolved once here rather than per call.
+      ...getProxyAxiosOptions(config.baseUrl),
     });
 
     this.client.interceptors.request.use(
@@ -130,7 +217,8 @@ export class CognigyApiClient {
   private formatError(error: AxiosError): Error {
     const data = error.response?.data as any;
     if (data) {
-      const message = data.detail || data.title || "API request failed";
+      const message =
+        data.detail || data.title || describeUnexpectedBody(data, error);
       const enhancedError = new Error(message);
       (enhancedError as any).status = data.status || error.response?.status;
       (enhancedError as any).code = data.code;

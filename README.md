@@ -117,6 +117,9 @@ A value that arrives as an unexpanded `${...}` placeholder counts as missing. Ho
 | `RATE_LIMIT_MAX_REQUESTS`           | No       | `100`   | Max requests per window                                        |
 | `RATE_LIMIT_WINDOW_MS`              | No       | `60000` | Rate limit window in ms                                        |
 | `COGNIGY_DISABLE_AUDIT_ATTRIBUTION` | No       | unset   | Set to `1` to stop naming the plugin in Cognigy's audit events |
+| `HTTPS_PROXY` / `HTTP_PROXY`        | No       | unset   | Corporate proxy to tunnel Cognigy requests through             |
+| `NO_PROXY`                          | No       | unset   | Comma-separated hosts to reach directly, bypassing the proxy   |
+| `NODE_EXTRA_CA_CERTS`               | No       | unset   | Path to your corporate root CA, for TLS-inspecting proxies     |
 
 ### Audit attribution
 
@@ -125,6 +128,24 @@ Everything this plugin changes is recorded in **Admin Center → Audit Events** 
 Requires Cognigy.AI 2026.17.0 or newer; older versions ignore the attribution and record the action normally. The "Performed by" column in the UI is gated behind the platform's `FEATURE_ENABLE_PLATFORM_AGENT_MFE` flag, but the attribution is always recorded and always readable through `list_resources { resourceType: "audit_event", actor: ["mcp-plugin"] }`.
 
 Set `COGNIGY_DISABLE_AUDIT_ATTRIBUTION=1` to opt out; plugin actions are then recorded like any other API action.
+
+### Corporate proxies
+
+If your network requires a proxy, set it in the MCP server `env` block (or export it before starting your client) and the plugin tunnels every Cognigy request through it:
+
+```json
+"env": {
+  "HTTPS_PROXY": "http://proxy.corp.example:8080",
+  "NO_PROXY": "localhost,127.0.0.1",
+  "NODE_EXTRA_CA_CERTS": "/etc/ssl/certs/corporate-root-ca.pem"
+}
+```
+
+Lower-case spellings (`https_proxy`) work too, as do credentials in the URL (`http://user:password@proxy.corp.example:8080`). HTTP and HTTPS proxies are supported; SOCKS proxies are not.
+
+**If your proxy inspects TLS** (Zscaler, Netskope, BlueCoat and similar), it presents its own certificate signed by a corporate root CA that Node does not trust by default. Point `NODE_EXTRA_CA_CERTS` at that CA file — Node reads it only at startup, so restart your client afterwards. Never set `NODE_TLS_REJECT_UNAUTHORIZED=0` instead; that disables certificate verification for every connection the engine makes.
+
+To confirm the engine picked the settings up, set `LOG_LEVEL=debug` and look for `Cognigy API requests route through a proxy` in your client's MCP log. GUI clients (Claude Desktop, Antigravity) start the engine with a minimal environment and often do not inherit your shell's proxy variables, so set them in the config file rather than your shell profile.
 
 ## Usage Examples
 
