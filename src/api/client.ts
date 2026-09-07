@@ -47,10 +47,12 @@ function isRetryable(error: AxiosError): boolean {
 }
 
 const BODY_SNIPPET_LIMIT = 300;
+/** How much of the raw body is read before whitespace collapsing. */
+const RAW_BODY_READ_LIMIT = BODY_SNIPPET_LIMIT * 20;
 
 /**
- * Build the message for a response that came back with a body Cognigy would
- * never send — no `detail`, no `title`. This used to collapse to a bare
+ * Build the message for a response whose body carries neither `detail` nor
+ * `title`, i.e. is not a Cognigy error. This used to collapse to a bare
  * "API request failed", which threw away the only evidence of what actually
  * answered: in the corporate-proxy case the responder is the proxy, returning
  * an HTML error page, and the generic message made that indistinguishable from
@@ -63,16 +65,23 @@ export function describeUnexpectedBody(
   data: unknown,
   error: AxiosError,
 ): string {
+  // Cap before decoding or collapsing whitespace: an error path must not
+  // allocate a multi-megabyte string just to throw all but 300 characters of it
+  // away. The raw cap is deliberately generous — whitespace collapsing shrinks
+  // an HTML page a lot, so slicing at the final limit would leave the snippet
+  // short of real text.
   let snippet: string;
   if (typeof data === "string") {
-    snippet = data;
+    snippet = data.slice(0, RAW_BODY_READ_LIMIT);
   } else if (Buffer.isBuffer(data)) {
-    snippet = data.toString("utf8");
+    // Slicing bytes can cut a multi-byte character in half; the trailing
+    // replacement char is acceptable in a truncated diagnostic snippet.
+    snippet = data.subarray(0, RAW_BODY_READ_LIMIT).toString("utf8");
   } else {
     try {
-      snippet = JSON.stringify(data);
+      snippet = JSON.stringify(data)?.slice(0, RAW_BODY_READ_LIMIT) ?? "";
     } catch {
-      snippet = String(data);
+      snippet = String(data).slice(0, RAW_BODY_READ_LIMIT);
     }
   }
   // Collapse whitespace: HTML error pages are mostly newlines and indentation,
@@ -88,7 +97,7 @@ export function describeUnexpectedBody(
 
   let message = parts.join(" ");
   if (snippet) {
-    message += `: the response did not come from the Cognigy API — ${snippet}`;
+    message += `: the response did not match the expected Cognigy error format — ${snippet}`;
   }
 
   const proxyUrl = safeGetProxyForUrl(resolveRequestUrl(error));

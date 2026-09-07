@@ -54,6 +54,20 @@ function getAgents(proxyUrl: string): { http: Agent; https: Agent } {
 }
 
 /**
+ * Origin only — never the path. `talk_to_agent` resolves through here with an
+ * endpoint URL whose path is the `URLToken`, which anyone holding it can use to
+ * talk to the agent. Logs get pasted into bug reports, so the host is all a
+ * proxy diagnosis needs and all it may have.
+ */
+function targetOrigin(targetUrl: string): string {
+  try {
+    return new URL(targetUrl).origin;
+  } catch {
+    return "(unparseable target url)";
+  }
+}
+
+/**
  * Strip credentials before a proxy URL reaches a log line — proxy passwords are
  * as sensitive as the API key and logs get pasted into bug reports.
  */
@@ -127,7 +141,7 @@ export function getProxyAxiosOptions(targetUrl: string): ProxyAxiosOptions {
   try {
     const agents = getAgents(proxyUrl);
     logger.debug("Routing request through proxy", {
-      target: targetUrl,
+      target: targetOrigin(targetUrl),
       proxy: redactProxyUrl(proxyUrl),
     });
     return { proxy: false, httpAgent: agents.http, httpsAgent: agents.https };

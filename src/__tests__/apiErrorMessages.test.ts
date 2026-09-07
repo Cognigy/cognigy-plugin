@@ -69,6 +69,14 @@ describe("describeUnexpectedBody", () => {
     expect(message).toContain("…");
   });
 
+  it("caps a multi-megabyte body without building the whole string", () => {
+    const message = describeUnexpectedBody(
+      Buffer.alloc(5 * 1024 * 1024, "y"),
+      errorWith(502),
+    );
+    expect(message.length).toBeLessThan(600);
+  });
+
   it("names the proxy when one is configured for the request", () => {
     process.env.HTTPS_PROXY = "http://alice:s3cret@proxy.corp.example:8080";
     const message = describeUnexpectedBody(
