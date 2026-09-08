@@ -39,6 +39,62 @@ describe("validateCodeNode", () => {
         "banned names inside comments",
         "// TODO: replace fetch() with an HTTP node\n/* api.setState('x') */\napi.say('ok');",
       ],
+      [
+        "banned names inside regex literals",
+        "input.isXhr = /XMLHttpRequest/.test(input.text); const re = /fetch\\(|require\\(/gi;",
+      ],
+      [
+        "regex literal after return",
+        "return /api\\.setState/.test(input.text);",
+      ],
+      [
+        "regex literal with a quote inside, followed by real code",
+        "const q = /[\"']/g; api.say(input.text.replace(q, ''));",
+      ],
+      [
+        "a locally declared function named fetch",
+        "function fetch() { return 42; } input.result = fetch();",
+      ],
+      [
+        "an object method named fetch",
+        "const repo = { fetch(id) { return id; } }; input.r = repo.fetch(1);",
+      ],
+      [
+        "a class method named fetch",
+        "class Repo { async fetch(id) { return id; } } input.r = new Repo().fetch(1);",
+      ],
+      [
+        "a const arrow function named fetch",
+        "const fetch = (u) => u; input.r = fetch('x');",
+      ],
+      [
+        "fetch bound by destructuring",
+        "const { fetch, other } = input.helpers; input.r = fetch('x');",
+      ],
+      [
+        "fetch as a parameter",
+        "const run = (fetch) => fetch(1); function go(a, fetch) { return fetch(a); }",
+      ],
+      [
+        "a locally declared function named require",
+        "function require(x) { return x; } input.r = require('a');",
+      ],
+      [
+        "an object key named XMLHttpRequest",
+        "input.caps = { XMLHttpRequest: false };",
+      ],
+      [
+        "feature detection via typeof",
+        "input.hasXhr = typeof XMLHttpRequest !== 'undefined';",
+      ],
+      [
+        "banned names inside a nested template literal",
+        "api.say(`outer ${`fetch() ${input.text}`} done`);",
+      ],
+      [
+        "banned names inside a string within an interpolation",
+        "api.say(`${\"fetch()\"} ${'require()'}`);",
+      ],
     ])("%s", (_name, code) => {
       expect(validateCodeNode(code)).toEqual({ errors: [], warnings: [] });
     });
@@ -97,6 +153,42 @@ describe("validateCodeNode", () => {
       expect(errors[0]).toContain("Intent Conditions");
     });
 
+    it("calls inside template literal interpolations", () => {
+      expect(
+        validateCodeNode("api.say(`State: ${api.getState()}`);").errors,
+      ).toHaveLength(1);
+      expect(
+        validateCodeNode("api.say(`${await fetch('https://x')}`);").errors,
+      ).toHaveLength(1);
+      expect(
+        validateCodeNode("api.say(`a ${`b ${require('x')}`} c`);").errors,
+      ).toHaveLength(1);
+    });
+
+    it("a division is not mistaken for a regex literal", () => {
+      expect(
+        validateCodeNode("const r = a / b / c; await fetch('x');").errors,
+      ).toHaveLength(1);
+      expect(
+        validateCodeNode("const r = (a) / 2 / 3; await fetch('x');").errors,
+      ).toHaveLength(1);
+    });
+
+    it("a condition head is not mistaken for a parameter list", () => {
+      expect(
+        validateCodeNode("if (fetch('x')) { api.say('y'); }").errors,
+      ).toHaveLength(1);
+      expect(
+        validateCodeNode("while (require('x')) { break; }").errors,
+      ).toHaveLength(1);
+    });
+
+    it("global-qualified fetch even when a local fetch exists", () => {
+      expect(
+        validateCodeNode("function fetch() {} globalThis.fetch('x');").errors,
+      ).toHaveLength(1);
+    });
+
     it("collects independent errors together", () => {
       const { errors } = validateCodeNode(
         "const a = require('axios'); await fetch('x'); api.resetState();",
@@ -111,7 +203,21 @@ describe("validateCodeNode", () => {
       const out = stripCommentsAndStrings(src);
       expect(out).toHaveLength(src.length);
       expect(out.split("\n")).toHaveLength(3);
-      expect(out).toMatch(/^a\("\s+"\)\s+\n\s+\n\s+b\(`\s+`\)$/);
+      expect(out).toMatch(/^a\("\s+"\)\s+\n\s+\n\s+b\(`\s+\$\{1\}`\)$/);
+    });
+
+    it("keeps template interpolations and blanks nested template text", () => {
+      const src = "t(`x ${ a(`y ${b}`) } z`)";
+      const out = stripCommentsAndStrings(src);
+      expect(out).toHaveLength(src.length);
+      expect(out).toBe("t(`  ${ a(`  ${b}`) }  `)");
+    });
+
+    it("blanks regex literal bodies but keeps delimiters and flags", () => {
+      const src = "x = /a[/]b\\/c/gi.test(s) / 2";
+      const out = stripCommentsAndStrings(src);
+      expect(out).toHaveLength(src.length);
+      expect(out).toBe("x = /        /gi.test(s) / 2");
     });
 
     it("leaves an unterminated string as-is without throwing", () => {
