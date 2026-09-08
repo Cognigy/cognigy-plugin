@@ -91,7 +91,7 @@ describe("talk_to_agent — endpoint test mode", () => {
 
   it("keeps the fallback warning alongside the empty-response hints", async () => {
     post
-      .mockRejectedValueOnce(httpError(429))
+      .mockRejectedValueOnce(httpError(404))
       .mockResolvedValueOnce({ data: { text: "" } });
 
     const result = await h.handleTalkToAgent({
@@ -99,8 +99,91 @@ describe("talk_to_agent — endpoint test mode", () => {
       message: "Hi",
     });
 
-    expect(result._hints.warning).toContain("429");
+    expect(result._hints.warning).toContain("404");
     expect(result._hints.likely_cause).toContain("no text");
+  });
+
+  // Only a 404 (no /test/ route, nothing processed) is replayed. Anything else
+  // is ambiguous — the first request may already have executed tools or moved
+  // the conversation — so it must be returned as an error without re-sending.
+  describe("does not replay ambiguous test-mode failures on the billable URL", () => {
+    const expectSingleTestModeAttempt = (result: any, status: number) => {
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(post.mock.calls[0][0]).toBe(TEST);
+      expect(result.error).toBe(`Request failed with status ${status}`);
+      expect(result.endpointUrl).toBe(TEST);
+      expect(result.testMode).toBe(true);
+      expect(result.testModeFallback).toBeUndefined();
+    };
+
+    it("504 gateway timeout: warns the message may have been processed", async () => {
+      post.mockRejectedValueOnce(httpError(504, "Gateway Time-out"));
+
+      const result = await h.handleTalkToAgent({
+        endpointUrl: PROD,
+        message: "Hi",
+      });
+
+      expectSingleTestModeAttempt(result, 504);
+      expect(result.detail).toBe("Gateway Time-out");
+      expect(result._hints.warning).toMatch(/may already have processed/i);
+      expect(result._hints.warning).toMatch(/do not re-send/i);
+      expect(result._hints.likely_cause).not.toMatch(
+        /unsupported.*test mode$/i,
+      );
+    });
+
+    it("500: same treatment as any other 5xx", async () => {
+      post.mockRejectedValueOnce(httpError(500, "boom"));
+
+      const result = await h.handleTalkToAgent({
+        endpointUrl: PROD,
+        message: "Hi",
+      });
+
+      expectSingleTestModeAttempt(result, 500);
+      expect(result._hints.warning).toMatch(/may already have processed/i);
+    });
+
+    it("400: points at the endpoint/payload, not at test mode", async () => {
+      post.mockRejectedValueOnce(httpError(400, "Bad Request"));
+
+      const result = await h.handleTalkToAgent({
+        endpointUrl: PROD,
+        message: "Hi",
+      });
+
+      expectSingleTestModeAttempt(result, 400);
+      expect(result._hints.likely_cause).toMatch(/unknown URL token/i);
+      expect(result._hints.likely_cause).toMatch(/does NOT by itself mean/);
+      expect(result._hints.action).toContain("list_resources");
+    });
+
+    it("429: asks to pause, never to switch to billable on its own", async () => {
+      post.mockRejectedValueOnce(httpError(429, "Too Many Requests"));
+
+      const result = await h.handleTalkToAgent({
+        endpointUrl: PROD,
+        message: "Hi",
+      });
+
+      expectSingleTestModeAttempt(result, 429);
+      expect(result._hints.likely_cause).toMatch(/throttling/i);
+      expect(result._hints.likely_cause).toMatch(/does not document/i);
+      expect(result._hints.action).toMatch(/pause/i);
+    });
+
+    it("403: does not equate it with an exhausted test budget", async () => {
+      post.mockRejectedValueOnce(httpError(403, "Forbidden"));
+
+      const result = await h.handleTalkToAgent({
+        endpointUrl: PROD,
+        message: "Hi",
+      });
+
+      expectSingleTestModeAttempt(result, 403);
+      expect(result._hints.likely_cause).toMatch(/do not assume.*budget/i);
+    });
   });
 
   it("does not fall back on network-level failures", async () => {
@@ -117,6 +200,8 @@ describe("talk_to_agent — endpoint test mode", () => {
     expect(result.error).toBe("Request failed with status unknown");
     expect(result.detail).toContain("timeout");
     expect(result.endpointUrl).toBe(TEST);
+    expect(result.testMode).toBe(true);
+    expect(result._hints.warning).toMatch(/may still have been processed/i);
   });
 
   it("reports the fallback when the regular endpoint fails too", async () => {
