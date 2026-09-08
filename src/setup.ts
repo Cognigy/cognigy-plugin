@@ -12,8 +12,6 @@
  *     into claude_desktop_config.json.
  *   - ChatGPT + Codex (CLI + IDE): `codex plugin add` (the plugin's own server)
  *     + plugin marketplace for skills; creds-file only.
- *   - Google Gemini CLI: `gemini extensions install` (creds-file only — Gemini
- *     never passes the shell env to extension MCP servers).
  *   - Antigravity (IDE + `agy` CLI): stages a plugin and registers it, writing
  *     MCP servers, skills and agents into the shared ~/.gemini/config tree.
  *
@@ -58,12 +56,6 @@ import {
   uninstallCodex,
   updateCodex,
 } from "./install/codex.js";
-import {
-  installGemini,
-  installedGeminiExtensionVersion,
-  uninstallGemini,
-  updateGemini,
-} from "./install/gemini.js";
 import { existsSync, realpathSync } from "fs";
 import { homedir } from "os";
 import { dirname, join } from "path";
@@ -97,7 +89,6 @@ type Client =
   | "claude-code"
   | "claude-desktop"
   | "codex"
-  | "gemini"
   | "antigravity"
   | "other-hosts";
 // "other-hosts" is last on purpose: it is the catch-all for clients we do not
@@ -106,7 +97,6 @@ const ALL_CLIENTS: Client[] = [
   "claude-code",
   "claude-desktop",
   "codex",
-  "gemini",
   "antigravity",
   "other-hosts",
 ];
@@ -119,9 +109,6 @@ const CLIENT_LABELS: Record<Client, string> = {
   // OpenAI merged Codex into the ChatGPT desktop app (July 2026); one
   // ~/.codex/config.toml serves that app, the CLI, and the IDE extension.
   codex: "ChatGPT + Codex (CLI + IDE)",
-  // Consumer Gemini CLI stopped serving requests on 18 June 2026; Code Assist
-  // Standard/Enterprise/GitHub subscriptions keep it.
-  gemini: "Google Gemini CLI (Code Assist subscribers)",
   // The IDE, the `agy` CLI and the SDK all read ~/.gemini/config, so one install
   // serves every Antigravity surface.
   antigravity: "Antigravity (IDE + agy CLI)",
@@ -130,6 +117,9 @@ const CLIENT_LABELS: Record<Client, string> = {
 
 interface Flags {
   clients: Client[];
+  /** --client values that are not (or no longer) valid targets — kept, not
+   * silently dropped, so callers can refuse to act on them. */
+  invalidClients: string[];
   apiBaseUrl?: string;
   apiKey?: string;
 }
@@ -139,12 +129,17 @@ function isClient(v: string): v is Client {
 }
 
 export function parseFlags(argv: string[]): Flags {
-  const flags: Flags = { clients: [] };
+  const flags: Flags = { clients: [], invalidClients: [] };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const take = () => argv[++i];
     const addClient = (v: string | undefined) => {
-      if (v && isClient(v) && !flags.clients.includes(v)) flags.clients.push(v);
+      if (!v) return;
+      if (isClient(v)) {
+        if (!flags.clients.includes(v)) flags.clients.push(v);
+      } else if (!flags.invalidClients.includes(v)) {
+        flags.invalidClients.push(v);
+      }
     };
     if (arg === "--api-base-url") flags.apiBaseUrl = take();
     else if (arg.startsWith("--api-base-url="))
@@ -159,6 +154,24 @@ export function parseFlags(argv: string[]): Flags {
   return flags;
 }
 
+/**
+ * Exit loudly on unknown --client values. Ignoring them is unsafe on
+ * uninstall: `uninstall --client gemini --yes` (a retired target) would leave
+ * the selection empty, fall through to the no-filter default, and remove the
+ * plugin from every client the user meant to keep.
+ */
+function rejectInvalidClients(invalid: string[]): void {
+  if (invalid.length === 0) return;
+  process.stderr.write(
+    `Unknown --client value(s): ${invalid.join(", ")}. Valid values: ${ALL_CLIENTS.join(", ")}.\n` +
+      (invalid.includes("gemini")
+        ? "  Gemini CLI support was removed (see docs/install/gemini-cli.md).\n" +
+          "  Remove an installed extension with: gemini extensions uninstall cognigy\n"
+        : ""),
+  );
+  process.exit(1);
+}
+
 /** Which clients look installed — used to pre-select the interactive menu. */
 export function detectClients(): Record<Client, boolean> {
   return {
@@ -168,8 +181,6 @@ export function detectClients(): Record<Client, boolean> {
     // app share ~/.codex without necessarily exposing the CLI.
     codex:
       detectOnPath("codex") !== null || existsSync(join(homedir(), ".codex")),
-    gemini:
-      detectOnPath("gemini") !== null || existsSync(join(homedir(), ".gemini")),
     antigravity: detectAntigravity(),
     // Never auto-detected, so it is never pre-checked: writing a plaintext key
     // to disk must stay an explicit choice. Claude-only users keep the keychain
@@ -515,29 +526,6 @@ function runInstall(client: Client, creds: UserConfigFile): void {
     }
     return;
   }
-  if (client === "gemini") {
-    const res = installGemini(creds);
-    if (res.method === "cli") {
-      process.stdout.write(
-        green(bold("\n✅ Gemini CLI — all set.")) +
-          " Extension installed to ~/.gemini/extensions/cognigy " +
-          dim("(auto-updates on new releases)") +
-          ".\n  Restart gemini — you get " +
-          green("tools, skills, and agents") +
-          ".\n" +
-          dim(`  Credentials are read from ${res.configFile}.\n`),
-      );
-    } else {
-      process.stdout.write(
-        green("\n✓ Gemini CLI") +
-          `: 'gemini' CLI not found — wrote creds to ${res.configFile}.\n` +
-          "  Once Gemini CLI is installed, run:\n" +
-          (res.commands ?? []).map((c) => cyan(`    ${c}`)).join("\n") +
-          "\n",
-      );
-    }
-    return;
-  }
   // claude-desktop
   const res = installClaudeDesktop(creds);
   process.stdout.write(
@@ -652,20 +640,9 @@ function runStatus(): void {
       ),
     );
   }
-  const geminiVersion = installedGeminiExtensionVersion();
   process.stdout.write(
     `  ChatGPT + Codex:      ${codexHasCognigyPlugin() ? green("plugin installed") : dim("not installed")}\n`,
   );
-  process.stdout.write(
-    `  Gemini CLI:           ${geminiVersion ? green(`extension ${geminiVersion}`) : dim("not installed")}\n`,
-  );
-  if (geminiVersion && latest && geminiVersion !== latest) {
-    process.stdout.write(
-      yellow(
-        `    Gemini extension ${geminiVersion} < ${latest} — run \`gemini extensions update cognigy\` (or cognigy-setup update).\n`,
-      ),
-    );
-  }
   process.stdout.write("\n");
 }
 
@@ -744,7 +721,6 @@ function runUpdate(): void {
   }
   // Antigravity's engine auto-updates via the launcher, but the plugin's skills
   // and agents are plain files — only a re-stage picks up a newer engine's copy.
-  // Must run before the Gemini block below, which returns early.
   if (antigravityHasPlugin()) {
     const ag = updateAntigravity();
     process.stdout.write(
@@ -759,26 +735,7 @@ function runUpdate(): void {
       dim("• Antigravity: plugin not installed — nothing to update.\n"),
     );
   }
-  // Only touch Gemini when our extension is actually installed — otherwise
-  // `gemini extensions update cognigy` exits non-zero and fails the whole run.
-  if (installedGeminiExtensionVersion() === null) {
-    process.stdout.write(
-      dim("• Gemini CLI: extension not installed — nothing to update.\n\n"),
-    );
-    return;
-  }
-  const gem = updateGemini();
-  if (gem.method === "cli") {
-    process.stdout.write(green("✓ Gemini CLI") + ": extension updated.\n\n");
-  } else {
-    process.stdout.write(
-      dim(
-        "• Gemini CLI not found — to update, run: " +
-          (gem.commands ?? []).join(" ") +
-          "\n\n",
-      ),
-    );
-  }
+  process.stdout.write("\n");
 }
 
 /**
@@ -790,7 +747,9 @@ function runUpdate(): void {
 async function runUninstall(argv: string[]): Promise<void> {
   const purge = argv.includes("--purge");
   const assumeYes = argv.includes("--yes") || argv.includes("-y");
-  const selected = parseFlags(argv).clients;
+  const flags = parseFlags(argv);
+  rejectInvalidClients(flags.invalidClients);
+  const selected = flags.clients;
   const targets = selected.length > 0 ? selected : [...ALL_CLIENTS];
   const wants = (client: Client) => targets.includes(client);
 
@@ -826,7 +785,6 @@ async function runUninstall(argv: string[]): Promise<void> {
   if (wants("claude-code")) runUninstallClaudeCode();
   if (wants("claude-desktop")) runUninstallClaudeDesktop();
   if (wants("codex")) runUninstallCodex();
-  if (wants("gemini")) runUninstallGemini();
   if (wants("antigravity")) runUninstallAntigravity();
   if (wants("other-hosts")) runUninstallOtherHosts(purge);
 
@@ -894,23 +852,6 @@ function runUninstallCodex(): void {
       dim("• ChatGPT + Codex") +
         ": 'codex' CLI not found — remove the plugin in the app\n" +
         dim("  (Plugins in the sidebar → ⋯ on Cognigy → Uninstall).\n"),
-    );
-  }
-}
-
-function runUninstallGemini(): void {
-  const gem = uninstallGemini();
-  if (gem.method === "cli") {
-    process.stdout.write(
-      (gem.removedExtension ? green("✓ Gemini CLI") : dim("• Gemini CLI")) +
-        `: ${gem.removedExtension ? "extension removed" : "no extension installed"}\n`,
-    );
-  } else {
-    process.stdout.write(
-      dim("• Gemini CLI") +
-        ": 'gemini' CLI not found. If installed, remove with:\n" +
-        (gem.commands ?? []).map((c) => cyan(`    ${c}`)).join("\n") +
-        "\n",
     );
   }
 }
@@ -986,6 +927,7 @@ async function main(): Promise<void> {
 
   const argv = rest;
   const flags = parseFlags(argv);
+  rejectInvalidClients(flags.invalidClients);
   const interactive = process.stdin.isTTY && flags.apiKey === undefined;
 
   let apiBaseUrl = flags.apiBaseUrl;

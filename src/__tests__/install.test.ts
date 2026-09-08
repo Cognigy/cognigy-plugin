@@ -382,15 +382,20 @@ describe("parseFlags", () => {
     expect(f.apiKey).toBe("k");
   });
 
-  it("accepts the codex and gemini clients", () => {
+  it("accepts the codex client and dedupes repeats", () => {
     expect(
-      parseFlags(["--client", "codex", "--client=gemini", "--client", "codex"])
+      parseFlags(["--client", "codex", "--client=codex", "--client", "codex"])
         .clients,
-    ).toEqual(["codex", "gemini"]);
+    ).toEqual(["codex"]);
   });
 
-  it("ignores unknown --client values", () => {
-    expect(parseFlags(["--client", "cursor"]).clients).toEqual([]);
+  it("records unknown --client values instead of silently dropping them", () => {
+    // A dropped value is dangerous on uninstall: an empty selection falls
+    // through to "all clients". `gemini` is the live case — retired targets
+    // must fail loudly, not uninstall everything else.
+    const f = parseFlags(["--client", "cursor", "--client=gemini"]);
+    expect(f.clients).toEqual([]);
+    expect(f.invalidClients).toEqual(["cursor", "gemini"]);
   });
 
   it("accepts the other-hosts target", () => {
@@ -433,10 +438,18 @@ describe("parseClientSelection", () => {
   });
 
   it("handles the full four-client menu", () => {
-    const full = ["claude-code", "claude-desktop", "codex", "gemini"] as const;
-    expect(parseClientSelection("3,4", [...full])).toEqual(["codex", "gemini"]);
+    const full = [
+      "claude-code",
+      "claude-desktop",
+      "codex",
+      "antigravity",
+    ] as const;
+    expect(parseClientSelection("3,4", [...full])).toEqual([
+      "codex",
+      "antigravity",
+    ]);
     expect(parseClientSelection("4 1", [...full])).toEqual([
-      "gemini",
+      "antigravity",
       "claude-code",
     ]);
   });
