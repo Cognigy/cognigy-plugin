@@ -25,6 +25,7 @@ import {
 import { buildWebchatSettings, deepMerge } from "./webchatSettings.js";
 import { normalizeToolParameters } from "./toolParameters.js";
 import { getNodeEntry, supportedNodeTypes } from "./nodeRegistry.js";
+import { codeNodeWarnings } from "./codeNodeHints.js";
 import {
   evaluateChecks,
   summarize,
@@ -3707,6 +3708,11 @@ export class ToolHandlers {
           resolveNodeId,
         },
       };
+      // Hints about runtime APIs the pre/post-process code uses but the Code
+      // Node runtime does not have (the code was written regardless).
+      for (const code of [cfg.preProcessCode, cfg.postProcessCode]) {
+        if (code) parameterWarnings.push(...codeNodeWarnings(code));
+      }
       return parameterWarnings.length > 0
         ? withHints(createdHttp, { warning: parameterWarnings.join(" ") })
         : createdHttp;
@@ -3971,6 +3977,15 @@ export class ToolHandlers {
       updatedFields,
     };
 
+    // Hints about runtime APIs the written pre/post-process code uses but
+    // the Code Node runtime does not have.
+    for (const field of ["preProcessCode", "postProcessCode"] as const) {
+      const code = cfg?.[field];
+      if (typeof code === "string" && updatedFields.includes(field)) {
+        parameterWarnings.push(...codeNodeWarnings(code));
+      }
+    }
+
     if (skippedUpdates.length > 0) {
       return withHints(response, {
         warning: [
@@ -4199,6 +4214,24 @@ export class ToolHandlers {
           configApplied: data.config ? Object.keys(data.config) : [],
         };
 
+        // Hints about runtime APIs the code uses but the Code Node runtime
+        // does not have; the node was created regardless.
+        const codeWarnings =
+          entry.type === "code" && typeof data.config?.code === "string"
+            ? codeNodeWarnings(data.config.code)
+            : [];
+        if (codeWarnings.length > 0) {
+          return withRenderSuggestion(
+            withHints(result, {
+              warning: codeWarnings.join(" "),
+              action:
+                "The node was created. If the flagged call is real, replace it with manage_flow_nodes update.",
+            }),
+            flowId,
+            nodeId,
+          );
+        }
+
         if (missingInitAppSession) {
           return withRenderSuggestion(
             withHints(result, {
@@ -4236,11 +4269,14 @@ export class ToolHandlers {
 
         const patchPayload: any = {};
         if (data.label) patchPayload.label = data.label;
+        // Declared outside the `if` so the post-write Code Node hints below
+        // can see the type fetched here.
+        let nodeType = "";
         if (data.config) {
           const existingNode: any = await this.apiClient.get(
             `/v2.0/flows/${flowId}/chart/nodes/${data.nodeId}`,
           );
-          const nodeType = existingNode?.type ?? "";
+          nodeType = existingNode?.type ?? "";
 
           // Strip server-computed, read-only fields before merging them back
           // into the PATCH. `transpiled` (a code node's compiled JS) can be
@@ -4326,6 +4362,13 @@ export class ToolHandlers {
           ...(data.config ? { configUpdated: Object.keys(data.config) } : {}),
         };
 
+        // Hints about runtime APIs the code uses but the Code Node runtime
+        // does not have; the node was updated regardless.
+        const codeWarnings =
+          nodeType === "code" && typeof data.config?.code === "string"
+            ? codeNodeWarnings(data.config.code)
+            : [];
+
         // The PATCH response echoes the input config without the server-computed
         // `hasError` (transpilation runs after the write). When code was edited,
         // read the node back to detect a transpile failure and surface it.
@@ -4337,8 +4380,10 @@ export class ToolHandlers {
             if (saved?.config?.hasError) {
               return withRenderSuggestion(
                 withHints(result, {
-                  warning:
+                  warning: [
                     "Node saved, but config.hasError is true — the code failed to transpile (TypeScript/syntax error).",
+                    ...codeWarnings,
+                  ].join(" "),
                   action: "Fix the code and update again.",
                 }),
                 flowId,
@@ -4348,6 +4393,17 @@ export class ToolHandlers {
           } catch {
             // Non-fatal — the update itself succeeded.
           }
+        }
+        if (codeWarnings.length > 0) {
+          return withRenderSuggestion(
+            withHints(result, {
+              warning: codeWarnings.join(" "),
+              action:
+                "The node was updated. If the flagged call is real, replace it with another update.",
+            }),
+            flowId,
+            data.nodeId,
+          );
         }
         return withRenderSuggestion(result, flowId, data.nodeId);
       }

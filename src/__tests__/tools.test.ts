@@ -2190,6 +2190,111 @@ describe("ToolHandlers v2", () => {
     });
   });
 
+  describe("manage_flow_nodes — Code Node runtime hints", () => {
+    const codeNodeId = "60d5ec49f1a2c8b1a4e0f013";
+    const toolNodeId = "60d5ec49f1a2c8b1a4e0f014";
+
+    it("create writes code that uses unavailable runtime APIs and hints about it", async () => {
+      api.post.mockResolvedValueOnce({ _id: codeNodeId, parentId: toolNodeId });
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: toolNodeId,
+        mode: "appendChild",
+        nodeType: "code",
+        label: "Lookup",
+        config: { code: "const r = await fetch('https://x');" },
+      });
+      expect(result.nodeId).toBe(codeNodeId);
+      expect(api.post).toHaveBeenCalledTimes(1);
+      expect(result._hints?.warning).toContain("fetch()/XMLHttpRequest");
+      expect(result._hints?.action).toContain("manage_flow_nodes update");
+    });
+
+    it("create stays quiet for code the runtime supports", async () => {
+      api.post.mockResolvedValueOnce({ _id: codeNodeId, parentId: toolNodeId });
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: toolNodeId,
+        mode: "appendChild",
+        nodeType: "code",
+        label: "Cleanup",
+        config: { code: "context.done = true; api.say('done');" },
+      });
+      expect(result.nodeId).toBe(codeNodeId);
+      expect(result._hints?.warning).toBeUndefined();
+    });
+
+    it("update PATCHes and hints, one sentence per unavailable API", async () => {
+      api.get
+        .mockResolvedValueOnce({
+          _id: codeNodeId,
+          type: "code",
+          config: { code: "old" },
+        })
+        .mockResolvedValueOnce({
+          _id: codeNodeId,
+          type: "code",
+          config: { code: "new", hasError: false },
+        });
+      api.patch.mockResolvedValueOnce({ _id: codeNodeId });
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "update",
+        flowId: ID.flow,
+        nodeId: codeNodeId,
+        config: { code: "const c = require('xml-js'); api.setState('x');" },
+      });
+      expect(result.updated).toBe(true);
+      expect(api.patch).toHaveBeenCalledTimes(1);
+      expect(result._hints?.warning).toContain("require()/import");
+      expect(result._hints?.warning).toContain("Intent Conditions");
+    });
+
+    it("update applies the hints only to code nodes", async () => {
+      api.get.mockResolvedValueOnce({
+        _id: codeNodeId,
+        type: "say",
+        config: { text: "old" },
+      });
+      api.patch.mockResolvedValueOnce({ _id: codeNodeId });
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "update",
+        flowId: ID.flow,
+        nodeId: codeNodeId,
+        config: { code: "await fetch('x')" },
+      });
+      expect(result.updated).toBe(true);
+      expect(api.patch).toHaveBeenCalledTimes(1);
+      expect(result._hints?.warning).toBeUndefined();
+    });
+
+    it("update keeps the hasError warning first when both apply", async () => {
+      api.get
+        .mockResolvedValueOnce({
+          _id: codeNodeId,
+          type: "code",
+          config: { code: "old" },
+        })
+        .mockResolvedValueOnce({
+          _id: codeNodeId,
+          type: "code",
+          config: { code: "bad", hasError: true },
+        });
+      api.patch.mockResolvedValueOnce({ _id: codeNodeId });
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "update",
+        flowId: ID.flow,
+        nodeId: codeNodeId,
+        config: { code: "await fetch('x'); const x: =" },
+      });
+      expect(result._hints?.warning).toMatch(
+        /^Node saved, but config.hasError/,
+      );
+      expect(result._hints?.warning).toContain("fetch()/XMLHttpRequest");
+    });
+  });
+
   describe("manage_flow_nodes — update surfaces transpile errors", () => {
     const codeNodeId = "60d5ec49f1a2c8b1a4e0f012";
 

@@ -207,12 +207,27 @@ Run custom **TypeScript** (a single source string — not multiple files, not HT
 
 **Runtime objects available inside the code:**
 
-| Object    | What it is                                                             |
-| --------- | ---------------------------------------------------------------------- |
-| `input`   | The current input — read/write. `input.text`, `input.data`, etc.       |
-| `context` | Session-persistent store. Read/write values that survive across turns. |
-| `profile` | The contact profile.                                                   |
-| `actions` | Helper actions, e.g. `actions.output(text, data)`, `actions.log(...)`. |
+| Object    | What it is                                                                                                                                                                                                  |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `input`   | The current input — read/write. `input.text`, `input.data`, etc.                                                                                                                                            |
+| `context` | Session-persistent store. Read/write values that survive across turns — `context.x = value` persists for the session, as does `api.addToContext()`.                                                         |
+| `profile` | The contact profile.                                                                                                                                                                                        |
+| `api`     | The platform API — `api.say()`, `api.output()`, `api.addToContext()`, `api.log()`, `api.setNextNode()`, … ([reference](https://docs.cognigy.com/ai/for-developers/code/api-functions)). `actions.*` is the legacy alias of `api.*`; only `api` is supported. |
+| modules   | Preinstalled modules are **globals**, not imports: `moment`, `_` (Lodash), `xmljs`, `getTextCleaner()` ([reference](https://docs.cognigy.com/ai/for-developers/code/modules)).                              |
+
+**Runtime constraints — the Code Node runtime does not have these. `manage_flow_nodes` and `create_tool`/`update_tool` write the code anyway and flag them in `_hints.warning`; don't use them:**
+
+- `api.httpRequest()` — exists only in Cognigy Functions, not Code Nodes. Use an HTTP Request node and read `input.httprequest`.
+- `fetch()` / `XMLHttpRequest` — not available in the runtime. Same alternative.
+- `require()` / `import` — no module loading; use the globals above.
+- `api.setState()` / `api.getState()` / `api.resetState()` — States are deprecated since 2026.7 and removed in 2026.12. Use Intent Conditions.
+
+**Documented footguns (not flagged — just know them):**
+
+- `api.deleteContext("a.b")` — only removes **top-level** keys; a dot-path silently does nothing. Use `delete context.a.b;`.
+- More than 100 `api.*` calls per execution — the platform aborts the node ([limits](https://docs.cognigy.com/ai/administer/limitations)).
+
+Anything the platform supports is not gated: there is no required code shape, no `api.*` allowlist, and `Date.prototype.toLocaleString()` and friends work (the editor's red underline on `Date` is the browser's type checker, not a runtime error).
 
 **Config:**
 | Field | Type | Required | Description |
