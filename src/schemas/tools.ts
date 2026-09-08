@@ -136,6 +136,7 @@ export const talkToAgentSchema = z
     userId: z.string().optional(),
     data: z.record(z.any()).optional(),
     verbose: z.boolean().optional(),
+    testMode: z.boolean().optional(),
   })
   .refine((d) => d.endpointUrl || d.aiAgentId, {
     message: "Either endpointUrl or aiAgentId must be provided",

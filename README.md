@@ -257,7 +257,7 @@ IDs before falling back to `setup_llm`.
 | `create_ai_agent`      | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint                  |
 | `update_ai_agent`      | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature)                         |
 | `setup_llm`            | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation          |
-| `talk_to_agent`        | Write | Send a message to an AI Agent and get its response                                                  |
+| `talk_to_agent`        | Write | Send a message to an AI Agent and get its response (uses Endpoint Test Mode, so it is not billed)   |
 | `list_resources`       | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more                           |
 | `get_resource`         | Read  | Get detailed information about a single resource                                                    |
 | `delete_resource`      | Write | Permanently delete a resource                                                                       |
