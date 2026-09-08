@@ -1,13 +1,47 @@
 import { describe, it, expect } from "@jest/globals";
-import {
-  validateCodeNode,
-  stripCommentsAndStrings,
-} from "../tools/codeNodeValidation.js";
+import { validateCodeNode } from "../tools/codeNodeValidation.js";
 
 describe("validateCodeNode", () => {
   describe("accepts everything the platform supports", () => {
     it.each([
+      [
+        "regex after a condition",
+        "if (input.text) /XMLHttpRequest/.test(input.text);",
+      ],
+      [
+        "second variable binding",
+        "const enabled = true, fetch = () => 42; input.result = fetch();",
+      ],
+      [
+        "property call with whitespace",
+        "const repo = { fetch: () => 42 }; input.result = repo. fetch();",
+      ],
+      [
+        "typed callback parameter",
+        "function run(fetch: () => number): number { return fetch(); }",
+      ],
+      [
+        "local api object",
+        "const api = { getState: () => 42 }; input.result = api.getState();",
+      ],
       ["plain input mutation", "input.result = input.httprequest.result;"],
+      [
+        "type-only imports",
+        "import type { Response } from 'client'; import { type Request } from 'client';",
+      ],
+      [
+        "locally bound global object",
+        "const globalThis = { fetch: () => 42 }; globalThis.fetch();",
+      ],
+      [
+        "comment about nested deletion",
+        "// api.deleteContext('a.b')\ndelete context.a.b;",
+      ],
+      [
+        "literal describing nested deletion",
+        "api.say(`api.deleteContext('a.b')`);",
+      ],
+      ["malformed source is left to the platform", "api.say('unterminated"],
       [
         "direct context assignment (persists for the session)",
         "context.date = new Date().toLocaleString();",
@@ -101,6 +135,12 @@ describe("validateCodeNode", () => {
   });
 
   describe("rejects what the runtime does not have", () => {
+    it("a binding in another scope does not hide an unavailable global", () => {
+      expect(
+        validateCodeNode("function run(fetch) { return fetch(); } fetch('x');")
+          .errors,
+      ).toHaveLength(1);
+    });
     it("api.httpRequest (Functions-only)", () => {
       const { errors } = validateCodeNode(
         "const r = await api.httpRequest({ url: 'https://x' });",
@@ -108,6 +148,16 @@ describe("validateCodeNode", () => {
       expect(errors).toHaveLength(1);
       expect(errors[0]).toContain("api.httpRequest()");
       expect(errors[0]).toContain("HTTP Request node");
+    });
+
+    it.each([
+      "(fetch)('x');",
+      "(fetch as any)('x');",
+      "globalThis['fetch']('x');",
+      "api['getState']();",
+      "import client = require('client');",
+    ])("recognizes executable calls in %s", (source) => {
+      expect(validateCodeNode(source).errors).toHaveLength(1);
     });
 
     it("global-qualified fetch/require", () => {
@@ -197,35 +247,18 @@ describe("validateCodeNode", () => {
     });
   });
 
-  describe("stripCommentsAndStrings", () => {
-    it("blanks literal contents and comments but keeps length and lines", () => {
-      const src = 'a("x\\"y") // c\n/* m\n */ b(`t${1}`)';
-      const out = stripCommentsAndStrings(src);
-      expect(out).toHaveLength(src.length);
-      expect(out.split("\n")).toHaveLength(3);
-      expect(out).toMatch(/^a\("\s+"\)\s+\n\s+\n\s+b\(`\s+\$\{1\}`\)$/);
-    });
-
-    it("keeps template interpolations and blanks nested template text", () => {
-      const src = "t(`x ${ a(`y ${b}`) } z`)";
-      const out = stripCommentsAndStrings(src);
-      expect(out).toHaveLength(src.length);
-      expect(out).toBe("t(`  ${ a(`  ${b}`) }  `)");
-    });
-
-    it("blanks regex literal bodies but keeps delimiters and flags", () => {
-      const src = "x = /a[/]b\\/c/gi.test(s) / 2";
-      const out = stripCommentsAndStrings(src);
-      expect(out).toHaveLength(src.length);
-      expect(out).toBe("x = /        /gi.test(s) / 2");
-    });
-
-    it("leaves an unterminated string as-is without throwing", () => {
-      expect(() => stripCommentsAndStrings('api.say("oops')).not.toThrow();
-    });
-  });
-
   describe("warns about documented footguns without blocking", () => {
+    it("warns when template text guarantees a dot path", () => {
+      expect(
+        validateCodeNode("api.deleteContext(`temp.${input.key}`);").warnings,
+      ).toHaveLength(1);
+      expect(
+        validateCodeNode("api.deleteContext(`${input.key}.temp`);").warnings,
+      ).toHaveLength(1);
+      expect(
+        validateCodeNode("api.deleteContext(`${input.key}`);").warnings,
+      ).toEqual([]);
+    });
     it("dot-path api.deleteContext", () => {
       const result = validateCodeNode('api.deleteContext("temp.start");');
       expect(result.errors).toEqual([]);
