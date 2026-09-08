@@ -7,7 +7,11 @@ import axios, {
 } from "axios";
 import FormData from "form-data";
 import { logger } from "../utils/logger.js";
-import { getProxyAxiosOptions, redactProxyUrl } from "../utils/proxy.js";
+import {
+  applyProxyToRedirect,
+  getProxyAxiosOptions,
+  redactProxyUrl,
+} from "../utils/proxy.js";
 import { getProxyForUrl } from "proxy-from-env";
 import {
   ACTOR_CONTEXT_HEADER,
@@ -172,6 +176,9 @@ export class CognigyApiClient {
           reqConfig,
           getProxyAxiosOptions(resolveRequestUrl(reqConfig)),
         );
+        // Redirects are followed inside the transport, below this interceptor,
+        // so each hop re-resolves its own route from its own destination.
+        reqConfig.beforeRedirect = applyProxyToRedirect;
         // Attribute this write to the plugin in Cognigy's audit events. Set
         // here rather than per call site so every platform request is covered,
         // including uploadFile's own headers object. Absent outside a tool

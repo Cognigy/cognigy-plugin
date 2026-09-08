@@ -260,7 +260,11 @@ export function getProxyAxiosOptions(targetUrl: string): ProxyAxiosOptions {
   }
 
   if (!proxyUrl) {
-    return { proxy: false };
+    // The agent keys are present-but-undefined on purpose: these options are
+    // `Object.assign`ed onto a request config that may already carry agents
+    // from an earlier resolution (a retry reuses the same config object), and
+    // an absent key would leave the stale agent in place.
+    return { proxy: false, httpAgent: undefined, httpsAgent: undefined };
   }
 
   const rejection = describeUnsupportedProxy(proxyUrl);
@@ -284,6 +288,63 @@ export function getProxyAxiosOptions(targetUrl: string): ProxyAxiosOptions {
         `Fix the proxy setting, or exclude ${targetOrigin(targetUrl)} with NO_PROXY to connect directly.`,
     );
   }
+}
+
+/**
+ * Options follow-redirects hands to `beforeRedirect`, already rewritten to the
+ * redirect destination. Only the fields we read or replace are named.
+ */
+interface RedirectRequestOptions {
+  href?: string;
+  protocol?: string;
+  host?: string;
+  path?: string;
+  agent?: Agent;
+  agents?: { http?: Agent; https?: Agent };
+}
+
+function redirectTargetUrl(options: RedirectRequestOptions): string {
+  if (options.href) return options.href;
+  // `href` is one of the fields follow-redirects copies from the resolved
+  // redirect URL, so this is belt and braces; rebuild it if a future version
+  // stops carrying it rather than silently routing against an empty string.
+  return `${options.protocol ?? "http:"}//${options.host ?? ""}${options.path ?? ""}`;
+}
+
+/**
+ * Re-route a redirect hop through whatever proxy its *destination* needs.
+ *
+ * Redirects are followed inside axios' transport (follow-redirects), which
+ * never re-enters the request interceptor, so the agents chosen for the
+ * original URL would otherwise be reused for every hop. That silently breaks
+ * both directions: a `NO_PROXY` host redirecting to a proxied host stays
+ * direct, and a proxied host redirecting to a `NO_PROXY` host keeps the
+ * tunnel. Axios' own equivalent (`setProxy`'s `beforeRedirects.proxy`) is a
+ * no-op for us because we pass `proxy: false`. Package downloads are the real
+ * case: the API answers with a link that redirects to the archive host.
+ *
+ * follow-redirects re-picks `agent` from `agents[scheme]` on every hop (a
+ * redirect may switch protocol), so the map is the authoritative slot and
+ * `agent` is set only to cover options axios did not build. Assigning
+ * `undefined` is what clears a previously selected proxy agent and sends the
+ * hop direct.
+ *
+ * Throws `ProxyConfigurationError` when the destination needs a proxy we
+ * cannot use — the same refusal as a first-hop request, rather than leaking
+ * the redirected request past the sanctioned proxy path.
+ */
+export function applyProxyToRedirect(
+  redirectOptions: Record<string, unknown>,
+): void {
+  const options = redirectOptions as RedirectRequestOptions;
+  const { httpAgent, httpsAgent } = getProxyAxiosOptions(
+    redirectTargetUrl(options),
+  );
+  if (options.agents) {
+    options.agents.http = httpAgent;
+    options.agents.https = httpsAgent;
+  }
+  options.agent = options.protocol === "https:" ? httpsAgent : httpAgent;
 }
 
 /** Test seam: proxy env vars are read per call, but agents are cached. */

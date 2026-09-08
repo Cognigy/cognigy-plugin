@@ -14,7 +14,7 @@ import { basename, dirname, isAbsolute, join } from "path";
 import { randomUUID } from "crypto";
 import { pathToFileURL } from "url";
 import axios from "axios";
-import { getProxyAxiosOptions } from "../utils/proxy.js";
+import { applyProxyToRedirect, getProxyAxiosOptions } from "../utils/proxy.js";
 import { CognigyApiClient } from "../api/client.js";
 import { logger } from "../utils/logger.js";
 import {
@@ -2329,6 +2329,7 @@ export class ToolHandlers {
         // the endpoint host differs from the API host and may be excluded by
         // NO_PROXY independently.
         ...getProxyAxiosOptions(endpointUrl!),
+        beforeRedirect: applyProxyToRedirect,
       });
 
       let agentResponse = response.data.text || "";

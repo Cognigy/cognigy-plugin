@@ -149,6 +149,88 @@ describe("proxy routing (real sockets)", () => {
     expect(proxied).toEqual([downloadUrl]);
   });
 
+  it("routes a redirect destination that needs the proxy, even when the first hop did not", async () => {
+    // Redirects are followed inside axios' transport, which never re-enters
+    // the request interceptor: without a per-hop decision the second request
+    // keeps the first hop's (direct) route.
+    const origin = await listen(
+      createServer((req, res) => {
+        res.writeHead(302, {
+          Location: `http://localhost:${portOf(origin)}/download/archive.zip`,
+        });
+        res.end();
+      }),
+    );
+
+    const proxied: string[] = [];
+    const proxy = await listen(
+      createServer((req, res) => {
+        proxied.push(req.url ?? "");
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ via: "proxy" }));
+      }),
+    );
+
+    process.env.HTTP_PROXY = `http://127.0.0.1:${portOf(proxy)}`;
+    process.env.NO_PROXY = "127.0.0.1";
+
+    const client = new CognigyApiClient({
+      baseUrl: `http://127.0.0.1:${portOf(origin)}`,
+      apiKey: "test-key",
+    });
+
+    // First hop is excluded by NO_PROXY and goes direct; the redirect target
+    // is not excluded, so that hop must be tunnelled.
+    await expect(client.get("/v2.0/packages/link")).resolves.toEqual({
+      via: "proxy",
+    });
+    expect(proxied).toEqual([
+      `http://localhost:${portOf(origin)}/download/archive.zip`,
+    ]);
+  });
+
+  it("stops proxying after a redirect to a host NO_PROXY excludes", async () => {
+    const directHits: string[] = [];
+    const origin = await listen(
+      createServer((req, res) => {
+        directHits.push(req.url ?? "");
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ via: "origin" }));
+      }),
+    );
+
+    const proxied: string[] = [];
+    const proxy = await listen(
+      createServer((req, res) => {
+        proxied.push(req.url ?? "");
+        res.writeHead(302, {
+          Location: `http://127.0.0.1:${portOf(origin)}/download/archive.zip`,
+        });
+        res.end();
+      }),
+    );
+
+    process.env.HTTP_PROXY = `http://127.0.0.1:${portOf(proxy)}`;
+    process.env.NO_PROXY = "127.0.0.1";
+
+    const client = new CognigyApiClient({
+      baseUrl: `http://127.0.0.1:${portOf(origin)}`,
+      apiKey: "test-key",
+    });
+
+    // The first hop is proxied; its redirect lands on an excluded host, which
+    // must clear the proxy agent rather than keep tunnelling.
+    await expect(
+      client.get(`http://localhost:${portOf(origin)}/v2.0/packages/link`, {
+        baseURL: undefined,
+      }),
+    ).resolves.toEqual({ via: "origin" });
+    expect(proxied).toEqual([
+      `http://localhost:${portOf(origin)}/v2.0/packages/link`,
+    ]);
+    expect(directHits).toEqual(["/download/archive.zip"]);
+  });
+
   it("fails the request when the configured proxy is unusable", async () => {
     process.env.HTTPS_PROXY = "socks5://127.0.0.1:1080";
     const client = new CognigyApiClient({
