@@ -20,7 +20,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "create_ai_agent",
     description:
-      "Create a complete AI Agent with auto-provisioned flow, AI Agent Job Node, and REST endpoint. Returns everything needed for talk_to_agent.\n\nIf projectId is omitted, a new project is auto-created using the agent name.\n\nLLM SETUP (required for the agent to generate responses):\n1. Ensure the target project already has a working LLM. If another project already has one, prefer reusing the required llm_model resources together with their shared connection resource(s) via manage_packages export/import.\n2. Use setup_llm only if no reusable LLM with connectionId exists or package transfer failed.\n3. If the LLM is not set as default, assign it via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: \"<llm referenceId>\" } }.\n\nKNOWLEDGE: If knowledgeStoreReferenceId is provided, a knowledge search tool is automatically created on the agent's Job Node. This is the preferred way to give agents access to knowledge stores.\n\nReturns: agent, flow, endpoint objects, endpointUrl, llmStatus, and the projectId used. If a knowledge tool was created, it is included in the response.\nIf llmStatus is 'unknown', especially after auto-creating a new project, ensure a working LLM is reused or set up before calling talk_to_agent, and do not call talk_to_agent until a working LLM is confirmed.",
+      "Create a complete AI Agent in one call: the agent resource plus an auto-provisioned flow, AI Agent Job Node and REST endpoint. Do not create those pieces separately. If projectId is omitted, a new project is created from the agent name. Passing knowledgeStoreReferenceId also attaches a knowledge-search tool to the Job Node. Returns the agent, flow and endpoint, the endpointUrl for talk_to_agent, the projectId used, and llmStatus. The agent cannot answer until the project has a working, connected LLM; llmStatus 'unknown' means that is not yet confirmed.",
     annotations: {
       title: "Create AI Agent",
       readOnlyHint: false,
@@ -48,7 +48,7 @@ export const tools: ToolDefinition[] = [
         knowledgeStoreReferenceId: {
           type: "string",
           description:
-            'Reference ID of a knowledge store to attach as a knowledge search tool on the agent (optional). This automatically creates a knowledge tool on the AI Agent Job Node. Use manage_knowledge { operation: "create_store" } first to get the store reference ID.',
+            "Optional knowledge store referenceId (from manage_knowledge create_store). When set, a knowledge-search tool for that store is created on the Job Node.",
         },
       },
       required: ["name"],
@@ -59,7 +59,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "update_ai_agent",
     description:
-      "Update an AI Agent's configuration. This tool updates both the AI Agent resource and the AI Agent Job Node config.\n\nUSE ALL RELEVANT FIELDS — do not put everything in description alone. Distribute configuration across the appropriate fields:\n\nAGENT-LEVEL FIELDS (the agent's identity):\n- name: Display name\n- description: Agent PERSONA — who the agent is, personality, tone, and high-level behavior. This is the primary identity field.\n- instructions: Agent GUARDRAILS — high-level constraints and policies (up to 1000 chars). Things the agent must always/never do.\n\nJOB-LEVEL FIELDS (jobConfig — how the agent performs its job):\n- jobName: Job title / role name (e.g., 'Customer Support Specialist')\n- jobDescription: Detailed responsibilities, scope, expertise areas, and what tools are available for this job\n- jobInstructions: Step-by-step procedures, output format requirements, decision trees for the job\n- llmProviderReferenceId: LLM to use (from setup_llm or list_resources { resourceType: 'llm_model' })\n- temperature: 0-1, lower = more deterministic (default: 0.7)\n- maxTokens: 100-8000 (default: 4000)\n\nKNOWLEDGE: Always use create_tool { toolType: 'knowledge' } to attach knowledge stores as tools. Only use persona-level knowledge if the user explicitly requests it.\n\nRequires: aiAgentId (from create_ai_agent or list_resources { resourceType: 'agent' }).\nAfter updating, use talk_to_agent to test the changes.",
+      "Update an existing AI Agent: its identity fields (name, persona in description, guardrails in instructions) and its AI Agent Job Node config (jobConfig: job name, scope, procedures, LLM, temperature, maxTokens) in one call. Only the fields you pass change. Spread configuration across the matching fields rather than putting everything into description. To give the agent knowledge, use create_tool with toolType 'knowledge' instead of persona text. Requires aiAgentId (from create_ai_agent or list_resources { resourceType: 'agent' }).",
     annotations: {
       title: "Update AI Agent",
       readOnlyHint: false,
@@ -132,7 +132,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "setup_llm",
     description:
-      "Create a NEW LLM resource (GPT-4, Claude, etc.) in a project. This is a LAST RESORT — only use when no existing LLM can be reused.\n\nPRECONDITION — you MUST have already completed ALL of these before calling this tool:\n1. Listed all projects: list_resources { resourceType: 'project' }\n2. Checked every other project for existing LLMs: list_resources { resourceType: 'llm_model', projectId }\n3. Attempted package reuse where another project already has a reusable LLM with connectionId\n4. Proceeding only because reuse is unavailable, transfer failed, or the user explicitly asked for a brand-new LLM\nIf you have not completed steps 1-4, STOP and do them first. Do NOT call this tool.\n\nMODEL ROLE WARNING:\n- Chat/completion models are used for AI Agents.\n- Embedding models are used for knowledge-store indexing.\n- Knowledge Search and Answer Extraction use same-project llm_model IDs accepted by the Cognigy API for that use case.\n- Do not use setup_llm as an automatic workaround for knowledgeSearchModelId failures while existing same-project candidates still exist.\n\nOPENAI-COMPATIBLE PROVIDERS (self-hosted or third-party endpoints that speak the OpenAI API, e.g. vLLM, Hugging Face, LiteLLM, Azure AI Foundry): use provider 'openAICompatible' with modelType 'custom-model' (chat) or 'custom-embedding-model' (embedding). The actual model name goes in customModel and the endpoint in baseCustomUrl — both required. Optional: customAuthHeader (send the API key in a custom header instead of 'Authorization: Bearer'), apiType ('chatCompletion' default, or 'responses').\n\nIMPORTANT: NEVER guess or hallucinate API keys. If creating a new LLM and no apiKey or connectionId was provided by the user, ASK for the required credentials.\n\nAfter creation, the connection is normally tested by sending a minimal probe to the provider. If this connection test runs and fails (for example, invalid credentials or model name), the model is deleted and an error is returned — this prevents broken model references from silently breaking downstream flows.\n\nIf the provider's test endpoint is unreachable or returns a non-testable status, the model is kept but a warning is returned so you know connectivity could not be fully verified.\n\nIf dangerouslySkipConnectionTest is true, the connection test is not run at all; the model is kept and the response includes a warning that no connectivity check was performed. Only use this flag when you explicitly accept the risk that the created LLM might not be callable. Never use it to bypass a missing or cross-project connection.\n\nIf isDefault is true (the default), agents in the project will automatically use this LLM. If isDefault is false, you must explicitly assign it to the agent via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: '<referenceId from this response>' } }.\n\nThe response includes the LLM's referenceId — use this value for jobConfig.llmProviderReferenceId if assigning manually.\n\nTo list existing LLMs: use list_resources { resourceType: 'llm_model', projectId }.\nTo delete: use delete_resource { resourceType: 'llm_model', id }.",
+      "Create a NEW LLM resource in a project, auto-creating a Connection from apiKey or reusing a same-project connectionId, then test the connection with a minimal probe. Use it only when no existing LLM can be reused via manage_packages; provider names, model strings and OpenAI-compatible endpoints are covered by the llm-providers skill. Never invent credentials: if no apiKey or connectionId was given, ask the user. A failed connection test deletes the model and returns an error; an untestable provider keeps it with a warning. Returns the LLM's referenceId, which update_ai_agent jobConfig.llmProviderReferenceId takes when isDefault is false.",
     annotations: {
       title: "Setup LLM",
       readOnlyHint: false,
@@ -175,7 +175,7 @@ export const tools: ToolDefinition[] = [
         connectionId: {
           type: "string",
           description:
-            "Existing Cognigy Connection referenceId (UUID) from the SAME project. Connections are project-scoped — a connectionId from a different project will NOT work and will be rejected. To reuse a connection from another project, use the package export/import workflow (see LLM REUSE VIA PACKAGES in server instructions) instead of passing a cross-project connectionId here.",
+            "Existing Connection referenceId (UUID) from the SAME project. Connections are project-scoped; to reuse one from another project, transfer it with manage_packages instead of passing it here.",
         },
         isDefault: {
           type: "boolean",
@@ -205,12 +205,7 @@ export const tools: ToolDefinition[] = [
         dangerouslySkipConnectionTest: {
           type: "boolean",
           description:
-            "LAST RESORT ONLY — Skip the automatic connection validation after creating the model. " +
-            "This creates an LLM that may be completely non-functional. " +
-            "Do NOT use this to work around a failed connection test — a failed test means the credentials are wrong or the connection doesn't exist. " +
-            "Skipping the test does NOT fix the underlying problem, it just hides it. " +
-            "Only use when the test endpoint is known to be unavailable (e.g., air-gapped environments, " +
-            "unsupported custom model providers) AND the user has explicitly confirmed. Default: false.",
+            "Skip the connection test after creating the model (default: false). Last resort for providers whose test endpoint is known to be unreachable, and only with the user's explicit confirmation. A failed test means wrong credentials or a missing connection; skipping hides that rather than fixing it.",
         },
       },
       required: ["projectId", "provider", "modelType"],
@@ -221,7 +216,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "talk_to_agent",
     description:
-      "Send a message to a Cognigy AI Agent and get its response. Use this to test agent behavior during iterative development.\n\nTwo modes:\n1. DIRECT: Provide endpointUrl (from create_ai_agent or list_resources { resourceType: 'endpoint' }).\n2. BY AGENT: Provide aiAgentId — the tool automatically finds or creates a REST endpoint for the agent's flow.\n\nUse the same sessionId across calls for multi-turn conversations.\n\nReturns: agentResponse text and sessionId. Add verbose: true for the full raw API response.",
+      "Send one message to a Cognigy AI Agent through its REST endpoint and return the reply, for testing during iterative development. Pass endpointUrl directly, or aiAgentId to have the tool find or create a REST endpoint for the agent's flow. Reuse the returned sessionId across calls for a multi-turn conversation. The project needs a working LLM, otherwise the reply is empty. Returns agentResponse and sessionId; verbose: true adds the raw API response.",
     annotations: {
       title: "Talk to Agent",
       readOnlyHint: false,
@@ -278,7 +273,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "list_resources",
     description:
-      "List resources in a Cognigy project. Use this to discover projects, agents, flows, endpoints, LLM models, knowledge stores, conversations, extensions, functions, tools, or audit events.\n\nSet resourceType to 'project' to find projectIds (no projectId needed). 'tool' requires aiAgentId instead of projectId. 'audit_event' is organisation-scoped and takes no projectId — it answers \"who changed what\" questions: `{ resourceType: 'audit_event', actor: ['mcp-plugin'], sort: 'timestamp:desc' }` lists exactly the changes this plugin made, and `actor: ['human']` the ones people made by hand. Each item carries `performedBy` for non-human actors; a missing `performedBy` means a person performed it. Needs Cognigy 2026.17.0+ and an API key with Admin Center access. All other types require projectId. For `llm_model`, you can also pass `useCase` to match the UI's use-case-filtered model dropdowns (for example `knowledgeSearch`). Packages are handled through manage_packages.\n\nUse `sort` for recency questions instead of paging through everything: `sort: 'lastChanged:desc', limit: 5` answers \"which project was touched most recently\" in one call. To attribute a change to a person, get the current user's id from get_resource { resourceType: 'user', id: 'me' } and compare it against `lastChangedBy` from get_resource { resourceType: 'project', id, raw: true } — list items omit `lastChangedBy` to save tokens.\n\nReturns a paginated list with id, name, and type-specific fields.",
+      "List Cognigy resources of one type, paginated, with optional server-side sort. Types: project (no projectId needed), tool (takes aiAgentId instead of projectId), audit_event (organisation-wide, no projectId; answers \"who changed what\" via the actor and eventType filters, Cognigy 2026.17.0+), and the project-scoped agent, flow, endpoint, llm_model, knowledge_store, conversation, extension, function. Packages and snapshots are listed by manage_packages and manage_snapshots. Returns id, name and a few type-specific fields per item; use get_resource for full detail. For recency questions use sort (e.g. 'lastChanged:desc' with a small limit) instead of paging through everything.",
     annotations: {
       title: "List Resources",
       readOnlyHint: true,
@@ -347,7 +342,7 @@ export const tools: ToolDefinition[] = [
             enum: [...AUDIT_ACTORS],
           },
           description:
-            "audit_event only — filter by who performed the action. 'mcp-plugin' is this plugin, 'ask-ai' the Cognigy Ask AI agent, 'human' a person working in the UI or calling the API directly. Filtered by the platform on Cognigy 2026.17.0+; on older versions the plugin applies it to the fetched page itself and says so.",
+            "audit_event only: who performed the action. 'mcp-plugin' is this plugin, 'ask-ai' the Cognigy Ask AI agent, 'human' a person in the UI or API. Filtered server-side on Cognigy 2026.17.0+, otherwise on the fetched page.",
         },
         eventType: {
           type: "array",
@@ -357,7 +352,7 @@ export const tools: ToolDefinition[] = [
             enum: [...AUDIT_EVENT_TYPES],
           },
           description:
-            "audit_event only — filter by operation type. Filtered by the platform on Cognigy 2026.17.0+; on older versions the plugin applies it to the fetched page itself and says so.",
+            "audit_event only: operation type filter. Filtered server-side on Cognigy 2026.17.0+, otherwise on the fetched page.",
         },
         user: {
           type: "string",
@@ -381,7 +376,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "get_resource",
     description:
-      "Get detailed information about a single Cognigy resource. Returns a summary view by default. Set `raw: true` for the complete unfiltered API response with all fields.\n\nUse list_resources first to find IDs. Supports all list_resources types plus 'session_state' for session context data and 'user' for accounts. 'audit_event' returns one audit event including its `performedBy` attribution.\n\nresourceType 'user' with id 'me' returns the account the API key belongs to — use it before claiming a resource was changed by the user, since `createdBy` / `lastChangedBy` are opaque ids that mean nothing on their own. Pass a 24-char hex id instead of 'me' to identify another user (requires user-management permissions).",
+      "Get one Cognigy resource by id, as a filtered summary by default or the complete API response with raw: true. Supports every list_resources type plus session_state (session context by session id) and user, where id 'me' returns the account the API key belongs to and a 24-char hex id another user. createdBy / lastChangedBy are opaque user ids: compare them with 'me' rather than guessing who they are. Use list_resources first to find ids.",
     annotations: {
       title: "Get Resource",
       readOnlyHint: true,
@@ -433,7 +428,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "delete_resource",
     description:
-      "Delete a Cognigy resource, or mark it for manual deletion.\n\nPROTECTED TYPES — flow, project, agent are NEVER hard-deleted. Instead they are renamed with a DELETE_ prefix (e.g. 'DELETE_My Flow') to mark them for manual deletion in the Cognigy UI. The response reports markedForDeletion: true and the new name. Idempotent: an already-marked resource is left unchanged (alreadyMarked: true).\n\nAGENT 'DELETION': By default (cascade: true) the agent's endpoints are DEACTIVATED (active: false — reversible in the Cognigy UI) to take the agent offline, then its companion flow and the agent itself are renamed with the DELETE_ prefix. Set cascade: false to rename only the agent and leave endpoints/flow untouched. The response reports what was deactivated, renamed, and any failures. Note: because the agent still exists (renamed), re-running create_ai_agent with the original name creates a NEW agent.\n\nFLOW 'DELETION' also deactivates every endpoint referencing the flow before renaming it. PROJECT 'deletion' renames only — flows, endpoints and agents inside the project remain live; the response warning says so.\n\nOTHER TYPES (endpoint, llm_model, knowledge_store, function, tool) are permanently deleted — this cannot be undone. Use list_resources to verify the resource exists before deleting. Some types (endpoint) may require projectId. For 'tool' type, provide aiAgentId — the handler resolves and deletes the underlying flow node internally.",
+      "Delete a Cognigy resource, or mark it for manual deletion. agent, flow and project are never hard-deleted: they are renamed with a DELETE_ prefix (idempotent; the response reports markedForDeletion or alreadyMarked), and agent and flow deletion also deactivate their endpoints, reversibly, unless cascade is false. endpoint, llm_model, knowledge_store, function and tool are permanently deleted and cannot be undone; tool additionally needs aiAgentId. Flow nodes are deleted with manage_flow_nodes and snapshots with manage_snapshots, not here.",
     annotations: {
       title: "Delete Resource",
       readOnlyHint: false,
@@ -486,7 +481,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "manage_knowledge",
     description:
-      "Manage knowledge bases for RAG. Create stores, add sources (URLs, text, or files), and list chunks to verify content.\n\nPREREQUISITES:\n- An embedding-capable model must be configured in the project before creating or using knowledge stores.\n- For normal AI-agent knowledge-store setups, configure Knowledge AI settings with manage_settings { operation: 'set_knowledge_ai', ... } before creating the store.\n- knowledgeSearchModelId must be an llm_model referenceId from the SAME project.\n- If you are reusing another project's knowledge workflow, import the exact source-project Knowledge Search model into the target project before guessing with a different model.\n\nFor URL sources: provide type 'url' and url field — the page is scraped and ingested automatically.\nFor text sources: provide text field (type defaults to 'manual') — a source and chunk are created.\nFor file sources (PDF, TXT, DOCX, CTXT, PPTX): provide type 'file' with filePath pointing to a local file. The server reads the file from disk and uploads it. Ingestion is async.\nTo verify content: use list_chunks with knowledgeStoreId (and optionally sourceId, filter).\n\nTo list stores: use list_resources { resourceType: 'knowledge_store' }.\nTo delete: use delete_resource { resourceType: 'knowledge_store', id }.\nAvoid repeated list_resources scans for the same unchanged project — reuse previous llm_model results unless imports or setup changed the state.",
+      "Manage Knowledge AI stores for RAG. Operations: create_store, create_source (type 'url' scrapes a page, 'manual' stores text, 'file' uploads a local PDF/TXT/DOCX/CTXT/PPTX; ingestion is async), list_sources, and list_chunks to verify what was ingested. The project needs an embedding model and Knowledge AI settings (manage_settings set_knowledge_ai) before a store is created; the knowledge-setup skill has the order. Stores are listed with list_resources and deleted with delete_resource. Attach a store to an agent with create_tool toolType 'knowledge'.",
     annotations: {
       title: "Manage Knowledge",
       readOnlyHint: false,
@@ -565,25 +560,8 @@ export const tools: ToolDefinition[] = [
   // 9. create_tool
   {
     name: "create_tool",
-    description: `Create a tool as a child of an AI Agent's Job node. Tools extend what the agent can do.
-
-IMPORTANT — environment-specific conventions that are NOT obvious from this schema and that silently produce broken tools when missed: the wrapped HTTP response shape (input.httprequest is an object containing { result, statusCode, length }, NOT the raw response body), where LLM tool-call arguments live (input.aiAgent.toolArgs.<param>, NOT input.data), and Code-node rules (top-level return is forbidden — mutate input directly). Assuming "REST is obvious" or "Code nodes are just JS" is the most common cause of HTTP tools that fire successfully but return empty results to the LLM.
-
-Tool types:
-- tool: General-purpose tool with custom logic branch. Use this for most requests (e.g., "unlock account", "check status", "validate input"). Provide toolId, description, and optional parameters (JSON Schema). After creation, use manage_flow_nodes with parentNodeId = returned toolNodeId and mode = "appendChild" to add logic nodes (say, code, ifThenElse, httpRequest, etc.) inside the tool branch.
-- knowledge: Search a Knowledge Store. Provide knowledgeStoreId, toolId, description.
-- send_email: Send emails. Provide toolId, description, recipient.
-- mcp: Connect to an EXTERNAL MCP (Model Context Protocol) server. ONLY use when the user explicitly asks to integrate with a specific external MCP server and provides an MCP server URL. Do NOT use for general tool requests — use "tool" or "http" instead.
-- http: Call an external HTTP API. Use when the user wants to call a specific REST/HTTP endpoint. Provide toolId, description, url, method, and optionally headers, body, preProcessCode, postProcessCode. Creates an aiAgentJobTool with child HTTP Request node (and optional pre/post-process Code nodes).
-
-Default choice: When unsure which toolType to use, default to "tool" (general-purpose). Only use "mcp" or "http" when the user specifically mentions an external MCP server or a specific HTTP API endpoint.
-
-IMPORTANT: Create exactly one tool per business action. If the same toolId already exists, create_tool reuses the existing tool node instead of creating a duplicate. If you need more logic for that action, reuse the same toolNodeId with manage_flow_nodes or update_tool.
-
-Prerequisites: Agent must exist (created via create_ai_agent).
-To list tools: list_resources { resourceType: 'tool', aiAgentId }.
-To delete: delete_resource { resourceType: 'tool', id: toolId, aiAgentId }.
-After creating, use talk_to_agent to test.`,
+    description:
+      "Add a tool to an AI Agent's Job Node so the agent's LLM can call it. toolType: 'tool' (default: a custom logic branch you fill with manage_flow_nodes afterwards), 'http' (call a concrete REST endpoint, with optional pre/post-process Code nodes), 'knowledge' (search a Knowledge Store), 'send_email', or 'mcp' (only for an explicitly named external MCP server URL). One tool per business action: an existing toolId is reused, never duplicated. Cognigy runtime conventions for http and Code nodes are in the parameter descriptions and the tools-setup skill. Returns toolNodeId and child node ids for update_tool and manage_flow_nodes.",
     annotations: {
       title: "Create Tool",
       readOnlyHint: false,
@@ -628,7 +606,7 @@ After creating, use talk_to_agent to test.`,
             parameters: {
               type: "string",
               description:
-                'JSON Schema string defining tool parameters (tool, http). Contract: top level {"type":"object","properties":{...},"required":[...]} — "required" is mandatory (use [] if none); EVERY property needs "type" AND "description"; allowed types: string, number, integer, boolean, object, array, null; "array" needs "items"; nested objects with "properties" also need "required". For strict-mode models (OpenAI Responses API, e.g. gpt-5.x) list EVERY key in "required" and mark optional params nullable, e.g. {"type":["string","null"]}. "additionalProperties":false is added automatically. Example: {"type":"object","properties":{"city":{"type":"string","description":"City name"}},"required":["city"]}',
+                'JSON Schema string for the tool parameters (tool, http). Top level must be {"type":"object","properties":{...},"required":[...]}: "required" is mandatory (use [] if none), every property needs "type" and "description", arrays need "items", nested objects their own "required". "additionalProperties": false is added automatically. Strict-mode models (OpenAI Responses API) need every key in "required", optional ones nullable.',
             },
             knowledgeStoreId: {
               type: "string",
@@ -678,17 +656,17 @@ After creating, use talk_to_agent to test.`,
             preProcessCode: {
               type: "string",
               description:
-                "JavaScript code to run BEFORE the HTTP request. Runs in Cognigy's Code Node environment with access to input, context, actions (http only).",
+                "JavaScript for a Code node that runs BEFORE the HTTP request (http only). Cognigy Code-node rules: no top-level return, mutate input / context directly; the LLM's tool arguments are at input.aiAgent.toolArgs.<param>, not input.data.",
             },
             postProcessCode: {
               type: "string",
               description:
-                "JavaScript code to run AFTER the HTTP response. Runs in Cognigy's Code Node environment with access to input, context, actions (http only).",
+                "JavaScript for a Code node that runs AFTER the HTTP response (http only). input.httprequest is an object { result, statusCode, length }, not the raw body; no top-level return; store what the LLM should see where toolResponseValue reads it.",
             },
             toolResponseValue: {
               type: "string",
               description:
-                "CognigyScript expression for the Resolve Tool Action node's answer field. Controls what value is returned to the LLM as the tool result. For http tools, default: '{{JSON.stringify(input.httprequest)}}'. For general-purpose tools, default: '{{JSON.stringify(input.result)}}'. Set this to match where your code stores the result. Must be a valid CognigyScript expression.",
+                "CognigyScript expression for the Resolve Tool Action node's answer, i.e. what the LLM receives as the tool result. Defaults: '{{JSON.stringify(input.httprequest)}}' for http tools, '{{JSON.stringify(input.result)}}' for general tools. Set it to wherever your code stores the result.",
             },
           },
         },
@@ -701,7 +679,7 @@ After creating, use talk_to_agent to test.`,
   {
     name: "update_tool",
     description:
-      "Update an existing tool node's configuration in an AI Agent's flow. Accepts the same config fields as create_tool.\n\nRequires: aiAgentId (to resolve the flow) and toolNodeId (the node ID from create_tool or list_resources { resourceType: 'tool', aiAgentId }).\n\nYou can update the name (display label) and/or tool-type-specific config fields. For http tools, config fields like url, method, headers, body update the child HTTP Request node, and preProcessCode/postProcessCode update the child Code nodes. If a pre-/post-process Code node does not yet exist (because the tool was originally created without that field), passing preProcessCode or postProcessCode here will provision and wire a new Code node — the same as if it had been included on create_tool. To target a specific existing Code node directly when label-based lookup is ambiguous, pass preProcessNodeId / postProcessNodeId.\n\nAfter updating, use talk_to_agent to test the changes.",
+      "Update an existing tool node on an AI Agent: its display name and any config field create_tool accepts, merged into the current config. For http tools url, method, headers and body update the child HTTP Request node, and preProcessCode / postProcessCode update or create the child Code nodes; pass httpNodeId, preProcessNodeId, postProcessNodeId or resolveNodeId to target a specific child when label lookup is ambiguous. Requires aiAgentId and toolNodeId (from create_tool or list_resources { resourceType: 'tool', aiAgentId }).",
     annotations: {
       title: "Update Tool",
       readOnlyHint: false,
@@ -750,7 +728,7 @@ After creating, use talk_to_agent to test.`,
             parameters: {
               type: "string",
               description:
-                'JSON Schema string defining tool parameters (tool, http). Contract: top level {"type":"object","properties":{...},"required":[...]} — "required" is mandatory (use [] if none); EVERY property needs "type" AND "description"; allowed types: string, number, integer, boolean, object, array, null; "array" needs "items"; nested objects with "properties" also need "required". For strict-mode models (OpenAI Responses API, e.g. gpt-5.x) list EVERY key in "required" and mark optional params nullable, e.g. {"type":["string","null"]}. "additionalProperties":false is added automatically. Example: {"type":"object","properties":{"city":{"type":"string","description":"City name"}},"required":["city"]}',
+                "JSON Schema string for the tool parameters (tool, http). Same contract as create_tool config.parameters.",
             },
             knowledgeStoreId: {
               type: "string",
@@ -806,27 +784,27 @@ After creating, use talk_to_agent to test.`,
             toolResponseValue: {
               type: "string",
               description:
-                "CognigyScript expression for the Resolve Tool Action node's answer field. Controls what value is returned to the LLM. For http tools, default: '{{JSON.stringify(input.httprequest)}}'. For general-purpose tools, default: '{{JSON.stringify(input.result)}}'. Set to match where your code stores results.",
+                "CognigyScript expression for the Resolve Tool Action node's answer (what the LLM receives). Defaults as in create_tool.",
             },
             httpNodeId: {
               type: "string",
               description:
-                "Optional 24-char hex ID of the HTTP Request child node (from create_tool's childNodes.httpNodeId). Pass this to target the node directly when label-based lookup fails (http only).",
+                "Optional 24-char hex id of the HTTP Request child node (from create_tool childNodes), when label lookup fails (http only).",
             },
             preProcessNodeId: {
               type: "string",
               description:
-                "Optional 24-char hex ID of the pre-process Code child node (from create_tool's childNodes.preProcessNodeId). Pass this to target the node directly when label-based lookup fails (http only).",
+                "Optional 24-char hex id of the pre-process Code child node (from create_tool childNodes), when label lookup fails (http only).",
             },
             postProcessNodeId: {
               type: "string",
               description:
-                "Optional 24-char hex ID of the post-process Code child node (from create_tool's childNodes.postProcessNodeId). Pass this to target the node directly when label-based lookup fails (http only).",
+                "Optional 24-char hex id of the post-process Code child node (from create_tool childNodes), when label lookup fails (http only).",
             },
             resolveNodeId: {
               type: "string",
               description:
-                "Optional 24-char hex ID of the Resolve Tool Action child node (from create_tool's childNodes.resolveNodeId). Required to update toolResponseValue when more than one Resolve Tool Action node exists in the flow.",
+                "Optional 24-char hex id of the Resolve Tool Action child node (from create_tool childNodes). Needed for toolResponseValue when the flow has more than one such node.",
             },
           },
         },
@@ -839,7 +817,7 @@ After creating, use talk_to_agent to test.`,
   {
     name: "manage_flow_nodes",
     description:
-      'Manage the logic nodes inside a flow (list/get/create/update/delete) and render the flow as a diagram. Nodes are helpers that live INSIDE AI Agent tool branches: create a tool first (create_tool { toolType: "tool" }), then add nodes with parentNodeId = toolNodeId, mode = "appendChild". NEVER add standalone nodes before the AI Agent Job node. The flow-nodes skill owns the full workflow — placement, branching (ifThenElse/lookup), node config, and case values.\n\nOPERATIONS:\n- list: all nodes in a flow (id, type, label, parentId, isEntryPoint only — NO config).\n- get: one node in full incl. config (requires nodeId). Read before editing. For code nodes the config reports `hasError`; the large server-computed `transpiled` output is omitted.\n- create: add a node (requires nodeType + config). parentNodeId + mode place it — see the flow-nodes skill.\n- update: change a node\'s config or label (only provided fields change). For switch/lookup nodes, pass a `cases` array to set case values.\n- delete: remove a node.\n- render (read-only): visualize the flow. Returns an `ascii` tree (display inline in any client incl. terminal) and a `mermaid` string. Deliver the mermaid ONLY as a native Mermaid/diagram artifact — do NOT wrap it in HTML or paste it as an inline ```mermaid fence (both break the zoomable, mobile-friendly viewer). Options: focus=<nodeId|nodeId[]> highlights nodes; writeHtml writes a self-contained rich HTML graph to a local tmp file and opens it in the browser (returns htmlUrl/htmlPath — the file is already on the user\'s machine, just hand them the link). See the flow-nodes skill for details.\n\nSupported node types come from the server node registry; an unsupported nodeType returns the current list. For AI Agent tool nodes (knowledge, send_email, mcp, http) use create_tool / update_tool instead.',
+      "Manage the logic nodes inside a Cognigy flow and render the flow as a diagram. Operations: list (id, type, label, parentId; no config), get (one node with config), create (nodeType + config, placed by parentNodeId and mode), update (partial config or label; cases for switch/lookup nodes), delete, render (read-only ascii tree plus mermaid string, optionally a local HTML file). Nodes belong inside a tool branch: create the tool first and pass parentNodeId = toolNodeId with mode 'appendChild'; never add standalone nodes before the AI Agent Job Node. Tool nodes themselves are managed with create_tool / update_tool. Node types and config schemas are in the flow-nodes skill; an unsupported nodeType returns the current list.",
     annotations: {
       title: "Manage Flow Nodes",
       readOnlyHint: false,
@@ -912,7 +890,7 @@ After creating, use talk_to_agent to test.`,
         writeHtml: {
           type: "boolean",
           description:
-            "render only: also write a self-contained rich HTML graph to a tmp file on the user's local machine and return its htmlUrl/htmlPath (the user opens it in a browser). The file is on the user's own computer — do not try to fetch or regenerate it. Default: false.",
+            "render only: also write a self-contained HTML graph to a tmp file on the user's machine and return htmlUrl / htmlPath. Hand the user the link; do not fetch or regenerate the file. Default: false.",
         },
         openInBrowser: {
           type: "boolean",
@@ -928,7 +906,7 @@ After creating, use talk_to_agent to test.`,
   {
     name: "manage_packages",
     description:
-      'Import and export Cognigy package `.zip` files through the same staged workflow used by the UI.\n\nDISCOVERY OPERATION:\n- list_exportable: list the project resources that can be packaged for export, including UI-parity export candidates such as flows, endpoints, knowledge stores, AI agents, and LLM models\n\nIMPORT OPERATIONS:\n- upload_and_inspect: upload a local package `.zip`, wait for extraction, then return the import preview\n- inspect: return the import preview for an already-uploaded packageId\n- import: merge selected package resources into the target project using UI-parity defaults\n\nEXPORT OPERATIONS:\n- export: create a package from project resources, optionally include dependencies, wait for packaging, and save the `.zip` locally\n- download: download an existing package `.zip` with MCP authentication and save it locally\n\nTASK OPERATION:\n- read_task: read task status and normalized progress for extraction, import, or export tasks\n\nUI PARITY DEFAULTS:\n- locales are excluded from the importable resource list and handled via localeMapping\n- knowledge stores default to strategy "replace" during import\n- all other import resources default to strategy "re-identify"\n- export includes detected dependencies by default unless dependencyResourceIds are provided\n- retired largeLanguageModel resources are disabled by default for import and skipped for export\n- exports append a timestamp suffix to the package name for UI parity\n- imports always use autoRename=true internally\n\nBEHAVIOR:\n- If import resources are omitted, the preview defaults are used.\n- If localeMapping is omitted, the preview default mapping is used.\n- If export dependencyResourceIds are omitted, all detected dependencies are included by default.\n- If outputPath is omitted for export or download, the package is saved to a local temp path because the raw download URL requires authentication.\n- Export and download responses include the absolute saved file path plus file:// URIs for both the archive and its containing directory.\n- When presenting saved locations to users, show local paths and file:// URIs verbatim; do not abbreviate them with ellipses.\n- By default, import and export wait for task completion (waitForCompletion: true).',
+      "Export and import Cognigy package .zip files with the same staged workflow as the UI, including moving an LLM together with its Connection between projects. Operations: list_exportable, export (saves the zip locally, dependencies included by default), download (saves an existing package), upload_and_inspect (upload a local zip and return the import preview), inspect (preview an uploaded packageId), import (merge selected resources with UI-parity defaults: 're-identify', knowledge stores 'replace'), read_task (poll a long-running task). Import and export wait for completion by default. Export and download return the absolute saved path and file:// URIs; show them to the user verbatim.",
     annotations: {
       title: "Manage Packages",
       readOnlyHint: false,
@@ -1060,7 +1038,7 @@ After creating, use talk_to_agent to test.`,
   {
     name: "manage_webchat",
     description:
-      "Create or configure a Webchat v3 Endpoint. This is the primary tool for deploying an AI Agent as an embeddable website chat widget.\n\nCREATE vs UPDATE:\n- To create: provide projectId + flowId (+ optional name). A new webchat3 endpoint is always created.\n- To update: provide endpointId. Settings are merged with existing configuration.\n- Without endpointId, the tool never modifies existing endpoints — it always creates a new one.\n\nTo update an existing webchat, you MUST provide the endpointId. Use list_resources { resourceType: 'endpoint', projectId } to find existing webchat endpoints first.\n\nSTYLE PRESETS: Use stylePreset ('classic', 'modern', 'slick') to apply a predefined look. You can override individual fields in the same call.\n\nSETTINGS are organized into semantic groups (layout, behavior, startBehavior, homeScreen, teaserMessage, chatOptions, privacyNotice, businessHours, unreadMessages, maintenance, watermark, persistentMenu, attachmentUpload, webchatIcon). Only include groups/fields you want to change — everything else is preserved.\n\nFor advanced customization not covered by the groups, use customJson (raw JSON string for Webchat Custom Settings).\n\nRESPONSE HANDLING — CRITICAL:\nThe response always contains demoWebchatUrl — a direct browser link to test the webchat. You MUST ALWAYS present this URL to the user as a clickable link after every successful create or update. Do NOT tell the user to go to the UI to find it. The _integration section contains configUrl and embeddingSnippet — only mention these if the user explicitly asks about embedding or deploying to their website.",
+      "Create or update a Webchat v3 endpoint that deploys an agent's flow as an embeddable website chat widget. Without endpointId a new endpoint is created (projectId and flowId required); with endpointId the existing endpoint is updated and the given settings are merged, so pass only what should change. stylePreset applies a predefined look, the setting groups (layout, behavior, startBehavior, homeScreen, ...) cover the Webchat settings, and customJson takes anything else. Always returns demoWebchatUrl, a live test page to show the user as a link, plus _integration with the embed snippet.",
     annotations: {
       title: "Manage Webchat",
       readOnlyHint: false,
@@ -1568,7 +1546,7 @@ After creating, use talk_to_agent to test.`,
   {
     name: "manage_voice_gateway",
     description:
-      "Create or configure a Voice Gateway endpoint with WebRTC support. This deploys an AI Agent as a voice-enabled endpoint that users can talk to via their browser.\n\nCREATE vs UPDATE:\n- To create: provide projectId + flowId (+ optional name). A new voiceGateway2 endpoint is created with a WebRTC client.\n- To update: provide endpointId. Settings are merged with existing configuration.\n\nThe tool automatically provisions a WebRTC client on the endpoint. After creation, the response includes a webrtcDemoUrl that the user can open in a browser to talk to the agent via voice.\n\nWebRTC widget can be customized with theme (CLEAN_WHITE, DARK_MODE, AI_PURPLE), transcription settings, avatar, and tagline.\n\nRESPONSE HANDLING — CRITICAL:\nThe response always contains webrtcDemoUrl — a direct browser link to talk to the agent via voice. You MUST ALWAYS present this URL to the user as a clickable link. The _integration section contains the WebSocket endpoint URL and an HTML embedding snippet — only mention these if the user asks about embedding.",
+      "Create or update a Voice Gateway endpoint with a WebRTC client so users can talk to an agent from the browser. Without endpointId a new voiceGateway2 endpoint is created (projectId and flowId required); with endpointId the existing endpoint is updated and settings are merged. webrtcWidgetConfig customizes theme, transcription, avatar and tagline. Always returns webrtcDemoUrl, a live voice page to show the user as a link, plus _integration with the WebSocket URL and embed snippet.",
     annotations: {
       title: "Manage Voice Gateway",
       readOnlyHint: false,
@@ -1672,7 +1650,7 @@ After creating, use talk_to_agent to test.`,
   {
     name: "manage_settings",
     description:
-      'Manage project-level settings in Cognigy, including Voice Preview Settings and Knowledge AI Settings.\n\nOperations:\n- set_voice_preview: Configure the speech provider for voice preview. Requires projectId and provider. If connectionId is omitted, the tool auto-detects an existing speech connection for the chosen provider. If no connection is found, it returns instructions to upload a package containing one via manage_packages.\n- set_knowledge_ai: Configure Knowledge AI Settings for the project. For normal AI-agent knowledge-store setups, use this before creating the knowledge store. Model IDs must be llm_model referenceIds from the SAME project. These are separate from the embedding-model settings used by manage_knowledge for knowledge-store indexing. The accepted model type for knowledgeSearchModelId can vary by Cognigy instance. Use list_resources { resourceType: "llm_model", projectId, useCase: "knowledgeSearch" } to match the Cognigy Settings UI dropdown when choosing candidates. If you are reusing another project\'s knowledge workflow, import the exact source-project Knowledge Search model into the target project before the first set_knowledge_ai attempt.\n\nSupported speech providers: microsoft, google, aws, deepgram, elevenlabs.',
+      "Set project-level Cognigy settings. set_voice_preview selects the speech provider for voice preview, auto-detecting a matching speech Connection when connectionId is omitted. set_knowledge_ai sets the Knowledge Search and Answer Extraction models and the content parser; model ids must be llm_model referenceIds from the SAME project (list_resources with useCase 'knowledgeSearch' matches the UI dropdown), and it runs before a knowledge store is created. Details are in the settings and knowledge-setup skills.",
     annotations: {
       title: "Manage Settings",
       readOnlyHint: false,
@@ -1732,7 +1710,7 @@ After creating, use talk_to_agent to test.`,
   {
     name: "audit_voice_agent",
     description:
-      'Audit a voice AI agent against the deterministic subset of the Voice AI Go-Live Checklist and optionally apply safe fixes.\n\nWHAT IT CHECKS (read from the flow chart, and optionally the endpoint/LLM):\n- 3.1 Flow Configuration: first node is a Set Session Config node; barge-in off; continuous ASR off; user input timeout (5–7 s, ≥5 retries); flow input timeout (~1500 ms) with filler; flow timeout does not fail on error; AI Agent "Stream to Output" on; AI Agent does not stop the flow on error.\n- 3.2 LLM: AI Agent error message configured; Log LLM Latency on; fallback LLM configured (advisory).\n- 3.3 Speech Services: STT hints present (advisory).\n- 3.6 Audio Experience: silence overlay delay 0 (when configured).\n- 3.7 Deployment: Output Transformer enabled (advisory).\n\nProvide aiAgentId (the flow is resolved automatically) or flowId directly. Pass endpointId to also audit the Output Transformer, and projectId to resolve the LLM for the fallback check.\n\nDRY-RUN BY DEFAULT: With apply omitted/false the tool only reports — each fixable failing check includes a proposedFix and nothing is changed. Set apply: true to apply the safe fixes (PATCH node config; prepend a Set Session Config node before the AI Agent node so it runs first). Use only: ["check.id", ...] to apply a subset.\n\nManual / out-of-scope items (most of 3.3 speech provider status, all of 3.8 release readiness) live in the external Voice Gateway app or are runtime/operational and are NOT covered.',
+      "Audit a voice agent's flow, and optionally its endpoint and LLM, against the deterministic checks of the Voice AI Go-Live Checklist: Set Session Config first, barge-in and continuous ASR off, input and flow timeouts, streaming, error handling, latency logging, fallback LLM, STT hints, output transformer. Dry-run by default: each failing check reports a proposedFix and nothing changes. apply: true applies the safe fixes, optionally narrowed with only. Provide aiAgentId or flowId; endpointId and projectId enable the endpoint and LLM checks. Checks outside this subset are listed in the voice-go-live-checklist skill.",
     annotations: {
       title: "Audit Voice Agent",
       readOnlyHint: false,
@@ -1782,7 +1760,7 @@ After creating, use talk_to_agent to test.`,
   {
     name: "manage_snapshots",
     description:
-      'Create and restore Cognigy Snapshots so agent changes can be rolled back. A Snapshot is an immutable copy of a PROJECT.\n\nBACKUP OPERATIONS:\n- list: list the project\'s snapshots, flagging which ones this plugin created, plus the current count against the snapshot limit\n- create: create a backup snapshot of the project and wait for the task to finish\n- restore: roll the project back to a snapshot (reports a preflight first; only acts with confirm: true)\n- delete: delete a snapshot — ONLY snapshots this plugin created\n- decline: record that the user was asked for a backup and said no (for that projectId only — another project is asked about separately)\n- read_task: read task status for a create, restore, or delete that outlived the wait\n\nWHEN TO USE:\n- The FIRST attempt to change an existing agent in a session is HELD by the server: it changes NOTHING and returns error \"backup_not_offered\". Ask the user whether they want a backup, then call create (yes) or decline (no), then retry the held call.\n- When the user wants to undo, call restore (preflight), show the warnings, get agreement, then restore with confirm: true.\n\nSCOPE — A SNAPSHOT IS PROJECT-WIDE:\n- It captures every AI Agent, Flow, Connection, LLM, Lexicon, Extension, Function, Playbook and Locale in the project. Restoring reverts ALL of them, not just one agent.\n- It does NOT contain Endpoints, Knowledge AI (stores/sources/chunks), Intent Trainer records, analytics, contact profiles, logs, or other snapshots. A RAG agent restored from a snapshot comes back WITHOUT its knowledge. Say so before creating or restoring.\n\nRESTORE IS DESTRUCTIVE:\n- All current project resources are DELETED and recreated from the snapshot. Resource ids change, so re-list resources afterwards.\n- Endpoints survive but their locale references are rewritten; endpoints on non-primary locales need manual repair in the UI.\n- restore without confirm: true performs NO action — it returns a preflight report. Show it to the user and get explicit agreement before retrying with confirm: true.\n\nSNAPSHOT LIMIT (default 10 per project, configurable per installation):\n- create pre-checks the count. At the limit it creates NOTHING and returns error "snapshot_limit_reached" plus the oldest deletable backup.\n- Ask the user whether to free a slot, then retry with confirmDeleteOldest: true, which deletes the OLDEST plugin-created backup and then creates.\n- If no plugin-created backup exists to delete, create refuses. The plugin NEVER deletes a human-created snapshot — the user must delete one in the Cognigy UI.\n\nIDENTIFICATION:\n- Snapshots created here are named "[AI Backup] v<N> <label> — <timestamp>" and carry a marker in their description. delete accepts ONLY snapshots with both markers.\n- <N> is a version number that only ever counts up within a project, so a backup can be referred to as "v3" instead of by timestamp. list returns it as `version` (null for snapshots with no version in the name).\n\nBEHAVIOR:\n- create/restore/delete are async platform tasks. By default this tool waits for completion (waitForCompletion: true) and returns the final task state.\n- Snapshot names must be unique in a project; the timestamp in the generated name guarantees that. Pass a short `label`, never a full name.\n- Downloading, packaging and uploading snapshots are deliberately NOT supported here.\n\nOUTCOMES THAT ARE NOT YET KNOWN:\n- If a task was started but its status could not be read, the result carries error \"task_status_unknown\" and outcomeUnknown: true. The operation MAY have succeeded — do NOT report it as failed and do NOT retry it. Poll read_task with the returned taskId first. On create, `created` is null rather than false on this path, because whether the backup exists is not yet known.\n- restore and delete verify the snapshot belongs to the passed projectId. A snapshotId from another project returns error \"snapshot_project_mismatch\" and changes nothing.\n- If freeing a slot cannot be confirmed, create returns error \"eviction_incomplete\" and stops: no further backup is deleted and no snapshot is created. Poll the task in haltedOn, then list before retrying.',
+      "Create, list, restore and delete Cognigy Snapshots: immutable, project-wide backups that let agent changes be rolled back. Operations: list (flags plugin-created backups and the count against the snapshot limit), create (waits for the task), restore (returns a preflight report until confirm is true), delete (plugin-created '[AI Backup]' snapshots only, never human ones), decline (record that the user refused a backup for this project), read_task. Restore deletes and recreates every resource in the project, changes all ids, and does not cover Endpoints or Knowledge AI. This is also the tool to call when another tool returns backup_not_offered. Error results such as snapshot_limit_reached or task_status_unknown carry the next step in their hints.",
     annotations: {
       title: "Manage Snapshots",
       readOnlyHint: false,

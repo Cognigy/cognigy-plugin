@@ -42,7 +42,7 @@ description: "Use when the user wants to add knowledge, RAG, or a knowledge stor
    - IMPORTANT: URL and file ingestion is async. Content is NOT searchable immediately.
    - Wait 10-60 seconds before searching.
 5. manage_knowledge { operation: "list_chunks", knowledgeStoreId }
-   - Verify content was ingested correctly
+   - Verify content was ingested correctly (optional `sourceId` — defaults to the first source — and `filter` to match chunk text; `list_sources` shows all sources in the store)
    - If no results right after create_source, wait and retry
 6. Attach to agent as a TOOL (default approach):
    - **During agent creation** — create_ai_agent { projectId, name, knowledgeStoreReferenceId: storeReferenceId }
@@ -79,7 +79,7 @@ This section is the authoritative policy for knowledge workflows. Follow it over
 - For knowledgeSearchModelId, do NOT assume a chat model is always required, and do NOT assume an embedding model is always rejected. The accepted model type is instance-dependent. Treat the Cognigy API response as the source of truth.
 - Before calling setup_llm for knowledge workflows, ALWAYS list llm_model resources in the TARGET project and try/reuse imported same-project model IDs first.
 - When choosing knowledgeSearchModelId, prefer list_resources { resourceType: "llm_model", projectId, useCase: "knowledgeSearch" } so the candidate set matches the Cognigy Settings UI dropdown instead of the unfiltered project-wide LLM list.
-- After package import, refresh list_resources { resourceType: "llm_model", projectId } before deciding what to use for knowledgeSearchModelId.
+- After package import, refresh list_resources { resourceType: "llm_model", projectId } before deciding what to use for knowledgeSearchModelId. Otherwise do not re-scan the same unchanged project — reuse the previous llm_model results unless an import or setup_llm changed the state.
 - If another project already has a working knowledge workflow, inspect that source project's exact Knowledge Search model and Content Parser choice BEFORE the first set_knowledge_ai call in the target project.
 - Do NOT attempt knowledgeSearchModelId with the agent chat model or any other generic default until the source project's exact Knowledge Search choice has been imported and tried, or you have confirmed that no such source-project choice is available.
 - If manage_settings rejects one knowledgeSearchModelId with a message like "model type not allowed", try other existing llm_model IDs in the SAME project before creating a new model.
