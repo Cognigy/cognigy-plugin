@@ -33,7 +33,7 @@ Credentials do **not** go into any `mcp_config.json` (shared, hand-edited, paste
 ## Tech stack
 
 - TypeScript, **ESM** (`"type": "module"` — import paths use `.js` even for `.ts` sources).
-- Runtime deps: `@modelcontextprotocol/sdk` (stdio transport), `axios`, `zod`, `form-data`. Nothing else.
+- Runtime deps: `@modelcontextprotocol/sdk` (stdio transport), `axios`, `zod`, `form-data`, plus `http-proxy-agent`/`https-proxy-agent`/`proxy-from-env` for corporate-proxy tunnelling (`src/utils/proxy.ts` — axios' own env-var proxy handling never issues `CONNECT`, so it cannot work behind a real proxy). Nothing else.
 - Entry `src/index.ts`: wires `Server` + `StdioServerTransport`, registers `ListTools`/`CallTool`, instantiates `CognigyApiClient` + `ToolHandlers`.
 
 ## Tools — few tools, many operations
