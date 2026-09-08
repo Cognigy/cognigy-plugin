@@ -25,7 +25,7 @@ import {
 import { buildWebchatSettings, deepMerge } from "./webchatSettings.js";
 import { normalizeToolParameters } from "./toolParameters.js";
 import { getNodeEntry, supportedNodeTypes } from "./nodeRegistry.js";
-import { validateCodeNode } from "./codeNodeValidation.js";
+import { codeNodeWarnings } from "./codeNodeHints.js";
 import {
   evaluateChecks,
   summarize,
@@ -3708,10 +3708,10 @@ export class ToolHandlers {
           resolveNodeId,
         },
       };
-      // Documented non-blocking Code Node problems in the pre/post-process
-      // code (blocking ones were rejected by createToolSchema).
+      // Hints about runtime APIs the pre/post-process code uses but the Code
+      // Node runtime does not have (the code was written regardless).
       for (const code of [cfg.preProcessCode, cfg.postProcessCode]) {
-        if (code) parameterWarnings.push(...validateCodeNode(code).warnings);
+        if (code) parameterWarnings.push(...codeNodeWarnings(code));
       }
       return parameterWarnings.length > 0
         ? withHints(createdHttp, { warning: parameterWarnings.join(" ") })
@@ -3977,12 +3977,12 @@ export class ToolHandlers {
       updatedFields,
     };
 
-    // Documented non-blocking Code Node problems in pre/post-process code
-    // that was actually written (blocking ones were rejected by the schema).
+    // Hints about runtime APIs the written pre/post-process code uses but
+    // the Code Node runtime does not have.
     for (const field of ["preProcessCode", "postProcessCode"] as const) {
       const code = cfg?.[field];
       if (typeof code === "string" && updatedFields.includes(field)) {
-        parameterWarnings.push(...validateCodeNode(code).warnings);
+        parameterWarnings.push(...codeNodeWarnings(code));
       }
     }
 
@@ -4214,18 +4214,18 @@ export class ToolHandlers {
           configApplied: data.config ? Object.keys(data.config) : [],
         };
 
-        // Blocking Code Node problems were rejected by manageFlowNodesSchema
-        // before we got here; attach the documented non-blocking ones now.
+        // Hints about runtime APIs the code uses but the Code Node runtime
+        // does not have; the node was created regardless.
         const codeWarnings =
           entry.type === "code" && typeof data.config?.code === "string"
-            ? validateCodeNode(data.config.code).warnings
+            ? codeNodeWarnings(data.config.code)
             : [];
         if (codeWarnings.length > 0) {
           return withRenderSuggestion(
             withHints(result, {
               warning: codeWarnings.join(" "),
               action:
-                "The node was created. Fix the flagged pattern with manage_flow_nodes update if it affects this node.",
+                "The node was created. If the flagged call is real, replace it with manage_flow_nodes update.",
             }),
             flowId,
             nodeId,
@@ -4269,7 +4269,7 @@ export class ToolHandlers {
 
         const patchPayload: any = {};
         if (data.label) patchPayload.label = data.label;
-        // Declared outside the `if` so the post-write Code Node warnings below
+        // Declared outside the `if` so the post-write Code Node hints below
         // can see the type fetched here.
         let nodeType = "";
         if (data.config) {
@@ -4277,30 +4277,6 @@ export class ToolHandlers {
             `/v2.0/flows/${flowId}/chart/nodes/${data.nodeId}`,
           );
           nodeType = existingNode?.type ?? "";
-
-          // A Code Node's type is only known now, so the platform-constraint
-          // check the schema runs on `create` runs here for `update`.
-          if (nodeType === "code" && data.config.code !== undefined) {
-            if (typeof data.config.code !== "string") {
-              return withHints(
-                {
-                  error:
-                    "config.code must be a string of TypeScript/JavaScript source.",
-                },
-                { action: "Send the full new code as a single string." },
-              );
-            }
-            const { errors } = validateCodeNode(data.config.code);
-            if (errors.length > 0) {
-              return withHints(
-                { error: `Code Node update rejected: ${errors.join(" ")}` },
-                {
-                  action:
-                    "Nothing was written. Fix the code and send the full new code string again.",
-                },
-              );
-            }
-          }
 
           // Strip server-computed, read-only fields before merging them back
           // into the PATCH. `transpiled` (a code node's compiled JS) can be
@@ -4386,11 +4362,11 @@ export class ToolHandlers {
           ...(data.config ? { configUpdated: Object.keys(data.config) } : {}),
         };
 
-        // Documented non-blocking Code Node problems (the blocking ones were
-        // rejected above, before the PATCH).
+        // Hints about runtime APIs the code uses but the Code Node runtime
+        // does not have; the node was updated regardless.
         const codeWarnings =
           nodeType === "code" && typeof data.config?.code === "string"
-            ? validateCodeNode(data.config.code).warnings
+            ? codeNodeWarnings(data.config.code)
             : [];
 
         // The PATCH response echoes the input config without the server-computed
@@ -4423,7 +4399,7 @@ export class ToolHandlers {
             withHints(result, {
               warning: codeWarnings.join(" "),
               action:
-                "The node was updated. Fix the flagged pattern with another update if it affects this node.",
+                "The node was updated. If the flagged call is real, replace it with another update.",
             }),
             flowId,
             data.nodeId,

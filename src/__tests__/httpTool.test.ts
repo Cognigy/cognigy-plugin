@@ -72,23 +72,7 @@ describe("create_tool – HTTP tool path", () => {
     }
   }
 
-  it("rejects preProcessCode/postProcessCode the Code Node runtime cannot run", async () => {
-    await expect(
-      h.handleToolCall(
-        "create_tool",
-        baseArgs({ preProcessCode: "const r = await api.httpRequest({});" }),
-      ),
-    ).rejects.toThrow("api.httpRequest() exists only in Cognigy Functions");
-    await expect(
-      h.handleToolCall(
-        "create_tool",
-        baseArgs({ postProcessCode: "import axios from 'axios';" }),
-      ),
-    ).rejects.toThrow("require()/import are not available");
-    expect(api.post).not.toHaveBeenCalled();
-  });
-
-  it("attaches documented Code Node warnings for pre/post-process code", async () => {
+  it("writes pre/post-process code that uses unavailable runtime APIs and hints about it", async () => {
     mockFlowWithJobNode();
     mockPostSequence(
       MOCK_IDS.toolNode,
@@ -98,10 +82,10 @@ describe("create_tool – HTTP tool path", () => {
     );
     const result = await h.handleToolCall(
       "create_tool",
-      baseArgs({ postProcessCode: 'api.deleteContext("temp.raw");' }),
+      baseArgs({ postProcessCode: "const r = await fetch('https://x');" }),
     );
     expect(result.childNodes.postProcessNodeId).toBe(MOCK_IDS.postNode);
-    expect(result._hints?.warning).toContain("api.deleteContext()");
+    expect(result._hints?.warning).toContain("fetch()/XMLHttpRequest");
   });
 
   it("creates HTTP tool with basic GET request (url only)", async () => {
@@ -460,17 +444,17 @@ describe("update_tool – HTTP child-node resolution", () => {
     });
   }
 
-  it("attaches documented Code Node warnings for written post-process code", async () => {
+  it("hints about unavailable runtime APIs in written post-process code", async () => {
     mockFlowAndChildren();
     api.patch.mockResolvedValueOnce({ _id: MOCK_IDS.postNode });
     const result = await h.handleToolCall("update_tool", {
       aiAgentId: ID.agent,
       toolNodeId: MOCK_IDS.toolNode,
       toolType: "http",
-      config: { postProcessCode: 'api.deleteContext("temp.raw");' },
+      config: { postProcessCode: "import axios from 'axios';" },
     });
     expect(result.updatedFields).toContain("postProcessCode");
-    expect(result._hints?.warning).toContain("api.deleteContext()");
+    expect(result._hints?.warning).toContain("require()/import");
   });
 
   it("resolves post-process Code node by label prefix", async () => {

@@ -2190,41 +2190,28 @@ describe("ToolHandlers v2", () => {
     });
   });
 
-  describe("manage_flow_nodes — Code Node platform constraints", () => {
+  describe("manage_flow_nodes — Code Node runtime hints", () => {
     const codeNodeId = "60d5ec49f1a2c8b1a4e0f013";
     const toolNodeId = "60d5ec49f1a2c8b1a4e0f014";
 
-    it("create rejects code the runtime cannot run, before any request", async () => {
-      await expect(
-        h.handleToolCall("manage_flow_nodes", {
-          operation: "create",
-          flowId: ID.flow,
-          parentNodeId: toolNodeId,
-          mode: "appendChild",
-          nodeType: "code",
-          label: "Bad",
-          config: { code: "const r = await fetch('https://x');" },
-        }),
-      ).rejects.toThrow("fetch()/XMLHttpRequest are not available");
-      expect(api.post).not.toHaveBeenCalled();
+    it("create writes code that uses unavailable runtime APIs and hints about it", async () => {
+      api.post.mockResolvedValueOnce({ _id: codeNodeId, parentId: toolNodeId });
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: toolNodeId,
+        mode: "appendChild",
+        nodeType: "code",
+        label: "Lookup",
+        config: { code: "const r = await fetch('https://x');" },
+      });
+      expect(result.nodeId).toBe(codeNodeId);
+      expect(api.post).toHaveBeenCalledTimes(1);
+      expect(result._hints?.warning).toContain("fetch()/XMLHttpRequest");
+      expect(result._hints?.action).toContain("manage_flow_nodes update");
     });
 
-    it("create rejects a non-string code field with a clear message", async () => {
-      await expect(
-        h.handleToolCall("manage_flow_nodes", {
-          operation: "create",
-          flowId: ID.flow,
-          parentNodeId: toolNodeId,
-          mode: "appendChild",
-          nodeType: "code",
-          label: "Bad",
-          config: { code: 123 },
-        }),
-      ).rejects.toThrow("must be a string");
-      expect(api.post).not.toHaveBeenCalled();
-    });
-
-    it("create does not gate supported code and attaches documented warnings", async () => {
+    it("create stays quiet for code the runtime supports", async () => {
       api.post.mockResolvedValueOnce({ _id: codeNodeId, parentId: toolNodeId });
       const result = await h.handleToolCall("manage_flow_nodes", {
         operation: "create",
@@ -2233,51 +2220,13 @@ describe("ToolHandlers v2", () => {
         mode: "appendChild",
         nodeType: "code",
         label: "Cleanup",
-        config: {
-          code: 'context.done = true; api.deleteContext("temp.start");',
-        },
+        config: { code: "context.done = true; api.say('done');" },
       });
       expect(result.nodeId).toBe(codeNodeId);
-      expect(result._hints?.warning).toContain("api.deleteContext()");
-      expect(result._hints?.warning).toContain("delete context.a.b;");
+      expect(result._hints?.warning).toBeUndefined();
     });
 
-    it("update rejects code the runtime cannot run and does not PATCH", async () => {
-      api.get.mockResolvedValueOnce({
-        _id: codeNodeId,
-        type: "code",
-        config: { code: "old" },
-      });
-      const result = await h.handleToolCall("manage_flow_nodes", {
-        operation: "update",
-        flowId: ID.flow,
-        nodeId: codeNodeId,
-        config: { code: "const c = require('xml-js'); api.setState('x');" },
-      });
-      expect(result.error).toContain("Code Node update rejected");
-      expect(result.error).toContain("require()/import");
-      expect(result.error).toContain("api.setState()");
-      expect(api.patch).not.toHaveBeenCalled();
-    });
-
-    it("update applies the checks only to code nodes", async () => {
-      api.get.mockResolvedValueOnce({
-        _id: codeNodeId,
-        type: "say",
-        config: { text: "old" },
-      });
-      api.patch.mockResolvedValueOnce({ _id: codeNodeId });
-      const result = await h.handleToolCall("manage_flow_nodes", {
-        operation: "update",
-        flowId: ID.flow,
-        nodeId: codeNodeId,
-        config: { code: "await fetch('x')" },
-      });
-      expect(result.updated).toBe(true);
-      expect(api.patch).toHaveBeenCalledTimes(1);
-    });
-
-    it("update attaches documented warnings after a successful write", async () => {
+    it("update PATCHes and hints, one sentence per unavailable API", async () => {
       api.get
         .mockResolvedValueOnce({
           _id: codeNodeId,
@@ -2294,11 +2243,30 @@ describe("ToolHandlers v2", () => {
         operation: "update",
         flowId: ID.flow,
         nodeId: codeNodeId,
-        config: { code: 'api.deleteContext("a.b");' },
+        config: { code: "const c = require('xml-js'); api.setState('x');" },
       });
       expect(result.updated).toBe(true);
       expect(api.patch).toHaveBeenCalledTimes(1);
-      expect(result._hints?.warning).toContain("api.deleteContext()");
+      expect(result._hints?.warning).toContain("require()/import");
+      expect(result._hints?.warning).toContain("Intent Conditions");
+    });
+
+    it("update applies the hints only to code nodes", async () => {
+      api.get.mockResolvedValueOnce({
+        _id: codeNodeId,
+        type: "say",
+        config: { text: "old" },
+      });
+      api.patch.mockResolvedValueOnce({ _id: codeNodeId });
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "update",
+        flowId: ID.flow,
+        nodeId: codeNodeId,
+        config: { code: "await fetch('x')" },
+      });
+      expect(result.updated).toBe(true);
+      expect(api.patch).toHaveBeenCalledTimes(1);
+      expect(result._hints?.warning).toBeUndefined();
     });
 
     it("update keeps the hasError warning first when both apply", async () => {
@@ -2318,12 +2286,12 @@ describe("ToolHandlers v2", () => {
         operation: "update",
         flowId: ID.flow,
         nodeId: codeNodeId,
-        config: { code: 'api.deleteContext("a.b"); const x: =' },
+        config: { code: "await fetch('x'); const x: =" },
       });
       expect(result._hints?.warning).toMatch(
         /^Node saved, but config.hasError/,
       );
-      expect(result._hints?.warning).toContain("api.deleteContext()");
+      expect(result._hints?.warning).toContain("fetch()/XMLHttpRequest");
     });
   });
 
