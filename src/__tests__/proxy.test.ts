@@ -12,10 +12,12 @@ import { HttpsProxyAgent } from "https-proxy-agent";
 import {
   clearProxyAgentCache,
   getProxyAxiosOptions,
+  ProxyConfigurationError,
   redactProxyUrl,
 } from "../utils/proxy.js";
 
 const PROXY_ENV_VARS = [
+  "COGNIGY_PROXY_CONNECT_TIMEOUT_MS",
   "HTTP_PROXY",
   "http_proxy",
   "HTTPS_PROXY",
@@ -117,19 +119,33 @@ describe("proxy support", () => {
       expect(second.httpsAgent).toBe(first.httpsAgent);
     });
 
-    it("falls back to a direct connection when the proxy URL is unusable", () => {
+    it("refuses an unusable proxy URL instead of connecting directly", () => {
       // A bare scheme survives proxy-from-env's normalisation but has no host.
       process.env.HTTPS_PROXY = "http://";
-      const options = getProxyAxiosOptions(API_URL);
-      expect(options.proxy).toBe(false);
-      expect(options.httpsAgent).toBeUndefined();
+      expect(() => getProxyAxiosOptions(API_URL)).toThrow(
+        ProxyConfigurationError,
+      );
     });
 
-    it("refuses a SOCKS proxy rather than tunnelling to a nonsense host", () => {
+    it("refuses a SOCKS proxy rather than silently bypassing it", () => {
       process.env.HTTPS_PROXY = "socks5://proxy.corp.example:1080";
-      const options = getProxyAxiosOptions(API_URL);
-      expect(options.proxy).toBe(false);
-      expect(options.httpsAgent).toBeUndefined();
+      expect(() => getProxyAxiosOptions(API_URL)).toThrow(
+        /only http and https proxies are supported/,
+      );
+    });
+
+    it("names NO_PROXY as the way out in the rejection message", () => {
+      process.env.HTTPS_PROXY = "socks5://proxy.corp.example:1080";
+      expect(() => getProxyAxiosOptions(API_URL)).toThrow(/NO_PROXY/);
+    });
+
+    it("keeps proxy credentials out of the rejection message", () => {
+      process.env.HTTPS_PROXY = "socks5://alice:s3cret@proxy.corp.example:1080";
+      expect(() => getProxyAxiosOptions(API_URL)).toThrow(
+        expect.objectContaining({
+          message: expect.not.stringContaining("s3cret"),
+        }) as Error,
+      );
     });
 
     it("accepts an https:// proxy URL", () => {

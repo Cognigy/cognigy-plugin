@@ -54,8 +54,15 @@ Cognigy.
 - If the proxy inspects TLS, also set `NODE_EXTRA_CA_CERTS` to the corporate root
   CA file, then restart the client — Node reads it only at startup. Do not set
   `NODE_TLS_REJECT_UNAUTHORIZED=0`.
-- An error mentioning a proxy, or quoting an HTML body, came from the proxy
-  rather than from Cognigy; the quoted text is the proxy's own message.
+- An error quoting an HTML body, or naming a proxy, points at the proxy rather
+  than Cognigy; the quoted text is the proxy's own message.
+- "Cannot use the configured proxy ..." means the proxy setting itself is
+  malformed or unsupported (SOCKS proxies are not supported). Requests fail
+  instead of connecting directly, so the API key never leaves the sanctioned
+  path; exclude the host with `NO_PROXY` if a direct connection is intended.
+- "Timed out ... connecting through the proxy" means the proxy accepted the
+  connection but never completed the tunnel. Check the proxy address, or raise
+  `COGNIGY_PROXY_CONNECT_TIMEOUT_MS` (default 30000) if it is merely slow.
 - `LOG_LEVEL=debug` logs the proxy actually in use at startup.
 
 ## setup_llm fails

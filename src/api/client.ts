@@ -100,7 +100,7 @@ export function describeUnexpectedBody(
     message += `: the response did not match the expected Cognigy error format — ${snippet}`;
   }
 
-  const proxyUrl = safeGetProxyForUrl(resolveRequestUrl(error));
+  const proxyUrl = safeGetProxyForUrl(resolveRequestUrl(error.config));
   if (proxyUrl) {
     message +=
       ` This request went through the proxy ${redactProxyUrl(proxyUrl)};` +
@@ -113,13 +113,15 @@ export function describeUnexpectedBody(
 }
 
 /**
- * Best-effort absolute URL for the failed request. Request paths are relative
- * to the client's `baseURL`, and `getProxyForUrl` needs an absolute URL to
- * apply `NO_PROXY` — but neither field is guaranteed to be present or valid,
- * and an error path must never throw an error of its own.
+ * Best-effort absolute URL for a request. Request paths are usually relative to
+ * the client's `baseURL`, and `getProxyForUrl` needs an absolute URL to apply
+ * `NO_PROXY` — but neither field is guaranteed to be present or valid, and
+ * neither proxy selection nor the error path may throw an error of its own.
  */
-function resolveRequestUrl(error: AxiosError): string {
-  const { url, baseURL } = error.config ?? {};
+function resolveRequestUrl(
+  config: Pick<AxiosRequestConfig, "url" | "baseURL"> | undefined,
+): string {
+  const { url, baseURL } = config ?? {};
   try {
     if (url) return new URL(url, baseURL).toString();
   } catch {
@@ -152,14 +154,24 @@ export class CognigyApiClient {
         Accept: "application/json",
       },
       timeout: 30000,
-      // Every request to the platform shares one base URL, so the proxy (and
-      // any NO_PROXY exclusion) is resolved once here rather than per call.
-      ...getProxyAxiosOptions(config.baseUrl),
+      // Axios' own proxy handling never opens a CONNECT tunnel; the request
+      // interceptor below attaches real tunnelling agents instead.
+      proxy: false,
     });
 
     this.client.interceptors.request.use(
       (reqConfig) => {
         reqConfig.headers["X-API-Key"] = this.apiKey;
+        // Resolve the proxy against THIS request's target rather than the
+        // client's base URL. Not every request goes to the API host:
+        // downloadPackageArchive passes an absolute download link with
+        // `baseURL: undefined`, and that host has its own NO_PROXY standing —
+        // a client-wide decision would proxy it when it should not, or send it
+        // direct when the proxy is mandatory.
+        Object.assign(
+          reqConfig,
+          getProxyAxiosOptions(resolveRequestUrl(reqConfig)),
+        );
         // Attribute this write to the plugin in Cognigy's audit events. Set
         // here rather than per call site so every platform request is covered,
         // including uploadFile's own headers object. Absent outside a tool

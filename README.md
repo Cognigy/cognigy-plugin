@@ -120,6 +120,7 @@ A value that arrives as an unexpanded `${...}` placeholder counts as missing. Ho
 | `HTTPS_PROXY` / `HTTP_PROXY`        | No       | unset   | Corporate proxy to tunnel Cognigy requests through             |
 | `NO_PROXY`                          | No       | unset   | Comma-separated hosts to reach directly, bypassing the proxy   |
 | `NODE_EXTRA_CA_CERTS`               | No       | unset   | Path to your corporate root CA, for TLS-inspecting proxies     |
+| `COGNIGY_PROXY_CONNECT_TIMEOUT_MS`  | No       | `30000` | Deadline for reaching the proxy and completing the tunnel      |
 
 ### Audit attribution
 
@@ -142,6 +143,12 @@ If your network requires a proxy, set it in the MCP server `env` block (or expor
 ```
 
 Lower-case spellings (`https_proxy`) work too, as do credentials in the URL (`http://user:password@proxy.corp.example:8080`). HTTP and HTTPS proxies are supported; SOCKS proxies are not.
+
+The proxy is chosen per request, so `NO_PROXY` can exclude one host while another still goes through the proxy — a package download link, for example, points at wherever the platform staged the archive rather than at the API host.
+
+If a proxy is configured but cannot be used — a malformed URL, or a SOCKS proxy — requests **fail with a configuration error** rather than quietly connecting directly, which would send your API key outside the sanctioned path. Exclude the host with `NO_PROXY` if you genuinely want a direct connection.
+
+A proxy that accepts the connection and then never completes the tunnel would otherwise hang a tool call indefinitely, so connecting and negotiating is bounded at 30 seconds. Raise `COGNIGY_PROXY_CONNECT_TIMEOUT_MS` if your proxy is simply slow.
 
 **If your proxy inspects TLS** (Zscaler, Netskope, BlueCoat and similar), it presents its own certificate signed by a corporate root CA that Node does not trust by default. Point `NODE_EXTRA_CA_CERTS` at that CA file — Node reads it only at startup, so restart your client afterwards. Never set `NODE_TLS_REJECT_UNAUTHORIZED=0` instead; that disables certificate verification for every connection the engine makes.
 

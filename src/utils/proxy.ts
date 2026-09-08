@@ -34,21 +34,149 @@ export interface ProxyAxiosOptions {
   httpsAgent?: Agent;
 }
 
+/** Raised when a proxy is configured but cannot be used as written. */
+export class ProxyConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProxyConfigurationError";
+  }
+}
+
+const DEFAULT_PROXY_CONNECT_TIMEOUT_MS = 30000;
+
+/**
+ * Deadline for reaching the proxy and completing the `CONNECT` handshake.
+ *
+ * Axios' own `timeout` cannot cover this: it is armed with
+ * `ClientRequest.setTimeout`, which only starts once the request has a socket,
+ * and a proxy agent hands the socket over only after the tunnel is negotiated.
+ * A proxy that accepts the TCP connection and then never answers `CONNECT`
+ * therefore leaves the tool call pending indefinitely — well past the 30s
+ * axios timeout. Overridable for environments where a slow proxy is normal.
+ */
+function connectTimeoutMs(): number {
+  const raw = process.env.COGNIGY_PROXY_CONNECT_TIMEOUT_MS;
+  if (!raw) return DEFAULT_PROXY_CONNECT_TIMEOUT_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    logger.warn(
+      "Ignoring invalid COGNIGY_PROXY_CONNECT_TIMEOUT_MS; using the default",
+      { value: raw, default: DEFAULT_PROXY_CONNECT_TIMEOUT_MS },
+    );
+    return DEFAULT_PROXY_CONNECT_TIMEOUT_MS;
+  }
+  return parsed;
+}
+
+interface ConnectableAgent {
+  connect: (...args: never[]) => Promise<unknown>;
+  /** Options both proxy agents hand to `net.connect`/`tls.connect`. */
+  connectOpts?: Record<string, unknown>;
+}
+
+/**
+ * Wrap an agent's `connect()` so proxy connection plus tunnel negotiation is
+ * bounded. On expiry the request fails with `ETIMEDOUT`; a socket that arrives
+ * late is destroyed rather than left holding a file descriptor for a tunnel
+ * nobody is waiting on any more.
+ */
+function withConnectDeadline<A extends ConnectableAgent>(
+  agent: A,
+  timeoutMs: number,
+  proxyLabel: string,
+): A {
+  const original = agent.connect.bind(agent) as (
+    ...args: never[]
+  ) => Promise<unknown>;
+
+  agent.connect = ((...args: never[]) => {
+    // Abort the socket the agent is about to open, so an expired attempt does
+    // not leave a file descriptor held open against a proxy that never
+    // answers. Both pinned agents build their socket with
+    // `net.connect(this.connectOpts)` synchronously, before their first
+    // `await`, so injecting the signal immediately before the call and
+    // removing it immediately after cannot interleave with another connect —
+    // there is no suspension point in between. Verified against
+    // http(s)-proxy-agent 9.1.0, which the manifest pins exactly.
+    const controller = new AbortController();
+    const connectOpts = agent.connectOpts;
+    const canSignal = Boolean(connectOpts) && !("signal" in connectOpts!);
+    if (canSignal) connectOpts!.signal = controller.signal;
+    let connecting: Promise<unknown>;
+    try {
+      connecting = original(...args);
+    } finally {
+      if (canSignal) delete connectOpts!.signal;
+    }
+
+    let timer: NodeJS.Timeout | undefined;
+    let expired = false;
+
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        expired = true;
+        controller.abort();
+        const error: NodeJS.ErrnoException = new Error(
+          `Timed out after ${timeoutMs}ms connecting through the proxy ${proxyLabel}. ` +
+            `The proxy accepted the connection but did not complete the tunnel. ` +
+            `Check the proxy address, and raise COGNIGY_PROXY_CONNECT_TIMEOUT_MS if it is simply slow.`,
+        );
+        error.code = "ETIMEDOUT";
+        reject(error);
+      }, timeoutMs);
+      // Never keep the process alive for this timer alone; the pending socket
+      // already holds the event loop for as long as the attempt is live.
+      timer.unref?.();
+    });
+
+    connecting.then(
+      (socket) => {
+        if (expired) (socket as { destroy?: () => void })?.destroy?.();
+      },
+      () => {
+        // The underlying failure is already the rejection of `connecting`,
+        // which the race below propagates; swallow it here so a late rejection
+        // after the deadline fired is not an unhandled rejection.
+      },
+    );
+
+    return Promise.race([connecting, deadline]).finally(() =>
+      clearTimeout(timer),
+    );
+  }) as A["connect"];
+
+  return agent;
+}
+
 /**
  * Agents are pooled per proxy URL. Each one owns a socket pool, so building a
  * fresh agent per request would leak sockets and re-do the `CONNECT` handshake
- * every time.
+ * every time. The deadline is part of the key so changing it takes effect
+ * rather than being masked by a cached agent.
  */
 const agentCache = new Map<string, { http: Agent; https: Agent }>();
 
 function getAgents(proxyUrl: string): { http: Agent; https: Agent } {
-  let agents = agentCache.get(proxyUrl);
+  const timeoutMs = connectTimeoutMs();
+  const cacheKey = `${proxyUrl}|${timeoutMs}`;
+  let agents = agentCache.get(cacheKey);
   if (!agents) {
+    const label = redactProxyUrl(proxyUrl);
     agents = {
-      http: new HttpProxyAgent(proxyUrl),
-      https: new HttpsProxyAgent(proxyUrl),
+      http: withConnectDeadline(
+        new HttpProxyAgent(proxyUrl) as unknown as HttpProxyAgent<string> &
+          ConnectableAgent,
+        timeoutMs,
+        label,
+      ) as unknown as Agent,
+      https: withConnectDeadline(
+        new HttpsProxyAgent(proxyUrl) as unknown as HttpsProxyAgent<string> &
+          ConnectableAgent,
+        timeoutMs,
+        label,
+      ) as unknown as Agent,
     };
-    agentCache.set(proxyUrl, agents);
+    agentCache.set(cacheKey, agents);
   }
   return agents;
 }
@@ -108,8 +236,18 @@ function describeUnsupportedProxy(proxyUrl: string): string | undefined {
 /**
  * Resolve the proxy configured for `targetUrl` and return the axios options
  * that route through it. With no proxy configured (or the target excluded by
- * `NO_PROXY`) this still returns `proxy: false`, which is what axios does
- * anyway when no proxy env var is set — so the no-proxy path is unchanged.
+ * `NO_PROXY`) this returns `proxy: false` and no agents, which is what axios
+ * does anyway when no proxy env var is set — so the no-proxy path is unchanged.
+ *
+ * Resolve per request, not per client: `NO_PROXY` and the proxy variables are
+ * matched against the individual target, and requests do not all share a host
+ * (a package download link points at wherever the platform staged the archive).
+ *
+ * Throws `ProxyConfigurationError` when a proxy IS configured for the target
+ * but cannot be used as written. Connecting directly instead would send the API
+ * key and the request body outside the sanctioned proxy path, and on a network
+ * that forbids direct egress it would replace an actionable configuration error
+ * with a puzzling connection failure.
  */
 export function getProxyAxiosOptions(targetUrl: string): ProxyAxiosOptions {
   let proxyUrl = "";
@@ -127,15 +265,10 @@ export function getProxyAxiosOptions(targetUrl: string): ProxyAxiosOptions {
 
   const rejection = describeUnsupportedProxy(proxyUrl);
   if (rejection) {
-    // Warn and connect directly rather than tunnelling through something that
-    // cannot work: the agents accept almost any string and would silently
-    // build a tunnel to a nonsense host, turning a typo into a connection
-    // timeout with no clue as to why.
-    logger.warn(
-      `Ignoring proxy configuration (${rejection}); connecting directly instead`,
-      { proxy: redactProxyUrl(proxyUrl) },
+    throw new ProxyConfigurationError(
+      `Cannot use the configured proxy ${redactProxyUrl(proxyUrl)}: ${rejection}. ` +
+        `Fix the proxy setting, or exclude ${targetOrigin(targetUrl)} with NO_PROXY to connect directly.`,
     );
-    return { proxy: false };
   }
 
   try {
@@ -146,14 +279,10 @@ export function getProxyAxiosOptions(targetUrl: string): ProxyAxiosOptions {
     });
     return { proxy: false, httpAgent: agents.http, httpsAgent: agents.https };
   } catch (error: any) {
-    // An unusable proxy URL must not take the whole server down at construction
-    // time. Warn loudly and fall back to a direct connection, which fails with
-    // a network error the user can act on.
-    logger.warn(
-      "Ignoring unusable proxy configuration; connecting directly instead",
-      { proxy: redactProxyUrl(proxyUrl), error: error?.message },
+    throw new ProxyConfigurationError(
+      `Cannot use the configured proxy ${redactProxyUrl(proxyUrl)}: ${error?.message ?? "unusable proxy configuration"}. ` +
+        `Fix the proxy setting, or exclude ${targetOrigin(targetUrl)} with NO_PROXY to connect directly.`,
     );
-    return { proxy: false };
   }
 }
 
@@ -178,6 +307,16 @@ export function logProxyConfiguration(apiBaseUrl: string): void {
   }
 
   if (proxyUrl) {
+    const rejection = describeUnsupportedProxy(proxyUrl);
+    if (rejection) {
+      // Requests will fail with the same complaint, but say it once at boot so
+      // the problem is visible in the client's log before the first tool call.
+      logger.error("The configured proxy cannot be used", {
+        proxy: redactProxyUrl(proxyUrl),
+        reason: rejection,
+      });
+      return;
+    }
     logger.info("Cognigy API requests route through a proxy", {
       proxy: redactProxyUrl(proxyUrl),
       extraCaCerts: process.env.NODE_EXTRA_CA_CERTS ?? "(not set)",
