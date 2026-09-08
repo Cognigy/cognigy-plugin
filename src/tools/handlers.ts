@@ -693,77 +693,69 @@ export class TaskFailedError extends Error {
 // ---------------------------------------------------------------------------
 
 /**
- * The only test-mode failure talk_to_agent replays on the regular endpoint.
- * 404 on `/test/<token>` means the route itself is missing (platform older than
- * Cognigy 4.27); no handler ran, so re-sending cannot duplicate anything.
+ * Hints for a failed talk_to_agent request. Nothing is ever replayed
+ * automatically (see handleTalkToAgent), so the caller decides what to do, and
+ * the one thing every branch insists on is establishing whether the original
+ * message was processed BEFORE re-sending anything: a REST endpoint's Execution
+ * Finished transformer runs after the flow and can set any HTTP status, and a
+ * gateway timeout can hide a completed execution. Waiting or reusing the
+ * sessionId does not prevent a duplicate. Cognigy documents the
+ * 600-test-messages-per-hour cap but not how exceeding it is signalled, so no
+ * status is equated with "budget exhausted".
  */
-const TEST_MODE_ROUTE_MISSING_STATUS = 404;
-
-/**
- * Hints for a talk_to_agent failure on the test-mode URL that was NOT replayed
- * (see the fallback policy in handleTalkToAgent). The caller has to decide,
- * with the user, whether a billable re-send is warranted, so each status class
- * says what it can and cannot mean and whether the message may already have
- * been processed. Cognigy documents the 600-test-messages-per-hour cap but not
- * how exceeding it is signalled, so no status is equated with "budget
- * exhausted".
- */
-function testModeFailureHints(
+function talkToAgentFailureHints(
   status: number | undefined,
+  sessionId: string,
+  testMode: boolean,
 ): Record<string, string> {
-  const resend =
-    "If the user accepts a BILLABLE message, re-send it with testMode: false.";
+  const checkOutcome = `FIRST establish whether the original message was processed: get_resource { resourceType: 'conversation', id: '${sessionId}' } returns the transcript when the endpoint collects conversations; otherwise continue this same sessionId with a neutral follow-up ("what did you just do?") or verify the side effects of the agent's tools. Re-send only if it was NOT processed.`;
+  const billable = testMode
+    ? " Re-sending with testMode: false is a billable production message and is not a way around an error: only after the outcome check, only once the test-mode cause is confirmed, and only with the user's explicit consent."
+    : "";
+  const warning =
+    "An HTTP error does not prove the message was not processed. A REST endpoint's Execution Finished transformer runs after the flow and can set any status, and a gateway timeout can hide a completed execution. A blind re-send can execute tools or advance the conversation twice; waiting or reusing the sessionId does not prevent that.";
+  const where = testMode ? "the test-mode URL" : "the endpoint";
+  const verifyEndpoint =
+    "verify the endpoint with list_resources { resourceType: 'endpoint' } (channel rest, URLToken present)";
+
+  let likely_cause: string;
+  let action: string;
   if (status === undefined) {
-    return {
-      likely_cause:
-        "Network-level failure (timeout, DNS, connection reset) before any HTTP response. This is not a test-mode rejection: the regular URL would fail the same way.",
-      warning:
-        "A timed-out request may still have been processed by the agent (tools executed, conversation state changed). Do NOT re-send the same message blindly; continue the conversation or check the agent first.",
-      action:
-        "Check connectivity and the endpoint base URL, then retry in test mode with the same sessionId.",
-    };
+    likely_cause =
+      `Network-level failure (timeout, DNS, connection reset) before any HTTP response from ${where}.` +
+      (testMode
+        ? " This is not a test-mode rejection; the regular URL would fail the same way."
+        : "");
+    action = `${checkOutcome} Then check connectivity and the endpoint base URL before sending anything else.`;
+  } else if (status === 400) {
+    likely_cause =
+      "HTTP 400: Cognigy answers this for an unknown URL token and for an invalid payload; an Execution Finished transformer can also set it after the flow ran." +
+      (testMode ? " It does NOT by itself mean test mode is unsupported." : "");
+    action = `${checkOutcome} Then ${verifyEndpoint} and check the payload against detail.${billable}`;
+  } else if (status === 401 || status === 403) {
+    likely_cause = `HTTP ${status}: the platform refused the request (authorization, IP or WAF block, endpoint restriction), or a transformer set the status. Do not read it as an exhausted test-message budget; Cognigy does not document how that cap is signalled.`;
+    action = `${checkOutcome} Then fix the cause named in detail; it would apply to the regular URL too.${billable}`;
+  } else if (status === 404) {
+    likely_cause = testMode
+      ? "HTTP 404 has three possible meanings that the response alone cannot separate: the /test/ route does not exist (platform older than Cognigy 4.27), the URL token is unknown (the regular URL would 404 too), or an Execution Finished transformer returned 404 AFTER the flow ran."
+      : "HTTP 404: the URL token is unknown, the endpoint was deleted, or an Execution Finished transformer returned 404 after the flow ran.";
+    action = testMode
+      ? `${checkOutcome} Then confirm route absence independently before even considering a billable send: the Cognigy release is older than 4.27 (Admin Center or release notes), AND get_resource { resourceType: 'endpoint', id, raw: true } shows the URLToken matches and no Execution Finished transformer is enabled.${billable}`
+      : `${checkOutcome} Then ${verifyEndpoint}.`;
+  } else if (status === 429) {
+    likely_cause =
+      "HTTP 429: the platform is throttling this caller, either general rate limiting or the 600-test-messages-per-hour cap (per organisation, shared by everyone testing there); Cognigy does not document which.";
+    action = `${checkOutcome} Then pause before sending anything else. Do not switch to testMode: false to get around throttling.${billable}`;
+  } else if (status >= 500) {
+    likely_cause =
+      `HTTP ${status} from the endpoint or a gateway in front of it; the request may have reached the flow before failing.` +
+      (testMode ? " This is not evidence that test mode is unsupported." : "");
+    action = `${checkOutcome} Only if it was not processed, retry later in the same mode.${billable}`;
+  } else {
+    likely_cause = `Unexpected HTTP ${status} from ${where}. Read detail.`;
+    action = `${checkOutcome} Then ${verifyEndpoint}.${billable}`;
   }
-  if (status === 400) {
-    return {
-      likely_cause:
-        "The platform rejected the request before processing it. Cognigy answers HTTP 400 for an unknown URL token and for an invalid payload as well, so this does NOT by itself mean test mode is unsupported; the regular URL would most likely fail identically.",
-      action:
-        "Verify the endpoint with list_resources { resourceType: 'endpoint' } (channel rest, URLToken present) and check `detail` and the payload first. Only if the endpoint is valid and the platform predates Cognigy 4.27 is test mode the cause. " +
-        resend,
-    };
-  }
-  if (status === 401 || status === 403) {
-    return {
-      likely_cause: `HTTP ${status}: the platform refused the request (authorization, IP or WAF block, endpoint restriction). Read \`detail\`. Do not assume the test-message budget is exhausted; Cognigy does not document how that cap is signalled.`,
-      action:
-        "Fix the cause named in `detail`; it would apply to the regular URL too. Only if `detail` explicitly names test mode: " +
-        resend,
-    };
-  }
-  if (status === 429) {
-    return {
-      likely_cause:
-        "HTTP 429: the platform is throttling this caller. That may be general rate limiting or the 600-test-messages-per-hour cap (per organisation, shared by everyone testing there); Cognigy does not document which.",
-      action:
-        "Pause, then retry the SAME message in test mode. Do not switch to testMode: false to get around throttling unless the user explicitly accepts billable messages.",
-    };
-  }
-  if (status >= 500) {
-    return {
-      likely_cause: `HTTP ${status} from the endpoint or a gateway in front of it. The request may have reached the flow before failing. This is not evidence that test mode is unsupported.`,
-      warning:
-        "The agent may already have processed this message (tools executed, conversation state changed) even though no response arrived. Do NOT re-send the same message blindly; continue the conversation or inspect the agent first.",
-      action:
-        "Retry later in test mode. Only if the error persists on the test URL and the regular URL is known to work: " +
-        resend,
-    };
-  }
-  return {
-    likely_cause: `Unexpected HTTP ${status} from the test-mode URL. Read \`detail\`.`,
-    action:
-      "Verify the endpoint with list_resources { resourceType: 'endpoint' }. " +
-      resend,
-  };
+  return { likely_cause, warning, action };
 }
 
 export class ToolHandlers {
@@ -2398,26 +2390,25 @@ export class ToolHandlers {
     // customer's billable conversation count, so it is the default. It is a
     // pure URL variant, so the handler stays stateless.
     //
-    // Fallback policy: the message is re-sent to the regular endpoint ONLY
-    // when the test-mode URL answers 404. That is what a platform without the
-    // /test/ route (older than Cognigy 4.27) returns, and a 404 means no
-    // handler ran, so the message cannot have been processed and the replay
-    // cannot duplicate a tool call or a conversation turn. Every other failure
-    // is returned as an error WITHOUT replaying: a 5xx or a timeout may have
-    // reached the flow already (tools executed, state changed), 429/403 mean
-    // the platform is pushing back and hammering the billable URL is the wrong
-    // answer, and 400 is what the platform also returns for an unknown URL
-    // token or an invalid payload, which would fail identically on the regular
-    // URL. testModeFailureHints() tells the caller what each class can mean
-    // so the decision to re-send with testMode: false is made with the user.
+    // There is deliberately NO automatic fallback to the regular (billable)
+    // URL. An HTTP error from the test-mode URL never proves the message was
+    // not processed: a REST endpoint's Execution Finished transformer runs
+    // after the flow and can set any status (a 404 included), and a gateway
+    // timeout can hide a completed execution. Replaying would then execute
+    // tools or advance the conversation twice, against production, billed.
+    // Nor can route absence (platform older than Cognigy 4.27) be told apart
+    // from an unknown URL token or a transformer-set status by the response
+    // alone: the platform answers an empty 400 for an unknown token on either
+    // path. So a failure is returned with status-aware hints
+    // (talkToAgentFailureHints) that require the original outcome to be
+    // checked first, and a billable send only ever happens when the caller
+    // passes testMode: false.
     const useTestMode = data.testMode !== false;
-    let productionUrl: string;
     let targetUrl: string;
     try {
-      productionUrl = toProductionEndpointUrl(endpointUrl!);
       targetUrl = useTestMode
         ? toTestModeEndpointUrl(endpointUrl!)
-        : productionUrl;
+        : toProductionEndpointUrl(endpointUrl!);
     } catch (urlErr: any) {
       // A caller-supplied endpointUrl is schema-validated, so this is almost
       // always a malformed COGNIGY_ENDPOINT_BASE_URL. Return it structured
@@ -2437,42 +2428,15 @@ export class ToolHandlers {
         },
       );
     }
-    let testModeFallback:
-      | { status: number; detail: string; testModeUrl: string }
-      | undefined;
 
-    const send = (url: string) =>
-      axios.post(url, payload, {
+    try {
+      const response = await axios.post(targetUrl, payload, {
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
         timeout: 30000,
       });
-
-    try {
-      let response;
-      try {
-        response = await send(targetUrl);
-      } catch (testErr: any) {
-        const status = testErr?.response?.status;
-        if (!useTestMode || status !== TEST_MODE_ROUTE_MISSING_STATUS) {
-          throw testErr;
-        }
-        logger.warn(
-          `talk_to_agent: test-mode URL answered ${status} (no /test/ route); falling back to the regular endpoint`,
-        );
-        testModeFallback = {
-          status,
-          detail:
-            testErr.response?.data?.error ||
-            testErr.response?.data?.message ||
-            testErr.message,
-          testModeUrl: targetUrl,
-        };
-        targetUrl = productionUrl;
-        response = await send(targetUrl);
-      }
 
       let agentResponse = response.data.text || "";
       const outputStack = response.data.outputStack || [];
@@ -2485,54 +2449,38 @@ export class ToolHandlers {
         agentResponse,
         sessionId,
         endpointUrl: targetUrl,
-        testMode: useTestMode && !testModeFallback,
+        testMode: useTestMode,
       };
       if (endpointMeta.autoCreated) result.endpointAutoCreated = true;
       if (endpointMeta.resolved) result.endpointResolved = true;
-      if (testModeFallback) result.testModeFallback = testModeFallback;
 
       if (data.verbose) {
         result.rawResponse = response.data;
       }
 
-      const hints: Record<string, string> = {};
-      if (testModeFallback) {
-        hints.warning = `The test-mode URL answered HTTP ${testModeFallback.status}: the /test/ route does not exist on this platform (it predates Cognigy 4.27), so this message was sent to the regular endpoint and COUNTS as a billable conversation. Tell the user. Pass testMode: false for further messages in this run to skip the failing test-mode attempt.`;
-      }
       if (!agentResponse) {
-        hints.likely_cause =
-          "Agent returned no text. Possible causes: 1) no LLM configured, 2) empty agent description, 3) endpoint not connected to flow.";
-        hints.action = "Read the troubleshooting guide for diagnostic steps.";
+        return withHints(result, {
+          likely_cause:
+            "Agent returned no text. Possible causes: 1) no LLM configured, 2) empty agent description, 3) endpoint not connected to flow.",
+          action: "Read the troubleshooting guide for diagnostic steps.",
+        });
       }
-
-      return Object.keys(hints).length > 0 ? withHints(result, hints) : result;
+      return result;
     } catch (error: any) {
       const status: number | undefined = error.response?.status;
       const detail =
         error.response?.data?.error ||
         error.response?.data?.message ||
         error.message;
-      // A failure on the test-mode URL that was deliberately NOT replayed
-      // (see the fallback policy above) needs status-aware guidance so the
-      // caller does not equate it with "test mode unsupported" or re-send a
-      // message that may already have been processed.
-      const failedInTestMode = useTestMode && !testModeFallback;
       return withHints(
         {
           error: `Request failed with status ${status ?? "unknown"}`,
           detail,
           sessionId,
           endpointUrl: targetUrl,
-          testMode: failedInTestMode,
-          ...(testModeFallback ? { testModeFallback } : {}),
+          testMode: useTestMode,
         },
-        failedInTestMode
-          ? testModeFailureHints(status)
-          : {
-              likely_cause: "Endpoint URL invalid or expired.",
-              action:
-                "Verify endpoint with list_resources { resourceType: 'endpoint' }.",
-            },
+        talkToAgentFailureHints(status, sessionId, useTestMode),
       );
     }
   }

@@ -16,40 +16,52 @@ description: "Use when a Cognigy agent returns empty responses, a tool call or c
 4. Check endpoint is connected: get_resource { resourceType: "endpoint", id }
    Verify flowId is set and URLToken exists
 
-## talk_to_agent fails or reports testModeFallback
+## talk_to_agent fails (any HTTP error or timeout)
 
 talk_to_agent sends through Cognigy Endpoint Test Mode (`/test/<token>`) so test
-messages are not billed. Only ONE failure is replayed on the regular endpoint:
+messages are not billed. It **never** re-sends a failed message on the regular
+(billable) endpoint by itself; a failure comes back as `error` with `testMode`,
+`endpointUrl` and status-aware `_hints`.
 
-- **404 on the test URL** — the `/test/` route does not exist, i.e. the
-  platform predates Cognigy 4.27. Nothing was processed, so the message is
-  re-sent to the regular endpoint and the response carries `testMode: false`,
-  `testModeFallback: { status, detail, testModeUrl }` and a `_hints.warning`.
-  That message **was billed** — always tell the user. Pass `testMode: false`
-  for the rest of the run to avoid a failed attempt per message.
+**Step 1, always: find out whether the message was processed.** An HTTP error
+does not prove it was not. A REST endpoint's Execution Finished transformer runs
+after the flow and can return any status (a 404 included), and a gateway timeout
+can hide a completed execution. Waiting or reusing the `sessionId` does not
+prevent a duplicate. Check:
 
-Every other failure comes back as an `error` with `testMode: true` and is **not**
-re-sent. Read `detail` and `_hints` before recommending billable mode; an HTTP
-status alone does not identify a test-mode problem, and Cognigy does not
-document how the 600-test-messages-per-hour cap is signalled:
+- `get_resource { resourceType: "conversation", id: "<sessionId>" }` for the
+  transcript (needs the endpoint to collect conversations), or
+- continue the **same** `sessionId` with a neutral follow-up ("what did you
+  just do?"), or verify the side effects of the agent's tools.
 
-- **400** — the platform rejected the request before processing it. Cognigy
-  returns 400 for an unknown URL token and for an invalid payload too, so
-  verify the endpoint (`get_resource { resourceType: "endpoint", id }`: channel
-  `rest`, `URLToken` present) and the payload first. Only a valid endpoint on a
-  pre-4.27 platform points at test mode; then `testMode: false` with the user's
-  consent.
+Re-send the message only if it was **not** processed.
+
+**Step 2: read the status, but do not over-interpret it.** Cognigy does not
+document how the 600-test-messages-per-hour cap is signalled, and the trial
+platform answers an empty 400 for an unknown token on both the test and the
+regular path, so a status alone never identifies a test-mode problem.
+
+- **404** has three possible meanings: the `/test/` route does not exist
+  (platform older than Cognigy 4.27), the URL token is unknown (the regular URL
+  would 404 too), or a transformer returned 404 after the flow ran. Confirm
+  route absence independently before considering billable mode: the Cognigy
+  release is older than 4.27 (Admin Center or release notes), **and**
+  `get_resource { resourceType: "endpoint", id, raw: true }` shows the token
+  matches and no Execution Finished transformer is enabled.
+- **400** — unknown URL token, invalid payload, or a transformer-set status.
+  Verify the endpoint (`channel: rest`, `URLToken` present) and the payload.
 - **401 / 403** — authorization, IP/WAF block or an endpoint restriction, which
   would hit the regular URL as well. Fix what `detail` names; do not read it as
   "quota exhausted".
-- **429** — throttling. May be general rate limiting or the per-organisation
-  test budget. Pause and retry the same message in test mode; switch to
-  `testMode: false` only if the user explicitly accepts billable messages.
+- **429** — throttling, either general rate limiting or the per-organisation
+  test budget. Pause; do not switch to `testMode: false` to get around it.
 - **5xx / timeout / DNS** — the request may have reached the flow before
-  failing, so the agent may already have executed tools or advanced the
-  conversation. Do **not** re-send the same message blindly; continue the
-  conversation or inspect the agent first. This is not evidence that test mode
-  is unsupported.
+  failing. Not evidence that test mode is unsupported.
+
+**Step 3: `testMode: false` is a billable production message.** Use it only
+when the user explicitly wants one, or when all of the following hold: the
+original message is confirmed unprocessed, the platform is confirmed to lack
+test mode, and the user has accepted the billing.
 
 ## create_ai_agent failed
 

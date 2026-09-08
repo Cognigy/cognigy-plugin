@@ -51,11 +51,10 @@ read as a complete one.
 Warn the user, once, that probes run against the live agent, consume LLM tokens, and land in the agent's
 conversation history. Probes go out in Cognigy Endpoint Test Mode (not billed), which is capped at **600
 test messages per hour per organisation** — a `thorough` run with repeats and controls approaches that,
-so size the probe budget accordingly and split a larger audit across hours rather than exceeding it. If
-a `talk_to_agent` response carries `testModeFallback`, the platform has no test mode (HTTP 404 on the
-test URL) and that probe **was billed**: stop, report it, and let the user decide whether to continue. Any
-other probe `error` is not replayed by the tool — read its `_hints`; a 5xx or timeout probe may already
-have been processed, so do not re-send it blindly, and never switch to `testMode: false` on your own. Also warn that probing is only possible over a REST endpoint: `talk_to_agent`
+so size the probe budget accordingly and split a larger audit across hours rather than exceeding it. The
+tool never falls back to a billable send on its own. A probe that returns an `error` was not replayed:
+read its `_hints` and establish whether the probe was processed (the agent may have answered it even
+though the HTTP response failed) before re-sending it, and never switch to `testMode: false` on your own. Also warn that probing is only possible over a REST endpoint: `talk_to_agent`
 reuses an existing one, but if the flow has none the first probe **creates a persistent REST endpoint**.
 That is inherent to probing at all and is _not_ covered by `environmentMutation` (which gates knowledge
 stores only). Preflight the endpoint state — if one has to be created, disclose it up front, and delete
