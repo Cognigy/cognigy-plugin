@@ -132,7 +132,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "setup_llm",
     description:
-      "Create a NEW LLM resource (GPT-4, Claude, etc.) in a project. This is a LAST RESORT — only use when no existing LLM can be reused.\n\nPRECONDITION — you MUST have already completed ALL of these before calling this tool:\n1. Listed all projects: list_resources { resourceType: 'project' }\n2. Checked every other project for existing LLMs: list_resources { resourceType: 'llm_model', projectId }\n3. Attempted package reuse where another project already has a reusable LLM with connectionId\n4. Proceeding only because reuse is unavailable, transfer failed, or the user explicitly asked for a brand-new LLM\nIf you have not completed steps 1-4, STOP and do them first. Do NOT call this tool.\n\nMODEL ROLE WARNING:\n- Chat/completion models are used for AI Agents.\n- Embedding models are used for knowledge-store indexing.\n- Knowledge Search and Answer Extraction use same-project llm_model IDs accepted by the Cognigy API for that use case.\n- Do not use setup_llm as an automatic workaround for knowledgeSearchModelId failures while existing same-project candidates still exist.\n\nOPENAI-COMPATIBLE PROVIDERS (self-hosted or third-party endpoints that speak the OpenAI API, e.g. vLLM, Hugging Face, LiteLLM, Azure AI Foundry): use provider 'openAICompatible' with modelType 'custom-model' (chat) or 'custom-embedding-model' (embedding). The actual model name goes in customModel and the endpoint in baseCustomUrl — both required. Optional: customAuthHeader (send the API key in a custom header instead of 'Authorization: Bearer'), apiType ('chatCompletion' default, or 'responses').\n\nIMPORTANT: NEVER guess or hallucinate API keys. If creating a new LLM and no apiKey or connectionId was provided by the user, ASK for the required credentials.\n\nAfter creation, the connection is normally tested by sending a minimal probe to the provider. If this connection test runs and fails (for example, invalid credentials or model name), the model is deleted and an error is returned — this prevents broken model references from silently breaking downstream flows.\n\nIf the provider's test endpoint is unreachable or returns a non-testable status, the model is kept but a warning is returned so you know connectivity could not be fully verified.\n\nIf dangerouslySkipConnectionTest is true, the connection test is not run at all; the model is kept and the response includes a warning that no connectivity check was performed. Only use this flag when you explicitly accept the risk that the created LLM might not be callable. Never use it to bypass a missing or cross-project connection.\n\nIf isDefault is true (the default), agents in the project will automatically use this LLM. If isDefault is false, you must explicitly assign it to the agent via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: '<referenceId from this response>' } }.\n\nThe response includes the LLM's referenceId — use this value for jobConfig.llmProviderReferenceId if assigning manually.\n\nTo list existing LLMs: use list_resources { resourceType: 'llm_model', projectId }.\nTo delete: use delete_resource { resourceType: 'llm_model', id }.",
+      "Create a NEW LLM resource (GPT-4, Claude, etc.) in a project. This is a LAST RESORT — only use when no existing LLM can be reused.\n\nPRECONDITION — you MUST have already completed ALL of these before calling this tool:\n1. Listed all projects: list_resources { resourceType: 'project' }\n2. Checked every other project for existing LLMs: list_resources { resourceType: 'llm_model', projectId }\n3. Attempted package reuse where another project already has a reusable LLM with connectionId\n4. Proceeding only because reuse is unavailable, transfer failed, or the user explicitly asked for a brand-new LLM\nIf you have not completed steps 1-4, STOP and do them first. Do NOT call this tool.\n\nMODEL ROLE WARNING:\n- Chat/completion models are used for AI Agents.\n- Embedding models are used for knowledge-store indexing.\n- Knowledge Search and Answer Extraction use same-project llm_model IDs accepted by the Cognigy API for that use case.\n- Do not use setup_llm as an automatic workaround for knowledgeSearchModelId failures while existing same-project candidates still exist.\n\nOPENAI-COMPATIBLE PROVIDERS (self-hosted or third-party endpoints that speak the OpenAI API, e.g. vLLM, Hugging Face, LiteLLM, Azure AI Foundry): use provider 'openAICompatible' with modelType 'custom-model' (chat) or 'custom-embedding-model' (embedding). The actual model name goes in customModel and the endpoint in baseCustomUrl — both required. Optional: customAuthHeader (send the API key in a custom header instead of 'Authorization: Bearer'), apiType ('chatCompletion' default, or 'responses').\n\nAWS BEDROCK: use provider 'awsBedrock' with region (required) and either accessKeyId + secretAccessKey or roleArn (IAM role) — NOT apiKey. modelType is a Bedrock model id from Cognigy's supported list (e.g. 'amazon.nova-pro-v1:0', 'amazon.nova-lite-v1:0', 'amazon.titan-embed-text-v2:0' for embeddings), or 'custom-model' with the Bedrock model id or inference profile id (e.g. 'eu.anthropic.claude-sonnet-4-6') in customModel. Optional location controls inference routing: 'region' (default — requests stay in the given region), 'geo' (routed within a geographic boundary; requires geo, e.g. 'us', 'eu', 'apac'), or 'global' (routed worldwide, highest throughput).\n\nIMPORTANT: NEVER guess or hallucinate credentials. If creating a new LLM and the user provided neither the provider's credentials nor a connectionId, ASK for the required credentials. Credentials are apiKey for most providers; for awsBedrock they are accessKeyId + secretAccessKey or roleArn instead (apiKey is rejected there — do not ask for one).\n\nAfter creation, the connection is normally tested by sending a minimal probe to the provider. If this connection test runs and fails (for example, invalid credentials or model name), the model is deleted and an error is returned — this prevents broken model references from silently breaking downstream flows.\n\nIf the provider's test endpoint is unreachable or returns a non-testable status, the model is kept but a warning is returned so you know connectivity could not be fully verified.\n\nIf dangerouslySkipConnectionTest is true, the connection test is not run at all; the model is kept and the response includes a warning that no connectivity check was performed. Only use this flag when you explicitly accept the risk that the created LLM might not be callable. Never use it to bypass a missing or cross-project connection.\n\nIf isDefault is true (the default), agents in the project will automatically use this LLM. If isDefault is false, you must explicitly assign it to the agent via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: '<referenceId from this response>' } }.\n\nThe response includes the LLM's referenceId — use this value for jobConfig.llmProviderReferenceId if assigning manually.\n\nTo list existing LLMs: use list_resources { resourceType: 'llm_model', projectId }.\nTo delete: use delete_resource { resourceType: 'llm_model', id }.",
     annotations: {
       title: "Setup LLM",
       readOnlyHint: false,
@@ -153,19 +153,20 @@ export const tools: ToolDefinition[] = [
             "google",
             "mistral",
             "openAICompatible",
+            "awsBedrock",
           ],
           description:
-            "LLM provider (API values: 'openAI', 'azureOpenAI', 'anthropic', 'google', 'mistral', 'openAICompatible'). Use 'openAICompatible' for any endpoint that speaks the OpenAI API (vLLM, Hugging Face, LiteLLM, Azure AI Foundry, ...).",
+            "LLM provider (API values: 'openAI', 'azureOpenAI', 'anthropic', 'google', 'mistral', 'openAICompatible', 'awsBedrock'). Use 'openAICompatible' for any endpoint that speaks the OpenAI API (vLLM, Hugging Face, LiteLLM, Azure AI Foundry, ...); 'awsBedrock' for models on AWS Bedrock.",
         },
         modelType: {
           type: "string",
           description:
-            "Model type string. Chat examples: 'gpt-4o', 'gpt-4o-mini', 'claude-sonnet-4-0', 'mistral-small-2503'. Embedding examples: 'text-embedding-3-small', 'text-embedding-3-large', 'text-embedding-ada-002', 'gemini-embedding-001'. For provider 'openAICompatible' this MUST be 'custom-model' (chat) or 'custom-embedding-model' (embedding); the real model name goes in customModel.",
+            "Model type string. Chat examples: 'gpt-4o', 'gpt-4o-mini', 'claude-sonnet-4-0', 'mistral-small-2503'. Embedding examples: 'text-embedding-3-small', 'text-embedding-3-large', 'text-embedding-ada-002', 'gemini-embedding-001'. For provider 'openAICompatible' this MUST be 'custom-model' (chat) or 'custom-embedding-model' (embedding); the real model name goes in customModel. For 'awsBedrock' use a Bedrock model id (e.g. 'amazon.nova-pro-v1:0') or 'custom-model' + customModel.",
         },
         name: {
           type: "string",
           description:
-            "Display name for the LLM resource. If omitted, defaults to customModel for openAICompatible providers and modelType for all other providers.",
+            "Display name for the LLM resource. If omitted, defaults to customModel when provided (openAICompatible, or awsBedrock with modelType 'custom-model'), otherwise to modelType.",
         },
         apiKey: {
           type: "string",
@@ -189,7 +190,7 @@ export const tools: ToolDefinition[] = [
         customModel: {
           type: "string",
           description:
-            "openAICompatible only (required): the model name as known by the provider, e.g. 'llama-3.3-70b-instruct'.",
+            "The provider's own model name when modelType is 'custom-model'. Required for openAICompatible (e.g. 'llama-3.3-70b-instruct'); optional for awsBedrock (a Bedrock model id, e.g. 'anthropic.claude-sonnet-4-20250514-v1:0').",
         },
         customAuthHeader: {
           type: "string",
@@ -201,6 +202,37 @@ export const tools: ToolDefinition[] = [
           enum: ["chatCompletion", "responses"],
           description:
             "API flavor for chat models (openAI, azureOpenAI, openAICompatible only). Default: 'chatCompletion'. Use 'responses' only if the provider supports OpenAI's Responses API.",
+        },
+        region: {
+          type: "string",
+          description:
+            "awsBedrock only (required): AWS region of the Bedrock deployment, e.g. 'us-east-1' or 'eu-central-1'.",
+        },
+        location: {
+          type: "string",
+          enum: ["region", "geo", "global"],
+          description:
+            "awsBedrock only: inference-call routing. 'region' (default) keeps requests in the given region; 'geo' routes within a geographic boundary (requires geo); 'global' routes worldwide for the highest throughput.",
+        },
+        geo: {
+          type: "string",
+          description:
+            "awsBedrock only, required when location is 'geo': the geographic boundary requests may be routed within, e.g. 'us', 'eu', or 'apac'. The AWS region must lie inside this boundary.",
+        },
+        accessKeyId: {
+          type: "string",
+          description:
+            "awsBedrock only: AWS access key ID. Must be provided together with secretAccessKey. A Connection is auto-created from the pair.",
+        },
+        secretAccessKey: {
+          type: "string",
+          description:
+            "awsBedrock only: AWS secret access key. Must be provided together with accessKeyId.",
+        },
+        roleArn: {
+          type: "string",
+          description:
+            "awsBedrock only: IAM role ARN for role-based auth (alternative to accessKeyId + secretAccessKey), e.g. 'arn:aws:iam::123456789012:role/cognigy-bedrock'. Feature-gated: the platform rejects this connection type unless IAM connections are enabled for the installation — prefer the access-key pair unless the user asked for IAM-role auth.",
         },
         dangerouslySkipConnectionTest: {
           type: "boolean",

@@ -695,6 +695,133 @@ describe("ToolHandlers v2", () => {
       });
       expect(llmPayload).not.toHaveProperty("apiType");
     });
+
+    it("creates an awsBedrock LLM with an access-key connection and region metadata", async () => {
+      const mockBedrockLlm = {
+        _id: ID.llm,
+        referenceId: "llm-ref-uuid",
+        name: "amazon.nova-pro-v1:0",
+        provider: "awsBedrock",
+        modelType: "amazon.nova-pro-v1:0",
+        connectionId: "conn-ref-uuid",
+        isDefault: true,
+        awsBedrock: { region: "eu-central-1" },
+      };
+      const mockConn = { _id: "conn1", referenceId: "conn-ref-uuid" };
+      api.post
+        .mockResolvedValueOnce(mockConn)
+        .mockResolvedValueOnce(mockBedrockLlm)
+        .mockResolvedValueOnce(mockTestSuccess);
+
+      const result = await h.handleToolCall("setup_llm", {
+        projectId: ID.project,
+        provider: "awsBedrock",
+        modelType: "amazon.nova-pro-v1:0",
+        region: "eu-central-1",
+        accessKeyId: "AKIA123",
+        secretAccessKey: "secret123",
+      });
+
+      expect(api.post).toHaveBeenCalledWith(
+        "/v2.0/connections",
+        expect.objectContaining({
+          type: "AwsBedrockProvider",
+          extension: "@cognigy/generative-ai-provider",
+          fields: { accessKeyId: "AKIA123", secretAccessKey: "secret123" },
+        }),
+      );
+      expect(api.post).toHaveBeenCalledWith(
+        "/v2.0/largelanguagemodels",
+        expect.objectContaining({
+          modelType: "amazon.nova-pro-v1:0",
+          provider: "awsBedrock",
+          awsBedrock: { region: "eu-central-1" },
+        }),
+      );
+      expect(result.awsBedrock).toEqual({ region: "eu-central-1" });
+    });
+
+    it("creates an awsBedrock IAM-role connection and includes customModel metadata", async () => {
+      const mockConn = { _id: "conn1", referenceId: "conn-ref-uuid" };
+      api.post
+        .mockResolvedValueOnce(mockConn)
+        .mockResolvedValueOnce({
+          ...mockLlm,
+          provider: "awsBedrock",
+          modelType: "custom-model",
+        })
+        .mockResolvedValueOnce(mockTestSuccess);
+
+      await h.handleToolCall("setup_llm", {
+        projectId: ID.project,
+        provider: "awsBedrock",
+        modelType: "custom-model",
+        customModel: "anthropic.claude-sonnet-4-20250514-v1:0",
+        region: "us-east-1",
+        roleArn: "arn:aws:iam::123456789012:role/cognigy-bedrock",
+      });
+
+      expect(api.post).toHaveBeenCalledWith(
+        "/v2.0/connections",
+        expect.objectContaining({
+          type: "AwsBedrockProviderIamRole",
+          fields: { roleArn: "arn:aws:iam::123456789012:role/cognigy-bedrock" },
+        }),
+      );
+      const llmPayload = api.post.mock.calls.find(
+        (call: any[]) => call[0] === "/v2.0/largelanguagemodels",
+      )?.[1];
+      expect(llmPayload.awsBedrock).toEqual({
+        region: "us-east-1",
+        customModel: "anthropic.claude-sonnet-4-20250514-v1:0",
+      });
+      // Display name falls back to customModel
+      expect(llmPayload.name).toBe("anthropic.claude-sonnet-4-20250514-v1:0");
+    });
+
+    it("includes location and geo in the awsBedrock metadata", async () => {
+      const mockConn = { _id: "conn1", referenceId: "conn-ref-uuid" };
+      api.post
+        .mockResolvedValueOnce(mockConn)
+        .mockResolvedValueOnce({
+          ...mockLlm,
+          provider: "awsBedrock",
+          modelType: "amazon.nova-pro-v1:0",
+        })
+        .mockResolvedValueOnce(mockTestSuccess);
+
+      await h.handleToolCall("setup_llm", {
+        projectId: ID.project,
+        provider: "awsBedrock",
+        modelType: "amazon.nova-pro-v1:0",
+        region: "eu-central-1",
+        location: "geo",
+        geo: "eu",
+        accessKeyId: "AKIA123",
+        secretAccessKey: "secret123",
+      });
+
+      const llmPayload = api.post.mock.calls.find(
+        (call: any[]) => call[0] === "/v2.0/largelanguagemodels",
+      )?.[1];
+      expect(llmPayload.awsBedrock).toEqual({
+        region: "eu-central-1",
+        location: "geo",
+        geo: "eu",
+      });
+    });
+
+    it("returns a bedrock-specific error when no AWS credentials provided", async () => {
+      const result = await h.handleToolCall("setup_llm", {
+        projectId: ID.project,
+        provider: "awsBedrock",
+        modelType: "amazon.nova-pro-v1:0",
+        region: "us-east-1",
+      });
+
+      expect(result.error).toContain("accessKeyId");
+      expect(api.post).not.toHaveBeenCalled();
+    });
   });
 
   // =========================================================================

@@ -34,6 +34,21 @@ export const updateAiAgentSchema = z.object({
 });
 
 // Tool 3: setup_llm
+
+// Which providers may use which provider-specific setup_llm field.
+const SETUP_LLM_FIELD_PROVIDERS = {
+  baseCustomUrl: ["openAICompatible"],
+  customModel: ["openAICompatible", "awsBedrock"],
+  customAuthHeader: ["openAICompatible"],
+  apiType: ["openAI", "azureOpenAI", "openAICompatible"],
+  region: ["awsBedrock"],
+  location: ["awsBedrock"],
+  geo: ["awsBedrock"],
+  accessKeyId: ["awsBedrock"],
+  secretAccessKey: ["awsBedrock"],
+  roleArn: ["awsBedrock"],
+} as const;
+
 export const setupLlmSchema = z
   .object({
     projectId: idSchema,
@@ -44,6 +59,7 @@ export const setupLlmSchema = z
       "google",
       "mistral",
       "openAICompatible",
+      "awsBedrock",
     ]),
     modelType: z.string().min(1),
     name: z.string().optional(),
@@ -54,9 +70,32 @@ export const setupLlmSchema = z
     customModel: z.string().min(1).optional(),
     customAuthHeader: z.string().min(1).optional(),
     apiType: z.enum(["chatCompletion", "responses"]).optional(),
+    region: z.string().min(1).optional(),
+    location: z.enum(["region", "geo", "global"]).optional(),
+    geo: z.string().min(1).optional(),
+    accessKeyId: z.string().min(1).optional(),
+    secretAccessKey: z.string().min(1).optional(),
+    roleArn: z.string().min(1).optional(),
     dangerouslySkipConnectionTest: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
+    for (const [field, providers] of Object.entries(
+      SETUP_LLM_FIELD_PROVIDERS,
+    )) {
+      if (
+        data[field as keyof typeof SETUP_LLM_FIELD_PROVIDERS] !== undefined &&
+        !(providers as readonly string[]).includes(data.provider)
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: `${field} is only supported for provider(s) ${providers
+            .map((p) => `'${p}'`)
+            .join(", ")}.`,
+        });
+      }
+    }
+
     if (data.provider === "openAICompatible") {
       if (!data.baseCustomUrl) {
         ctx.addIssue({
@@ -96,30 +135,71 @@ export const setupLlmSchema = z
             "apiType is only supported for chat models; omit it when modelType is 'custom-embedding-model'.",
         });
       }
-    } else {
-      for (const field of [
-        "baseCustomUrl",
-        "customModel",
-        "customAuthHeader",
-      ] as const) {
-        if (data[field] !== undefined) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: [field],
-            message: `${field} is only supported for provider 'openAICompatible'.`,
-          });
-        }
+    }
+
+    if (data.provider === "awsBedrock") {
+      if (!data.region) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["region"],
+          message:
+            "Provider 'awsBedrock' requires region — the AWS region of the Bedrock deployment (e.g. 'us-east-1').",
+        });
       }
-      if (
-        data.apiType !== undefined &&
-        data.provider !== "openAI" &&
-        data.provider !== "azureOpenAI"
+      if (data.apiKey) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["apiKey"],
+          message:
+            "Provider 'awsBedrock' does not use apiKey. Provide accessKeyId + secretAccessKey (access-key auth) or roleArn (IAM-role auth) instead.",
+        });
+      }
+      if (data.roleArn && (data.accessKeyId || data.secretAccessKey)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["roleArn"],
+          message:
+            "Provide either accessKeyId + secretAccessKey OR roleArn, not both.",
+        });
+      } else if (
+        (data.accessKeyId && !data.secretAccessKey) ||
+        (!data.accessKeyId && data.secretAccessKey)
       ) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["apiType"],
+          path: [data.accessKeyId ? "secretAccessKey" : "accessKeyId"],
+          message: "accessKeyId and secretAccessKey must be provided together.",
+        });
+      }
+      if (data.customModel && data.modelType !== "custom-model") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["modelType"],
           message:
-            "apiType is only supported for providers 'openAI', 'azureOpenAI', and 'openAICompatible'.",
+            "customModel requires modelType 'custom-model' for provider 'awsBedrock'. Use a named modelType (e.g. 'amazon.nova-pro-v1:0') without customModel, or modelType 'custom-model' with the Bedrock model id in customModel.",
+        });
+      }
+      if (data.modelType === "custom-model" && !data.customModel) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["customModel"],
+          message:
+            "modelType 'custom-model' requires customModel — the Bedrock model id (e.g. 'anthropic.claude-sonnet-4-20250514-v1:0').",
+        });
+      }
+      if (data.location === "geo" && !data.geo) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["geo"],
+          message:
+            "location 'geo' requires geo — the geographic boundary requests may be routed within (e.g. 'us', 'eu', 'apac').",
+        });
+      }
+      if (data.geo && data.location !== "geo") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["geo"],
+          message: "geo is only supported when location is 'geo'.",
         });
       }
     }
