@@ -1,3 +1,9 @@
+## [1.15.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.15.0...v1.15.1) (2026-09-08)
+
+### Bug Fixes
+
+* **api:** tunnel Cognigy requests through corporate proxies ([#47](https://github.com/Cognigy/cognigy-plugin/issues/47)) ([4520406](https://github.com/Cognigy/cognigy-plugin/commit/45204061dd2965e33d21909236b16f870eb87860))
+
 ## [1.15.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.14.0...v1.15.0) (2026-09-01)
 
 ### Features
