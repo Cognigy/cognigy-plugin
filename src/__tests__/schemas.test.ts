@@ -133,6 +133,44 @@ describe("createAiAgentSchema", () => {
       }),
     ).toThrow(/knowledgeStoreReferenceId/);
   });
+
+  it("accepts agentNodeType llmPrompt with only a description", () => {
+    const result = schemas.createAiAgentSchema.parse({
+      name: "Prompt Agent",
+      agentNodeType: "llmPrompt",
+      description: "Summarizes the conversation for the agent desktop.",
+    });
+    expect(result.agentNodeType).toBe("llmPrompt");
+    expect(result.systemPrompt).toBeUndefined();
+  });
+
+  it("rejects agentNodeType llmPrompt without systemPrompt or description", () => {
+    expect(() =>
+      schemas.createAiAgentSchema.parse({
+        name: "Prompt Agent",
+        agentNodeType: "llmPrompt",
+      }),
+    ).toThrow(/requires a systemPrompt \(or description\)/);
+  });
+
+  it("rejects agentNodeType llmPrompt with a blank systemPrompt", () => {
+    expect(() =>
+      schemas.createAiAgentSchema.parse({
+        name: "Prompt Agent",
+        agentNodeType: "llmPrompt",
+        systemPrompt: "   \n  ",
+      }),
+    ).toThrow(/requires a systemPrompt \(or description\)/);
+  });
+
+  it("accepts agentNodeType aiAgent without systemPrompt or description", () => {
+    const result = schemas.createAiAgentSchema.parse({
+      name: "Agent",
+      agentNodeType: "aiAgent",
+    });
+    expect(result.agentNodeType).toBe("aiAgent");
+    expect(result.systemPrompt).toBeUndefined();
+  });
 });
 
 describe("updateAiAgentSchema", () => {

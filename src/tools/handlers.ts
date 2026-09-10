@@ -21,6 +21,7 @@ import {
   filterList,
   filterFlowNodeDetail,
   withHints,
+  type ResponseHints,
 } from "./filters.js";
 import { buildWebchatSettings, deepMerge } from "./webchatSettings.js";
 import { normalizeToolParameters } from "./toolParameters.js";
@@ -419,15 +420,31 @@ function transformConfigForApi(
   }
 }
 
-function identifyFailedStep(
-  agentId: string | null,
-  flowId: string | null,
-  endpointId: string | null,
-): string {
-  if (!agentId) return "agent";
-  if (!flowId) return "flow";
-  if (!endpointId) return "endpoint";
-  return "node";
+/**
+ * Combine several hint sets into one. `withHints` overwrites `_hints` rather
+ * than accumulating, so a response that has to report two independent
+ * problems (say: the knowledge tool failed to provision AND the LLM the node
+ * was assigned has no connection) must merge them before that single call, or
+ * one of the two warnings is silently dropped.
+ */
+function mergeHints(
+  ...sets: (ResponseHints | null | undefined)[]
+): ResponseHints {
+  const merged: ResponseHints = {};
+  for (const set of sets) {
+    if (!set) continue;
+    for (const key of [
+      "hint",
+      "warning",
+      "likely_cause",
+      "action",
+    ] as (keyof ResponseHints)[]) {
+      const value = set[key];
+      if (!value) continue;
+      merged[key] = merged[key] ? `${merged[key]} ${value}` : value;
+    }
+  }
+  return merged;
 }
 
 const TOOL_TYPE_MAP: Record<string, { type: string; extension: string }> = {
@@ -452,6 +469,93 @@ const LLM_PROMPT_TOOL_TYPE_MAP: Record<
   mcp: { type: "llmPromptMCPTool", extension: "@cognigy/basic-nodes" },
   http: { type: "llmPromptTool", extension: "@cognigy/basic-nodes" },
 };
+
+type ToolKind = "tool" | "knowledge" | "send_email" | "mcp";
+
+/**
+ * The tool kind (create_tool's `toolType` vocabulary) that a tool node's chart
+ * type belongs to. `http` tools are plain `aiAgentJobTool` / `llmPromptTool`
+ * nodes as well, so they report as "tool" — their HTTP fields live on child
+ * nodes, not on the tool node.
+ */
+const TOOL_NODE_TYPE_KIND: Record<string, ToolKind> = {
+  aiAgentJobTool: "tool",
+  llmPromptTool: "tool",
+  aiAgentJobMCPTool: "mcp",
+  llmPromptMCPTool: "mcp",
+  knowledgeTool: "knowledge",
+  sendEmailTool: "send_email",
+};
+
+/** Tool-node config keys update_tool can PATCH, per tool kind. */
+const TOOL_CONFIG_KEYS_BY_KIND: Record<ToolKind, string[]> = {
+  tool: ["toolId", "description", "parameters"],
+  knowledge: ["knowledgeStoreId", "toolId", "description", "topK"],
+  send_email: ["toolId", "description", "recipient"],
+  mcp: ["mcpName", "mcpServerUrl", "timeout"],
+};
+
+/** Every tool-node config key, in the order they are mapped. */
+const TOOL_NODE_CONFIG_KEYS = [
+  "toolId",
+  "description",
+  "parameters",
+  "knowledgeStoreId",
+  "topK",
+  "recipient",
+  "mcpName",
+  "mcpServerUrl",
+  "timeout",
+];
+
+/**
+ * Config keys that exist only on an AI-Agent-family tool node. They are the
+ * reason update_tool has to know a node's real family before PATCHing: under
+ * an LLM Prompt node there is no descriptor that owns them, and the platform
+ * stores unknown keys and then ignores them, so a blind PATCH looks like a
+ * successful update that changed nothing.
+ */
+const AI_AGENT_ONLY_CONFIG_KEYS = ["knowledgeStoreId", "topK", "recipient"];
+
+/**
+ * Map the caller's tool config onto the node config keys the given tool kind
+ * owns. Keys belonging to another kind are reported in `ignored` instead of
+ * being PATCHed, so the caller hears about them rather than getting a silent
+ * no-op.
+ */
+function buildToolNodeConfig(
+  kind: ToolKind,
+  cfg: Record<string, any>,
+): {
+  nodeConfig: Record<string, any>;
+  ignored: string[];
+  parameterWarnings: string[];
+} {
+  const allowed = new Set(TOOL_CONFIG_KEYS_BY_KIND[kind]);
+  const nodeConfig: Record<string, any> = {};
+  const ignored: string[] = [];
+  let parameterWarnings: string[] = [];
+  for (const key of TOOL_NODE_CONFIG_KEYS) {
+    const value = cfg[key];
+    if (!value) continue;
+    if (!allowed.has(key)) {
+      ignored.push(key);
+      continue;
+    }
+    if (key === "parameters") {
+      const normalized = normalizeToolParameters(value);
+      nodeConfig.useParameters = true;
+      nodeConfig.parameters = normalized.parameters;
+      parameterWarnings = normalized.warnings;
+    } else if (key === "mcpName") {
+      // The MCP descriptor calls it `name`.
+      nodeConfig.name = value;
+    } else {
+      nodeConfig[key] = value;
+    }
+  }
+  return { nodeConfig, ignored, parameterWarnings };
+}
 
 const RESOLVE_NODE_MAP: Record<string, { type: string; label: string } | null> =
   {
@@ -538,33 +642,110 @@ function nodeParentId(node: any): string | undefined {
 }
 
 /**
- * Pick the LLM to auto-assign to a new agent node from a
- * GET /v2.0/largelanguagemodels response. An LLM without its connection
- * cannot answer — the node then fails silently (default errorHandling
- * "continue" with an empty message) — so prefer connected models over the
- * bare isDefault flag. Embedding models are never candidates: they cannot
- * generate text, so a project that only has embedding models gets no pick
- * (undefined) and the caller reports llmStatus "unknown" with the LLM setup
- * guidance instead of wiring the node to a model that can never answer.
- * `connected` tells the caller whether the pick still had to fall back to a
- * connectionless model.
+ * Matches the model strings of embedding models. Embedding models cannot
+ * generate text, so wiring one into an agent node yields silent empty
+ * replies. The platform's own `useCase` filter is the primary defence (see
+ * fetchLlmsForUseCase); this local check is the belt-and-braces fallback for
+ * platforms that do not support that filter, so it has to be generous:
+ * Cognigy's catalogue spells the family in several ways
+ * ("text-embedding-3-large", "amazon.titan-embed-text-v2:0",
+ * "Pharia-1-Embedding-4608"), hence a case-insensitive "embed" substring
+ * rather than the literal word "embedding".
  */
-function pickDefaultLlm(
-  llmList: any,
-): { refId: string; connected: boolean } | undefined {
+const EMBEDDING_MODEL_PATTERN = /embed/i;
+
+function isEmbeddingModel(llm: any): boolean {
+  // For openAICompatible providers `modelType` is the generic "custom-model"
+  // and the real model string lives under openAICompatible.customModel.
+  return [llm?.modelType, llm?.openAICompatible?.customModel].some(
+    (value) => typeof value === "string" && EMBEDDING_MODEL_PATTERN.test(value),
+  );
+}
+
+/**
+ * Fetch the project's LLMs that the platform considers valid for a given node
+ * type. Cognigy makes exactly that distinction through the `useCase` query
+ * parameter on /new/v2.0/largelanguagemodels — the same call
+ * list_resources { resourceType: "llm_model", useCase } makes, and what the
+ * UI's model dropdowns are built from — which is far more reliable than
+ * guessing from a model string. Older platforms do not know the parameter, so
+ * a failed request falls back to the unfiltered list rather than aborting the
+ * whole agent creation; pickDefaultLlm's own embedding check then does the
+ * filtering locally.
+ */
+async function fetchLlmsForUseCase(
+  apiClient: CognigyApiClient,
+  projectId: string,
+  useCase: "aiAgent" | "promptNode",
+): Promise<any> {
+  try {
+    return await apiClient.get("/new/v2.0/largelanguagemodels", {
+      params: { projectId, useCase },
+    });
+  } catch (error: any) {
+    logger.debug(
+      "useCase-filtered LLM lookup failed — refetching the unfiltered list",
+      { useCase, error: error?.message },
+    );
+    return await apiClient.get("/v2.0/largelanguagemodels", {
+      params: { projectId },
+    });
+  }
+}
+
+/**
+ * Pick the LLM to auto-assign to a new agent node from a
+ * largelanguagemodels list response. An LLM without its connection cannot
+ * answer — the node then fails silently (default errorHandling "continue"
+ * with an empty message) — so prefer connected models over the bare
+ * isDefault flag. Embedding models are never candidates: they cannot generate
+ * text, so a project that only has embedding models gets no pick (undefined)
+ * and the caller reports llmStatus "unknown" with the LLM setup guidance
+ * instead of wiring the node to a model that can never answer.
+ *
+ * Every returned fact ends up in the caller's create result, because
+ * preferring a connected model means the project's designated default can be
+ * passed over and the user has to be able to see that:
+ *   - `connected`: false when even the pick has no connection (no usable
+ *     model had one), so the node still cannot answer.
+ *   - `isDefault`: whether the pick is the project's default model.
+ *   - `defaultSkipped` / `skippedDefaultRefId`: set when a text-capable
+ *     default existed but was passed over for having no connection.
+ */
+function pickDefaultLlm(llmList: any):
+  | {
+      refId: string;
+      connected: boolean;
+      isDefault: boolean;
+      defaultSkipped: boolean;
+      skippedDefaultRefId?: string;
+    }
+  | undefined {
   const llmItems = llmList?.items ?? llmList;
   if (!Array.isArray(llmItems) || llmItems.length === 0) return undefined;
-  const pool = llmItems.filter(
-    (l: any) => !String(l.modelType ?? "").includes("embedding"),
-  );
+  const pool = llmItems.filter((l: any) => !isEmbeddingModel(l));
   if (pool.length === 0) return undefined;
   const connected = pool.filter((l: any) => l.connectionId);
   const candidates = connected.length > 0 ? connected : pool;
   const chosen = candidates.find((l: any) => l.isDefault) ?? candidates[0];
   const refId = chosen?.referenceId ?? chosen?._id;
-  return refId
-    ? { refId: String(refId), connected: Boolean(chosen.connectionId) }
+  if (!refId) return undefined;
+  const isDefault = Boolean(chosen.isDefault);
+  const projectDefault = isDefault
+    ? undefined
+    : pool.find((l: any) => l.isDefault);
+  const skippedDefaultRefId = projectDefault
+    ? (projectDefault.referenceId ?? projectDefault._id)
     : undefined;
+  return {
+    refId: String(refId),
+    connected: Boolean(chosen.connectionId),
+    isDefault,
+    defaultSkipped: Boolean(projectDefault),
+    ...(skippedDefaultRefId
+      ? { skippedDefaultRefId: String(skippedDefaultRefId) }
+      : {}),
+  };
 }
 
 const PROVIDER_CONNECTION_TYPE: Record<string, string> = {
@@ -1572,6 +1753,12 @@ export class ToolHandlers {
     let agentId: string | null = null;
     let flowId: string | null = null;
     let endpointId: string | null = null;
+    // Which step is in flight. The job node is created BEFORE the endpoint
+    // here, so the failed step cannot be derived from which ids are set — a
+    // node-stage failure would look like an endpoint failure. Same tracker and
+    // same step names as createLlmPromptAgent, so both paths report a given
+    // stage identically.
+    let step: "project" | "agent" | "flow" | "node" | "endpoint" = "project";
 
     try {
       // Step 0: Auto-create project if none provided
@@ -1581,6 +1768,7 @@ export class ToolHandlers {
       }
 
       // Step 1: Create agent resource
+      step = "agent";
       const agentPayload: any = {
         projectId,
         name: data.name,
@@ -1595,6 +1783,7 @@ export class ToolHandlers {
       agentId = agent._id || agent.id;
 
       // Steps 2-3: Create flow and find its entry node (with retry)
+      step = "flow";
       const provisioned = await this.createFlowFor(
         projectId!,
         data.name,
@@ -1604,6 +1793,7 @@ export class ToolHandlers {
       );
       const { flow, entryNode } = provisioned;
       flowId = provisioned.flowId;
+      step = "node";
 
       // Step 4: Create AI Agent Job Node
       const jobNode: any = await this.apiClient.post(
@@ -1633,17 +1823,22 @@ export class ToolHandlers {
       let llmAutoAssigned = false;
       let llmConnected = true;
       let llmRefId: string | undefined;
+      let llmIsDefault = false;
+      let llmDefaultSkipped = false;
+      let skippedDefaultRefId: string | undefined;
       try {
-        const llmList: any = await this.apiClient.get(
-          "/v2.0/largelanguagemodels",
-          {
-            params: { projectId },
-          },
+        const llmList: any = await fetchLlmsForUseCase(
+          this.apiClient,
+          projectId!,
+          "aiAgent",
         );
         const picked = pickDefaultLlm(llmList);
         if (picked) {
           llmRefId = picked.refId;
           llmConnected = picked.connected;
+          llmIsDefault = picked.isDefault;
+          llmDefaultSkipped = picked.defaultSkipped;
+          skippedDefaultRefId = picked.skippedDefaultRefId;
           await this.apiClient.patch(
             `/v2.0/flows/${flowId}/chart/nodes/${jobNodeId}`,
             {
@@ -1701,6 +1896,7 @@ export class ToolHandlers {
       }
 
       // Step 5: Create REST endpoint
+      step = "endpoint";
       const endpoint: any = await this.createRestEndpointFor(
         projectId!,
         flow,
@@ -1745,6 +1941,18 @@ export class ToolHandlers {
           ? `${this.endpointBaseUrl}/${endpoint.URLToken}`
           : "URL not available",
         llmStatus,
+        // Which model the job node ended up on. Always reported, because the
+        // pick can differ from the project default (see pickDefaultLlm) and
+        // the caller can only notice that if it is in the response.
+        ...(llmRefId
+          ? {
+              llm: {
+                referenceId: llmRefId,
+                isDefault: llmIsDefault,
+                connected: llmConnected,
+              },
+            }
+          : {}),
       };
 
       if (knowledgeToolId) {
@@ -1754,32 +1962,56 @@ export class ToolHandlers {
         };
       }
 
-      if (data.knowledgeStoreReferenceId && !knowledgeToolId) {
-        return withHints(result, {
-          warning: "Agent created but knowledge tool failed to provision.",
-          action: `Create it manually: create_tool { aiAgentId: "${agentId}", toolType: "knowledge", name: "Search Knowledge", config: { knowledgeStoreId: "${data.knowledgeStoreReferenceId}", toolId: "search_knowledge", description: "Search the knowledge base" } }`,
-        });
-      }
+      // The LLM verdict is computed here — before the knowledge-failure
+      // return below — and merged into whatever that return says. Computing it
+      // afterwards meant a knowledge failure short-circuited the "do not call
+      // talk_to_agent" guidance in exactly the case it matters most: an
+      // unconnected LLM plus a missing knowledge tool.
+      let llmHints: ResponseHints | null = null;
 
       if (llmStatus === "unknown") {
         const nextAction = createdProject
           ? `A new project was auto-created as "${projectId}". Immediately inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Choose only source-project llm_model entries with a non-empty connectionId, transfer the required LLM resources plus their shared connection resource(s) via manage_packages export/upload_and_inspect/import, verify the import with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and do not call talk_to_agent until the import is confirmed. If this workflow will use knowledge, transfer the source project's embedding model and exact Knowledge Search model together before calling manage_settings. Only use setup_llm if no reusable LLM with connectionId exists or package transfer fails.`
           : `Inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Choose only source-project llm_model entries with a non-empty connectionId, transfer the required LLM resources plus their shared connection resource(s) via manage_packages export/upload_and_inspect/import, verify the import with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and do not call talk_to_agent until the import is confirmed. If this workflow will use knowledge, transfer the source project's embedding model and exact Knowledge Search model together before calling manage_settings. Only use setup_llm if no reusable LLM with connectionId exists or package transfer fails.`;
-        return withHints(result, {
+        llmHints = {
           warning:
             "Could not verify LLM resource in project. Agent may not generate responses.",
           action: nextAction,
-        });
-      }
-
-      if (!llmConnected) {
+        };
+      } else if (!llmConnected) {
         // Assigned a real LLM, but one without a connection — the agent will
         // answer with empty messages until the connection is fixed.
         result.llmConnected = false;
-        return withHints(result, {
+        llmHints = {
           warning: `The AI Agent Job node was assigned LLM "${llmRefId}", but that model has no connection (no connectionId) — the agent will return empty responses until the connection is fixed.`,
           action: `Attach a connection to that LLM, or import a connected one from another project via manage_packages export/import, then assign it with update_ai_agent { aiAgentId: "${agentId}", jobConfig: { llmProviderReferenceId: "<llm referenceId>" } }. Do not call talk_to_agent before that.`,
-        });
+        };
+      } else if (llmDefaultSkipped) {
+        // The project has a designated default model, but it has no
+        // connection, so a connected model was used instead. Nothing is
+        // broken, yet the agent is not on the model the user chose — say so
+        // rather than let it be discovered later.
+        llmHints = {
+          warning: `The project default LLM${skippedDefaultRefId ? ` "${skippedDefaultRefId}"` : ""} has no connection, so the AI Agent Job node was assigned the connected model "${llmRefId}" instead.`,
+          action: `This agent works as it is. To move it onto the project default, attach a connection to that default LLM and then re-point the node with update_ai_agent { aiAgentId: "${agentId}", jobConfig: { llmProviderReferenceId: "${skippedDefaultRefId ?? "<default llm referenceId>"}" } }.`,
+        };
+      }
+
+      if (data.knowledgeStoreReferenceId && !knowledgeToolId) {
+        return withHints(
+          result,
+          mergeHints(
+            {
+              warning: "Agent created but knowledge tool failed to provision.",
+              action: `Create it manually: create_tool { aiAgentId: "${agentId}", toolType: "knowledge", name: "Search Knowledge", config: { knowledgeStoreId: "${data.knowledgeStoreReferenceId}", toolId: "search_knowledge", description: "Search the knowledge base" } }`,
+            },
+            llmHints,
+          ),
+        );
+      }
+
+      if (llmHints) {
+        return withHints(result, llmHints);
       }
 
       return result;
@@ -1787,7 +2019,7 @@ export class ToolHandlers {
       return withHints(
         {
           failed: {
-            step: identifyFailedStep(agentId, flowId, endpointId),
+            step,
             error: error.message,
           },
         },
@@ -1931,15 +2163,22 @@ export class ToolHandlers {
       // False when the only usable models have no connection — the node is
       // then wired to an LLM that cannot answer.
       let llmConnected = true;
+      let llmIsDefault = false;
+      let llmDefaultSkipped = false;
+      let skippedDefaultRefId: string | undefined;
       try {
-        const llmList: any = await this.apiClient.get(
-          "/v2.0/largelanguagemodels",
-          { params: { projectId } },
+        const llmList: any = await fetchLlmsForUseCase(
+          this.apiClient,
+          projectId!,
+          "promptNode",
         );
         const picked = pickDefaultLlm(llmList);
         if (picked) {
           llmRefId = picked.refId;
           llmConnected = picked.connected;
+          llmIsDefault = picked.isDefault;
+          llmDefaultSkipped = picked.defaultSkipped;
+          skippedDefaultRefId = picked.skippedDefaultRefId;
         }
       } catch (llmErr: any) {
         logger.warn(
@@ -1959,9 +2198,16 @@ export class ToolHandlers {
           extension: "@cognigy/basic-nodes",
           label: data.name,
           config: {
+            // Prefer whichever field actually has text: a systemPrompt of
+            // nothing but whitespace would otherwise provision a node with an
+            // empty persona while a usable description sat unused.
             prompt: data.systemPrompt?.trim() || data.description?.trim() || "",
             storeLocation: "stream",
-            immediateOutput: true,
+            // No immediateOutput here. The Cognigy UI only offers "Output
+            // result immediately" for the "Store in Input" and "Store in
+            // Context" locations — in stream mode the result is already
+            // streamed to the user, so the flag means nothing, and leaving it
+            // set would silently apply once someone switched storeLocation.
             ...(llmRefId ? { llmProviderReferenceId: llmRefId } : {}),
           },
         },
@@ -2016,6 +2262,18 @@ export class ToolHandlers {
           ? `${this.endpointBaseUrl}/${endpoint.URLToken}`
           : "URL not available",
         llmStatus,
+        // Which model the prompt node ended up on. Always reported, because
+        // the pick can differ from the project default (see pickDefaultLlm)
+        // and the caller can only notice that if it is in the response.
+        ...(llmRefId
+          ? {
+              llm: {
+                referenceId: llmRefId,
+                isDefault: llmIsDefault,
+                connected: llmConnected,
+              },
+            }
+          : {}),
       };
 
       const usageHint = `LLM Prompt flow created — there is NO agent resource in this mode. Edit the system prompt with manage_flow_nodes { operation: "update", flowId: "${flowId}", nodeId: "${promptNodeId}", config: { prompt: "..." } } (NOT update_ai_agent). Add tools with create_tool { flowId: "${flowId}", ... }. Test with talk_to_agent { endpointUrl }. If the first reply right after creation is empty, wait a few seconds and retry with a NEW sessionId — endpoint config propagates briefly, and a session that first hit the stale config stays cached as broken.`;
@@ -2041,6 +2299,17 @@ export class ToolHandlers {
         });
       }
 
+      if (llmDefaultSkipped) {
+        // The project has a designated default model, but it has no
+        // connection, so a connected model was used instead. Nothing is
+        // broken, yet the node is not on the model the user chose.
+        return withHints(result, {
+          hint: usageHint,
+          warning: `The project default LLM${skippedDefaultRefId ? ` "${skippedDefaultRefId}"` : ""} has no connection, so the LLM Prompt node was assigned the connected model "${llmRefId}" instead.`,
+          action: `This flow works as it is. To move it onto the project default, attach a connection to that default LLM and then re-point the node with manage_flow_nodes { operation: "update", flowId: "${flowId}", nodeId: "${promptNodeId}", config: { llmProviderReferenceId: "${skippedDefaultRefId ?? "<default llm referenceId>"}" } }.`,
+        });
+      }
+
       return withHints(result, { hint: usageHint });
     } catch (error: any) {
       return withHints(
@@ -2063,29 +2332,42 @@ export class ToolHandlers {
    * Remove the placeholder "unlock_account" tool the backend auto-creates
    * under a new tool parent (aiAgentJob / llmPromptV2) — UI preview cruft the
    * LLM would otherwise see as a real tool. Scoped to direct children of
-   * `parentNodeId`; matched by the placeholder's preview/label/toolId, or by
-   * `childType` (a just-created parent has no other tool children yet).
+   * `parentNodeId`; matched either by the placeholder's own markers
+   * (preview/label/toolId "unlock_account") or, because the llmPromptV2
+   * placeholder carries none of those, by a bare `childType` match.
+   *
+   * The bare type match is only sound while the parent has no real tools yet,
+   * so that half is capped rather than assumed: it deletes only when it
+   * selects a single child. Two or more type-only children mean the parent
+   * already has real tools (a repair op, a retried partial create, a
+   * `manage_flow_nodes` op re-targeting an existing node), and the type sweep
+   * is skipped with a warning instead of wiping them. Marker-matched children
+   * are still deleted in that case.
+   *
    * Reads the chart with the flow's locale when known (relations are
    * per-locale) and falls back to the node list. Failures are non-fatal.
+   * Returns the ids actually deleted so callers can surface them.
    */
   private async removePlaceholderTools(
     flowId: string,
     parentNodeId: string,
     childType: "aiAgentJobTool" | "llmPromptTool",
     preferredLocaleId?: string,
-  ): Promise<void> {
+  ): Promise<string[]> {
     // Without the parent id the child filters below would match unrelated
     // nodes (e.g. every node lacking parentId) — better to leave the
     // placeholder in place than to delete real tools.
-    if (!parentNodeId) return;
-    const isPlaceholder = (n: any) =>
+    if (!parentNodeId) return [];
+    const isMarkedPlaceholder = (n: any) =>
       n.preview === "unlock_account" ||
       n.label === "unlock_account" ||
-      n.config?.toolId === "unlock_account" ||
-      n.type === childType;
+      n.config?.toolId === "unlock_account";
+    const isCandidate = (n: any) =>
+      isMarkedPlaceholder(n) || n.type === childType;
 
+    const deletedIds: string[] = [];
     try {
-      let placeholderTools: any[] = [];
+      let candidates: any[] = [];
 
       try {
         const chart: any = await this.apiClient.get(
@@ -2099,21 +2381,39 @@ export class ToolHandlers {
         ).find((relation: any) => relation.node === parentNodeId);
         const childNodeIds = new Set(parentRelation?.children ?? []);
 
-        placeholderTools = (Array.isArray(chartNodes) ? chartNodes : []).filter(
-          (n: any) => childNodeIds.has(n._id || n.id) && isPlaceholder(n),
+        candidates = (Array.isArray(chartNodes) ? chartNodes : []).filter(
+          (n: any) => childNodeIds.has(n._id || n.id) && isCandidate(n),
         );
       } catch {
         // Fall back to the regular node list when the chart endpoint is not available.
       }
 
-      if (placeholderTools.length === 0) {
+      if (candidates.length === 0) {
         const nodeList: any = await this.apiClient.get(
           `/v2.0/flows/${flowId}/chart/nodes`,
           { params: { limit: 200 } },
         );
         const nodeItems = nodeList.items ?? nodeList;
-        placeholderTools = (Array.isArray(nodeItems) ? nodeItems : []).filter(
-          (n: any) => nodeParentId(n) === parentNodeId && isPlaceholder(n),
+        candidates = (Array.isArray(nodeItems) ? nodeItems : []).filter(
+          (n: any) => nodeParentId(n) === parentNodeId && isCandidate(n),
+        );
+      }
+
+      const marked = candidates.filter(isMarkedPlaceholder);
+      const typeOnly = candidates.filter((n: any) => !isMarkedPlaceholder(n));
+
+      let placeholderTools = marked;
+      if (typeOnly.length === 1) {
+        placeholderTools = [...marked, ...typeOnly];
+      } else if (typeOnly.length > 1) {
+        logger.warn(
+          "Skipped the placeholder sweep by node type: this parent already has real tool children",
+          {
+            flowId,
+            parentNodeId,
+            childType,
+            typeOnlyChildren: typeOnly.length,
+          },
         );
       }
 
@@ -2123,6 +2423,7 @@ export class ToolHandlers {
         await this.apiClient.delete(
           `/v2.0/flows/${flowId}/chart/nodes/${placeholderToolId}`,
         );
+        deletedIds.push(String(placeholderToolId));
       }
     } catch (placeholderCleanupError: any) {
       logger.warn(
@@ -2130,6 +2431,7 @@ export class ToolHandlers {
         { error: placeholderCleanupError.message, flowId, parentNodeId },
       );
     }
+    return deletedIds;
   }
 
   // =========================================================================
@@ -3822,6 +4124,33 @@ export class ToolHandlers {
         );
       }
     } else {
+      // A flow can hold both an AI Agent Job node and an LLM Prompt node
+      // (manage_flow_nodes can add the latter to an existing flow). When the
+      // caller named the agent, the AI Agent Job node is unambiguously the
+      // one meant. When the caller addressed the flow by flowId — documented
+      // as the way to reach an LLM Prompt flow — there is no such signal, and
+      // quietly preferring the AI Agent Job node would attach the tool to the
+      // parent the caller was least likely to mean. Refuse and list both.
+      const parentTypes = [
+        ...new Set(parentCandidates.map((n: any) => n.type)),
+      ];
+      if (!data.aiAgentId && parentTypes.length > 1) {
+        return withHints(
+          {
+            error: `The flow has ${parentCandidates.length} nodes tools can attach to, of more than one type (${parentTypes.join(", ")}); pass parentNodeId to choose.`,
+            candidates: parentCandidates.map((n: any) => ({
+              nodeId: n._id || n.id,
+              type: n.type,
+              label: n.label,
+            })),
+          },
+          {
+            action:
+              "Retry create_tool with parentNodeId set to the node the tool belongs to.",
+          },
+        );
+      }
+
       // The AI Agent Job node wins when a flow has both parent types (see
       // findToolParentNode); only several nodes of the preferred type are
       // ambiguous.
@@ -3910,11 +4239,19 @@ export class ToolHandlers {
 
     if (requestedToolId) {
       // Scoped to the chosen parent: the same toolId under another tool
-      // parent in the flow is a different tool, not a duplicate.
+      // parent in the flow is a different tool, not a duplicate. That scoping
+      // needs the node list to carry parent references, though — on a
+      // projection that omits them every child looks unparented, no child can
+      // ever match the parent id, and a real duplicate would slip through as a
+      // second node. When NO node in the list carries any parent reference at
+      // all, fall back to matching flow-wide (the behaviour before scoping).
+      const listHasParentRefs = allNodes.some(
+        (node: any) => nodeParentId(node) !== undefined,
+      );
       const duplicateTool = allNodes.find(
         (node: any) =>
           MCP_MANAGED_TOOL_TYPES.has(node.type) &&
-          nodeParentId(node) === jobNodeId &&
+          (!listHasParentRefs || nodeParentId(node) === jobNodeId) &&
           (node.config?.toolId === requestedToolId ||
             node.label === requestedToolId ||
             node.name === requestedToolId),
@@ -3922,11 +4259,17 @@ export class ToolHandlers {
 
       if (duplicateTool) {
         const duplicateToolNodeId = duplicateTool._id || duplicateTool.id;
+        const duplicateParentId = nodeParentId(duplicateTool) ?? jobNodeId;
+        const duplicateParent =
+          allNodes.find((n: any) => (n._id || n.id) === duplicateParentId) ??
+          jobNode;
         return withHints(
           {
             toolId: duplicateToolNodeId,
             toolNodeId: duplicateToolNodeId,
             requestedToolId,
+            parentNodeId: duplicateParentId,
+            parentNodeType: duplicateParent.type,
             name: duplicateTool.label || duplicateTool.name || data.name,
             toolType:
               duplicateTool.type === "knowledgeTool"
@@ -4045,6 +4388,10 @@ export class ToolHandlers {
           toolId: toolNodeId,
           name: data.name,
           toolType: data.toolType,
+          // Which parent the tool actually landed under — a flow can hold
+          // more than one, so the caller must be able to see the choice.
+          parentNodeId: jobNodeId,
+          parentNodeType: jobNode.type,
           ...(resolveNodeId ? { resolveNodeId } : {}),
         };
         return parameterWarnings.length > 0
@@ -4179,6 +4526,8 @@ export class ToolHandlers {
         toolId: toolNodeId,
         name: data.name,
         toolType: "http",
+        parentNodeId: jobNodeId,
+        parentNodeType: jobNode.type,
         childNodes: {
           ...(preProcessNodeId ? { preProcessNodeId } : {}),
           httpNodeId,
@@ -4242,32 +4591,9 @@ export class ToolHandlers {
     }
 
     const updatedFields: string[] = [];
+    const skippedUpdates: string[] = [];
     const cfg = data.config;
     const toolType = data.toolType;
-
-    // Mirror create_tool's guard: descriptors that don't exist under an LLM
-    // Prompt node (knowledge, send_email) must not be PATCHed onto its tools —
-    // the platform accepts the unknown keys and the tool silently does nothing.
-    if (cfg && toolType && !(toolType in LLM_PROMPT_TOOL_TYPE_MAP)) {
-      const node: any = await this.apiClient.get(
-        `/v2.0/flows/${flowId}/chart/nodes/${data.toolNodeId}`,
-      );
-      if (typeof node?.type === "string" && node.type.startsWith("llmPrompt")) {
-        return withHints(
-          {
-            error: `toolType "${toolType}" is not supported under an LLM Prompt node — it only supports ${Object.keys(
-              LLM_PROMPT_TOOL_TYPE_MAP,
-            )
-              .map((t) => `"${t}"`)
-              .join(", ")} tools.`,
-          },
-          {
-            action:
-              "Use toolType 'tool' (or omit toolType) for this node, or build the agent with an AI Agent node, which supports knowledge and send_email tools.",
-          },
-        );
-      }
-    }
 
     // Detect whether config contains HTTP child-node fields
     const hasHttpUpdates =
@@ -4279,45 +4605,100 @@ export class ToolHandlers {
     const hasChildUpdates =
       hasHttpUpdates || hasCodeUpdates || hasResolveUpdate;
 
+    // Which family the tool node belongs to decides which config keys can
+    // apply to it. The caller's toolType is a hint at best — it is optional,
+    // and a flow can hold both an AI Agent Job node and an LLM Prompt node —
+    // so the node's own type is the authority. Reading it costs a round-trip,
+    // so only do it when the request actually carries keys that exist in one
+    // family and not the other; everything else maps the same either way.
+    const requestedAiAgentOnlyKeys = cfg
+      ? AI_AGENT_ONLY_CONFIG_KEYS.filter((key) => (cfg as any)[key])
+      : [];
+    const needsNodeFamily =
+      !!cfg &&
+      (requestedAiAgentOnlyKeys.length > 0 ||
+        toolType === "knowledge" ||
+        toolType === "send_email");
+
+    let fetchedToolNode: any;
+    if (needsNodeFamily) {
+      try {
+        fetchedToolNode = await this.apiClient.get(
+          `/v2.0/flows/${flowId}/chart/nodes/${data.toolNodeId}`,
+        );
+      } catch (error: any) {
+        // Non-fatal: without the node type we fall back to the caller's
+        // toolType, which is what this handler did before the family check
+        // existed. A read failure must not turn a valid update into a throw.
+        logger.debug("update_tool could not read the tool node", {
+          flowId,
+          toolNodeId: data.toolNodeId,
+          error: error?.message,
+        });
+      }
+    }
+    const nodeType: string | undefined =
+      typeof fetchedToolNode?.type === "string"
+        ? fetchedToolNode.type
+        : undefined;
+    // Dispatch on the node's real type; fall back to the caller's toolType,
+    // and to the plain-tool keys when it was omitted (as before).
+    const effectiveKind: ToolKind =
+      (nodeType ? TOOL_NODE_TYPE_KIND[nodeType] : undefined) ??
+      (toolType && toolType !== "http" ? (toolType as ToolKind) : "tool");
+
     // Step 1: Update the tool node itself (label and/or tool-node config)
     const patchPayload: any = {};
     let parameterWarnings: string[] = [];
+    let ignoredConfigKeys: string[] = [];
     if (data.name) patchPayload.label = data.name;
 
     if (cfg) {
-      const nodeConfig: any = {};
+      const mapped = buildToolNodeConfig(effectiveKind, cfg as any);
+      parameterWarnings = mapped.parameterWarnings;
+      ignoredConfigKeys = mapped.ignored;
+      if (Object.keys(mapped.nodeConfig).length > 0) {
+        patchPayload.config = mapped.nodeConfig;
+      }
+    }
 
-      if (toolType === "tool" || toolType === "http" || !toolType) {
-        if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
-        if (cfg.description) nodeConfig.description = cfg.description;
-        if (cfg.parameters) {
-          const normalized = normalizeToolParameters(cfg.parameters);
-          nodeConfig.useParameters = true;
-          nodeConfig.parameters = normalized.parameters;
-          parameterWarnings = normalized.warnings;
-        }
-      }
-      if (toolType === "knowledge") {
-        if (cfg.knowledgeStoreId)
-          nodeConfig.knowledgeStoreId = cfg.knowledgeStoreId;
-        if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
-        if (cfg.description) nodeConfig.description = cfg.description;
-        if (cfg.topK) nodeConfig.topK = cfg.topK;
-      }
-      if (toolType === "send_email") {
-        if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
-        if (cfg.description) nodeConfig.description = cfg.description;
-        if (cfg.recipient) nodeConfig.recipient = cfg.recipient;
-      }
-      if (toolType === "mcp") {
-        if (cfg.mcpName) nodeConfig.name = cfg.mcpName;
-        if (cfg.mcpServerUrl) nodeConfig.mcpServerUrl = cfg.mcpServerUrl;
-        if (cfg.timeout) nodeConfig.timeout = cfg.timeout;
-      }
-
-      if (Object.keys(nodeConfig).length > 0) {
-        patchPayload.config = nodeConfig;
-      }
+    // Nothing the caller asked for can land on this node. Say so instead of
+    // reporting a successful update that changed nothing — the platform
+    // stores unknown config keys and then ignores them, so a blind PATCH
+    // would leave the tool silently doing nothing.
+    if (
+      ignoredConfigKeys.length > 0 &&
+      !patchPayload.config &&
+      !data.name &&
+      !hasChildUpdates
+    ) {
+      const fields = ignoredConfigKeys.map((k) => `"${k}"`).join(", ");
+      const isLlmPromptNode = !!nodeType && nodeType.startsWith("llmPrompt");
+      return withHints(
+        {
+          error: isLlmPromptNode
+            ? `config ${fields} is not supported under an LLM Prompt node — it only supports ${Object.keys(
+                LLM_PROMPT_TOOL_TYPE_MAP,
+              )
+                .map((t) => `"${t}"`)
+                .join(", ")} tools.`
+            : `config ${fields} does not apply to a ${
+                nodeType ?? effectiveKind
+              } tool node.`,
+          toolId: data.toolNodeId,
+          ...(nodeType ? { nodeType } : {}),
+          updated: false,
+          updatedFields: [],
+        },
+        {
+          warning: `No update was applied: ${fields} ${
+            ignoredConfigKeys.length === 1 ? "is not a field" : "are not fields"
+          } of ${nodeType ? `a ${nodeType} node` : `a "${effectiveKind}" tool`}.`,
+          action: isLlmPromptNode
+            ? "Update only toolId/description/parameters (plain tools) or mcpName/mcpServerUrl/timeout (MCP tools) on this node, or build the agent with an AI Agent node (create_ai_agent), which supports knowledge and send_email tools."
+            : "Check the tool's type with manage_flow_nodes { operation: 'get' } and retry with the fields that node supports.",
+        },
+      );
     }
 
     if (Object.keys(patchPayload).length > 0) {
@@ -4328,9 +4709,17 @@ export class ToolHandlers {
       if (data.name) updatedFields.push("name");
       if (patchPayload.config) updatedFields.push("config");
     }
+    if (ignoredConfigKeys.length > 0) {
+      skippedUpdates.push(
+        `${ignoredConfigKeys.join(", ")} ${
+          ignoredConfigKeys.length === 1 ? "is not a field" : "are not fields"
+        } of ${nodeType ? `a ${nodeType} node` : `a "${effectiveKind}" tool`} and ${
+          ignoredConfigKeys.length === 1 ? "was" : "were"
+        } ignored`,
+      );
+    }
 
     // Step 2: Update child nodes for http tools (httpRequest + Code nodes)
-    const skippedUpdates: string[] = [];
     if (hasChildUpdates && cfg) {
       const nodes: any = await this.apiClient.get(
         `/v2.0/flows/${flowId}/chart/nodes`,
@@ -4341,9 +4730,10 @@ export class ToolHandlers {
       const rawNodes = nodes.items ?? nodes;
       const allNodes = Array.isArray(rawNodes) ? rawNodes : [];
 
-      const toolNode = allNodes.find(
-        (n) => (n._id || n.id) === data.toolNodeId,
-      );
+      // Reuse the node already read above rather than a second per-node GET.
+      const toolNode =
+        allNodes.find((n) => (n._id || n.id) === data.toolNodeId) ??
+        fetchedToolNode;
       const toolLabel: string = toolNode?.label ?? "";
 
       const findById = (id?: string) =>
@@ -4472,21 +4862,40 @@ export class ToolHandlers {
       }
     }
 
+    // `updated: true` with an empty updatedFields would read as success while
+    // nothing changed — report the no-op instead.
+    const nothingApplied =
+      updatedFields.length === 0 && skippedUpdates.length === 0;
     const response: any = {
       toolId: data.toolNodeId,
       name: data.name ?? undefined,
-      updated: true,
+      updated: !nothingApplied,
       updatedFields,
     };
 
+    if (nothingApplied) {
+      return withHints(response, {
+        warning:
+          "No update was applied — none of the provided fields map onto this tool node.",
+        action:
+          "Read the node with manage_flow_nodes { operation: 'get' } and retry with the fields it supports.",
+      });
+    }
+
     if (skippedUpdates.length > 0) {
+      // The config-key skip is pushed first, so it is the only entry when
+      // nothing else was skipped — and then the child-node advice would be
+      // beside the point.
+      const onlyConfigKeysSkipped =
+        ignoredConfigKeys.length > 0 && skippedUpdates.length === 1;
       return withHints(response, {
         warning: [
           `Some updates were skipped: ${skippedUpdates.join("; ")}`,
           ...parameterWarnings,
         ].join(" "),
-        action:
-          "Child nodes may not exist yet. Use create_tool with http type to create the full node tree, or verify the tool structure.",
+        action: onlyConfigKeysSkipped
+          ? "Check the tool's type with manage_flow_nodes { operation: 'get' } and retry with the fields that node supports."
+          : "Child nodes may not exist yet. Use create_tool with http type to create the full node tree, or verify the tool structure.",
       });
     }
 
@@ -4698,6 +5107,7 @@ export class ToolHandlers {
         // The backend auto-creates a placeholder "unlock_account" tool (plus a
         // non-deletable llmPromptDefault branch) under a new LLM Prompt node —
         // UI preview cruft the LLM would otherwise see as a real tool.
+        let placeholderToolsRemoved: string[] = [];
         if (entry.type === "llmPromptV2") {
           let preferredLocaleId: string | undefined;
           try {
@@ -4708,7 +5118,7 @@ export class ToolHandlers {
           } catch {
             // Locale is an optimization for multi-locale flows; proceed without it.
           }
-          await this.removePlaceholderTools(
+          placeholderToolsRemoved = await this.removePlaceholderTools(
             flowId,
             nodeId,
             "llmPromptTool",
@@ -4724,6 +5134,11 @@ export class ToolHandlers {
           targetNodeId,
           mode,
           configApplied: data.config ? Object.keys(data.config) : [],
+          // Only when something was actually deleted — a node whose children
+          // the server pruned should say which ones.
+          ...(placeholderToolsRemoved.length > 0
+            ? { placeholderToolsRemoved }
+            : {}),
         };
 
         if (missingInitAppSession) {

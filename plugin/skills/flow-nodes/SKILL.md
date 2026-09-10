@@ -334,7 +334,7 @@ A raw LLM call driven by a **freeform system prompt** (`config.prompt`). Support
 | prompt | string | Yes | Freeform system prompt. Supports CognigyScript and the `@cognigyRecentConversation` / `@cognigyRecentUserInputs` transcript tags (optionally with a turn limit, e.g. `@cognigyRecentConversation:3`) |
 | llmProviderReferenceId | string | No | LLM referenceId, or `"default"` for the project's Generative AI default |
 | storeLocation | string | No | `stream` (stream to output), `input`, or `context` |
-| immediateOutput | boolean | No | Output the result immediately (with `storeLocation: "stream"`) |
+| immediateOutput | boolean | No | Output the result immediately — applies only with `storeLocation: "input"` or `"context"`; with `"stream"` the result already streams, so the flag is meaningless and must not be sent |
 | inputKey / contextKey | string | No | Where to store the result for `input`/`context` storage (default `promptResult`) |
 | chatTranscriptSteps | number | No | Previous conversation turns included in the request (default 50) |
 | usePromptMode | boolean | No | Single-prompt mode — no conversation context; prompt must be non-empty |

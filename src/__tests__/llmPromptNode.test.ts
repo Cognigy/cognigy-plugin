@@ -124,10 +124,69 @@ describe("LLM Prompt node support", () => {
             prompt: baseArgs.systemPrompt,
             llmProviderReferenceId: "llm-ref",
             storeLocation: "stream",
-            immediateOutput: true,
           }),
         }),
       );
+      // "Output result immediately" is a Store in Input / Store in Context
+      // option; in stream mode the UI never shows it, so the payload must not
+      // set it.
+      expect(nodeCreateCall![1].config).not.toHaveProperty("immediateOutput");
+      // The chosen model is reported back, default or not.
+      expect(result.llm).toEqual({
+        referenceId: "llm-ref",
+        isDefault: true,
+        connected: false,
+      });
+    });
+
+    it("asks the platform for promptNode-capable models", async () => {
+      mockHappyPath();
+
+      await h.handleToolCall("create_ai_agent", baseArgs);
+
+      expect(api.get).toHaveBeenCalledWith("/new/v2.0/largelanguagemodels", {
+        params: { projectId: ID.project, useCase: "promptNode" },
+      });
+    });
+
+    it("refetches the unfiltered LLM list when useCase is unsupported", async () => {
+      api.post
+        .mockResolvedValueOnce({ _id: ID.flow, referenceId: "flow-uuid" })
+        .mockResolvedValueOnce({ _id: ID.node })
+        .mockResolvedValueOnce({ _id: ID.endpoint, URLToken: "abc123" });
+      api.get
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.entry, isEntryPoint: true }],
+        })
+        // An older platform rejects the useCase parameter outright.
+        .mockRejectedValueOnce(
+          Object.assign(new Error("Bad Request"), { status: 400 }),
+        )
+        .mockResolvedValueOnce({
+          items: [
+            {
+              _id: ID.llm,
+              referenceId: "legacy-ref",
+              connectionId: "conn-1",
+              modelType: "gpt-4o",
+            },
+          ],
+        })
+        .mockResolvedValueOnce({ items: [] });
+      api.delete.mockResolvedValue({});
+
+      const result = await h.handleToolCall("create_ai_agent", baseArgs);
+
+      expect(api.get).toHaveBeenCalledWith("/v2.0/largelanguagemodels", {
+        params: { projectId: ID.project },
+      });
+      const nodeCreateCall = api.post.mock.calls.find(
+        (c: any[]) => c[0] === `/v2.0/flows/${ID.flow}/chart/nodes`,
+      );
+      expect(nodeCreateCall![1].config.llmProviderReferenceId).toBe(
+        "legacy-ref",
+      );
+      expect(result.llmStatus).toBe("configured");
     });
 
     it("removes the backend-created placeholder llmPromptTool (but not llmPromptDefault)", async () => {
@@ -151,6 +210,23 @@ describe("LLM Prompt node support", () => {
         name: "Prompt Agent",
         description: "Persona text",
         agentNodeType: "llmPrompt",
+      });
+
+      const nodeCreateCall = api.post.mock.calls.find(
+        (c: any[]) => c[0] === `/v2.0/flows/${ID.flow}/chart/nodes`,
+      );
+      expect(nodeCreateCall![1].config.prompt).toBe("Persona text");
+    });
+
+    it("falls back to description when systemPrompt is only whitespace", async () => {
+      mockHappyPath();
+
+      await h.handleToolCall("create_ai_agent", {
+        projectId: ID.project,
+        name: "Prompt Agent",
+        description: "Persona text",
+        agentNodeType: "llmPrompt",
+        systemPrompt: "   \n  ",
       });
 
       const nodeCreateCall = api.post.mock.calls.find(
@@ -193,7 +269,7 @@ describe("LLM Prompt node support", () => {
         .mockResolvedValueOnce({ items: [] });
       api.delete.mockResolvedValue({});
 
-      await h.handleToolCall("create_ai_agent", baseArgs);
+      const result = await h.handleToolCall("create_ai_agent", baseArgs);
 
       const nodeCreateCall = api.post.mock.calls.find(
         (c: any[]) => c[0] === `/v2.0/flows/${ID.flow}/chart/nodes`,
@@ -201,6 +277,63 @@ describe("LLM Prompt node support", () => {
       expect(nodeCreateCall![1].config.llmProviderReferenceId).toBe(
         "working-ref",
       );
+      // Passing over the project default is reported, not silent.
+      expect(result.llm).toEqual({
+        referenceId: "working-ref",
+        isDefault: false,
+        connected: true,
+      });
+      expect(result._hints.warning).toContain("project default LLM");
+      expect(result._hints.warning).toContain("broken-default");
+      expect(result._hints.action).toContain("llmProviderReferenceId");
+      expect(result._hints.hint).toContain("manage_flow_nodes");
+    });
+
+    it("never picks an embedding model that happens to have a connection", async () => {
+      api.post
+        .mockResolvedValueOnce({ _id: ID.flow, referenceId: "flow-uuid" })
+        .mockResolvedValueOnce({ _id: ID.node })
+        .mockResolvedValueOnce({ _id: ID.endpoint, URLToken: "abc123" });
+      api.get
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.entry, isEntryPoint: true }],
+        })
+        // Model strings taken from the plugin's own llm-providers skill: the
+        // old "embedding" substring check let both of these through.
+        .mockResolvedValueOnce({
+          items: [
+            {
+              _id: "a".repeat(24),
+              referenceId: "titan-embed-ref",
+              connectionId: "conn-1",
+              modelType: "amazon.titan-embed-text-v2:0",
+            },
+            {
+              _id: "b".repeat(24),
+              referenceId: "pharia-embedding-ref",
+              connectionId: "conn-2",
+              modelType: "Pharia-1-Embedding-4608",
+            },
+            {
+              _id: "c".repeat(24),
+              referenceId: "chat-ref",
+              modelType: "gpt-4o",
+              isDefault: true,
+            },
+          ],
+        })
+        .mockResolvedValueOnce({ items: [] });
+      api.delete.mockResolvedValue({});
+
+      const result = await h.handleToolCall("create_ai_agent", baseArgs);
+
+      const nodeCreateCall = api.post.mock.calls.find(
+        (c: any[]) => c[0] === `/v2.0/flows/${ID.flow}/chart/nodes`,
+      );
+      // The connectionless chat model beats both connected embedding models.
+      expect(nodeCreateCall![1].config.llmProviderReferenceId).toBe("chat-ref");
+      expect(result.llm.connected).toBe(false);
+      expect(result._hints.warning).toContain("no connection");
     });
 
     it("does not assign an embedding-only model list to the llmPromptV2 node", async () => {
@@ -443,13 +576,35 @@ describe("LLM Prompt node support", () => {
       expect(api.post).not.toHaveBeenCalled();
     });
 
-    it("prefers the aiAgentJob node when a flow has both parents and no parentNodeId", async () => {
+    it("refuses a mixed-parent flow addressed by flowId and lists both candidates", async () => {
       api.get.mockResolvedValueOnce({
         items: [
-          { _id: ID.node, type: "llmPromptV2" },
-          { _id: ID.job, type: "aiAgentJob" },
+          { _id: ID.node, type: "llmPromptV2", label: "LLM Prompt" },
+          { _id: ID.job, type: "aiAgentJob", label: "AI Agent" },
         ],
       });
+
+      const result = await h.handleToolCall("create_tool", {
+        flowId: ID.flow,
+        toolType: "tool",
+        name: "Fetch Weather",
+        config: { toolId: "fetch_weather", description: "d" },
+      });
+
+      // flowId is the documented way to reach an LLM Prompt flow, so silently
+      // preferring the aiAgentJob node would attach the tool to the parent the
+      // caller was least likely to mean.
+      expect(result.error).toContain("more than one type");
+      expect(result.candidates).toEqual([
+        { nodeId: ID.node, type: "llmPromptV2", label: "LLM Prompt" },
+        { nodeId: ID.job, type: "aiAgentJob", label: "AI Agent" },
+      ]);
+      expect(result._hints.action).toContain("parentNodeId");
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it("reports the parent it attached an LLM Prompt tool to", async () => {
+      mockFlowWithLlmPromptNode();
       api.post
         .mockResolvedValueOnce({ _id: ID.tool })
         .mockResolvedValueOnce({ _id: ID.resolve });
@@ -461,12 +616,8 @@ describe("LLM Prompt node support", () => {
         config: { toolId: "fetch_weather", description: "d" },
       });
 
-      expect(result.error).toBeUndefined();
-      expect(api.post).toHaveBeenNthCalledWith(
-        1,
-        `/v2.0/flows/${ID.flow}/chart/nodes`,
-        expect.objectContaining({ type: "aiAgentJobTool", target: ID.job }),
-      );
+      expect(result.parentNodeId).toBe(ID.node);
+      expect(result.parentNodeType).toBe("llmPromptV2");
     });
 
     it("refuses to guess between several llmPromptV2 nodes without parentNodeId", async () => {
@@ -562,6 +713,26 @@ describe("LLM Prompt node support", () => {
       });
 
       expect(result.error).toContain("not supported under an LLM Prompt");
+      expect(result.updated).toBe(false);
+      expect(api.patch).not.toHaveBeenCalled();
+    });
+
+    it("update_tool rejects knowledge config with toolType omitted too", async () => {
+      // The family decision follows the node's own type, so omitting the
+      // optional toolType (which the guard's own hint suggests) no longer
+      // slips past it into a silent no-op update.
+      api.get.mockResolvedValueOnce({ _id: ID.tool, type: "llmPromptMCPTool" });
+
+      const result = await h.handleToolCall("update_tool", {
+        flowId: ID.flow,
+        toolNodeId: ID.tool,
+        config: { knowledgeStoreId: ID.project, topK: 5 },
+      });
+
+      expect(result.updated).toBe(false);
+      expect(result.updatedFields).toEqual([]);
+      expect(result.error).toContain("not supported under an LLM Prompt");
+      expect(result.nodeType).toBe("llmPromptMCPTool");
       expect(api.patch).not.toHaveBeenCalled();
     });
 
@@ -698,6 +869,50 @@ describe("LLM Prompt node support", () => {
       expect(api.delete).not.toHaveBeenCalledWith(
         `/v2.0/flows/${ID.flow}/chart/nodes/${ID.defaultBranch}`,
       );
+      // What was swept is reported, so a caller can see which children of its
+      // brand-new node disappeared.
+      expect(result.placeholderToolsRemoved).toEqual([ID.placeholder]);
+    });
+
+    it("skips the type-only placeholder sweep when the parent already has several tool children", async () => {
+      // Re-targeting an existing llmPromptV2 node: its children are real
+      // tools, and none of them carries an "unlock_account" marker. Matching
+      // on node type alone would delete both.
+      api.post.mockResolvedValueOnce({ _id: ID.node, parentId: null });
+      api.get
+        .mockResolvedValueOnce({ _id: ID.flow, localeReference: "loc-ref-1" })
+        .mockResolvedValueOnce({
+          nodes: [
+            { _id: ID.tool, type: "llmPromptTool", label: "Fetch Weather" },
+            { _id: ID.placeholder, type: "llmPromptTool", label: "Send Email" },
+            {
+              _id: ID.defaultBranch,
+              type: "llmPromptDefault",
+              label: "Default",
+            },
+          ],
+          relations: [
+            {
+              node: ID.node,
+              children: [ID.tool, ID.placeholder, ID.defaultBranch],
+            },
+          ],
+        });
+      api.delete.mockResolvedValue({});
+
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        nodeType: "llmPrompt",
+        label: "Summarize",
+        parentNodeId: ID.entry,
+        mode: "append",
+        config: { prompt: "Summarize the conversation." },
+      });
+
+      expect(result.nodeId).toBe(ID.node);
+      expect(api.delete).not.toHaveBeenCalled();
+      expect(result.placeholderToolsRemoved).toBeUndefined();
     });
 
     it("requires config.prompt", async () => {
