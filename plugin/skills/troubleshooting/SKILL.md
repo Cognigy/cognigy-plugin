@@ -15,6 +15,12 @@ description: "Use when a Cognigy agent returns empty responses, a tool call or c
 3. Check agent description is not empty: get_resource { resourceType: "agent", id }
 4. Check endpoint is connected: get_resource { resourceType: "endpoint", id }
    Verify flowId is set and URLToken exists
+5. Endpoint JUST created (seconds ago)? Endpoint config propagates briefly, and a
+   session whose FIRST message hit the stale config stays cached as broken — wait a
+   few seconds and retry with a NEW sessionId, not the same one.
+6. LLM Prompt flows: the assigned LLM must have a connection (`connectionId` set on
+   the llm_model). A connectionless LLM fails silently — the node's default error
+   handling is "continue" with an empty message, which looks like an empty response.
 
 ## create_ai_agent failed
 

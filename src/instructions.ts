@@ -24,6 +24,7 @@ DOCUMENTATION LOOKUP:
 
 RULES:
 - create_ai_agent auto-provisions flow + AI Agent Job Node + REST endpoint. Do NOT create these separately.
+- The AI Agent node is ALWAYS the way to build agents. Use the LLM Prompt node (llmPromptV2) ONLY when the user explicitly asks for it by name — NEVER offer, suggest, or fall back to it. Flows driven by it have no agent resource: address their tools with flowId instead of aiAgentId.
 - An LLM resource MUST exist AND be successfully connected in the project before calling talk_to_agent. Do NOT test an agent without a confirmed working LLM — it fails silently or returns empty responses. If LLM setup failed or was not completed, skip testing and inform the user.
 - If another project already has a reusable LLM with a connectionId, DO NOT call setup_llm first. Transfer the LLM + its connection via manage_packages and only fall back to setup_llm if reuse is unavailable or failed. An LLM without its connection is useless.
 - NEVER hallucinate or guess API keys, connection URLs, or credentials. If an LLM needs to be created and no API key was provided, ASK for it. Do NOT invent values.
