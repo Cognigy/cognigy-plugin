@@ -20,7 +20,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "create_ai_agent",
     description:
-      "Create a complete AI Agent with auto-provisioned flow, AI Agent Job Node, and REST endpoint. Returns everything needed for talk_to_agent.\n\nIf projectId is omitted, a new project is auto-created using the agent name.\n\nLLM SETUP (required for the agent to generate responses):\n1. Ensure the target project already has a working LLM. If another project already has one, prefer reusing the required llm_model resources together with their shared connection resource(s) via manage_packages export/import.\n2. Use setup_llm only if no reusable LLM with connectionId exists or package transfer failed.\n3. If the LLM is not set as default, assign it via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: \"<llm referenceId>\" } }.\n\nKNOWLEDGE: If knowledgeStoreReferenceId is provided, a knowledge search tool is automatically created on the agent's Job Node. This is the preferred way to give agents access to knowledge stores.\n\nAGENT NODE TYPE: The AI Agent node is ALWAYS the default. Set agentNodeType: 'llmPrompt' ONLY when the user EXPLICITLY asked for an LLM Prompt node (e.g. \"create an agent using an LLM Prompt node\"). NEVER offer, suggest, or fall back to it, and never ask the user whether they want it. In llmPrompt mode no agent resource exists: the flow gets an LLM Prompt (llmPromptV2) node whose freeform systemPrompt drives behavior; edit it later via manage_flow_nodes update (NOT update_ai_agent), add tools via create_tool { flowId }, and knowledgeStoreReferenceId is not supported.\n\nReturns: agent, flow, endpoint objects, endpointUrl, llmStatus, and the projectId used. If a knowledge tool was created, it is included in the response.\nIf llmStatus is 'unknown', especially after auto-creating a new project, ensure a working LLM is reused or set up before calling talk_to_agent, and do not call talk_to_agent until a working LLM is confirmed.",
+      "Create a complete AI Agent with auto-provisioned flow, AI Agent Job Node, and REST endpoint. Returns everything needed for talk_to_agent.\n\nIf projectId is omitted, a new project is auto-created using the agent name.\n\nLLM SETUP (required for responses):\n1. Ensure the target project has a working LLM. Prefer reusing connected llm_model resources and their connection resources via manage_packages export/import.\n2. Use setup_llm only if no reusable LLM with connectionId exists or package transfer failed.\n3. If the LLM is not default, assign it via update_ai_agent { aiAgentId, jobConfig: { llmProviderReferenceId: \"<llm referenceId>\" } }.\n\nKNOWLEDGE: knowledgeStoreReferenceId auto-creates a knowledge search tool on the agent's Job Node.\n\nAGENT NODE TYPE: Default to the AI Agent node. Set agentNodeType: 'llmPrompt' only when the user asks for an LLM Prompt node by name. In llmPrompt mode there is no agent resource: systemPrompt drives the node, edit it via manage_flow_nodes update, add tools with create_tool { flowId }, and do not pass knowledgeStoreReferenceId.\n\nReturns: agent, flow, endpoint objects, endpointUrl, llmStatus, projectId, and any created knowledge tool. If llmStatus is 'unknown', set up or reuse a working LLM before calling talk_to_agent.",
     annotations: {
       title: "Create AI Agent",
       readOnlyHint: false,
@@ -54,12 +54,12 @@ export const tools: ToolDefinition[] = [
           type: "string",
           enum: ["aiAgent", "llmPrompt"],
           description:
-            "Which node drives the agent. Omit (or 'aiAgent') in ALL normal cases — the AI Agent node is always the default. Pass 'llmPrompt' ONLY when the user explicitly asked for an LLM Prompt node in their own words. Never suggest or offer this option, and never ask the user about it.",
+            "Which node drives the agent. Omit for the AI Agent default. Pass 'llmPrompt' only when the user asked for an LLM Prompt node by name.",
         },
         systemPrompt: {
           type: "string",
           description:
-            "llmPrompt mode only: the LLM Prompt node's freeform system prompt (config.prompt). This is the entire persona/behavior definition — there are no separate persona or guardrail fields in this mode, so include any needed guardrails in the prompt itself. Falls back to description when omitted.",
+            "llmPrompt mode only: freeform system prompt (config.prompt). It is the full persona, behavior, and guardrail definition. Falls back to description when omitted.",
         },
       },
       required: ["name"],
@@ -606,7 +606,7 @@ To list tools: list_resources { resourceType: 'tool', aiAgentId }.
 To delete: delete_resource { resourceType: 'tool', id: toolId, aiAgentId }.
 After creating, use talk_to_agent to test.
 
-ADDRESSING: Pass aiAgentId for normal agents. Pass flowId instead ONLY for a flow whose agent is an LLM Prompt (llmPromptV2) node — those flows have no agent resource. Tools attach to the flow's AI Agent Job node when present, otherwise to its LLM Prompt node (which supports only toolType 'tool', 'mcp', and 'http').`,
+ADDRESSING: Pass aiAgentId for normal agents. Pass flowId only for LLM Prompt flows with no agent resource. Tools attach to the AI Agent Job node when present, otherwise to the LLM Prompt node, which supports only tool/mcp/http.`,
     annotations: {
       title: "Create Tool",
       readOnlyHint: false,
@@ -625,7 +625,7 @@ ADDRESSING: Pass aiAgentId for normal agents. Pass flowId instead ONLY for a flo
         flowId: {
           type: "string",
           description:
-            "24-char hex flow ID — alternative to aiAgentId, ONLY for flows driven by an LLM Prompt node (no agent resource exists for those). Prefer aiAgentId whenever the agent has one. Never pass both.",
+            "24-char hex flow ID — use instead of aiAgentId only for LLM Prompt flows with no agent resource. Never pass both.",
         },
         parentNodeId: {
           type: "string",
@@ -636,7 +636,7 @@ ADDRESSING: Pass aiAgentId for normal agents. Pass flowId instead ONLY for a flo
           type: "string",
           enum: ["tool", "knowledge", "send_email", "mcp", "http"],
           description:
-            "tool: general-purpose with custom logic (DEFAULT — use for most requests). knowledge: search a Knowledge Store. send_email: send emails. mcp: connect to an external MCP server (ONLY when user explicitly requests MCP integration with a specific server URL). http: call an external HTTP API (when user specifies a concrete API endpoint). Under an LLM Prompt node only tool/mcp/http are supported.",
+            "tool: general-purpose default. knowledge: search a Knowledge Store. send_email: send emails. mcp: external MCP server requested by the user. http: concrete HTTP API endpoint. LLM Prompt nodes support only tool/mcp/http.",
         },
         name: {
           type: "string",
@@ -877,7 +877,7 @@ ADDRESSING: Pass aiAgentId for normal agents. Pass flowId instead ONLY for a flo
   {
     name: "manage_flow_nodes",
     description:
-      'Manage the logic nodes inside a flow (list/get/create/update/delete) and render the flow as a diagram. Nodes are helpers that live INSIDE AI Agent tool branches: create a tool first (create_tool { toolType: "tool" }), then add nodes with parentNodeId = toolNodeId, mode = "appendChild". NEVER add standalone nodes before the AI Agent Job node. The flow-nodes skill owns the full workflow — placement, branching (ifThenElse/lookup), node config, and case values.\n\nOPERATIONS:\n- list: all nodes in a flow (id, type, label, parentId, isEntryPoint only — NO config).\n- get: one node in full incl. config (requires nodeId). Read before editing. For code nodes the config reports `hasError`; the large server-computed `transpiled` output is omitted.\n- create: add a node (requires nodeType + config). parentNodeId + mode place it — see the flow-nodes skill. Returns nodeId; `placeholderToolsRemoved` lists the auto-created placeholder tool nodes that were deleted with it (llmPrompt nodes only).\n- update: change a node\'s config or label (only provided fields change). For switch/lookup nodes, pass a `cases` array to set case values.\n- delete: remove a node.\n- render (read-only): visualize the flow. Returns an `ascii` tree (display inline in any client incl. terminal) and a `mermaid` string. Deliver the mermaid ONLY as a native Mermaid/diagram artifact — do NOT wrap it in HTML or paste it as an inline ```mermaid fence (both break the zoomable, mobile-friendly viewer). Options: focus=<nodeId|nodeId[]> highlights nodes; writeHtml writes a self-contained rich HTML graph to a local tmp file and opens it in the browser (returns htmlUrl/htmlPath — the file is already on the user\'s machine, just hand them the link). See the flow-nodes skill for details.\n\nSupported node types come from the server node registry; an unsupported nodeType returns the current list. For AI Agent tool nodes (knowledge, send_email, mcp, http) use create_tool / update_tool instead.\n\nLLM PROMPT EXCEPTION: the llmPrompt node type (a raw LLM call with a freeform system prompt) is a top-level flow node, not a tool-branch helper. Create one ONLY when the user explicitly asked for an LLM Prompt node — never offer it, never use it instead of the AI Agent node, and never ask the user whether they want one. Reading/updating an existing llmPromptV2 node (e.g. its config.prompt) is always fine.',
+      'Manage the logic nodes inside a flow (list/get/create/update/delete) and render the flow as a diagram. Nodes are helpers that live INSIDE AI Agent tool branches: create a tool first (create_tool { toolType: "tool" }), then add nodes with parentNodeId = toolNodeId, mode = "appendChild". NEVER add standalone nodes before the AI Agent Job node. The flow-nodes skill owns the full workflow — placement, branching (ifThenElse/lookup), node config, and case values.\n\nOPERATIONS:\n- list: all nodes in a flow (id, type, label, parentId, isEntryPoint only — NO config).\n- get: one node in full incl. config (requires nodeId). Read before editing. For code nodes the config reports `hasError`; the large server-computed `transpiled` output is omitted.\n- create: add a node (requires nodeType + config). parentNodeId + mode place it — see the flow-nodes skill. Returns nodeId; `placeholderToolsRemoved` lists auto-created placeholder tool nodes removed for llmPrompt nodes.\n- update: change a node\'s config or label (only provided fields change). For switch/lookup nodes, pass a `cases` array to set case values.\n- delete: remove a node.\n- render (read-only): visualize the flow. Returns an `ascii` tree (display inline in any client incl. terminal) and a `mermaid` string. Deliver the mermaid ONLY as a native Mermaid/diagram artifact — do NOT wrap it in HTML or paste it as an inline ```mermaid fence (both break the zoomable, mobile-friendly viewer). Options: focus=<nodeId|nodeId[]> highlights nodes; writeHtml writes a self-contained rich HTML graph to a local tmp file and opens it in the browser (returns htmlUrl/htmlPath — the file is already on the user\'s machine, just hand them the link). See the flow-nodes skill for details.\n\nSupported node types come from the server node registry; an unsupported nodeType returns the current list. For AI Agent tool nodes (knowledge, send_email, mcp, http) use create_tool / update_tool instead.\n\nLLM PROMPT EXCEPTION: llmPrompt is a top-level raw LLM node, not a tool-branch helper. Create it only when the user asks for an LLM Prompt node by name; reading/updating existing llmPromptV2 nodes is fine.',
     annotations: {
       title: "Manage Flow Nodes",
       readOnlyHint: false,

@@ -299,16 +299,16 @@ If the tool was originally created without `preProcessCode` / `postProcessCode`,
 
 ## Tools under an LLM Prompt node (flowId addressing)
 
-Flows driven by an LLM Prompt (`llmPromptV2`) node instead of an AI Agent node have **no agent resource**, so there is no aiAgentId. For those flows — and only those — address tools by flow:
+LLM Prompt (`llmPromptV2`) flows have no agent resource, so address their tools by `flowId`:
 
 - Create: create_tool { flowId, toolType, name, config }
 - List: list_resources { resourceType: "tool", flowId }
 - Update: update_tool { flowId, toolNodeId, ... }
 - Remove: delete_resource { resourceType: "tool", id: toolId, flowId }
 
-Tools attach to the flow's aiAgentJob node when one exists, otherwise to its llmPromptV2 node. Under an LLM Prompt node only `tool`, `mcp`, and `http` types are supported (no knowledge/send_email — those descriptors don't exist there). Everything else works the same: the same tool branch, the same Resolve Tool Action node, the same `input.aiAgent.toolArgs` parameter access, and the same manage_flow_nodes workflow for logic inside the branch.
+Tools attach to the flow's aiAgentJob node when one exists, otherwise to its llmPromptV2 node. Under an LLM Prompt node, only `tool`, `mcp`, and `http` are supported; branch logic and `input.aiAgent.toolArgs` work the same.
 
-Reminder: the LLM Prompt node itself is created only on explicit user request — see the flow-nodes guide. This section is about working with tools once such a flow exists.
+Create LLM Prompt nodes only on explicit user request; see the flow-nodes guide.
 
 ## Prerequisites
 

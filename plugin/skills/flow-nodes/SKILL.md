@@ -11,7 +11,7 @@ Use `manage_flow_nodes` to add logic nodes **inside tool branches only**. Nodes 
 
 **Voice exception — Set Session Config:** The one node that _should_ run before the AI Agent node is a `setSessionConfig` (Set Session Config) node, and only in **voice** flows. It applies per-session speech settings (barge-in, ASR, STT/TTS, input timeouts) and must be the **first** node. The `audit_voice_agent` tool checks for this and can create it by `prepend`ing before the AI Agent node. Do not add any other pre-agent nodes.
 
-**LLM Prompt exception — explicit request only:** The `llmPrompt` node (`llmPromptV2` — a raw LLM call driven by a freeform system prompt) is the one node type that legitimately lives at the **top level** of a flow, in flows that have **no AI Agent node at all**. It is supported ONLY when the user **explicitly asks for an LLM Prompt node by name**. NEVER offer it, never use it as a fallback for the AI Agent node, and never ask the user to choose between the two — the AI Agent node (via `create_ai_agent`) is always the default for anything agent-shaped. Reading and updating llmPromptV2 nodes that already exist in a flow is always fine. See the [LLM Prompt section](#llmprompt--llm-prompt-explicit-request-only) for config.
+**LLM Prompt exception:** `llmPrompt` (`llmPromptV2`) is a top-level raw LLM node for flows with no AI Agent node. Create it only when the user asks for an LLM Prompt node by name; otherwise use the AI Agent default. Reading or updating existing llmPromptV2 nodes is fine. See the [LLM Prompt section](#llmprompt--llm-prompt-explicit-request-only).
 
 ## Quick Start (tool-first workflow)
 
@@ -313,7 +313,7 @@ Call an external API.
 
 ---
 
-### llmPrompt — LLM Prompt (explicit request ONLY)
+### llmPrompt — LLM Prompt
 
 Category: service
 
@@ -321,12 +321,12 @@ A raw LLM call driven by a **freeform system prompt** (`config.prompt`). Support
 
 **STEERING — read first:**
 
-- Create this node ONLY when the user explicitly asked for an "LLM Prompt" node. The AI Agent node is ALWAYS the default for agents — never offer llmPrompt as an alternative, never fall back to it, never ask the user to choose.
-- For a **new** agent built on an LLM Prompt node ("create an agent using an LLM Prompt node"), use `create_ai_agent { agentNodeType: "llmPrompt", systemPrompt }` — it provisions project + flow + node + endpoint in one call. Use `manage_flow_nodes create` only to add an llmPrompt node to an **existing** flow.
-- Unlike every other node in this guide, llmPrompt is a **top-level flow node** (placed after `start` via `mode: "append"`), not a tool-branch helper. A flow can be driven entirely by it, with no aiAgentJob node.
-- `prompt` is a fully freeform system prompt — there are no separate persona/guardrail fields like the AI Agent node has. All behavior AND all guardrails must live in the prompt text itself, so treat it with care: include explicit constraints (what the agent must never do) directly in the prompt.
-- The backend auto-creates a `llmPromptDefault` branch (not deletable) and a placeholder tool under every new llmPromptV2 node; the plugin removes the placeholder tool automatically.
-- Flows driven by an LLM Prompt node have **no agent resource**: `update_ai_agent` does not apply (update the prompt via `manage_flow_nodes update`), and tools are addressed with `create_tool { flowId }` / `update_tool { flowId }` / `list_resources { resourceType: "tool", flowId }` instead of aiAgentId. Only `tool`, `mcp`, and `http` tool types work under it (no knowledge/send_email).
+- Create only when the user explicitly asks for an "LLM Prompt" node; otherwise use the AI Agent default. Do not offer it, fall back to it, or ask the user to choose.
+- For a new LLM Prompt agent, use `create_ai_agent { agentNodeType: "llmPrompt", systemPrompt }`; it provisions project, flow, node, and endpoint. Use `manage_flow_nodes create` only for existing flows.
+- `llmPrompt` is top-level, placed after `start` via `mode: "append"`, and can drive a flow without an aiAgentJob node.
+- `prompt` is the full persona, job, and guardrail definition. Put required constraints in the prompt itself.
+- The backend auto-creates a non-deletable `llmPromptDefault` branch and a placeholder tool; the plugin removes the placeholder.
+- These flows have no agent resource: update prompts via `manage_flow_nodes update`, and address tools with `flowId`. Only `tool`, `mcp`, and `http` tools are supported.
 
 **Config (key fields — `get` the node for the full set):**
 | Field | Type | Required | Description |
