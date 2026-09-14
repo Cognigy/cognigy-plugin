@@ -493,14 +493,16 @@ const MCP_MANAGED_TOOL_TYPES = new Set([
   "sendEmailTool",
 ]);
 
-const PROVIDER_CONNECTION_TYPE: Record<string, string> = {
-  openAI: "OpenAIProvider",
-  azureOpenAI: "AzureOpenAIProviderV2",
-  anthropic: "AnthropicProvider",
-  google: "GoogleVertexAIProvider",
-  mistral: "MistralProvider",
-  openAICompatible: "OpenAICompatibleProvider",
-  awsBedrock: "AwsBedrockProvider",
+// Connection types accepted per setup_llm provider; the first entry is the
+// type auto-created from an apiKey.
+const PROVIDER_CONNECTION_TYPES: Record<string, readonly string[]> = {
+  openAI: ["OpenAIProvider"],
+  azureOpenAI: ["AzureOpenAIProviderV2"],
+  anthropic: ["AnthropicProvider"],
+  google: ["GoogleVertexAIProvider"],
+  mistral: ["MistralProvider"],
+  openAICompatible: ["OpenAICompatibleProvider"],
+  awsBedrock: ["AwsBedrockProvider", "AwsBedrockProviderIamRole"],
 };
 
 /**
@@ -1986,6 +1988,23 @@ export class ToolHandlers {
           );
         }
 
+        const allowedTypes = PROVIDER_CONNECTION_TYPES[data.provider];
+        if (match.type && !allowedTypes.includes(match.type)) {
+          return withHints(
+            {
+              error: `The provided connectionId is a '${match.type}' connection, which cannot be used with provider '${data.provider}' (expected ${allowedTypes
+                .map((type) => `'${type}'`)
+                .join(" or ")}).`,
+              connectionId: connectionRefId,
+              projectId: data.projectId,
+            },
+            {
+              action:
+                "Pass a same-project connectionId of a matching type, or provide inline credentials to auto-create one.",
+            },
+          );
+        }
+
         connectionRefId =
           match.referenceId ?? match._id ?? match.id ?? connectionRefId;
       } catch (connectionLookupError: any) {
@@ -2005,8 +2024,7 @@ export class ToolHandlers {
 
     // If inline credentials are provided, auto-create a Connection first
     if (hasInlineCredentials && !connectionRefId) {
-      let connectionType =
-        PROVIDER_CONNECTION_TYPE[data.provider] ?? data.provider;
+      let connectionType = PROVIDER_CONNECTION_TYPES[data.provider][0];
       let connectionFields: Record<string, string> = { apiKey: data.apiKey! };
       if (data.provider === "awsBedrock") {
         if (data.roleArn) {
@@ -2033,7 +2051,10 @@ export class ToolHandlers {
         return withHints(
           { error: `Failed to create connection: ${connError.message}` },
           {
-            action: "Check credentials and provider, then retry.",
+            action:
+              connectionType === "AwsBedrockProviderIamRole"
+                ? "IAM-role connections are feature-gated per installation. If the platform reports the type is not enabled, retry with accessKeyId + secretAccessKey instead of roleArn."
+                : "Check credentials and provider, then retry.",
           },
         );
       }
@@ -2166,7 +2187,9 @@ export class ToolHandlers {
           },
           {
             action:
-              "Verify your API key and model type are correct, then retry.",
+              data.provider === "awsBedrock"
+                ? "Verify accessKeyId + secretAccessKey (or roleArn), region, and model id are correct, then retry."
+                : "Verify your API key and model type are correct, then retry.",
           },
         );
       }

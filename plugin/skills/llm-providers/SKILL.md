@@ -71,7 +71,7 @@ Use provider `awsBedrock` for models hosted on AWS Bedrock (Amazon Nova, Anthrop
 Required parameters:
 
 - `region`: AWS region of the Bedrock deployment, e.g. `us-east-1`
-- `modelType`: a Bedrock model id from Cognigy's supported list — chat: `amazon.nova-pro-v1:0`, `amazon.nova-lite-v1:0`, `amazon.nova-micro-v1:0`, `amazon.nova-2-lite-v1:0`, `anthropic.claude-3-5-sonnet-20240620-v1:0`; embedding: `amazon.titan-embed-text-v2:0`. For any other Bedrock model use `custom-model` and put the model id — or an inference profile id like `eu.anthropic.claude-sonnet-4-6` — in `customModel`.
+- `modelType`: a Bedrock model id from Cognigy's supported list — chat: `amazon.nova-pro-v1:0`, `amazon.nova-lite-v1:0`, `amazon.nova-micro-v1:0`, `amazon.nova-2-lite-v1:0`; embedding: `amazon.titan-embed-text-v2:0`. For any other Bedrock model (including Claude) use `custom-model` and put the model id — or an inference profile id like `eu.anthropic.claude-sonnet-4-6` — in `customModel`. Cognigy's list changes with platform releases (`anthropic.claude-3-5-sonnet-20240620-v1:0` was removed in 2026.10); check the deprecations table in the docs if a named id is rejected.
 - Credentials — one of (NOT `apiKey`):
   - `accessKeyId` + `secretAccessKey` (access-key auth → `AwsBedrockProvider` connection) — the standard option, works everywhere
   - `roleArn` (IAM-role auth → `AwsBedrockProviderIamRole` connection) — feature-gated: only works when the Cognigy installation has IAM connections enabled for the organisation (`FEATURE_ENABLE_IAM_AWS_CONNECTION_WHITELIST`); otherwise connection creation is rejected with "This type is not enabled for your installation". Don't steer users here unless they asked for IAM-role auth — default to the key pair.
@@ -102,7 +102,7 @@ Caveat: AWS Bedrock rejects requests with an empty or whitespace-only system pro
 ## Credential resolution
 
 - Provide the provider's credentials — a Connection is auto-created, then the LLM resource is linked to it. For most providers that is apiKey; for awsBedrock it is accessKeyId + secretAccessKey or roleArn instead (apiKey is rejected there)
-- Provide connectionId (UUID referenceId of an existing Connection in the SAME project) to skip connection creation
+- Provide connectionId (UUID referenceId of an existing Connection in the SAME project, of a type matching the provider) to skip connection creation — never together with inline credentials
 - Either the provider's credentials or connectionId is required
 - If the only working connection lives in another project, transfer the LLM + connection via manage_packages instead of passing that connectionId directly
 
@@ -117,7 +117,7 @@ After creating the model, setup_llm automatically tests the connection by sendin
 ## Common errors
 
 - "Invalid provider": use exact camelCase strings from the provider column (openAI, not openai)
-- "Authentication failed": verify API key is valid for that provider
+- "Authentication failed": verify the credentials are valid for that provider (apiKey; or AWS access keys / role ARN for awsBedrock)
 - "Model not found": check exact modelType spelling (e.g. gpt-4o, not gpt4o)
 
 ## Troubleshooting: dangerouslySkipConnectionTest

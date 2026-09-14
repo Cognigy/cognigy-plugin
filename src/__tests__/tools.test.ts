@@ -822,6 +822,102 @@ describe("ToolHandlers v2", () => {
       expect(result.error).toContain("accessKeyId");
       expect(api.post).not.toHaveBeenCalled();
     });
+
+    it("reuses an existing awsBedrock connection of either Bedrock type", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [
+          {
+            _id: "conn1",
+            referenceId: "bedrock-conn-uuid",
+            type: "AwsBedrockProviderIamRole",
+          },
+        ],
+      });
+      api.post
+        .mockResolvedValueOnce({ ...mockLlm, provider: "awsBedrock" })
+        .mockResolvedValueOnce(mockTestSuccess);
+
+      const result = await h.handleToolCall("setup_llm", {
+        projectId: ID.project,
+        provider: "awsBedrock",
+        modelType: "amazon.nova-pro-v1:0",
+        region: "us-east-1",
+        connectionId: "bedrock-conn-uuid",
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(api.post).not.toHaveBeenCalledWith(
+        "/v2.0/connections",
+        expect.anything(),
+      );
+      expect(api.post).toHaveBeenCalledWith(
+        "/v2.0/largelanguagemodels",
+        expect.objectContaining({ connectionId: "bedrock-conn-uuid" }),
+      );
+    });
+
+    it("rejects a connectionId whose type does not match the provider", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [
+          {
+            _id: "conn1",
+            referenceId: "openai-conn-uuid",
+            type: "OpenAIProvider",
+          },
+        ],
+      });
+
+      const result = await h.handleToolCall("setup_llm", {
+        projectId: ID.project,
+        provider: "awsBedrock",
+        modelType: "amazon.nova-pro-v1:0",
+        region: "us-east-1",
+        connectionId: "openai-conn-uuid",
+      });
+
+      expect(result.error).toContain("OpenAIProvider");
+      expect(result.error).toContain("awsBedrock");
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it("points IAM-role connection failures at the access-key fallback", async () => {
+      api.post.mockRejectedValueOnce(
+        new Error("This type is not enabled for your installation"),
+      );
+
+      const result = await h.handleToolCall("setup_llm", {
+        projectId: ID.project,
+        provider: "awsBedrock",
+        modelType: "amazon.nova-pro-v1:0",
+        region: "us-east-1",
+        roleArn: "arn:aws:iam::123456789012:role/cognigy-bedrock",
+      });
+
+      expect(result.error).toContain("not enabled for your installation");
+      expect(result._hints.action).toContain("accessKeyId");
+      expect(result._hints.action).toContain("secretAccessKey");
+    });
+
+    it("gives an AWS-specific hint when the awsBedrock connection test fails", async () => {
+      api.post
+        .mockResolvedValueOnce({ _id: "conn1", referenceId: "conn-ref-uuid" })
+        .mockResolvedValueOnce({ ...mockLlm, provider: "awsBedrock" })
+        .mockResolvedValueOnce(mockTestFailure);
+      api.delete.mockResolvedValue({});
+
+      const result = await h.handleToolCall("setup_llm", {
+        projectId: ID.project,
+        provider: "awsBedrock",
+        modelType: "amazon.nova-pro-v1:0",
+        region: "us-east-1",
+        accessKeyId: "AKIA123",
+        secretAccessKey: "wrong",
+      });
+
+      expect(result.error).toContain("connection test failed");
+      expect(result._hints.action).not.toContain("API key");
+      expect(result._hints.action).toContain("secretAccessKey");
+    });
   });
 
   // =========================================================================

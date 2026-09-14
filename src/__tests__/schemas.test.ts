@@ -501,6 +501,54 @@ describe("setupLlmSchema", () => {
       }),
     ).toThrow(/awsBedrock/);
   });
+
+  it("reports both roleArn conflict and incomplete key pair at once", () => {
+    const result = schemas.setupLlmSchema.safeParse({
+      projectId: VALID_ID,
+      provider: "awsBedrock",
+      modelType: "amazon.nova-pro-v1:0",
+      region: "us-east-1",
+      accessKeyId: "AKIA123",
+      roleArn: "arn:aws:iam::123456789012:role/cognigy-bedrock",
+    });
+    expect(result.success).toBe(false);
+    const messages = result.success
+      ? []
+      : result.error.issues.map((issue) => issue.message);
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("not both"),
+        expect.stringContaining("provided together"),
+      ]),
+    );
+  });
+
+  it("rejects inline credentials combined with connectionId", () => {
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "awsBedrock",
+        modelType: "amazon.nova-pro-v1:0",
+        region: "us-east-1",
+        roleArn: "arn:aws:iam::123456789012:role/cognigy-bedrock",
+        connectionId: "conn-ref-uuid",
+      }),
+    ).toThrow(/connectionId/);
+    expect(() =>
+      schemas.setupLlmSchema.parse({
+        projectId: VALID_ID,
+        provider: "openAI",
+        modelType: "gpt-4o",
+        apiKey: "sk-abc123",
+        connectionId: "conn-ref-uuid",
+      }),
+    ).toThrow(/connectionId/);
+  });
+
+  it("exports the provider and location enums used by the tool definition", () => {
+    expect(schemas.SETUP_LLM_PROVIDERS).toContain("awsBedrock");
+    expect(schemas.BEDROCK_LOCATIONS).toEqual(["region", "geo", "global"]);
+  });
 });
 
 describe("talkToAgentSchema", () => {

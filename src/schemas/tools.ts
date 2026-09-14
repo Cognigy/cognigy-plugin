@@ -35,6 +35,18 @@ export const updateAiAgentSchema = z.object({
 
 // Tool 3: setup_llm
 
+export const SETUP_LLM_PROVIDERS = [
+  "openAI",
+  "azureOpenAI",
+  "anthropic",
+  "google",
+  "mistral",
+  "openAICompatible",
+  "awsBedrock",
+] as const;
+
+export const BEDROCK_LOCATIONS = ["region", "geo", "global"] as const;
+
 // Which providers may use which provider-specific setup_llm field.
 const SETUP_LLM_FIELD_PROVIDERS = {
   baseCustomUrl: ["openAICompatible"],
@@ -52,15 +64,7 @@ const SETUP_LLM_FIELD_PROVIDERS = {
 export const setupLlmSchema = z
   .object({
     projectId: idSchema,
-    provider: z.enum([
-      "openAI",
-      "azureOpenAI",
-      "anthropic",
-      "google",
-      "mistral",
-      "openAICompatible",
-      "awsBedrock",
-    ]),
+    provider: z.enum(SETUP_LLM_PROVIDERS),
     modelType: z.string().min(1),
     name: z.string().optional(),
     apiKey: z.string().optional(),
@@ -71,7 +75,7 @@ export const setupLlmSchema = z
     customAuthHeader: z.string().min(1).optional(),
     apiType: z.enum(["chatCompletion", "responses"]).optional(),
     region: z.string().min(1).optional(),
-    location: z.enum(["region", "geo", "global"]).optional(),
+    location: z.enum(BEDROCK_LOCATIONS).optional(),
     geo: z.string().min(1).optional(),
     accessKeyId: z.string().min(1).optional(),
     secretAccessKey: z.string().min(1).optional(),
@@ -79,6 +83,18 @@ export const setupLlmSchema = z
     dangerouslySkipConnectionTest: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
+    if (
+      data.connectionId &&
+      (data.apiKey || data.accessKeyId || data.secretAccessKey || data.roleArn)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["connectionId"],
+        message:
+          "Provide either inline credentials (apiKey / accessKeyId + secretAccessKey / roleArn) OR connectionId, not both — inline credentials would be ignored.",
+      });
+    }
+
     for (const [field, providers] of Object.entries(
       SETUP_LLM_FIELD_PROVIDERS,
     )) {
@@ -161,7 +177,8 @@ export const setupLlmSchema = z
           message:
             "Provide either accessKeyId + secretAccessKey OR roleArn, not both.",
         });
-      } else if (
+      }
+      if (
         (data.accessKeyId && !data.secretAccessKey) ||
         (!data.accessKeyId && data.secretAccessKey)
       ) {
@@ -184,7 +201,7 @@ export const setupLlmSchema = z
           code: z.ZodIssueCode.custom,
           path: ["customModel"],
           message:
-            "modelType 'custom-model' requires customModel — the Bedrock model id (e.g. 'anthropic.claude-sonnet-4-20250514-v1:0').",
+            "modelType 'custom-model' requires customModel — the Bedrock model id or inference profile id (e.g. 'eu.anthropic.claude-sonnet-4-6').",
         });
       }
       if (data.location === "geo" && !data.geo) {
