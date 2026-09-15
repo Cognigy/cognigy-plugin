@@ -1,3 +1,9 @@
+## [1.18.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.17.0...v1.18.0) (2026-09-15)
+
+### Features
+
+* **tools:** support AWS Bedrock LLM provider in setup_llm ([#22](https://github.com/Cognigy/cognigy-plugin/issues/22)) ([ac1f3d9](https://github.com/Cognigy/cognigy-plugin/commit/ac1f3d916a9d936d3fa12700abcd3a12210c017b))
+
 ## [1.17.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.16.0...v1.17.0) (2026-09-15)
 
 ### Features
