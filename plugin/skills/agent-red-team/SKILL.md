@@ -49,8 +49,8 @@ it under Coverage limits with what that leaves untested. Silently omitting a pha
 read as a complete one.
 
 Warn the user, once, that probes run against the live agent, consume LLM tokens, and land in the agent's
-conversation history. Probes go out in Cognigy Endpoint Test Mode (not billed), which is capped at **600
-test messages per hour per organisation** — a `thorough` run with repeats and controls approaches that,
+conversation history. Probes go out in Cognigy Endpoint Test Mode (not counted as billable), which Cognigy documents with a
+fair-use limit of **600 test messages per hour** (scope unspecified) — a `thorough` run with repeats and controls approaches that,
 so size the probe budget accordingly and split a larger audit across hours rather than exceeding it. The
 tool never falls back to a billable send on its own. A probe that returns an `error` was not replayed:
 read its `_hints` and establish whether the probe was processed (the agent may have answered it even

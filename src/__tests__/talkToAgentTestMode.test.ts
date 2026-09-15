@@ -51,7 +51,9 @@ describe("talk_to_agent — endpoint test mode", () => {
     expect(post).toHaveBeenCalledTimes(1);
     expect(post.mock.calls[0][0]).toBe(TEST);
     expect(result.agentResponse).toBe("hello");
-    expect(result.endpointUrl).toBe(TEST);
+    // The result names the regular endpoint; the test-mode URL is a transport
+    // detail and is never returned.
+    expect(result.endpointUrl).toBe(PROD);
     expect(result.testMode).toBe(true);
     expect(result._hints).toBeUndefined();
   });
@@ -119,10 +121,9 @@ describe("talk_to_agent — endpoint test mode", () => {
       expect(post).toHaveBeenCalledTimes(1);
       expect(post.mock.calls[0][0]).toBe(TEST);
       expect(result.error).toBe(`Request failed with status ${statusLabel}`);
-      expect(result.endpointUrl).toBe(TEST);
+      expect(result.endpointUrl).toBe(PROD);
       expect(result.testMode).toBe(true);
       expect(result.sessionId).toBe(SESSION);
-      expect(result.testModeFallback).toBeUndefined();
       expect(result._hints.warning).toMatch(/does not prove/i);
       expect(result._hints.warning).toMatch(/Execution Finished transformer/);
       expect(result._hints.warning).toMatch(/reusing the sessionId does not/i);
@@ -234,7 +235,6 @@ describe("talk_to_agent — endpoint test mode", () => {
     expect(post.mock.calls[0][0]).toBe(PROD);
     expect(result.error).toBe("Request failed with status 404");
     expect(result.testMode).toBe(false);
-    expect(result.testModeFallback).toBeUndefined();
     expect(result._hints.action.indexOf("FIRST establish")).toBe(0);
     expect(result._hints.likely_cause).not.toMatch(/\/test\//);
     expect(result._hints.action).not.toContain("testMode: false");
@@ -314,5 +314,98 @@ describe("talk_to_agent — endpoint test mode", () => {
     expect(post.mock.calls[0][0]).toBe(TEST);
     expect(result.endpointResolved).toBe(true);
     expect(result.testMode).toBe(true);
+  });
+});
+
+describe("talk_to_agent — URL construction edge cases", () => {
+  const resolveEndpoint = (api: any, URLToken = "abc123token") =>
+    api.get
+      .mockResolvedValueOnce({
+        _id: "60d5ec49f1a2c8b1a4e0f001",
+        name: "Test Agent",
+        flowId: "60d5ec49f1a2c8b1a4e0f002",
+        projectId: "507f1f77bcf86cd799439011",
+      })
+      .mockResolvedValueOnce({
+        _id: "60d5ec49f1a2c8b1a4e0f002",
+        referenceId: "ref-flow-uuid",
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            _id: "60d5ec49f1a2c8b1a4e0f003",
+            channel: "rest",
+            flowId: "60d5ec49f1a2c8b1a4e0f002",
+            URLToken,
+          },
+        ],
+      });
+
+  beforeEach(() => post.mockReset());
+
+  it("builds the request URL from base + token, so a base path ending in /test still gets its own test segment", async () => {
+    const h = new ToolHandlers(
+      mockApi(),
+      "https://bots.corp.example/test",
+      "",
+      "https://static.corp.example",
+    );
+    resolveEndpoint((h as any).apiClient);
+    post.mockResolvedValueOnce({ data: { text: "hi" } });
+
+    const result = await h.handleTalkToAgent({
+      aiAgentId: "60d5ec49f1a2c8b1a4e0f001",
+      message: "Hi",
+    });
+
+    expect(post.mock.calls[0][0]).toBe(
+      "https://bots.corp.example/test/test/abc123token",
+    );
+    expect(result.endpointUrl).toBe(
+      "https://bots.corp.example/test/abc123token",
+    );
+    expect(result.testMode).toBe(true);
+  });
+
+  it("testMode: false with a /test base path keeps the base intact", async () => {
+    const h = new ToolHandlers(
+      mockApi(),
+      "https://bots.corp.example/test",
+      "",
+      "https://static.corp.example",
+    );
+    resolveEndpoint((h as any).apiClient);
+    post.mockResolvedValueOnce({ data: { text: "hi" } });
+
+    const result = await h.handleTalkToAgent({
+      aiAgentId: "60d5ec49f1a2c8b1a4e0f001",
+      message: "Hi",
+      testMode: false,
+    });
+
+    expect(post.mock.calls[0][0]).toBe(
+      "https://bots.corp.example/test/abc123token",
+    );
+    expect(result.testMode).toBe(false);
+  });
+
+  it("rejects a token-less endpointUrl before sending anything", async () => {
+    const h = new ToolHandlers(
+      mockApi(),
+      "https://endpoint-trial.cognigy.ai",
+      "",
+      "https://static-trial.cognigy.ai",
+    );
+
+    for (const endpointUrl of [
+      "https://endpoint-trial.cognigy.ai",
+      "https://endpoint-trial.cognigy.ai/",
+    ]) {
+      const result = await h.handleTalkToAgent({ endpointUrl, message: "Hi" });
+      expect(result.error).toBe("Endpoint URL has no URL token.");
+      expect(result.testMode).toBeUndefined();
+      expect(result._hints.likely_cause).toMatch(/base URL/);
+    }
+    expect(post).not.toHaveBeenCalled();
   });
 });

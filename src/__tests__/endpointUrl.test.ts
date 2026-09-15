@@ -1,5 +1,7 @@
 import { describe, it, expect } from "@jest/globals";
 import {
+  endpointUrlFor,
+  hasEndpointToken,
   isTestModeEndpointUrl,
   toProductionEndpointUrl,
   toTestModeEndpointUrl,
@@ -42,5 +44,35 @@ describe("endpoint URL test-mode helpers", () => {
     expect(toTestModeEndpointUrl("https://host/tok/")).toBe(
       "https://host/test/tok",
     );
+  });
+});
+
+describe("endpointUrlFor / hasEndpointToken", () => {
+  it("appends the token behind the base, with a test segment in test mode", () => {
+    expect(
+      endpointUrlFor("https://endpoint-trial.cognigy.ai", "tok", true),
+    ).toBe("https://endpoint-trial.cognigy.ai/test/tok");
+    expect(
+      endpointUrlFor("https://endpoint-trial.cognigy.ai", "tok", false),
+    ).toBe("https://endpoint-trial.cognigy.ai/tok");
+  });
+
+  it("keeps any base path prefix, even one that ends in /test", () => {
+    expect(endpointUrlFor("https://host/endpoint/", "tok", true)).toBe(
+      "https://host/endpoint/test/tok",
+    );
+    expect(endpointUrlFor("https://host/test", "tok", true)).toBe(
+      "https://host/test/test/tok",
+    );
+    expect(endpointUrlFor("https://host/test", "tok", false)).toBe(
+      "https://host/test/tok",
+    );
+  });
+
+  it("detects whether a URL carries a token segment at all", () => {
+    expect(hasEndpointToken("https://host/tok")).toBe(true);
+    expect(hasEndpointToken("https://host/test/tok")).toBe(true);
+    expect(hasEndpointToken("https://host")).toBe(false);
+    expect(hasEndpointToken("https://host/")).toBe(false);
   });
 });

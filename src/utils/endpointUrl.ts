@@ -5,10 +5,20 @@
  * Mode) processes a message exactly like a real user message but keeps it out
  * of the billable conversation count. For REST endpoints it is selected purely
  * by URL: `https://<ENDPOINT_BASE>/test/<URL_TOKEN>` instead of
- * `https://<ENDPOINT_BASE>/<URL_TOKEN>`. The `test` segment sits directly in
- * front of the token, so it survives an endpoint base that carries its own path
- * prefix (on-prem installs). Cognigy caps test traffic at 600 messages per hour
- * per organisation; above that it may be treated as misuse.
+ * `https://<ENDPOINT_BASE>/<URL_TOKEN>`. Cognigy documents a fair-use limit of
+ * 600 test messages per hour, above which traffic may be treated as misuse; it
+ * does not state the limit's scope or how exceeding it is signalled.
+ *
+ * Two ways to get at the URLs:
+ *
+ * - `endpointUrlFor(base, token, testMode)` when the endpoint base URL and the
+ *   URL token are known separately (the handler resolved the endpoint itself).
+ *   This is exact: the base may carry any path prefix, even one ending in
+ *   `/test`, because the token is appended rather than searched for.
+ * - `toTestModeEndpointUrl` / `toProductionEndpointUrl` for a complete URL the
+ *   caller supplied, where the base is unknown. These treat the last path
+ *   segment as the token and the segment before it as an optional `test`
+ *   marker, which is right for every URL this plugin hands out.
  */
 
 const TEST_SEGMENT = "test";
@@ -18,9 +28,31 @@ function splitPath(url: URL): string[] {
 }
 
 function withSegments(url: URL, segments: string[]): string {
-  const out = new URL(url.toString());
-  out.pathname = "/" + segments.join("/");
-  return out.toString();
+  url.pathname = "/" + segments.join("/");
+  return url.toString();
+}
+
+/**
+ * Builds the endpoint URL from its parts. The base may carry a path prefix
+ * (on-prem installs); the token is appended after it, behind a `test` segment
+ * when `testMode` is set.
+ */
+export function endpointUrlFor(
+  endpointBaseUrl: string,
+  urlToken: string,
+  testMode: boolean,
+): string {
+  const url = new URL(endpointBaseUrl);
+  const prefix = splitPath(url);
+  return withSegments(
+    url,
+    testMode ? [...prefix, TEST_SEGMENT, urlToken] : [...prefix, urlToken],
+  );
+}
+
+/** True when the URL has at least one path segment to serve as the URL token. */
+export function hasEndpointToken(endpointUrl: string): boolean {
+  return splitPath(new URL(endpointUrl)).length > 0;
 }
 
 /** True when the URL already addresses the test-mode variant of an endpoint. */
@@ -30,8 +62,8 @@ export function isTestModeEndpointUrl(endpointUrl: string): boolean {
 }
 
 /**
- * Returns the test-mode URL for a REST endpoint URL. Idempotent: a URL that is
- * already in test mode is returned unchanged (normalised).
+ * Returns the test-mode URL for a complete REST endpoint URL. Idempotent: a URL
+ * that is already in test mode is returned unchanged (normalised).
  */
 export function toTestModeEndpointUrl(endpointUrl: string): string {
   const url = new URL(endpointUrl);
@@ -43,8 +75,8 @@ export function toTestModeEndpointUrl(endpointUrl: string): string {
 }
 
 /**
- * Returns the regular (billable) URL for a REST endpoint URL, stripping the
- * test-mode segment if present. Idempotent.
+ * Returns the regular (billable) URL for a complete REST endpoint URL,
+ * stripping the test-mode segment if present. Idempotent.
  */
 export function toProductionEndpointUrl(endpointUrl: string): string {
   const url = new URL(endpointUrl);

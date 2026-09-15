@@ -19,7 +19,7 @@ description: "Use when a Cognigy agent returns empty responses, a tool call or c
 ## talk_to_agent fails (any HTTP error or timeout)
 
 talk_to_agent sends through Cognigy Endpoint Test Mode (`/test/<token>`) so test
-messages are not billed. It **never** re-sends a failed message on the regular
+messages are not counted as billable. It **never** re-sends a failed message on the regular
 (billable) endpoint by itself; a failure comes back as `error` with `testMode`,
 `endpointUrl` and status-aware `_hints`.
 
@@ -53,7 +53,7 @@ regular path, so a status alone never identifies a test-mode problem.
 - **401 / 403** — authorization, IP/WAF block or an endpoint restriction, which
   would hit the regular URL as well. Fix what `detail` names; do not read it as
   "quota exhausted".
-- **429** — throttling, either general rate limiting or the per-organisation
+- **429** — throttling, either general rate limiting or the documented 600-per-hour
   test budget. Pause; do not switch to `testMode: false` to get around it.
 - **5xx / timeout / DNS** — the request may have reached the flow before
   failing. Not evidence that test mode is unsupported.

@@ -16,6 +16,8 @@ import { pathToFileURL } from "url";
 import axios from "axios";
 import { CognigyApiClient } from "../api/client.js";
 import {
+  endpointUrlFor,
+  hasEndpointToken,
   toProductionEndpointUrl,
   toTestModeEndpointUrl,
 } from "../utils/endpointUrl.js";
@@ -744,7 +746,7 @@ function talkToAgentFailureHints(
       : `${checkOutcome} Then ${verifyEndpoint}.`;
   } else if (status === 429) {
     likely_cause =
-      "HTTP 429: the platform is throttling this caller, either general rate limiting or the 600-test-messages-per-hour cap (per organisation, shared by everyone testing there); Cognigy does not document which.";
+      "HTTP 429: the platform is throttling this caller, either general rate limiting or the documented fair-use limit of 600 test messages per hour; Cognigy does not document which, nor the limit's scope.";
     action = `${checkOutcome} Then pause before sending anything else. Do not switch to testMode: false to get around throttling.${billable}`;
   } else if (status >= 500) {
     likely_cause =
@@ -2247,6 +2249,9 @@ export class ToolHandlers {
 
     // --- Endpoint resolution ---
     let endpointUrl: string | undefined = data.endpointUrl;
+    // Set when the handler resolved the endpoint itself; lets the request URL
+    // be built from base + token instead of inferred from a finished URL.
+    let resolvedToken: string | undefined;
     let endpointMeta: {
       autoCreated?: boolean;
       resolved?: boolean;
@@ -2327,8 +2332,9 @@ export class ToolHandlers {
       }
 
       if (existingEndpoint) {
-        endpointUrl = existingEndpoint.URLToken
-          ? `${this.endpointBaseUrl}/${existingEndpoint.URLToken}`
+        resolvedToken = existingEndpoint.URLToken || undefined;
+        endpointUrl = resolvedToken
+          ? `${this.endpointBaseUrl}/${resolvedToken}`
           : undefined;
         endpointMeta = {
           resolved: true,
@@ -2344,8 +2350,9 @@ export class ToolHandlers {
             flowId: flowRef,
             name: `${agent.name} REST Endpoint`,
           });
-          endpointUrl = endpoint.URLToken
-            ? `${this.endpointBaseUrl}/${endpoint.URLToken}`
+          resolvedToken = endpoint.URLToken || undefined;
+          endpointUrl = resolvedToken
+            ? `${this.endpointBaseUrl}/${resolvedToken}`
             : undefined;
           endpointMeta = {
             autoCreated: true,
@@ -2403,12 +2410,48 @@ export class ToolHandlers {
     // (talkToAgentFailureHints) that require the original outcome to be
     // checked first, and a billable send only ever happens when the caller
     // passes testMode: false.
+    //
+    // The request URL is built from base + token when the handler resolved the
+    // endpoint itself (exact, whatever path prefix the base carries). Only a
+    // caller-supplied URL goes through the segment-based helpers. Results carry
+    // the regular endpointUrl and a testMode flag; the test-mode URL is a
+    // transport detail and is never returned, so it cannot be handed on as
+    // "the endpoint URL".
     const useTestMode = data.testMode !== false;
     let targetUrl: string;
     try {
-      targetUrl = useTestMode
-        ? toTestModeEndpointUrl(endpointUrl!)
-        : toProductionEndpointUrl(endpointUrl!);
+      if (resolvedToken) {
+        endpointUrl = endpointUrlFor(
+          this.endpointBaseUrl,
+          resolvedToken,
+          false,
+        );
+        targetUrl = endpointUrlFor(
+          this.endpointBaseUrl,
+          resolvedToken,
+          useTestMode,
+        );
+      } else {
+        if (!hasEndpointToken(endpointUrl!)) {
+          return withHints(
+            {
+              error: "Endpoint URL has no URL token.",
+              endpointUrl,
+              sessionId,
+            },
+            {
+              likely_cause:
+                "Only the endpoint base URL was passed; a REST endpoint URL ends in the endpoint's URLToken.",
+              action:
+                "Pass the full endpointUrl from create_ai_agent or list_resources { resourceType: 'endpoint' } (channel rest), or pass aiAgentId instead.",
+            },
+          );
+        }
+        endpointUrl = toProductionEndpointUrl(endpointUrl!);
+        targetUrl = useTestMode
+          ? toTestModeEndpointUrl(endpointUrl)
+          : endpointUrl;
+      }
     } catch (urlErr: any) {
       // A caller-supplied endpointUrl is schema-validated, so this is almost
       // always a malformed COGNIGY_ENDPOINT_BASE_URL. Return it structured
@@ -2448,7 +2491,7 @@ export class ToolHandlers {
       const result: any = {
         agentResponse,
         sessionId,
-        endpointUrl: targetUrl,
+        endpointUrl,
         testMode: useTestMode,
       };
       if (endpointMeta.autoCreated) result.endpointAutoCreated = true;
@@ -2477,7 +2520,7 @@ export class ToolHandlers {
           error: `Request failed with status ${status ?? "unknown"}`,
           detail,
           sessionId,
-          endpointUrl: targetUrl,
+          endpointUrl,
           testMode: useTestMode,
         },
         talkToAgentFailureHints(status, sessionId, useTestMode),
