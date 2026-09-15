@@ -134,7 +134,10 @@ export function parseFlags(argv: string[]): Flags {
     const arg = argv[i];
     const take = () => argv[++i];
     const addClient = (v: string | undefined) => {
-      if (!v) return;
+      // An empty value (`--client=$UNSET`, or a trailing `--client`) must be
+      // rejected too: silently ignoring it leaves the selection empty, and on
+      // uninstall an empty selection means "every client".
+      if (!v) v = "(empty)";
       if (isClient(v)) {
         if (!flags.clients.includes(v)) flags.clients.push(v);
       } else if (!flags.invalidClients.includes(v)) {
@@ -155,17 +158,18 @@ export function parseFlags(argv: string[]): Flags {
 }
 
 /**
- * Exit loudly on unknown --client values. Ignoring them is unsafe on
- * uninstall: `uninstall --client gemini --yes` (a retired target) would leave
- * the selection empty, fall through to the no-filter default, and remove the
- * plugin from every client the user meant to keep.
+ * Exit loudly on unknown or empty --client values. Ignoring them is unsafe on
+ * uninstall: `uninstall --client gemini --yes` (a retired target) or
+ * `uninstall --client= --yes` would leave the selection empty, fall through to
+ * the no-filter default, and remove the plugin from every client the user
+ * meant to keep.
  */
 function rejectInvalidClients(invalid: string[]): void {
   if (invalid.length === 0) return;
   process.stderr.write(
     `Unknown --client value(s): ${invalid.join(", ")}. Valid values: ${ALL_CLIENTS.join(", ")}.\n` +
       (invalid.includes("gemini")
-        ? "  Gemini CLI support was removed (see docs/install/gemini-cli.md).\n" +
+        ? "  Gemini CLI support was removed: https://github.com/Cognigy/cognigy-plugin/blob/main/docs/install/gemini-cli.md\n" +
           "  Remove an installed extension with: gemini extensions uninstall cognigy\n"
         : ""),
   );

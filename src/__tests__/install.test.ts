@@ -398,6 +398,20 @@ describe("parseFlags", () => {
     expect(f.invalidClients).toEqual(["cursor", "gemini"]);
   });
 
+  it("treats an empty or missing --client value as invalid", () => {
+    // `--client=$CLIENT` with the variable unset, or a trailing `--client`,
+    // must not leave the selection silently empty — same fall-through hazard.
+    expect(parseFlags(["--client=", "--yes"]).invalidClients).toEqual([
+      "(empty)",
+    ]);
+    expect(parseFlags(["--yes", "--client"]).invalidClients).toEqual([
+      "(empty)",
+    ]);
+    expect(parseFlags(["--client=", "--client"]).invalidClients).toEqual([
+      "(empty)",
+    ]);
+  });
+
   it("accepts the other-hosts target", () => {
     expect(parseFlags(["--client=other-hosts"]).clients).toEqual([
       "other-hosts",
