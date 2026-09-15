@@ -92,6 +92,9 @@ describe("update_tool", () => {
 
   it("updates config for knowledge type (knowledgeStoreId, topK)", async () => {
     mockAgentWithFlow();
+    // knowledgeStoreId/topK exist only on an AI-Agent-family node, so the
+    // handler reads the node to confirm which family it belongs to.
+    api.get.mockResolvedValueOnce({ _id: ID.tool, type: "knowledgeTool" });
     api.patch.mockResolvedValue({});
 
     const result = await h.handleToolCall("update_tool", {
@@ -111,6 +114,7 @@ describe("update_tool", () => {
 
   it("updates config for send_email type (recipient)", async () => {
     mockAgentWithFlow();
+    api.get.mockResolvedValueOnce({ _id: ID.tool, type: "sendEmailTool" });
     api.patch.mockResolvedValue({});
 
     const result = await h.handleToolCall("update_tool", {
@@ -292,6 +296,96 @@ describe("update_tool", () => {
       `/v2.0/flows/${ID.flow}/chart/nodes/code-post-001`,
       { config: { code: 'output.result = "done";' } },
     );
+  });
+
+  it("maps knowledge fields with toolType omitted when the node is a knowledgeTool", async () => {
+    mockAgentWithFlow();
+    api.get.mockResolvedValueOnce({ _id: ID.tool, type: "knowledgeTool" });
+    api.patch.mockResolvedValue({});
+
+    const result = await h.handleToolCall("update_tool", {
+      aiAgentId: ID.agent,
+      toolNodeId: ID.tool,
+      config: { knowledgeStoreId: ID.ks, topK: 3 },
+    });
+
+    expect(result.updated).toBe(true);
+    expect(result.updatedFields).toContain("config");
+    expect(api.patch).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes/${ID.tool}`,
+      { config: { knowledgeStoreId: ID.ks, topK: 3 } },
+    );
+  });
+
+  it("refuses knowledge fields on a plain tool node instead of reporting an empty update", async () => {
+    mockAgentWithFlow();
+    api.get.mockResolvedValueOnce({ _id: ID.tool, type: "aiAgentJobTool" });
+
+    const result = await h.handleToolCall("update_tool", {
+      aiAgentId: ID.agent,
+      toolNodeId: ID.tool,
+      config: { recipient: "team@example.com" },
+    });
+
+    expect(result.updated).toBe(false);
+    expect(result.updatedFields).toEqual([]);
+    expect(result.error).toContain("aiAgentJobTool");
+    expect(api.patch).not.toHaveBeenCalled();
+  });
+
+  it("patches what applies and warns about the fields that do not", async () => {
+    mockAgentWithFlow();
+    api.get.mockResolvedValueOnce({ _id: ID.tool, type: "llmPromptTool" });
+    api.patch.mockResolvedValue({});
+
+    const result = await h.handleToolCall("update_tool", {
+      aiAgentId: ID.agent,
+      toolNodeId: ID.tool,
+      config: { description: "Updated", recipient: "team@example.com" },
+    });
+
+    expect(result.updated).toBe(true);
+    expect(result.updatedFields).toContain("config");
+    expect(api.patch).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes/${ID.tool}`,
+      { config: { description: "Updated" } },
+    );
+    expect(result._hints.warning).toContain("recipient");
+  });
+
+  it("still patches as before when the tool node cannot be read", async () => {
+    mockAgentWithFlow();
+    api.get.mockRejectedValueOnce(new Error("boom"));
+    api.patch.mockResolvedValue({});
+
+    const result = await h.handleToolCall("update_tool", {
+      aiAgentId: ID.agent,
+      toolNodeId: ID.tool,
+      toolType: "knowledge",
+      config: { knowledgeStoreId: ID.ks, topK: 10 },
+    });
+
+    // A failed (and un-retried) node read must not turn a valid update into a
+    // raw throw — it falls back to the caller's toolType.
+    expect(result.updated).toBe(true);
+    expect(api.patch).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes/${ID.tool}`,
+      { config: { knowledgeStoreId: ID.ks, topK: 10 } },
+    );
+  });
+
+  it("does not read the tool node for updates that map the same either way", async () => {
+    mockAgentWithFlow();
+    api.patch.mockResolvedValue({});
+
+    await h.handleToolCall("update_tool", {
+      aiAgentId: ID.agent,
+      toolNodeId: ID.tool,
+      config: { description: "Updated" },
+    });
+
+    // Only the agent -> flow lookup; no extra per-node round-trip.
+    expect(api.get).toHaveBeenCalledTimes(1);
   });
 
   it("skips code node provisioning with warning when anchor nodes are missing", async () => {

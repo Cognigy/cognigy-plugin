@@ -103,6 +103,7 @@ const GLYPH: Record<string, string> = {
   start: "●",
   end: "■",
   aiAgentJob: "◆",
+  llmPromptV2: "◆",
   ifElse: "◇",
   switch: "◇",
   say: "▭",
@@ -209,6 +210,7 @@ function shapeCat(type: string | undefined): ShapeCat {
     case "switch":
       return "branch";
     case "aiAgentJob":
+    case "llmPromptV2":
       return "agent";
     default:
       return "step";
