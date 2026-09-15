@@ -1,3 +1,9 @@
+## [1.17.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.16.0...v1.17.0) (2026-09-15)
+
+### Features
+
+* **installer:** drop Gemini CLI support (superseded by Antigravity) ([#32](https://github.com/Cognigy/cognigy-plugin/issues/32)) ([b622f0b](https://github.com/Cognigy/cognigy-plugin/commit/b622f0b258cc0ca4cac8aa5ca506b3dbe483c5e1))
+
 ## [1.16.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.15.1...v1.16.0) (2026-09-15)
 
 ### Features
