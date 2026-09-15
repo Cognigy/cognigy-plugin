@@ -1,5 +1,5 @@
-import type { z } from 'zod';
-import type { manageWebchatSchema } from '../schemas/tools.js';
+import type { z } from "zod";
+import type { manageWebchatSchema } from "../schemas/tools.js";
 
 type ManageWebchatInput = z.infer<typeof manageWebchatSchema>;
 
@@ -14,10 +14,10 @@ const STYLE_PRESETS: Record<string, Partial<ManageWebchatInput>> = {
       botOutputMaxWidth: 73,
       chatWindowWidth: 460,
       enableInputCollation: false,
-      colors: { agentMessageBg: '#ffffff' },
+      colors: { agentMessageBg: "#ffffff" },
     },
     behavior: {
-      scrollingBehavior: 'alwaysScroll',
+      scrollingBehavior: "alwaysScroll",
       collateStreamedOutputs: false,
       progressiveMessageRendering: false,
       renderMarkdown: true,
@@ -29,10 +29,10 @@ const STYLE_PRESETS: Record<string, Partial<ManageWebchatInput>> = {
       botOutputMaxWidth: 100,
       chatWindowWidth: 900,
       enableInputCollation: true,
-      colors: { agentMessageBg: '#ffffff' },
+      colors: { agentMessageBg: "#ffffff" },
     },
     behavior: {
-      scrollingBehavior: 'scrollToLastInput',
+      scrollingBehavior: "scrollToLastInput",
       collateStreamedOutputs: true,
       progressiveMessageRendering: true,
       renderMarkdown: true,
@@ -44,10 +44,10 @@ const STYLE_PRESETS: Record<string, Partial<ManageWebchatInput>> = {
       botOutputMaxWidth: 100,
       chatWindowWidth: 600,
       enableInputCollation: true,
-      colors: { agentMessageBg: '#cccccc' },
+      colors: { agentMessageBg: "#cccccc" },
     },
     behavior: {
-      scrollingBehavior: 'scrollToLastInput',
+      scrollingBehavior: "scrollToLastInput",
       collateStreamedOutputs: true,
       progressiveMessageRendering: false,
       renderMarkdown: true,
@@ -60,10 +60,10 @@ export function deepMerge(target: any, source: any): any {
   for (const key of Object.keys(source)) {
     if (source[key] !== undefined) {
       if (
-        typeof source[key] === 'object' &&
+        typeof source[key] === "object" &&
         source[key] !== null &&
         !Array.isArray(source[key]) &&
-        typeof result[key] === 'object' &&
+        typeof result[key] === "object" &&
         result[key] !== null &&
         !Array.isArray(result[key])
       ) {
@@ -78,7 +78,7 @@ export function deepMerge(target: any, source: any): any {
 
 interface ConversationStarter {
   title: string;
-  type: 'postback' | 'url';
+  type: "postback" | "url";
   value: string;
 }
 
@@ -86,14 +86,14 @@ function mapStarters(starters?: ConversationStarter[]): any[] | undefined {
   if (!starters) return undefined;
   return starters.map((s) => ({
     title: s.title,
-    type: s.type === 'postback' ? 'postbackValue' : 'url',
-    ...(s.type === 'postback' ? { postbackValue: s.value } : { url: s.value }),
+    type: s.type === "postback" ? "postbackValue" : "url",
+    ...(s.type === "postback" ? { postbackValue: s.value } : { url: s.value }),
   }));
 }
 
 const SCROLLING_MAP: Record<string, string> = {
-  alwaysScroll: 'alwaysScrollToBottom',
-  scrollToLastInput: 'scrollUntilLastInputAtTop',
+  alwaysScroll: "alwaysScrollToBottom",
+  scrollToLastInput: "scrollUntilLastInputAtTop",
 };
 
 /**
@@ -103,7 +103,9 @@ const SCROLLING_MAP: Record<string, string> = {
  * homeScreen, teaserMessage, chatOptions, privacyNotice, businessHours,
  * unreadMessages, maintenance, demoWebchat, fileStorageSettings, etc.
  */
-export function buildWebchatSettings(input: ManageWebchatInput): Record<string, any> {
+export function buildWebchatSettings(
+  input: ManageWebchatInput,
+): Record<string, any> {
   let effective = { ...input };
 
   if (input.stylePreset && STYLE_PRESETS[input.stylePreset]) {
@@ -118,10 +120,14 @@ export function buildWebchatSettings(input: ManageWebchatInput): Record<string, 
   if (colors) {
     const c: Record<string, any> = {};
     if (colors.primaryColor !== undefined) c.primaryColor = colors.primaryColor;
-    if (colors.secondaryColor !== undefined) c.secondaryColor = colors.secondaryColor;
-    if (colors.chatBackground !== undefined) c.chatInterfaceColor = colors.chatBackground;
-    if (colors.agentMessageBg !== undefined) c.botMessageColor = colors.agentMessageBg;
-    if (colors.userMessageBg !== undefined) c.userMessageColor = colors.userMessageBg;
+    if (colors.secondaryColor !== undefined)
+      c.secondaryColor = colors.secondaryColor;
+    if (colors.chatBackground !== undefined)
+      c.chatInterfaceColor = colors.chatBackground;
+    if (colors.agentMessageBg !== undefined)
+      c.botMessageColor = colors.agentMessageBg;
+    if (colors.userMessageBg !== undefined)
+      c.userMessageColor = colors.userMessageBg;
     if (colors.textLink !== undefined) c.textLinkColor = colors.textLink;
     if (Object.keys(c).length > 0) s.colors = c;
   }
@@ -132,23 +138,39 @@ export function buildWebchatSettings(input: ManageWebchatInput): Record<string, 
     const l: Record<string, any> = {};
     if (layout.title !== undefined) l.title = layout.title;
     if (layout.logoUrl !== undefined) l.logoUrl = layout.logoUrl;
-    if (layout.maxInputRows !== undefined) l.inputAutogrowMaxRows = layout.maxInputRows;
-    if (layout.enableInputCollation !== undefined) l.enableInputCollation = layout.enableInputCollation;
-    if (layout.inputCollationTimeout !== undefined) l.inputCollationTimeout = layout.inputCollationTimeout;
-    if (layout.dynamicImageAspectRatio !== undefined) l.dynamicImageAspectRatio = layout.dynamicImageAspectRatio;
-    if (layout.disableInputAutocomplete !== undefined) l.disableInputAutocomplete = layout.disableInputAutocomplete;
-    if (layout.enableGenericHtml !== undefined) l.enableGenericHTMLStyling = layout.enableGenericHtml;
-    if (layout.allowJsInHtml !== undefined) l.disableHtmlContentSanitization = layout.allowJsInHtml;
-    if (layout.allowJsInUrls !== undefined) l.disableUrlButtonSanitization = layout.allowJsInUrls;
-    if (layout.disableBotOutputBorder !== undefined) l.disableBotOutputBorder = layout.disableBotOutputBorder;
-    if (layout.botOutputMaxWidth !== undefined) l.botOutputMaxWidthPercentage = layout.botOutputMaxWidth;
-    if (layout.chatWindowWidth !== undefined) l.chatWindowWidth = layout.chatWindowWidth;
+    if (layout.maxInputRows !== undefined)
+      l.inputAutogrowMaxRows = layout.maxInputRows;
+    if (layout.enableInputCollation !== undefined)
+      l.enableInputCollation = layout.enableInputCollation;
+    if (layout.inputCollationTimeout !== undefined)
+      l.inputCollationTimeout = layout.inputCollationTimeout;
+    if (layout.dynamicImageAspectRatio !== undefined)
+      l.dynamicImageAspectRatio = layout.dynamicImageAspectRatio;
+    if (layout.disableInputAutocomplete !== undefined)
+      l.disableInputAutocomplete = layout.disableInputAutocomplete;
+    if (layout.enableGenericHtml !== undefined)
+      l.enableGenericHTMLStyling = layout.enableGenericHtml;
+    if (layout.allowJsInHtml !== undefined)
+      l.disableHtmlContentSanitization = layout.allowJsInHtml;
+    if (layout.allowJsInUrls !== undefined)
+      l.disableUrlButtonSanitization = layout.allowJsInUrls;
+    if (layout.disableBotOutputBorder !== undefined)
+      l.disableBotOutputBorder = layout.disableBotOutputBorder;
+    if (layout.botOutputMaxWidth !== undefined)
+      l.botOutputMaxWidthPercentage = layout.botOutputMaxWidth;
+    if (layout.chatWindowWidth !== undefined)
+      l.chatWindowWidth = layout.chatWindowWidth;
 
-    if (layout.useAgentAvatars !== undefined) l.useOtherAgentLogo = layout.useAgentAvatars;
-    if (layout.botAvatarName !== undefined) l.botAvatarName = layout.botAvatarName;
-    if (layout.botAvatarLogoUrl !== undefined) l.botLogoUrl = layout.botAvatarLogoUrl;
-    if (layout.humanAvatarName !== undefined) l.agentAvatarName = layout.humanAvatarName;
-    if (layout.humanAvatarLogoUrl !== undefined) l.agentLogoUrl = layout.humanAvatarLogoUrl;
+    if (layout.useAgentAvatars !== undefined)
+      l.useOtherAgentLogo = layout.useAgentAvatars;
+    if (layout.botAvatarName !== undefined)
+      l.botAvatarName = layout.botAvatarName;
+    if (layout.botAvatarLogoUrl !== undefined)
+      l.botLogoUrl = layout.botAvatarLogoUrl;
+    if (layout.humanAvatarName !== undefined)
+      l.agentAvatarName = layout.humanAvatarName;
+    if (layout.humanAvatarLogoUrl !== undefined)
+      l.agentLogoUrl = layout.humanAvatarLogoUrl;
 
     if (Object.keys(l).length > 0) s.layout = l;
   }
@@ -157,23 +179,34 @@ export function buildWebchatSettings(input: ManageWebchatInput): Record<string, 
   const beh = effective.behavior;
   if (beh) {
     const b: Record<string, any> = {};
-    if (beh.enableTypingIndicator !== undefined) b.enableTypingIndicator = beh.enableTypingIndicator;
-    if (beh.inputPlaceholder !== undefined) b.inputPlaceholder = beh.inputPlaceholder;
+    if (beh.enableTypingIndicator !== undefined)
+      b.enableTypingIndicator = beh.enableTypingIndicator;
+    if (beh.inputPlaceholder !== undefined)
+      b.inputPlaceholder = beh.inputPlaceholder;
     if (beh.enableStt !== undefined) b.enableSTT = beh.enableStt;
     if (beh.enableTts !== undefined) b.enableTTS = beh.enableTts;
-    if (beh.focusInputAfterPostback !== undefined) b.focusInputAfterPostback = beh.focusInputAfterPostback;
-    if (beh.enableConnectionStatusIndicator !== undefined) b.enableConnectionStatusIndicator = beh.enableConnectionStatusIndicator;
+    if (beh.focusInputAfterPostback !== undefined)
+      b.focusInputAfterPostback = beh.focusInputAfterPostback;
+    if (beh.enableConnectionStatusIndicator !== undefined)
+      b.enableConnectionStatusIndicator = beh.enableConnectionStatusIndicator;
     if (beh.messageDelay !== undefined) b.messageDelay = beh.messageDelay;
-    if (beh.collectMetadata !== undefined) b.enableCollectMetadata = beh.collectMetadata;
-    if (beh.displayAIAgentNotice !== undefined) b.enableAIAgentNotice = beh.displayAIAgentNotice;
-    if (beh.aiAgentNoticeText !== undefined) b.AIAgentNoticeText = beh.aiAgentNoticeText;
+    if (beh.collectMetadata !== undefined)
+      b.enableCollectMetadata = beh.collectMetadata;
+    if (beh.displayAIAgentNotice !== undefined)
+      b.enableAIAgentNotice = beh.displayAIAgentNotice;
+    if (beh.aiAgentNoticeText !== undefined)
+      b.AIAgentNoticeText = beh.aiAgentNoticeText;
     if (beh.scrollingBehavior !== undefined) {
-      b.scrollingBehavior = SCROLLING_MAP[beh.scrollingBehavior] ?? beh.scrollingBehavior;
+      b.scrollingBehavior =
+        SCROLLING_MAP[beh.scrollingBehavior] ?? beh.scrollingBehavior;
     }
-    if (beh.collateStreamedOutputs !== undefined) b.collateStreamedOutputs = beh.collateStreamedOutputs;
-    if (beh.progressiveMessageRendering !== undefined) b.progressiveMessageRendering = beh.progressiveMessageRendering;
+    if (beh.collateStreamedOutputs !== undefined)
+      b.collateStreamedOutputs = beh.collateStreamedOutputs;
+    if (beh.progressiveMessageRendering !== undefined)
+      b.progressiveMessageRendering = beh.progressiveMessageRendering;
     if (beh.renderMarkdown !== undefined) b.renderMarkdown = beh.renderMarkdown;
-    if (beh.enableScrollButton !== undefined) b.enableScrollButton = beh.enableScrollButton;
+    if (beh.enableScrollButton !== undefined)
+      b.enableScrollButton = beh.enableScrollButton;
     if (Object.keys(b).length > 0) s.behavior = b;
   }
 
@@ -182,13 +215,18 @@ export function buildWebchatSettings(input: ManageWebchatInput): Record<string, 
   if (sb) {
     const sbObj: Record<string, any> = {};
     if (sb.mode !== undefined) {
-      const modeMap: Record<string, string> = { textField: 'none', button: 'button', autoSend: 'autoSend' };
+      const modeMap: Record<string, string> = {
+        textField: "none",
+        button: "button",
+        autoSend: "autoSend",
+      };
       sbObj.startBehavior = modeMap[sb.mode] ?? sb.mode;
     }
     if (sb.textPayload !== undefined) sbObj.getStartedPayload = sb.textPayload;
     if (sb.dataPayload !== undefined) sbObj.getStartedData = sb.dataPayload;
     if (sb.displayText !== undefined) sbObj.getStartedText = sb.displayText;
-    if (sb.buttonTitle !== undefined) sbObj.getStartedButtonText = sb.buttonTitle;
+    if (sb.buttonTitle !== undefined)
+      sbObj.getStartedButtonText = sb.buttonTitle;
     if (Object.keys(sbObj).length > 0) s.startBehavior = sbObj;
   }
 
@@ -200,10 +238,13 @@ export function buildWebchatSettings(input: ManageWebchatInput): Record<string, 
     if (hs.welcomeText !== undefined) hsObj.welcomeText = hs.welcomeText;
     if (hs.backgroundImage !== undefined || hs.backgroundColor !== undefined) {
       hsObj.background = {};
-      if (hs.backgroundImage !== undefined) hsObj.background.imageUrl = hs.backgroundImage;
-      if (hs.backgroundColor !== undefined) hsObj.background.color = hs.backgroundColor;
+      if (hs.backgroundImage !== undefined)
+        hsObj.background.imageUrl = hs.backgroundImage;
+      if (hs.backgroundColor !== undefined)
+        hsObj.background.color = hs.backgroundColor;
     }
-    if (hs.startConversationButtonText !== undefined) hsObj.startConversationButtonText = hs.startConversationButtonText;
+    if (hs.startConversationButtonText !== undefined)
+      hsObj.startConversationButtonText = hs.startConversationButtonText;
 
     const mappedStarters = mapStarters(hs.conversationStarters);
     if (mappedStarters) {
@@ -212,11 +253,18 @@ export function buildWebchatSettings(input: ManageWebchatInput): Record<string, 
 
     if (hs.previousConversations) {
       const pc: Record<string, any> = {};
-      if (hs.previousConversations.enabled !== undefined) pc.enabled = hs.previousConversations.enabled;
-      if (hs.previousConversations.enableDeleteAll !== undefined) pc.enableDeleteAllConversations = hs.previousConversations.enableDeleteAll;
-      if (hs.previousConversations.buttonText !== undefined) pc.buttonText = hs.previousConversations.buttonText;
-      if (hs.previousConversations.title !== undefined) pc.title = hs.previousConversations.title;
-      if (hs.previousConversations.startNewButtonText !== undefined) pc.startNewConversationButtonText = hs.previousConversations.startNewButtonText;
+      if (hs.previousConversations.enabled !== undefined)
+        pc.enabled = hs.previousConversations.enabled;
+      if (hs.previousConversations.enableDeleteAll !== undefined)
+        pc.enableDeleteAllConversations =
+          hs.previousConversations.enableDeleteAll;
+      if (hs.previousConversations.buttonText !== undefined)
+        pc.buttonText = hs.previousConversations.buttonText;
+      if (hs.previousConversations.title !== undefined)
+        pc.title = hs.previousConversations.title;
+      if (hs.previousConversations.startNewButtonText !== undefined)
+        pc.startNewConversationButtonText =
+          hs.previousConversations.startNewButtonText;
       if (Object.keys(pc).length > 0) hsObj.previousConversations = pc;
     }
 
@@ -242,30 +290,40 @@ export function buildWebchatSettings(input: ManageWebchatInput): Record<string, 
     const coObj: Record<string, any> = {};
     if (co.enabled !== undefined) coObj.enabled = co.enabled;
     if (co.title !== undefined) coObj.title = co.title;
-    if (co.enableDeleteConversation !== undefined) coObj.enableDeleteConversation = co.enableDeleteConversation;
+    if (co.enableDeleteConversation !== undefined)
+      coObj.enableDeleteConversation = co.enableDeleteConversation;
 
     if (co.quickReplies) {
       const qr: Record<string, any> = {};
-      if (co.quickReplies.enabled !== undefined) qr.enabled = co.quickReplies.enabled;
-      if (co.quickReplies.sectionTitle !== undefined) qr.sectionTitle = co.quickReplies.sectionTitle;
+      if (co.quickReplies.enabled !== undefined)
+        qr.enabled = co.quickReplies.enabled;
+      if (co.quickReplies.sectionTitle !== undefined)
+        qr.sectionTitle = co.quickReplies.sectionTitle;
       const mappedItems = mapStarters(co.quickReplies.items);
       if (mappedItems) qr.quickReplies = mappedItems;
       coObj.quickReplyOptions = qr;
     }
 
     if (co.textToSpeech) {
-      if (co.textToSpeech.showToggle !== undefined) coObj.showTTSToggle = co.textToSpeech.showToggle;
-      if (co.textToSpeech.activateByDefault !== undefined) coObj.activateTTSToggle = co.textToSpeech.activateByDefault;
-      if (co.textToSpeech.toggleLabel !== undefined) coObj.labelTTSToggle = co.textToSpeech.toggleLabel;
+      if (co.textToSpeech.showToggle !== undefined)
+        coObj.showTTSToggle = co.textToSpeech.showToggle;
+      if (co.textToSpeech.activateByDefault !== undefined)
+        coObj.activateTTSToggle = co.textToSpeech.activateByDefault;
+      if (co.textToSpeech.toggleLabel !== undefined)
+        coObj.labelTTSToggle = co.textToSpeech.toggleLabel;
     }
 
     if (co.rating) {
       const r: Record<string, any> = {};
-      if (co.rating.enabled !== undefined) r.enabled = co.rating.enabled ? 'once' : 'never';
+      if (co.rating.enabled !== undefined)
+        r.enabled = co.rating.enabled ? "once" : "never";
       if (co.rating.titleText !== undefined) r.title = co.rating.titleText;
-      if (co.rating.commentPlaceholder !== undefined) r.commentPlaceholder = co.rating.commentPlaceholder;
-      if (co.rating.submitButtonText !== undefined) r.submitButtonText = co.rating.submitButtonText;
-      if (co.rating.submittedBannerText !== undefined) r.eventBannerText = co.rating.submittedBannerText;
+      if (co.rating.commentPlaceholder !== undefined)
+        r.commentPlaceholder = co.rating.commentPlaceholder;
+      if (co.rating.submitButtonText !== undefined)
+        r.submitButtonText = co.rating.submitButtonText;
+      if (co.rating.submittedBannerText !== undefined)
+        r.eventBannerText = co.rating.submittedBannerText;
       if (Object.keys(r).length > 0) coObj.rating = r;
     }
 
@@ -315,7 +373,8 @@ export function buildWebchatSettings(input: ManageWebchatInput): Record<string, 
   const um = effective.unreadMessages;
   if (um) {
     const umObj: Record<string, any> = {};
-    if (um.enableTitleIndicator !== undefined) umObj.enableIndicator = um.enableTitleIndicator;
+    if (um.enableTitleIndicator !== undefined)
+      umObj.enableIndicator = um.enableTitleIndicator;
     if (um.enableBadge !== undefined) umObj.enableBadge = um.enableBadge;
     if (um.enablePreview !== undefined) umObj.enablePreview = um.enablePreview;
     if (um.enableSound !== undefined) umObj.enableSound = um.enableSound;
@@ -348,9 +407,15 @@ export function buildWebchatSettings(input: ManageWebchatInput): Record<string, 
   if (icon) {
     const layout = s.layout ?? {};
     if (icon.animation !== undefined) layout.iconAnimation = icon.animation;
-    if (icon.animationInterval !== undefined) layout.iconAnimationInterval = icon.animationInterval;
+    if (icon.animationInterval !== undefined)
+      layout.iconAnimationInterval = icon.animationInterval;
     if (icon.animationSpeed !== undefined) {
-      const speedMap: Record<string, number> = { slow: 0.5, normal: 1, fast: 2, superfast: 3 };
+      const speedMap: Record<string, number> = {
+        slow: 0.5,
+        normal: 1,
+        fast: 2,
+        superfast: 3,
+      };
       layout.iconAnimationSpeed = speedMap[icon.animationSpeed] ?? 1;
     }
     s.layout = layout;
@@ -363,7 +428,7 @@ export function buildWebchatSettings(input: ManageWebchatInput): Record<string, 
     if (pm.enabled !== undefined) layout.enablePersistentMenu = pm.enabled;
     if (pm.items || pm.title) {
       layout.persistentMenu = {
-        title: pm.title ?? '',
+        title: pm.title ?? "",
         menuItems: (pm.items ?? []).map((item) => ({
           title: item.title,
           payload: item.payload,
