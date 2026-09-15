@@ -72,6 +72,22 @@ describe("create_tool – HTTP tool path", () => {
     }
   }
 
+  it("writes pre/post-process code that uses unavailable runtime APIs and hints about it", async () => {
+    mockFlowWithJobNode();
+    mockPostSequence(
+      MOCK_IDS.toolNode,
+      MOCK_IDS.resolveNode,
+      MOCK_IDS.httpNode,
+      MOCK_IDS.postNode,
+    );
+    const result = await h.handleToolCall(
+      "create_tool",
+      baseArgs({ postProcessCode: "const r = await fetch('https://x');" }),
+    );
+    expect(result.childNodes.postProcessNodeId).toBe(MOCK_IDS.postNode);
+    expect(result._hints?.warning).toContain("fetch()/XMLHttpRequest");
+  });
+
   it("creates HTTP tool with basic GET request (url only)", async () => {
     mockFlowWithJobNode();
     mockPostSequence(
@@ -427,6 +443,19 @@ describe("update_tool – HTTP child-node resolution", () => {
       ],
     });
   }
+
+  it("hints about unavailable runtime APIs in written post-process code", async () => {
+    mockFlowAndChildren();
+    api.patch.mockResolvedValueOnce({ _id: MOCK_IDS.postNode });
+    const result = await h.handleToolCall("update_tool", {
+      aiAgentId: ID.agent,
+      toolNodeId: MOCK_IDS.toolNode,
+      toolType: "http",
+      config: { postProcessCode: "import axios from 'axios';" },
+    });
+    expect(result.updatedFields).toContain("postProcessCode");
+    expect(result._hints?.warning).toContain("require()/import");
+  });
 
   it("resolves post-process Code node by label prefix", async () => {
     mockFlowAndChildren();
