@@ -3,7 +3,7 @@ name: add-client-platform
 description: Add support for a new client platform (a new AI client/IDE the Cognigy plugin can be installed into) — manifests, installer wiring, release plumbing, docs
 ---
 
-Add a new client platform to the NiCE Cognigy Plugin — a new AI client the plugin can be installed into (Cursor, Windsurf, Zed, Copilot, JetBrains, …). The four existing clients (`claude-code`, `claude-desktop`, `codex`, `gemini`) are the reference implementations; copy whichever one matches the new client's shape rather than inventing a new pattern.
+Add a new client platform to the NiCE Cognigy Plugin — a new AI client the plugin can be installed into (Cursor, Windsurf, Zed, Copilot, JetBrains, …). The four existing clients (`claude-code`, `claude-desktop`, `codex`, `antigravity`) are the reference implementations; copy whichever one matches the new client's shape rather than inventing a new pattern.
 
 ## Before writing anything: check whether it already works
 
@@ -24,7 +24,7 @@ Only the parts a fallback can't cover need new code.
 |---|---|---|---|
 | Repo-marketplace plugin | `claude-code`, `codex` | Client discovers `plugin/.<client>-plugin/plugin.json` via a marketplace manifest in this repo. Installer drives the client CLI (`marketplace add`), user finishes in the client's plugin UI. | The client re-checks the repo ref and swaps the cached plugin; the new manifest's engine pin pulls the matching engine. **Only works if the ref moves** — pin it to `main` explicitly. |
 | Direct config merge | `claude-desktop` | No CLI. Installer reads/merges the client's own MCP config file, preserving every other key, and chmods it 0600 when it holds secrets. | Nothing in the client updates. The MCP entry points at the launcher, which pulls `@latest` each boot. |
-| Packaged extension | `gemini` | A build script emits a release asset; installer runs the client's `extensions install` against the GitHub release. | The client's own extension auto-update, if it has one — install with that flag on. |
+| Packaged extension | _(removed — was `gemini`; see git history for `scripts/build-gemini-extension.mjs` + `src/install/gemini.ts`)_ | A build script emits a release asset; installer runs the client's `extensions install` against the GitHub release. | The client's own extension auto-update, if it has one — install with that flag on. |
 | Stage and register | `antigravity` | The installer builds a plugin directory itself and writes the client's own registry entries — no client CLI involved, works before the client's first launch. | Nothing in the client updates — we staged the files, so we own refreshing them. The launcher re-stages them after an engine bump. |
 | Credentials only | `other-hosts` | The client installs the plugin itself (or takes a hand-written MCP entry); the installer writes `~/.cognigy-plugin/config.json` and wires nothing. | The host owns the version. Say so and stop. |
 
@@ -39,8 +39,8 @@ Most new clients are archetype 1 or 2. "Stage and register" is the answer when t
 | `plugin/.<client>-plugin/plugin.json` | Only for archetype 1, and only if the client's own manifest schema carries fields the fallback can't. |
 | `scripts/sync-plugin-version.mjs` | Add any **committed** manifest carrying a `version` field or an engine pin to `FILES`. |
 | `scripts/check-plugin-manifest.mjs` | Guard the new committed manifest's published form (npx command, alias pin). |
-| `.releaserc.json` | Add the same committed manifests to the `@semantic-release/git` assets. Add a build step to `prepareCmd` + a GitHub asset only if the client needs a packaged artifact (see `build-gemini-extension.mjs`). |
-| `src/__tests__/install<...>.test.ts` | Arg builders, config merge/remove round-trips, detection. Follow `installCodexGemini.test.ts`. |
+| `.releaserc.json` | Add the same committed manifests to the `@semantic-release/git` assets. Add a build step to `prepareCmd` + a GitHub asset only if the client needs a packaged artifact (the removed `build-gemini-extension.mjs` in git history is the pattern). |
+| `src/__tests__/install<...>.test.ts` | Arg builders, config merge/remove round-trips, detection. Follow `installCodex.test.ts`. |
 | `docs/install/<client>.md` | Install, credentials, update, uninstall — same four sections as the existing guides. |
 | `README.md` | Row in the per-client support table — including the **Auto-updates** cell — link in the docs list, and the credentials paragraph if this client uses a different channel. |
 
@@ -48,7 +48,7 @@ Do **not** touch `src/index.ts`, the tools, or the skills — the MCP server its
 
 ## Hard rules
 
-**Credentials.** `${user_config.*}` interpolation is a **Claude Code feature**, not an MCP standard. Codex and Gemini have no equivalent. Emitting it in a manifest for a client that doesn't interpolate is worse than omitting it: the engine receives the literal string `${user_config.cognigy_api_key}`, which is non-empty, so `loadConfig()` (`src/config.ts`) treats the environment as configured and **skips the `~/.cognigy-plugin/config.json` fallback** — every API call then fails with a mangled base URL. For any client without verified interpolation, ship the MCP entry with **no `env` block** and rely on `writeUserConfigFile(creds)` in the installer.
+**Credentials.** `${user_config.*}` interpolation is a **Claude Code feature**, not an MCP standard. Codex and Antigravity have no equivalent. Emitting it in a manifest for a client that doesn't interpolate is worse than omitting it: the engine receives the literal string `${user_config.cognigy_api_key}`, which is non-empty, so `loadConfig()` (`src/config.ts`) treats the environment as configured and **skips the `~/.cognigy-plugin/config.json` fallback** — every API call then fails with a mangled base URL. For any client without verified interpolation, ship the MCP entry with **no `env` block** and rely on `writeUserConfigFile(creds)` in the installer.
 
 **Engine pinning.** Two different specs, deliberately:
 
@@ -81,7 +81,7 @@ Then wire `runUpdate()` to actually do the work. A branch that prints a claim in
 
 **The launcher can't update itself.** `~/.cognigy-plugin/desktop-launch.mjs` lives outside the versioned engine directory, so an engine bump never rewrites it. Any client whose install writes it must also rewrite it on update, or launcher fixes will never reach existing installs.
 
-**Detection probes both PATH and config dir.** A client's IDE extension or desktop app often shares the config directory without exposing a CLI. See the `codex`/`gemini` entries in `detectClients()`.
+**Detection probes both PATH and config dir.** A client's IDE extension or desktop app often shares the config directory without exposing a CLI. See the `codex`/`antigravity` entries in `detectClients()`.
 
 **Every entry in `ALL_CLIENTS` needs a full lifecycle.** `runUninstall()` iterates the list, so a client with only an `install` branch silently does nothing when the user targets it with `--client`. If there is genuinely nothing to undo, say that and point at what does own the cleanup — don't leave the branch out.
 
