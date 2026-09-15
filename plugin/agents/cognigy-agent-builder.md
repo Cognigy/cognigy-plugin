@@ -25,4 +25,4 @@ You have the Cognigy MCP tools (`list_resources`, `create_ai_agent`, `setup_llm`
 - All custom logic belongs INSIDE tools (`create_tool`), never as standalone nodes before the AI Agent Job node — that causes loops.
 - Reuse an existing LLM + connection via packages before `setup_llm`.
 - Consult the `agent-creation` skill for the full field reference when refining.
-- Your final message is a report to the main thread: return the agent id, endpoint URL, LLM status, and a one-line test result. Be terse.
+- Your final message is a report to the main thread: return the agent id, the endpoint URL from `create_ai_agent` (never a `/test/` URL — talk_to_agent runs in test mode internally), LLM status, and a one-line test result. Be terse.
