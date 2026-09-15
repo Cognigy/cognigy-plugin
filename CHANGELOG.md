@@ -1,3 +1,15 @@
+## [1.16.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.15.1...v1.16.0) (2026-09-15)
+
+### Features
+
+* **tools:** support the LLM Prompt node on explicit user request ([#42](https://github.com/Cognigy/cognigy-plugin/issues/42)) ([7798e9f](https://github.com/Cognigy/cognigy-plugin/commit/7798e9f36798a6ebb141164ccefb0b9cb78cd70f))
+
+## [1.15.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.15.0...v1.15.1) (2026-09-08)
+
+### Bug Fixes
+
+* **api:** tunnel Cognigy requests through corporate proxies ([#47](https://github.com/Cognigy/cognigy-plugin/issues/47)) ([4520406](https://github.com/Cognigy/cognigy-plugin/commit/45204061dd2965e33d21909236b16f870eb87860))
+
 ## [1.15.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.14.0...v1.15.0) (2026-09-01)
 
 ### Features

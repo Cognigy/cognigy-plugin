@@ -15,6 +15,7 @@ import { SERVER_INSTRUCTIONS } from "./instructions.js";
 import { logger } from "./utils/logger.js";
 import { RateLimiter } from "./utils/rateLimiter.js";
 import { getSessionId, getTaskId, runWithTask } from "./utils/actorContext.js";
+import { logProxyConfiguration } from "./utils/proxy.js";
 
 async function main() {
   try {
@@ -24,6 +25,7 @@ async function main() {
       name: config.serverName,
       version: config.serverVersion,
     });
+    logProxyConfiguration(config.apiBaseUrl);
 
     const apiClient = new CognigyApiClient({
       baseUrl: config.apiBaseUrl,

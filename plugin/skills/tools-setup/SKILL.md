@@ -200,6 +200,15 @@ Inside AI Agent tool branches, the LLM's tool call arguments are at `input.aiAge
 - Code nodes: `input.aiAgent.toolArgs.city`
 - CognigyScript fields (URLs, body templates): `{{input.aiAgent.toolArgs.city}}`
 
+**Under an LLM Prompt (`llmPromptV2`) node the path is different:** args land at `input.llmPrompt.toolArgs`, and `input.aiAgent` is `null`. Reading `input.aiAgent.toolArgs` there yields `undefined` — the tool then runs with no arguments and silently falls back (mock/default) with no error. For tools that may run under either node type, read defensively:
+
+```js
+const args =
+  (input.llmPrompt && input.llmPrompt.toolArgs) ||
+  (input.aiAgent && input.aiAgent.toolArgs) ||
+  {};
+```
+
 ## Adding logic inside tools (manage_flow_nodes)
 
 After creating a `toolType: "tool"`, you can add flow nodes inside the tool's branch to build custom logic. This is the recommended way to add conversation logic — nodes should live inside tools, not as standalone nodes in the flow.
@@ -296,6 +305,19 @@ If the tool was originally created without `preProcessCode` / `postProcessCode`,
 - Update: update_tool { aiAgentId, toolNodeId, name?, config? }
 - Tool IDs come from create_tool response or list_resources
 - Tool IDs must be unique within an agent flow. If a tool already exists for an action, reuse it.
+
+## Tools under an LLM Prompt node (flowId addressing)
+
+LLM Prompt (`llmPromptV2`) flows have no agent resource, so address their tools by `flowId`:
+
+- Create: create_tool { flowId, toolType, name, config }
+- List: list_resources { resourceType: "tool", flowId }
+- Update: update_tool { flowId, toolNodeId, ... }
+- Remove: delete_resource { resourceType: "tool", id: toolId, flowId }
+
+Tools attach to the flow's aiAgentJob node when one exists, otherwise to its llmPromptV2 node. Under an LLM Prompt node, only `tool`, `mcp`, and `http` are supported. Branch logic works the same, **but the tool arguments arrive at `input.llmPrompt.toolArgs`, not `input.aiAgent.toolArgs`** (`input.aiAgent` is `null` in an LLM Prompt branch). Code and CognigyScript inside these tool branches must read `input.llmPrompt.toolArgs.<param>`; the `input.aiAgent.toolArgs` examples above apply only to AI Agent Job flows. See the flow-nodes guide's Notes for the defensive read that covers both.
+
+Create LLM Prompt nodes only on explicit user request; see the flow-nodes guide.
 
 ## Prerequisites
 

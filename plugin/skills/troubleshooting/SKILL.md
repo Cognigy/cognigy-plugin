@@ -15,6 +15,12 @@ description: "Use when a Cognigy agent returns empty responses, a tool call or c
 3. Check agent description is not empty: get_resource { resourceType: "agent", id }
 4. Check endpoint is connected: get_resource { resourceType: "endpoint", id }
    Verify flowId is set and URLToken exists
+5. Endpoint JUST created (seconds ago)? Endpoint config propagates briefly, and a
+   session whose FIRST message hit the stale config stays cached as broken — wait a
+   few seconds and retry with a NEW sessionId, not the same one.
+6. LLM Prompt flows: the assigned LLM must have a connection (`connectionId` set on
+   the llm_model). A connectionless LLM fails silently — the node's default error
+   handling is "continue" with an empty message, which looks like an empty response.
 
 ## create_ai_agent failed
 
@@ -41,6 +47,29 @@ description: "Use when a Cognigy agent returns empty responses, a tool call or c
 - Sort server-side instead of paging through everything and comparing by hand:
   list_resources { resourceType: "project", sort: "lastChanged:desc", limit: 5 }
 - `sort` takes `field:direction` and works on any field the resource returns.
+
+## Every tool call fails with the same error, but the tool list works
+
+Suspect the network path, not the platform — listing tools makes no HTTP request,
+so a working list plus a uniformly failing call means requests are not reaching
+Cognigy.
+
+- On a corporate network, set `HTTPS_PROXY` (and `NO_PROXY` for hosts to reach
+  directly) in the MCP server `env` block. GUI clients start the engine with a
+  minimal environment and usually do not inherit shell proxy variables.
+- If the proxy inspects TLS, also set `NODE_EXTRA_CA_CERTS` to the corporate root
+  CA file, then restart the client — Node reads it only at startup. Do not set
+  `NODE_TLS_REJECT_UNAUTHORIZED=0`.
+- An error quoting an HTML body, or naming a proxy, points at the proxy rather
+  than Cognigy; the quoted text is the proxy's own message.
+- "Cannot use the configured proxy ..." means the proxy setting itself is
+  malformed or unsupported (SOCKS proxies are not supported). Requests fail
+  instead of connecting directly, so the API key never leaves the sanctioned
+  path; exclude the host with `NO_PROXY` if a direct connection is intended.
+- "Timed out ... connecting through the proxy" means the proxy accepted the
+  connection but never completed the tunnel. Check the proxy address, or raise
+  `COGNIGY_PROXY_CONNECT_TIMEOUT_MS` (default 30000) if it is merely slow.
+- `LOG_LEVEL=debug` logs the proxy actually in use at startup.
 
 ## setup_llm fails
 
