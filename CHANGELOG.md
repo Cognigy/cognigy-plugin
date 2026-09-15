@@ -1,3 +1,9 @@
+## [1.19.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.18.0...v1.19.0) (2026-09-15)
+
+### Features
+
+* **tools:** hint when Code Node code uses APIs the runtime does not have ([#45](https://github.com/Cognigy/cognigy-plugin/issues/45)) ([1b03482](https://github.com/Cognigy/cognigy-plugin/commit/1b03482587414e1c4a95f93873171ae2b0489f20)), closes [#41](https://github.com/Cognigy/cognigy-plugin/issues/41)
+
 ## [1.18.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.17.0...v1.18.0) (2026-09-15)
 
 ### Features
