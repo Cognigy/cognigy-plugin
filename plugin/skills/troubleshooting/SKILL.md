@@ -74,7 +74,7 @@ Cognigy.
 ## setup_llm fails
 
 - See the llm-providers skill for valid provider and model strings
-- Verify API key has access to the specified model
+- Verify the credentials (apiKey, or AWS access keys / role ARN for awsBedrock) have access to the specified model
 
 ## delete_resource fails
 

@@ -656,9 +656,14 @@ function nodeParentId(node: any): string | undefined {
 const EMBEDDING_MODEL_PATTERN = /embed/i;
 
 function isEmbeddingModel(llm: any): boolean {
-  // For openAICompatible providers `modelType` is the generic "custom-model"
-  // and the real model string lives under openAICompatible.customModel.
-  return [llm?.modelType, llm?.openAICompatible?.customModel].some(
+  // For openAICompatible and awsBedrock providers `modelType` can be the
+  // generic "custom-model", with the real model string under the provider
+  // metadata's customModel (e.g. "amazon.titan-embed-text-v2:0").
+  return [
+    llm?.modelType,
+    llm?.openAICompatible?.customModel,
+    llm?.awsBedrock?.customModel,
+  ].some(
     (value) => typeof value === "string" && EMBEDDING_MODEL_PATTERN.test(value),
   );
 }
@@ -749,13 +754,16 @@ function pickDefaultLlm(llmList: any):
   };
 }
 
-const PROVIDER_CONNECTION_TYPE: Record<string, string> = {
-  openAI: "OpenAIProvider",
-  azureOpenAI: "AzureOpenAIProviderV2",
-  anthropic: "AnthropicProvider",
-  google: "GoogleVertexAIProvider",
-  mistral: "MistralProvider",
-  openAICompatible: "OpenAICompatibleProvider",
+// Connection types accepted per setup_llm provider; the first entry is the
+// type auto-created from an apiKey.
+const PROVIDER_CONNECTION_TYPES: Record<string, readonly string[]> = {
+  openAI: ["OpenAIProvider"],
+  azureOpenAI: ["AzureOpenAIProviderV2"],
+  anthropic: ["AnthropicProvider"],
+  google: ["GoogleVertexAIProvider"],
+  mistral: ["MistralProvider"],
+  openAICompatible: ["OpenAICompatibleProvider"],
+  awsBedrock: ["AwsBedrockProvider", "AwsBedrockProviderIamRole"],
 };
 
 /**
@@ -2585,9 +2593,19 @@ export class ToolHandlers {
   async handleSetupLlm(args: any): Promise<any> {
     const data = schemas.setupLlmSchema.parse(args);
 
-    if (!data.apiKey && !data.connectionId) {
+    const hasInlineCredentials =
+      data.provider === "awsBedrock"
+        ? Boolean((data.accessKeyId && data.secretAccessKey) || data.roleArn)
+        : Boolean(data.apiKey);
+
+    if (!hasInlineCredentials && !data.connectionId) {
       return withHints(
-        { error: "Either apiKey or connectionId must be provided." },
+        {
+          error:
+            data.provider === "awsBedrock"
+              ? "Either accessKeyId + secretAccessKey, roleArn, or connectionId must be provided."
+              : "Either apiKey or connectionId must be provided.",
+        },
         {
           action: "Read the provider guide for credential requirements.",
         },
@@ -2621,8 +2639,28 @@ export class ToolHandlers {
               projectId: data.projectId,
             },
             {
+              action: `Import the LLM and its connection into the target project with manage_packages, or provide ${
+                data.provider === "awsBedrock"
+                  ? "accessKeyId + secretAccessKey (or roleArn)"
+                  : "an apiKey"
+              } / a same-project connectionId.`,
+            },
+          );
+        }
+
+        const allowedTypes = PROVIDER_CONNECTION_TYPES[data.provider];
+        if (match.type && !allowedTypes.includes(match.type)) {
+          return withHints(
+            {
+              error: `The provided connectionId is a '${match.type}' connection, which cannot be used with provider '${data.provider}' (expected ${allowedTypes
+                .map((type) => `'${type}'`)
+                .join(" or ")}).`,
+              connectionId: connectionRefId,
+              projectId: data.projectId,
+            },
+            {
               action:
-                "Import the LLM and its connection into the target project with manage_packages, or provide an apiKey / same-project connectionId.",
+                "Pass a same-project connectionId of a matching type, or provide inline credentials to auto-create one.",
             },
           );
         }
@@ -2644,15 +2682,28 @@ export class ToolHandlers {
       }
     }
 
-    // If apiKey is provided, auto-create a Connection first
-    if (data.apiKey && !connectionRefId) {
+    // If inline credentials are provided, auto-create a Connection first
+    if (hasInlineCredentials && !connectionRefId) {
+      let connectionType = PROVIDER_CONNECTION_TYPES[data.provider][0];
+      let connectionFields: Record<string, string> = { apiKey: data.apiKey! };
+      if (data.provider === "awsBedrock") {
+        if (data.roleArn) {
+          connectionType = "AwsBedrockProviderIamRole";
+          connectionFields = { roleArn: data.roleArn };
+        } else {
+          connectionFields = {
+            accessKeyId: data.accessKeyId!,
+            secretAccessKey: data.secretAccessKey!,
+          };
+        }
+      }
       try {
         const connection: any = await this.apiClient.post("/v2.0/connections", {
           projectId: data.projectId,
           name: `${data.provider} - auto - ${randomUUID()}`,
-          type: PROVIDER_CONNECTION_TYPE[data.provider] ?? data.provider,
+          type: connectionType,
           extension: "@cognigy/generative-ai-provider",
-          fields: { apiKey: data.apiKey },
+          fields: connectionFields,
         });
         connectionRefId =
           connection.referenceId || connection._id || connection.id;
@@ -2660,7 +2711,10 @@ export class ToolHandlers {
         return withHints(
           { error: `Failed to create connection: ${connError.message}` },
           {
-            action: "Check API key and provider, then retry.",
+            action:
+              connectionType === "AwsBedrockProviderIamRole"
+                ? "IAM-role connections are feature-gated per installation. If the platform reports the type is not enabled, retry with accessKeyId + secretAccessKey instead of roleArn."
+                : "Check credentials and provider, then retry.",
           },
         );
       }
@@ -2670,6 +2724,8 @@ export class ToolHandlers {
 
     // Provider-specific metadata. For openAICompatible the actual model name
     // and endpoint live here — modelType is just "custom-model" / "custom-embedding-model".
+    // For awsBedrock the region, routing location, and optionally a custom
+    // Bedrock model id live here.
     const providerMeta =
       data.provider === "openAICompatible"
         ? {
@@ -2679,7 +2735,14 @@ export class ToolHandlers {
               ? { customAuthHeader: data.customAuthHeader }
               : {}),
           }
-        : {};
+        : data.provider === "awsBedrock"
+          ? {
+              region: data.region,
+              ...(data.location ? { location: data.location } : {}),
+              ...(data.geo ? { geo: data.geo } : {}),
+              ...(data.customModel ? { customModel: data.customModel } : {}),
+            }
+          : {};
 
     let result: any;
     try {
@@ -2784,7 +2847,9 @@ export class ToolHandlers {
           },
           {
             action:
-              "Verify your API key and model type are correct, then retry.",
+              data.provider === "awsBedrock"
+                ? "Verify accessKeyId + secretAccessKey (or roleArn), region, and model id are correct, then retry."
+                : "Verify your API key and model type are correct, then retry.",
           },
         );
       }

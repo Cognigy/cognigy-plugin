@@ -78,6 +78,7 @@ export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
     isDefault: r.isDefault,
     apiType: r.apiType,
     openAICompatible: r.openAICompatible,
+    awsBedrock: r.awsBedrock,
   }),
   knowledge_store: (r) => ({
     id: rid(r),

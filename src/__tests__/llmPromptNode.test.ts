@@ -336,6 +336,58 @@ describe("LLM Prompt node support", () => {
       expect(result._hints.warning).toContain("no connection");
     });
 
+    it("never picks an awsBedrock embedding model hidden behind custom-model", async () => {
+      api.post
+        .mockResolvedValueOnce({ _id: ID.flow, referenceId: "flow-uuid" })
+        .mockResolvedValueOnce({ _id: ID.node })
+        .mockResolvedValueOnce({ _id: ID.endpoint, URLToken: "abc123" });
+      api.get
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.entry, isEntryPoint: true }],
+        })
+        // setup_llm registers a Bedrock model id under awsBedrock.customModel
+        // when modelType is the generic "custom-model", so modelType alone
+        // never reveals that this one cannot generate text.
+        .mockResolvedValueOnce({
+          items: [
+            {
+              _id: "a".repeat(24),
+              referenceId: "bedrock-embed-ref",
+              connectionId: "conn-1",
+              modelType: "custom-model",
+              awsBedrock: {
+                region: "eu-central-1",
+                customModel: "amazon.titan-embed-text-v2:0",
+              },
+              isDefault: true,
+            },
+            {
+              _id: "b".repeat(24),
+              referenceId: "bedrock-chat-ref",
+              connectionId: "conn-2",
+              modelType: "custom-model",
+              awsBedrock: {
+                region: "eu-central-1",
+                customModel: "eu.anthropic.claude-sonnet-4-6",
+              },
+            },
+          ],
+        })
+        .mockResolvedValueOnce({ items: [] });
+      api.delete.mockResolvedValue({});
+
+      const result = await h.handleToolCall("create_ai_agent", baseArgs);
+
+      const nodeCreateCall = api.post.mock.calls.find(
+        (c: any[]) => c[0] === `/v2.0/flows/${ID.flow}/chart/nodes`,
+      );
+      // The chat model wins even though the embedding model is the default.
+      expect(nodeCreateCall![1].config.llmProviderReferenceId).toBe(
+        "bedrock-chat-ref",
+      );
+      expect(result.llm.connected).toBe(true);
+    });
+
     it("does not assign an embedding-only model list to the llmPromptV2 node", async () => {
       api.post
         .mockResolvedValueOnce({ _id: ID.flow, referenceId: "flow-uuid" })
