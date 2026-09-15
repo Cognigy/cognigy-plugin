@@ -1,6 +1,6 @@
 # NiCE Cognigy Plugin
 
-> Distributed exclusively through each client's native plugin mechanism — a **plugin** on **Claude Code**, **Claude Desktop**, **ChatGPT + Codex**, and **Antigravity**, an **extension** on **Google Gemini CLI**, a **plugin** on **Cursor**, and an [**Agent Plugins**](https://agent-plugins.org)-standard plugin on any conformant host (**Kiro**, **VS Code + Copilot**, …) — with more clients to come. Each package installs the server engine and ships skills + agents.
+> Distributed exclusively through each client's native plugin mechanism — a **plugin** on **Claude Code**, **Claude Desktop**, **ChatGPT + Codex**, and **Antigravity**, a **plugin** on **Cursor**, and an [**Agent Plugins**](https://agent-plugins.org)-standard plugin on any conformant host (**Kiro**, **VS Code + Copilot**, …) — with more clients to come. Each package installs the server engine and ships skills + agents.
 
 A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy.com) REST API. Create, test, and improve LLM-based AI Agents through a self-improvement loop — without leaving your client.
 
@@ -57,7 +57,6 @@ Cursor is the one client that needs no installer at all: it collects your creden
 | **[Claude Code](docs/install/claude-code.md)** (CLI + Desktop "Code" tab) | ✅    | ✅     | ✅     | None                                     | Enable once <sup>1</sup> |
 | **[Claude Desktop chat](docs/install/claude-desktop.md)**                 | ✅    | ✅     | ✅     | Install the plugin in-app                | Automatic                |
 | **[ChatGPT + Codex](docs/install/chatgpt-codex.md)** (CLI + IDE)          | ✅    | ✅     | —      | None                                     | Automatic                |
-| **[Google Gemini CLI](docs/install/gemini-cli.md)** (Code Assist only)    | ✅    | ✅     | ✅     | None                                     | Automatic                |
 | **[Antigravity](docs/install/antigravity.md)** (IDE + `agy` CLI)          | ✅    | ✅     | ✅     | None                                     | Automatic                |
 | **[Cursor](docs/install/cursor.md)**                                      | ✅    | ✅     | ✅     | Install + set two variables <sup>2</sup> | Managed by Cursor        |
 | **[Other hosts](docs/install/other-hosts.md)** (VS Code, Kiro, …)         | ✅    | ✅     | ✅     | Install the plugin in the host itself    | Manual <sup>3</sup>      |
@@ -74,11 +73,11 @@ Skip the prompts with flags:
 ```
 npx -y -p @cognigy/plugin-engine@latest cognigy-setup \
   --client claude-code --client claude-desktop --client codex \
-  --client gemini --client antigravity --client other-hosts \
+  --client antigravity --client other-hosts \
   --api-base-url https://api-trial.cognigy.ai --api-key <key>
 ```
 
-`--client` is repeatable; valid values are `claude-code`, `claude-desktop`, `codex`, `gemini`, `antigravity`, and `other-hosts`. Omit it in interactive mode to pick from the menu.
+`--client` is repeatable; valid values are `claude-code`, `claude-desktop`, `codex`, `antigravity`, and `other-hosts`. Omit it in interactive mode to pick from the menu.
 
 </details>
 
@@ -105,7 +104,7 @@ Beyond the MCP tools, the plugin ships **skills** and **agents** that surface th
 
 ## Configuration
 
-The [installer](#installation) collects your **Cognigy API base URL** and **API key** and wires them per client: on Claude Code into the system **keychain**, on Claude Desktop into `claude_desktop_config.json` (`chmod 600`). The engine receives them as environment variables. If either is missing for a given launch, the engine falls back to `~/.cognigy-plugin/config.json` (`chmod 600`), which the installer also writes — so credentials resolve from the environment first, then that file. ChatGPT + Codex, Gemini CLI, and other hosts rely on that file exclusively: their client configs carry no secrets (and Gemini never passes your shell environment to extension MCP servers anyway).
+The [installer](#installation) collects your **Cognigy API base URL** and **API key** and wires them per client: on Claude Code into the system **keychain**, on Claude Desktop into `claude_desktop_config.json` (`chmod 600`). The engine receives them as environment variables. If either is missing for a given launch, the engine falls back to `~/.cognigy-plugin/config.json` (`chmod 600`), which the installer also writes — so credentials resolve from the environment first, then that file. ChatGPT + Codex, Antigravity, and other hosts rely on that file exclusively: their client configs carry no secrets.
 
 A value that arrives as an unexpanded `${...}` placeholder counts as missing. Hosts other than Claude Code don't implement `userConfig` and pass the manifest's `${user_config.cognigy_api_key}` through literally; treating that as a real credential would both fail the request and shadow the file fallback. The optional variables below can be set in the MCP server `env` if you need to override defaults.
 
@@ -117,6 +116,10 @@ A value that arrives as an unexpanded `${...}` placeholder counts as missing. Ho
 | `RATE_LIMIT_MAX_REQUESTS`           | No       | `100`   | Max requests per window                                        |
 | `RATE_LIMIT_WINDOW_MS`              | No       | `60000` | Rate limit window in ms                                        |
 | `COGNIGY_DISABLE_AUDIT_ATTRIBUTION` | No       | unset   | Set to `1` to stop naming the plugin in Cognigy's audit events |
+| `HTTPS_PROXY` / `HTTP_PROXY`        | No       | unset   | Corporate proxy to tunnel Cognigy requests through             |
+| `NO_PROXY`                          | No       | unset   | Comma-separated hosts to reach directly, bypassing the proxy   |
+| `NODE_EXTRA_CA_CERTS`               | No       | unset   | Path to your corporate root CA, for TLS-inspecting proxies     |
+| `COGNIGY_PROXY_CONNECT_TIMEOUT_MS`  | No       | `30000` | Deadline for reaching the proxy and completing the tunnel      |
 
 ### Audit attribution
 
@@ -125,6 +128,30 @@ Everything this plugin changes is recorded in **Admin Center → Audit Events** 
 Requires Cognigy.AI 2026.17.0 or newer; older versions ignore the attribution and record the action normally. The "Performed by" column in the UI is gated behind the platform's `FEATURE_ENABLE_PLATFORM_AGENT_MFE` flag, but the attribution is always recorded and always readable through `list_resources { resourceType: "audit_event", actor: ["mcp-plugin"] }`.
 
 Set `COGNIGY_DISABLE_AUDIT_ATTRIBUTION=1` to opt out; plugin actions are then recorded like any other API action.
+
+### Corporate proxies
+
+If your network requires a proxy, set it in the MCP server `env` block (or export it before starting your client) and the plugin tunnels every Cognigy request through it:
+
+```json
+"env": {
+  "HTTPS_PROXY": "http://proxy.corp.example:8080",
+  "NO_PROXY": "localhost,127.0.0.1",
+  "NODE_EXTRA_CA_CERTS": "/etc/ssl/certs/corporate-root-ca.pem"
+}
+```
+
+Lower-case spellings (`https_proxy`) work too, as do credentials in the URL (`http://user:password@proxy.corp.example:8080`). HTTP and HTTPS proxies are supported; SOCKS proxies are not.
+
+The proxy is chosen per request, so `NO_PROXY` can exclude one host while another still goes through the proxy — a package download link, for example, points at wherever the platform staged the archive rather than at the API host.
+
+If a proxy is configured but cannot be used — a malformed URL, or a SOCKS proxy — requests **fail with a configuration error** rather than quietly connecting directly, which would send your API key outside the sanctioned path. Exclude the host with `NO_PROXY` if you genuinely want a direct connection.
+
+A proxy that accepts the connection and then never completes the tunnel would otherwise hang a tool call indefinitely, so connecting and negotiating is bounded at 30 seconds. Raise `COGNIGY_PROXY_CONNECT_TIMEOUT_MS` if your proxy is simply slow.
+
+**If your proxy inspects TLS** (Zscaler, Netskope, BlueCoat and similar), it presents its own certificate signed by a corporate root CA that Node does not trust by default. Point `NODE_EXTRA_CA_CERTS` at that CA file — Node reads it only at startup, so restart your client afterwards. Never set `NODE_TLS_REJECT_UNAUTHORIZED=0` instead; that disables certificate verification for every connection the engine makes.
+
+To confirm the engine picked the settings up, set `LOG_LEVEL=debug` and look for `Cognigy API requests route through a proxy` in your client's MCP log. GUI clients (Claude Desktop, Antigravity) start the engine with a minimal environment and often do not inherit your shell's proxy variables, so set them in the config file rather than your shell profile.
 
 ## Usage Examples
 
@@ -293,7 +320,7 @@ Full privacy policy: [https://www.cognigy.com/privacy-policy](https://www.cognig
 
 ## Documentation
 
-- [docs/install/](https://github.com/Cognigy/cognigy-plugin/tree/main/docs/install) — per-client install guides ([Claude Code](docs/install/claude-code.md), [Claude Desktop](docs/install/claude-desktop.md), [ChatGPT + Codex](docs/install/chatgpt-codex.md), [Gemini CLI](docs/install/gemini-cli.md), [Antigravity](docs/install/antigravity.md), [Cursor](docs/install/cursor.md), [other hosts](docs/install/other-hosts.md))
+- [docs/install/](https://github.com/Cognigy/cognigy-plugin/tree/main/docs/install) — per-client install guides ([Claude Code](docs/install/claude-code.md), [Claude Desktop](docs/install/claude-desktop.md), [ChatGPT + Codex](docs/install/chatgpt-codex.md), [Antigravity](docs/install/antigravity.md), [Cursor](docs/install/cursor.md), [other hosts](docs/install/other-hosts.md))
 - [docs/ARCHITECTURE.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/ARCHITECTURE.md) — tool design, self-improvement loop, ID formats
 - [docs/USAGE.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/USAGE.md) — detailed usage reference
 - [docs/TESTING.md](https://github.com/Cognigy/cognigy-plugin/blob/main/docs/TESTING.md) — how to test the plugin and a local engine build

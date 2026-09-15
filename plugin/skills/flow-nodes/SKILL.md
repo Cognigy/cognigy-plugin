@@ -11,6 +11,8 @@ Use `manage_flow_nodes` to add logic nodes **inside tool branches only**. Nodes 
 
 **Voice exception — Set Session Config:** The one node that _should_ run before the AI Agent node is a `setSessionConfig` (Set Session Config) node, and only in **voice** flows. It applies per-session speech settings (barge-in, ASR, STT/TTS, input timeouts) and must be the **first** node. The `audit_voice_agent` tool checks for this and can create it by `prepend`ing before the AI Agent node. Do not add any other pre-agent nodes.
 
+**LLM Prompt exception:** `llmPrompt` (`llmPromptV2`) is a top-level raw LLM node for flows with no AI Agent node. Create it only when the user asks for an LLM Prompt node by name; otherwise use the AI Agent default. Reading or updating existing llmPromptV2 nodes is fine. See the [LLM Prompt section](#llmprompt--llm-prompt-explicit-request-only).
+
 ## Quick Start (tool-first workflow)
 
 ```
@@ -326,6 +328,59 @@ Call an external API.
 
 ---
 
+### llmPrompt — LLM Prompt
+
+Category: service
+
+A raw LLM call driven by a **freeform system prompt** (`config.prompt`). Supports tools, streaming/storage options, image handling, and custom model options.
+
+**STEERING — read first:**
+
+- Create only when the user explicitly asks for an "LLM Prompt" node; otherwise use the AI Agent default. Do not offer it, fall back to it, or ask the user to choose.
+- For a new LLM Prompt agent, use `create_ai_agent { agentNodeType: "llmPrompt", systemPrompt }`; it provisions project, flow, node, and endpoint. Use `manage_flow_nodes create` only for existing flows.
+- `llmPrompt` is top-level, placed after `start` via `mode: "append"`, and can drive a flow without an aiAgentJob node.
+- `prompt` is the full persona, job, and guardrail definition. Put required constraints in the prompt itself.
+- The backend auto-creates a non-deletable `llmPromptDefault` branch and a placeholder tool; the plugin removes the placeholder.
+- These flows have no agent resource: update prompts via `manage_flow_nodes update`, and address tools with `flowId`. Only `tool`, `mcp`, and `http` tools are supported.
+
+**Config (key fields — `get` the node for the full set):**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| prompt | string | Yes | Freeform system prompt. Supports CognigyScript and the `@cognigyRecentConversation` / `@cognigyRecentUserInputs` transcript tags (optionally with a turn limit, e.g. `@cognigyRecentConversation:3`) |
+| llmProviderReferenceId | string | No | LLM referenceId, or `"default"` for the project's Generative AI default |
+| storeLocation | string | No | `stream` (stream to output), `input`, or `context` |
+| immediateOutput | boolean | No | Output the result immediately — applies only with `storeLocation: "input"` or `"context"`; with `"stream"` the result already streams, so the flag is meaningless and must not be sent |
+| inputKey / contextKey | string | No | Where to store the result for `input`/`context` storage (default `promptResult`) |
+| chatTranscriptSteps | number | No | Previous conversation turns included in the request (default 50) |
+| usePromptMode | boolean | No | Single-prompt mode — no conversation context; prompt must be non-empty |
+| temperature / topP / maxTokens / frequencyPenalty / presencePenalty / seed | number | No | Sampling controls (samplingMethod picks `temperature` vs `topP`) |
+| responseFormat | string | No | `default`, `text`, or `json` |
+| toolChoice | string | No | `auto`, `required`, or `none` — how tools are selected |
+| useStrict | boolean | No | Strict mode for tool argument schemas |
+| processImages / transcriptImageHandling | boolean / string | No | Image attachment handling (`minify`, `drop`, `keep`) |
+| customModelOptions / customRequestOptions | object | No | Provider-specific overrides (e.g. `{ "model": "..." }`, `{ "stream": true }`) |
+| errorHandling / errorMessage / logErrorToSystem | string / string / boolean | No | `continue` (default), `stop`, or go-to error handling |
+
+**Example (only after an explicit user request):**
+
+```json
+{
+  "operation": "create",
+  "flowId": "<flowId>",
+  "nodeType": "llmPrompt",
+  "label": "Summarize Conversation",
+  "parentNodeId": "<startNodeId or preceding top-level node>",
+  "mode": "append",
+  "config": {
+    "prompt": "A user talked to a chatbot:\n@cognigyRecentConversation\n\nSummarize the conversation in two sentences.",
+    "storeLocation": "context",
+    "contextKey": "summary"
+  }
+}
+```
+
+---
+
 ## Branching nodes
 
 `ifThenElse` and `lookup` nodes auto-create child branch nodes when created:
@@ -464,7 +519,7 @@ After a node create/update/delete, offer a render once, in one short line (do no
 
 ## Notes
 
-- **Tool parameters**: Inside AI Agent tool branches, the LLM's tool call parameters are available at `input.aiAgent.toolArgs`, **NOT** `input.data`. For example, if the tool defines a `city` parameter, access it as `input.aiAgent.toolArgs.city` in Code nodes or `{{input.aiAgent.toolArgs.city}}` in CognigyScript fields.
+- **Tool parameters**: Inside AI Agent tool branches, the LLM's tool call parameters are available at `input.aiAgent.toolArgs`, **NOT** `input.data`. For example, if the tool defines a `city` parameter, access it as `input.aiAgent.toolArgs.city` in Code nodes or `{{input.aiAgent.toolArgs.city}}` in CognigyScript fields. **Under an LLM Prompt (`llmPromptV2`) node the parameters live at `input.llmPrompt.toolArgs` instead** — `input.aiAgent` is `null` there, so reading `input.aiAgent.toolArgs` returns `undefined` and the tool runs with no arguments (a silent fallback, no error). For a tool that may run under either node type, read defensively: `const args = (input.llmPrompt && input.llmPrompt.toolArgs) || (input.aiAgent && input.aiAgent.toolArgs) || {};`.
 - **CognigyScript**: Use `{{expression}}` syntax in text/message fields to reference runtime data (`input`, `context`, `profile`). For condition fields (ifThenElse, lookup), use plain expressions without `{{ }}` — e.g. `context.isVIP === true`.
 - **Node IDs**: All node IDs are 24-char hex strings. Get them from `manage_flow_nodes { operation: 'list' }`.
 - **Ordering**: Nodes execute top-to-bottom within a branch. Use `parentNodeId` to control placement.

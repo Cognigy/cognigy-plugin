@@ -102,6 +102,17 @@ update_ai_agent {
 
 Always use ALL relevant fields when configuring an agent. Do not put everything in `description` alone — distribute the configuration across the appropriate fields for best results.
 
+## LLM Prompt node — explicit request ONLY
+
+Use the **LLM Prompt** node only when the user asks for it by name, e.g. "create an agent using an LLM Prompt node." Otherwise, build agents with the AI Agent node.
+
+When (and only when) the user explicitly asked for it:
+
+- New agent: `create_ai_agent { name, agentNodeType: "llmPrompt", systemPrompt: "..." }` — provisions project + flow + LLM Prompt node + REST endpoint. There is NO agent resource in this mode.
+- `systemPrompt` is the full persona, job, and guardrail definition.
+- Iterate with `manage_flow_nodes { operation: "update", flowId, nodeId, config: { prompt } }` — NOT update_ai_agent (there is no agent to update).
+- Tools: `create_tool { flowId, ... }` (only tool/mcp/http types). Test with `talk_to_agent { endpointUrl }`.
+
 ## Key facts
 
 - create_ai_agent auto-provisions: flow, AI Agent Job Node, REST endpoint

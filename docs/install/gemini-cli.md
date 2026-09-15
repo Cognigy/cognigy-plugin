@@ -1,67 +1,15 @@
-# Install for Google Gemini CLI
+# Google Gemini CLI — support dropped
 
-Shipped as a **Gemini CLI extension** — one installable unit carrying everything.
+The Gemini CLI extension is **no longer shipped or supported**. Google [transitioned Gemini CLI to Antigravity CLI](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/) — on **18 June 2026** it stopped serving requests for all consumer tiers — so use the **[Antigravity install guide](antigravity.md)** instead (`cognigy-setup --client antigravity` covers the IDE, the `agy` CLI, and the SDK in one install).
 
-> **Gemini CLI is no longer generally available.** Google [transitioned it to Antigravity CLI](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/): on **18 June 2026** Gemini CLI stopped serving requests for the free tier, Google AI Pro, and Ultra. It keeps working for **Code Assist Standard, Code Assist Enterprise, and Code Assist for GitHub** subscriptions managed through Google Cloud — this guide is for those users. On a consumer tier, use Antigravity instead.
+Releases no longer carry the `cognigy-gemini-extension.zip` asset, and `cognigy-setup` no longer accepts `--client gemini`.
 
-|                  |                                                                           |
-| ---------------- | ------------------------------------------------------------------------- |
-| **You get**      | Tools, skills, agents, and an always-on `GEMINI.md` context file          |
-| **Credentials**  | `~/.cognigy-plugin/config.json` (`chmod 600`), or the OS keychain — below |
-| **Extra steps**  | None — the extension install is all-in-one                                |
-| **Requires**     | A plugin release of 1.9.0 or newer (see Troubleshooting)                  |
-| **Eligibility**  | A Code Assist subscription — see the note above                           |
-| **Auto-updates** | Enabled by the installer (`--auto-update`)                                |
+## If you still have the extension installed
 
-## Install
-
-Either [run the installer](../../README.md#installation) and pick **Google Gemini CLI**, or install the extension directly:
-
-```
-gemini extensions install https://github.com/Cognigy/cognigy-plugin
-```
-
-Restart `gemini` afterwards. Verify with `gemini extensions list` — you should see `cognigy`.
-
-## Credentials — two paths
-
-Gemini passes **only the environment variables an extension declares** to its MCP servers; your shell environment never reaches them. The two supported paths both work around that:
-
-- **Via the installer** — writes `~/.cognigy-plugin/config.json` (`chmod 600`) and installs with `--skip-settings`. The engine reads that file directly from disk.
-- **Manual install** — Gemini prompts for the API base URL and key, storing the key in the **OS keychain** and injecting both as declared env vars.
-
-Re-run the prompts at any time with `gemini extensions config cognigy`.
-
-## Updating
-
-The installer enables auto-update, so new releases arrive on their own. To force one:
-
-```
-gemini extensions update cognigy
-```
-
-`cognigy-setup update` does the same, and skips the step when the extension isn't installed.
-
-## Uninstall
+It keeps working at the engine version its manifest pins, but receives no further updates. To remove it:
 
 ```
 gemini extensions uninstall cognigy
 ```
 
-`cognigy-setup uninstall --client gemini` does this too. Drop `--client` to uninstall from every client; add `--purge` to also delete `~/.cognigy-plugin`, the credentials file every client shares.
-
-## Troubleshooting
-
-**`Configuration file not found at /var/folders/.../gemini-extension.json`**
-
-Gemini installs from the newest GitHub release: it looks for an extension archive attached to that release, and when none is attached it falls back to GitHub's auto-generated source tarball — which has no `gemini-extension.json` at its root, producing exactly this error. It means the newest release predates Gemini support. Upgrade to plugin **1.9.0 or newer**, which ships `cognigy-gemini-extension.zip` as a release asset.
-
-**Testing an unreleased build** — build the extension locally and link it instead of installing:
-
-```
-npm run build
-node scripts/build-gemini-extension.mjs "$(node -p "require('./package.json').version")"
-gemini extensions link .gemini-extension
-```
-
-Linked extensions are served from the working tree; restart `gemini` after each rebuild. See [../TESTING.md](../TESTING.md).
+Antigravity users who migrated with `agy plugin import gemini` should also remove the imported copy (`agy plugin list` shows it), or two engines will boot — see the [Antigravity guide's troubleshooting notes](antigravity.md).
