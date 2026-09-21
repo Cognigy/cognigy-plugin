@@ -1,3 +1,9 @@
+## [1.20.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.19.0...v1.20.0) (2026-09-21)
+
+### Features
+
+* **tools:** send talk_to_agent messages in Cognigy Endpoint Test Mode ([#46](https://github.com/Cognigy/cognigy-plugin/issues/46)) ([96d1b52](https://github.com/Cognigy/cognigy-plugin/commit/96d1b524598d9e9376b17419504cc076fc18fde2))
+
 ## [1.19.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.18.0...v1.19.0) (2026-09-15)
 
 ### Features
