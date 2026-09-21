@@ -1,0 +1,26 @@
+# Line-ending normalization.
+#
+# Without this file, a Windows checkout rewrites every text file with CRLF
+# line endings. The content is identical to what is committed (LF), but git
+# reports the entire tree as modified, which makes `git status` unreadable,
+# fails the prettier check in .husky/pre-commit, and blocks `git rebase`
+# (which refuses to start with a dirty working tree).
+#
+# `text=auto eol=lf` tells git: normalize text files to LF in the repository,
+# and write LF into the working tree on every platform. This matches what is
+# already committed, so it changes no file contents.
+* text=auto eol=lf
+
+# Binary files: never transform.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.svg  text
+*.zip  binary
+*.gz   binary
+*.tgz  binary
+*.pdf  binary
+*.woff binary
+*.woff2 binary
