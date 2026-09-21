@@ -37,5 +37,7 @@ coverage/
 
 # Local planning notes (not for commit)
 .plans/
-docs/plans
+
+# Local reference material (not for commit)
+__References/
 
