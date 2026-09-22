@@ -2746,8 +2746,7 @@ describe("ToolHandlers v2", () => {
     const codeNodeId = "60d5ec49f1a2c8b1a4e0f013";
     const toolNodeId = "60d5ec49f1a2c8b1a4e0f014";
 
-    it("create writes code that uses unavailable runtime APIs and hints about it", async () => {
-      api.post.mockResolvedValueOnce({ _id: codeNodeId, parentId: toolNodeId });
+    it("create refuses code that uses unavailable runtime APIs (AI COE policy layer)", async () => {
       const result = await h.handleToolCall("manage_flow_nodes", {
         operation: "create",
         flowId: ID.flow,
@@ -2757,10 +2756,10 @@ describe("ToolHandlers v2", () => {
         label: "Lookup",
         config: { code: "const r = await fetch('https://x');" },
       });
-      expect(result.nodeId).toBe(codeNodeId);
-      expect(api.post).toHaveBeenCalledTimes(1);
-      expect(result._hints?.warning).toContain("fetch()/XMLHttpRequest");
-      expect(result._hints?.action).toContain("manage_flow_nodes update");
+      expect(result.error).toBe("policy_violation");
+      const messages = result.findings.map((f: any) => f.message).join(" ");
+      expect(messages).toContain("fetch()/XMLHttpRequest");
+      expect(api.post).not.toHaveBeenCalled();
     });
 
     it("create stays quiet for code the runtime supports", async () => {
@@ -2778,72 +2777,51 @@ describe("ToolHandlers v2", () => {
       expect(result._hints?.warning).toBeUndefined();
     });
 
-    it("update PATCHes and hints, one sentence per unavailable API", async () => {
-      api.get
-        .mockResolvedValueOnce({
-          _id: codeNodeId,
-          type: "code",
-          config: { code: "old" },
-        })
-        .mockResolvedValueOnce({
-          _id: codeNodeId,
-          type: "code",
-          config: { code: "new", hasError: false },
-        });
-      api.patch.mockResolvedValueOnce({ _id: codeNodeId });
+    it("update refuses code that uses unavailable runtime APIs (AI COE policy layer)", async () => {
       const result = await h.handleToolCall("manage_flow_nodes", {
         operation: "update",
         flowId: ID.flow,
         nodeId: codeNodeId,
         config: { code: "const c = require('xml-js'); api.setState('x');" },
       });
-      expect(result.updated).toBe(true);
-      expect(api.patch).toHaveBeenCalledTimes(1);
-      expect(result._hints?.warning).toContain("require()/import");
-      expect(result._hints?.warning).toContain("Intent Conditions");
+      expect(result.error).toBe("policy_violation");
+      const messages = result.findings.map((f: any) => f.message).join(" ");
+      expect(messages).toContain("require()/import");
+      expect(messages).toContain("Intent Conditions");
+      // The policy gate is pre-dispatch (§3.4): it runs before the handler
+      // fetches the existing node, so nothing is read or written.
+      expect(api.get).not.toHaveBeenCalled();
+      expect(api.patch).not.toHaveBeenCalled();
     });
 
-    it("update applies the hints only to code nodes", async () => {
-      api.get.mockResolvedValueOnce({
-        _id: codeNodeId,
-        type: "say",
-        config: { text: "old" },
-      });
-      api.patch.mockResolvedValueOnce({ _id: codeNodeId });
+    it("update: the gate fires on config.code presence, independent of the node's actual type (§3.3)", async () => {
+      // Upstream's own hint only applies to nodes it has fetched and
+      // confirmed are type "code". The policy gate has no such fetch to make
+      // that call, so it selects on the presence of config.code instead -
+      // sound in practice, because "code" is the only registry entry with a
+      // "code" config key, but it means a coincidental config.code on some
+      // other node's update is refused too, rather than silently allowed.
       const result = await h.handleToolCall("manage_flow_nodes", {
         operation: "update",
         flowId: ID.flow,
         nodeId: codeNodeId,
         config: { code: "await fetch('x')" },
       });
-      expect(result.updated).toBe(true);
-      expect(api.patch).toHaveBeenCalledTimes(1);
-      expect(result._hints?.warning).toBeUndefined();
+      expect(result.error).toBe("policy_violation");
+      expect(api.get).not.toHaveBeenCalled();
+      expect(api.patch).not.toHaveBeenCalled();
     });
 
-    it("update keeps the hasError warning first when both apply", async () => {
-      api.get
-        .mockResolvedValueOnce({
-          _id: codeNodeId,
-          type: "code",
-          config: { code: "old" },
-        })
-        .mockResolvedValueOnce({
-          _id: codeNodeId,
-          type: "code",
-          config: { code: "bad", hasError: true },
-        });
-      api.patch.mockResolvedValueOnce({ _id: codeNodeId });
+    it("update refuses non-compliant code before the platform's hasError check ever runs", async () => {
       const result = await h.handleToolCall("manage_flow_nodes", {
         operation: "update",
         flowId: ID.flow,
         nodeId: codeNodeId,
         config: { code: "await fetch('x'); const x: =" },
       });
-      expect(result._hints?.warning).toMatch(
-        /^Node saved, but config.hasError/,
-      );
-      expect(result._hints?.warning).toContain("fetch()/XMLHttpRequest");
+      expect(result.error).toBe("policy_violation");
+      expect(api.get).not.toHaveBeenCalled();
+      expect(api.patch).not.toHaveBeenCalled();
     });
   });
 

@@ -32,8 +32,10 @@ import {
 } from "./filters.js";
 import { buildWebchatSettings, deepMerge } from "./webchatSettings.js";
 import { normalizeToolParameters } from "./toolParameters.js";
-import { getNodeEntry, supportedNodeTypes } from "./nodeRegistry.js";
+import { getNodeEntry, supportedNodeTypes } from "../policy/nodeRegistry.js";
 import { codeNodeWarnings } from "./codeNodeHints.js";
+import { evaluatePolicy } from "../policy/index.js";
+import { PolicySession } from "../policy/session.js";
 import {
   evaluateChecks,
   summarize,
@@ -1201,6 +1203,11 @@ export class ToolHandlers {
    * create would reuse a number and make "restore v3" ambiguous.
    */
   private highestBackupVersionThisSession = 0;
+
+  // AI COE policy layer (fork-owned, src/policy/). One instance per
+  // ToolHandlers, matching the session-lifetime premise the backup gate's
+  // own state above already relies on.
+  private readonly policySession = new PolicySession();
 
   constructor(
     private apiClient: CognigyApiClient,
@@ -7681,6 +7688,12 @@ export class ToolHandlers {
     });
 
     try {
+      // AI COE policy layer (fork-owned, src/policy/). Runs before the backup
+      // gate: a refused call is not an impending mutation, so offering a backup
+      // for it is noise, and it must not consume the gate's one-shot hold.
+      const refusal = evaluatePolicy(toolName, args, this.policySession);
+      if (refusal) return refusal;
+
       // Before anything mutates an existing agent, give the user one chance to
       // take a backup. Must precede the switch — a post-hoc hint arrives after
       // the change and is therefore useless.

@@ -528,6 +528,16 @@ Branch off instead. The result is the same clean `v1.20.0` base with none of the
 > **Progress, 2026-09-22: steps 0, 1 and 2 are DONE.** Start at step 3. Branch `feat/ai-coe-policy-layer` exists on a clean `v1.20.0` base, carrying three commits (`803c1c0` docs + `.gitattributes`, `f591902` `.gitignore` + `.claude/settings.json`, `d328710` `Claude outputs/` ignore + this design doc). `git diff v1.20.0 --stat -- src/` returns nothing. `Claude outputs/` was gitignored. Suite timed at ~37s (§5). `fix/code-node-development-best-practices` is untouched at `030e9c6`, locally and on the remote, as intended.
 >
 > Two things changed underneath this document after it was written. **The GitHub repo was renamed** to `jacognigy/ai-coe-cognigy-plugin`, and the local remotes were reconfigured: `origin` is now the fork, `upstream` is Cognigy with its push URL set to `DISABLED`, plus an uncommitted `.husky/pre-push` guard. Read `origin` as the fork anywhere below. **Upstream also released `v1.20.1`**, which touches `src/config.ts`; this branch is still based on `v1.20.0`, so decide whether to merge `upstream/main` in (additive - do not rebase or force-push a branch that is already pushed) before starting step 3.
+>
+> **Progress, 2026-09-22 (continued): steps 3 through 7 are DONE, uncommitted.** Before step 3, `upstream/main` (v1.20.1, `ce778b5` / `fix(config)` #49) was merged into `main` (fast-forward) and then into this branch (merge commit `abdb858`), resolving the open decision above. `git diff v1.20.1 --stat -- src/` returned nothing immediately after, confirming `src/` was still byte-identical to upstream before any policy-layer code landed.
+>
+> The full `src/policy/` tree now exists - `types.ts`, `index.ts`, `registry.ts`, `selectors.ts`, `session.ts`, `response.ts`, `nodeRegistry.ts` + `nodeRegistry.extensions.ts`, `generate-docs.ts`, `rules/upstream-code-node-hints.ts` - with its test suite under `src/__tests__/policy/` (`attachment`, `ordering`, `coverage`, `override`, `registry-clash`, `docs-fresh`, plus `rules/codenode.runtime-apis.test.ts`): 19 tests, all green. `handlers.ts` carries both upstream-file touch points from §3.1: the pre-dispatch gate and the `nodeRegistry` import repoint. The generated skill `plugin/skills/ai-coe-standards/SKILL.md` exists and matches the registry (`npm run policy:docs` regenerates it, wired as a new `package.json` script). `npm run check:manifest` and lint both pass.
+>
+> One consequence, not a regression: shipping `codenode.runtime-apis` at `block` severity broke six pre-existing tests in `tools.test.ts` / `httpTool.test.ts` that asserted the old upstream advisory-hint behavior (write succeeds, hint rides along). Those were updated in place to assert the refusal instead - exactly §2.0's intended effect.
+>
+> `npm test`: 830 passed, 8 failed, 3 skipped - the 8 are the same Windows-environment baseline as §5 (POSIX `0600`/`0700` checks, macOS/Linux path assertions, `file://` URI formatting), unchanged in count or identity throughout steps 3-7.
+>
+> **None of this is committed yet.** Step 8 is next; see §11 for its kickoff.
 
 **Step 0 - get the base branch to v1.20.0.** `origin/main` and tag `v1.20.0` are the same commit (`9783046`), so `main` fast-forwards: `git checkout main && git merge --ff-only origin/main`. Then create the working branch off it, for example `git switch -c feat/ai-coe-policy-layer`. Leave `fix/code-node-development-best-practices` exactly as it is, locally and on the remote.
 
@@ -621,3 +631,25 @@ This document is intended to be sufficient on its own; no companion briefing fil
 > One open decision before step 3: upstream released `v1.20.1` (touches `src/config.ts`) after this branch was cut. Decide whether to merge `upstream/main` in first. Merge, do not rebase - the branch is already pushed and must not be force-pushed.
 
 Both prerequisites this section used to flag are now settled: `npm test` runs in **~37s** (§5), and the untracked `Claude outputs/` directory was **gitignored** (§6 step 1).
+
+---
+
+## 11. Kickoff for the Code Node standards session (step 8)
+
+Steps 0 through 7 of §6 are done. The policy layer mechanism exists, is tested, and is self-defending (§2.2, §5) - one rule is shipped (`codenode.runtime-apis`, wrapping upstream's hints at `block` severity). What is left is content, not mechanism: re-authoring the NA PS Code Node standards as rules on this framework. That is a separate session, deliberately - this document's own scope never covered the standards' content (§9).
+
+A fresh session with no memory of this one can be started with the following, and nothing else.
+
+> Author the NA PS Code Node standards as AI COE policy rules in the NiCE Cognigy plugin fork.
+>
+> Repo: `C:\Users\jamiea\sandbox\ai-coe-plugin\cognigy-plugin`. Check `git log` and `git status` first - branch and commit state may have moved since this note was written, and none of the policy-layer work was committed when it was.
+>
+> The mechanism is already built and tested; your job is content, not mechanism. Read `docs/ai-coe/architecture/06-Policy-Layer-Design.md` in full first, then `src/policy/types.ts` (the `Rule` shape), `src/policy/registry.ts` (where a rule is added), and `src/policy/rules/upstream-code-node-hints.ts` (the one worked example - study its shape, but note it wraps an existing upstream function, which most of your new rules will not).
+>
+> Re-derive the standards from the NA PS **`cognigyCodeDev`** source - not from the fork's old POC (`fix/code-node-development-best-practices`, commit `030e9c6`), which is deliberately being left behind (§2.1: it carries at least one known bug - raw-source pattern matching with no comment/string blanking - and porting it would carry the bug forward; the standards are the asset, not that implementation). **Locating the `cognigyCodeDev` source is your first task, not a given** - it is an NA PS team resource, not a file in this repo (a stale reference to a "cognigyCodeDev skill" in `definitions.ts`/`handlers.ts` that the Limitations doc once flagged is gone from the current source; grepping for it here will not find it).
+>
+> For each standard: decide `severity` (`block` vs `warn`) and `kind` (`platform-fact` vs `house-opinion` - §2.0 explains the distinction and why it decides upstream PR candidacy), write the `check()` function and a `RuleTarget`, and give it a `retireWhen` condition and a `rules/<rule-id>.test.ts` negative-path test - `coverage.test.ts` fails the build if you skip the test. Prefer one rule per check, per the decision in §4 item 2.
+>
+> After adding rules, run `npm run policy:docs` to regenerate `plugin/skills/ai-coe-standards/SKILL.md` and confirm `docs-fresh.test.ts` passes.
+>
+> **Never push to upstream** - push only to `origin` (the fork), and confirm before doing so.
