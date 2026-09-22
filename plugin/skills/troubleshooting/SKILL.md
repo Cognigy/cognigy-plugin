@@ -113,6 +113,12 @@ Cognigy.
   malformed or unsupported (SOCKS proxies are not supported). Requests fail
   instead of connecting directly, so the API key never leaves the sanctioned
   path; exclude the host with `NO_PROXY` if a direct connection is intended.
+- `DEPTH_ZERO_SELF_SIGNED_CERT` (or `SELF_SIGNED_CERT_IN_CHAIN`) with no proxy in
+  play means the Cognigy host itself presents a certificate Node does not trust
+  — typical for a local cluster such as `https://api.test`. Node ignores the
+  operating-system trust store, so add the certificate (or its issuing local CA)
+  via `NODE_EXTRA_CA_CERTS`, then restart the client. Do not set
+  `NODE_TLS_REJECT_UNAUTHORIZED=0`.
 - "Timed out ... connecting through the proxy" means the proxy accepted the
   connection but never completed the tunnel. Check the proxy address, or raise
   `COGNIGY_PROXY_CONNECT_TIMEOUT_MS` (default 30000) if it is merely slow.
