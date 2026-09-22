@@ -2,9 +2,10 @@
 
 _Design of record for how the fork declares and enforces AI COE standards on top of the NiCE Cognigy Plugin. Written 2026-09-21. Supersedes the proposal sketched in `BRIEF-Policy-Layer-Architecture.md` §4._
 
-**Repo:** `C:\Users\jamiea\sandbox\ai-coe-plugin\cognigy-plugin`
+**Repo:** `C:\Users\jamiea\sandbox\ai-coe-plugin\cognigy-plugin` (local folder name unchanged; the GitHub repo was renamed to `jacognigy/ai-coe-cognigy-plugin` on 2026-09-22)
 **Upstream at time of writing:** `v1.20.0`, released 2026-09-21 09:02 UTC
-**Fork branch:** `fix/code-node-development-best-practices`, one commit (`030e9c6`) on a `v1.15.0` base
+**Fork branch at time of writing:** `fix/code-node-development-best-practices`, one commit (`030e9c6`) on a `v1.15.0` base
+**Current working branch (2026-09-22):** `feat/ai-coe-policy-layer`, three docs/config commits on a clean `v1.20.0` base. Steps 0-2 of §6 are done; §10 carries the up-to-date kickoff.
 
 ---
 
@@ -512,7 +513,9 @@ To be precise about what is missing today, because the brief overstated it: the 
 
 **7. Override round trip.** Asserts that a blocked call retried with the correct `_policyOverride` succeeds, that an unrelated rule id does not unlock it, and that the override does not leak across projects.
 
-**Unmeasured:** the brief noted `npm test` did not complete within 175 seconds locally. A background run during this session was lost when the environment recycled, so the number is still unknown. Time it before building - it determines whether the negative-path loop is runnable locally or effectively CI-only, and that changes how rules get authored.
+**Measured 2026-09-22: ~37s wall clock** (`npm test`, 31 suites, 816 tests; Jest self-reported 28.7s). The brief's "did not complete within 175 seconds" does not reproduce. The negative-path loop is comfortably runnable locally, so rules can be authored test-first without leaning on CI.
+
+Note for anyone reading a red suite: **8 tests fail on Windows for environment reasons, not fork reasons** - Linux path assertions, POSIX `0600` mode checks, and `file://` URI formatting. They fail identically on stock `v1.20.0` (this branch's `src/` is byte-identical to it), so do not chase them.
 
 ---
 
@@ -522,6 +525,10 @@ To be precise about what is missing today, because the brief overstated it: the 
 
 Branch off instead. The result is the same clean `v1.20.0` base with none of the risk, and every step below is additive.
 
+> **Progress, 2026-09-22: steps 0, 1 and 2 are DONE.** Start at step 3. Branch `feat/ai-coe-policy-layer` exists on a clean `v1.20.0` base, carrying three commits (`803c1c0` docs + `.gitattributes`, `f591902` `.gitignore` + `.claude/settings.json`, `d328710` `Claude outputs/` ignore + this design doc). `git diff v1.20.0 --stat -- src/` returns nothing. `Claude outputs/` was gitignored. Suite timed at ~37s (§5). `fix/code-node-development-best-practices` is untouched at `030e9c6`, locally and on the remote, as intended.
+>
+> Two things changed underneath this document after it was written. **The GitHub repo was renamed** to `jacognigy/ai-coe-cognigy-plugin`, and the local remotes were reconfigured: `origin` is now the fork, `upstream` is Cognigy with its push URL set to `DISABLED`, plus an uncommitted `.husky/pre-push` guard. Read `origin` as the fork anywhere below. **Upstream also released `v1.20.1`**, which touches `src/config.ts`; this branch is still based on `v1.20.0`, so decide whether to merge `upstream/main` in (additive - do not rebase or force-push a branch that is already pushed) before starting step 3.
+
 **Step 0 - get the base branch to v1.20.0.** `origin/main` and tag `v1.20.0` are the same commit (`9783046`), so `main` fast-forwards: `git checkout main && git merge --ff-only origin/main`. Then create the working branch off it, for example `git switch -c feat/ai-coe-policy-layer`. Leave `fix/code-node-development-best-practices` exactly as it is, locally and on the remote.
 
 **Step 1 - carry the uncommitted work across, by hand where needed.** Ten files are staged on the POC branch and must not be lost:
@@ -530,11 +537,11 @@ Branch off instead. The result is the same clean `v1.20.0` base with none of the
 - **`.gitignore` must be re-applied by hand, not carried.** The staged diff was written against the `v1.15.0` file, and upstream changed that file in `v1.17.0` when Gemini CLI support was dropped - the `.gemini-extension/` and `cognigy-gemini-extension.zip` lines that appear as context in the staged diff no longer exist. The intent is two edits: remove the `docs/plans` entry, and add `__References/` under a "Local reference material (not for commit)" comment. Make those two edits directly on the v1.20.0 version of the file.
 - `.claude/settings.json` is **created by `030e9c6`** and exists at neither `v1.15.0` nor `v1.20.0`, so it is fork-only and does not come across on its own. It has nothing to do with Code Node enforcement: it is a permissions allowlist pre-approving `npm run *`, `npx tsc *` and `npx eslint *`. Bring just that one file over with `git checkout 030e9c6 -- .claude/settings.json`, or the build session prompts for approval on every build and test command it runs.
 
-Also decide on the untracked `Claude outputs/` directory - gitignore it or remove it.
+Also decide on the untracked `Claude outputs/` directory - gitignore it or remove it. _(Resolved 2026-09-22: gitignored, under a "Local reference material (not for commit)" comment alongside `__References/`. It holds local scratch briefs.)_
 
 **Verify:** `git diff v1.20.0 --stat -- src/` must return nothing. The `src/` tree is byte-identical to upstream; the branch as a whole is not, because it now carries the docs, `.gitattributes`, the `.gitignore` edits and `.claude/settings.json`, all intended. Upstream's `codeNodeHints.ts` is the fork's Code Node behavior from here, advisory, and that is the accepted interim state.
 
-**Step 2 - time the suite.** Run `npm test` and record the wall clock. Decide the local loop strategy from the number.
+**Step 2 - time the suite.** Run `npm test` and record the wall clock. Decide the local loop strategy from the number. _(Done 2026-09-22: ~37s. Local test-first authoring is viable; see §5 for the number and for the 8 pre-existing Windows failures.)_
 
 **Step 3 - skeleton, no rules.** `types.ts`, `registry.ts` (empty array), `session.ts`, `response.ts`, `index.ts`. Insert the gate in `handleToolCall` per §3.4. Add `attachment.test.ts` and `ordering.test.ts` against a single throwaway always-fires rule. This proves the wiring before any real rule exists, and is the point at which the design is falsified if it is going to be.
 
@@ -601,12 +608,16 @@ This document is intended to be sufficient on its own; no companion briefing fil
 
 > Implement the AI COE policy layer in the NiCE Cognigy plugin fork.
 >
-> Repo: `C:\Users\jamiea\sandbox\ai-coe-plugin\cognigy-plugin`. Branch `fix/code-node-development-best-practices`, currently one commit (`030e9c6`) on a `v1.15.0` base. Remotes: `origin` = `Cognigy/cognigy-plugin` (upstream, at `v1.20.0`), `fork` = `jacognigy/cognigy-plugin`.
+> Repo: `C:\Users\jamiea\sandbox\ai-coe-plugin\cognigy-plugin` (local folder; the GitHub repo is `jacognigy/ai-coe-cognigy-plugin`). Work on branch `feat/ai-coe-policy-layer`, which is already checked out and sits on a clean `v1.20.0` base with three docs/config commits. Remotes: `origin` = the fork, `upstream` = `Cognigy/cognigy-plugin` with its push URL deliberately set to `DISABLED`.
 >
-> The design of record is `docs/ai-coe/architecture/06-Policy-Layer-Design.md` (this file). Read it in full before touching anything. Work through section 6 in order, starting at step 0. Sections 3 and 5 are the specification; section 4 records why each decision was made, so if you want to depart from one, check what was already rejected and why before you do.
+> **Never push to upstream.** This fork exists to enforce standards upstream has rejected; nothing here goes back. An uncommitted `.husky/pre-push` guard blocks it - never bypass it with `--no-verify`. Push only to `origin`, and confirm before doing so.
+>
+> The design of record is `docs/ai-coe/architecture/06-Policy-Layer-Design.md` (this file). Read it in full before touching anything. Work through section 6 in order - **steps 0, 1 and 2 are already done, so start at step 3.** Sections 3 and 5 are the specification; section 4 records why each decision was made, so if you want to depart from one, check what was already rejected and why before you do.
 >
 > Two things that will mislead you if you skip section 1: several facts in the older `BRIEF-Policy-Layer-Architecture.md` are stale, and all line numbers anywhere in either document are approximate - locate code by symbol.
 >
-> Do not re-derive the architecture from source. `docs/ai-coe/architecture/` in the repo has it, read in numbered order.
+> Do not re-derive the architecture from source. `docs/ai-coe/architecture/` in the repo has it, read in numbered order. It is canonical; the copies in the sibling `ai-coe-plugin-workspace/` are older and self-disclaiming.
+>
+> One open decision before step 3: upstream released `v1.20.1` (touches `src/config.ts`) after this branch was cut. Decide whether to merge `upstream/main` in first. Merge, do not rebase - the branch is already pushed and must not be force-pushed.
 
-Two prerequisites are worth settling before that session starts rather than inside it: the `npm test` wall-clock time (§5, still unmeasured), and the disposition of the untracked `Claude outputs/` directory (§6 step 0).
+Both prerequisites this section used to flag are now settled: `npm test` runs in **~37s** (§5), and the untracked `Claude outputs/` directory was **gitignored** (§6 step 1).

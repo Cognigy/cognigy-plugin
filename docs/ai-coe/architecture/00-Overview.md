@@ -4,14 +4,14 @@
 
 **Source state this knowledge base reflects (as of 2026-09-14):**
 
-| Item                | Value                                                                                                                                                              |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Local checkout      | `C:\Users\jamiea\sandbox\ai-coe-plugin\cognigy-plugin`, branch `fix/code-node-development-best-practices`                                                          |
-| Local base          | upstream `Cognigy/cognigy-plugin` v1.15.0 (commit `160ae03`, released 2026-09-01)                                                                                  |
-| Local commit on top | `030e9c6` "feat: enforce Cognigy Code Node best practices and standards at write time" (the Phase 0 Code Node PR case study; 9 files, +598/-100)                   |
-| Fork remote         | `jacognigy/cognigy-plugin`, same branch pushed                                                                                                                     |
-| Upstream head       | v1.15.1 (`f82ca78`, 2026-09-08) - one fix ahead of local: `fix(api): tunnel Cognigy requests through corporate proxies (#47)`, 20 files, adds `src/utils/proxy.ts` |
-| Code Node PR status | not present in upstream `main` as of 1.15.1; merge status on GitHub not checked from this session                                                                  |
+| Item                | Value                                                                                                                                                                                                          |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local checkout      | `C:\Users\jamiea\sandbox\ai-coe-plugin\cognigy-plugin`, branch `fix/code-node-development-best-practices` (that branch is now a preserved POC; current work is on `feat/ai-coe-policy-layer` - see change log) |
+| Local base          | upstream `Cognigy/cognigy-plugin` v1.15.0 (commit `160ae03`, released 2026-09-01)                                                                                                                              |
+| Local commit on top | `030e9c6` "feat: enforce Cognigy Code Node best practices and standards at write time" (the Phase 0 Code Node PR case study; 9 files, +598/-100)                                                               |
+| Fork remote         | `jacognigy/cognigy-plugin`, same branch pushed (renamed to `jacognigy/ai-coe-cognigy-plugin` on 2026-09-22 - see change log)                                                                                   |
+| Upstream head       | v1.15.1 (`f82ca78`, 2026-09-08) - one fix ahead of local: `fix(api): tunnel Cognigy requests through corporate proxies (#47)`, 20 files, adds `src/utils/proxy.ts`                                             |
+| Code Node PR status | not present in upstream `main` as of 1.15.1; merge status on GitHub not checked from this session                                                                                                              |
 
 Every file/line reference in this knowledge base points at the local branch above. Line numbers in `src/tools/handlers.ts` will shift after the next rebase onto upstream; function names are the stable anchor.
 
@@ -46,3 +46,4 @@ When upstream releases, rebase, and re-check: the tool count and action enums in
 ## Change log
 
 - **2026-09-21** - Updated local checkout path: `cognigy-plugin` and `ai-coe-plugin-workspace` were moved under a new parent folder, `ai-coe-plugin\`, as siblings. Repo location and git/GitHub remotes unaffected.
+- **2026-09-22** - GitHub repo renamed `jacognigy/cognigy-plugin` → `jacognigy/ai-coe-cognigy-plugin`; local folder name unchanged. Remotes reconfigured so `origin` is the fork and `upstream` is Cognigy with its push URL set to `DISABLED` (plus an uncommitted `.husky/pre-push` guard) - **nothing from this fork is ever pushed upstream.** Work moved onto `feat/ai-coe-policy-layer`, a clean `v1.20.0` base carrying the docs and config formerly staged on the POC branch; `fix/code-node-development-best-practices` is preserved untouched at `030e9c6` as the record of that proof of concept. The source tree on the new branch is byte-identical to upstream `v1.20.0`.
