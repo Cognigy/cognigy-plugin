@@ -104,6 +104,73 @@ describe("loadConfig", () => {
     expect(config.staticFilesBaseUrl).toBe("https://myapi-dev.example.com");
   });
 
+  it("derives sibling hosts when 'api' is a whole DNS label (local cluster)", () => {
+    // A local cluster has no environment suffix, so its hostnames are
+    // api.test / endpoint.test rather than api-dev / endpoint-dev.
+    process.env.COGNIGY_API_BASE_URL = "https://api.test";
+    process.env.COGNIGY_API_KEY = "test-key";
+    const config = loadConfig();
+    expect(config.apiBaseUrl).toBe("https://api.test");
+    expect(config.endpointBaseUrl).toBe("https://endpoint.test");
+    expect(config.webchatBaseUrl).toBe("https://webchat.test");
+    expect(config.staticFilesBaseUrl).toBe("https://static.test");
+  });
+
+  it("derives sibling hosts when 'api' is the first of several labels", () => {
+    process.env.COGNIGY_API_BASE_URL = "https://api.cognigy.local:8443";
+    process.env.COGNIGY_API_KEY = "test-key";
+    const config = loadConfig();
+    expect(config.endpointBaseUrl).toBe("https://endpoint.cognigy.local:8443");
+  });
+
+  it("does not treat a label that merely starts with 'api' as the api segment", () => {
+    process.env.COGNIGY_API_BASE_URL = "https://apix.example.com";
+    process.env.COGNIGY_API_KEY = "test-key";
+    const config = loadConfig();
+    expect(config.endpointBaseUrl).toBe("https://apix.example.com");
+  });
+
+  it("warns at boot when no sibling host can be derived and no override is set", () => {
+    process.env.COGNIGY_API_BASE_URL = "https://cognigy.example.com";
+    process.env.COGNIGY_API_KEY = "test-key";
+    delete process.env.COGNIGY_ENDPOINT_BASE_URL;
+    const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      loadConfig();
+      expect(spy).toHaveBeenCalledWith(
+        expect.stringContaining("Could not derive the endpoint host"),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("does not warn when the endpoint host is overridden explicitly", () => {
+    process.env.COGNIGY_API_BASE_URL = "https://cognigy.example.com";
+    process.env.COGNIGY_API_KEY = "test-key";
+    process.env.COGNIGY_ENDPOINT_BASE_URL = "https://chat.example.com";
+    const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      loadConfig();
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("reads sibling-host overrides from the setup file when credentials come from it", () => {
+    delete process.env.COGNIGY_API_BASE_URL;
+    delete process.env.COGNIGY_API_KEY;
+    delete process.env.COGNIGY_ENDPOINT_BASE_URL;
+    readUserConfigFile.mockReturnValue({
+      COGNIGY_API_BASE_URL: "https://cognigy.example.com",
+      COGNIGY_API_KEY: "file-key",
+      COGNIGY_ENDPOINT_BASE_URL: "https://chat.example.com",
+    });
+    const config = loadConfig();
+    expect(config.endpointBaseUrl).toBe("https://chat.example.com");
+  });
+
   it("uses explicit COGNIGY_ENDPOINT_BASE_URL if provided", () => {
     process.env.COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai";
     process.env.COGNIGY_API_KEY = "test-key";

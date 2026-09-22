@@ -120,6 +120,9 @@ A value that arrives as an unexpanded `${...}` placeholder counts as missing. Ho
 | `NO_PROXY`                          | No       | unset   | Comma-separated hosts to reach directly, bypassing the proxy   |
 | `NODE_EXTRA_CA_CERTS`               | No       | unset   | Path to your corporate root CA, for TLS-inspecting proxies     |
 | `COGNIGY_PROXY_CONNECT_TIMEOUT_MS`  | No       | `30000` | Deadline for reaching the proxy and completing the tunnel      |
+| `COGNIGY_ENDPOINT_BASE_URL`         | No       | derived | Endpoint host, when it cannot be derived from the API host     |
+| `COGNIGY_WEBCHAT_BASE_URL`          | No       | derived | Webchat host, when it cannot be derived from the API host      |
+| `COGNIGY_STATIC_FILES_BASE_URL`     | No       | derived | Static-files host, when it cannot be derived from the API host |
 
 ### Audit attribution
 
@@ -152,6 +155,12 @@ A proxy that accepts the connection and then never completes the tunnel would ot
 **If your proxy inspects TLS** (Zscaler, Netskope, BlueCoat and similar), it presents its own certificate signed by a corporate root CA that Node does not trust by default. Point `NODE_EXTRA_CA_CERTS` at that CA file — Node reads it only at startup, so restart your client afterwards. Never set `NODE_TLS_REJECT_UNAUTHORIZED=0` instead; that disables certificate verification for every connection the engine makes.
 
 To confirm the engine picked the settings up, set `LOG_LEVEL=debug` and look for `Cognigy API requests route through a proxy` in your client's MCP log. GUI clients (Claude Desktop, Antigravity) start the engine with a minimal environment and often do not inherit your shell's proxy variables, so set them in the config file rather than your shell profile.
+
+### Self-hosted and local clusters
+
+The engine talks to more than one Cognigy host: the API for everything, the endpoint host for `talk_to_agent`, and the webchat and static hosts for embed snippets. The other three are derived from `COGNIGY_API_BASE_URL` by swapping its `api` segment — `api-dev.cognigy.ai` gives `endpoint-dev.cognigy.ai`, `cognigy-api-na1.nicecxone.com` gives `cognigy-endpoint-na1.nicecxone.com`, and a local cluster's `api.test` gives `endpoint.test`. If your hostnames follow no such pattern, set `COGNIGY_ENDPOINT_BASE_URL`, `COGNIGY_WEBCHAT_BASE_URL` and `COGNIGY_STATIC_FILES_BASE_URL` explicitly; the engine warns at startup (`Could not derive the endpoint host`) when it had to fall back to the API host.
+
+A cluster that serves a self-signed certificate is rejected with `DEPTH_ZERO_SELF_SIGNED_CERT`, because Node does not consult the operating-system trust store. Point `NODE_EXTRA_CA_CERTS` at the certificate (or the local CA that issued it), exactly as for a TLS-inspecting proxy above.
 
 ## Usage Examples
 
