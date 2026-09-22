@@ -64,23 +64,46 @@ function normalizeApiBaseUrl(raw: string): string {
 }
 
 /**
- * Derive a sibling base URL from the API base URL by swapping the "api-"
- * segment of the hostname for another one (e.g. "endpoint-", "static-").
- * Handles both bare hosts (api-dev.cognigy.ai) and prefixed tenant hosts
- * (cognigy-api-na1.nicecxone.com -> cognigy-endpoint-na1.nicecxone.com).
+ * The "api" word of a Cognigy API hostname, wherever a deployment puts it:
+ * a leading segment ("api-dev.cognigy.ai"), a segment after a tenant prefix
+ * ("cognigy-api-na1.nicecxone.com"), or a whole DNS label ("api.test", the
+ * shape a local cluster uses because its hostnames have no environment
+ * suffix to hang a hyphen on). The lookbehind/lookahead keep "myapi-dev" and
+ * "rapid.example" untouched — "api" must be bounded on both sides.
+ */
+const API_HOST_SEGMENT = /(^|-)api(?=[-.])/;
+
+/**
+ * Derive a sibling base URL from the API base URL by swapping the "api"
+ * segment of the hostname for another one (e.g. "endpoint", "static"):
+ * api-dev.cognigy.ai -> endpoint-dev.cognigy.ai,
+ * cognigy-api-na1.nicecxone.com -> cognigy-endpoint-na1.nicecxone.com,
+ * api.test -> endpoint.test. A hostname with no such segment is returned as
+ * is — callers must then rely on the explicit COGNIGY_*_BASE_URL overrides.
  */
 function deriveHostBaseUrl(apiBaseUrl: string, replacement: string): string {
   try {
     const url = new URL(apiBaseUrl);
-    url.hostname = url.hostname.replace(/(^|-)api-/, `$1${replacement}-`);
-    return `${url.protocol}//${url.hostname}`;
+    url.hostname = url.hostname.replace(API_HOST_SEGMENT, `$1${replacement}`);
+    // `host`, not `hostname`: a local cluster often listens on a non-default
+    // port, and the sibling services sit behind the same ingress port.
+    return `${url.protocol}//${url.host}`;
   } catch {
     // Not a parseable URL: fall back to a host-scoped replace on the
     // scheme://host portion only, leaving any path/query untouched.
     const schemeMatch = apiBaseUrl.match(/^([a-z]+:\/\/)([^/?#]*)(.*)$/i);
     if (!schemeMatch) return apiBaseUrl;
     const [, scheme, host, rest] = schemeMatch;
-    return `${scheme}${host.replace(/(^|-)api-/, `$1${replacement}-`)}${rest}`;
+    return `${scheme}${host.replace(API_HOST_SEGMENT, `$1${replacement}`)}${rest}`;
+  }
+}
+
+/** True when derivation found no "api" segment to swap. */
+function hostDerivationFailed(apiBaseUrl: string): boolean {
+  try {
+    return !API_HOST_SEGMENT.test(new URL(apiBaseUrl).hostname);
+  } catch {
+    return true;
   }
 }
 
@@ -207,17 +230,39 @@ export function loadConfig(): Config {
 
   const normalizedApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
 
+  // The sibling hosts (endpoint, webchat, static) are normally derived from the
+  // API host. Explicit overrides win, from the environment or — for hosts whose
+  // credentials already come from the setup file, i.e. GUI clients — from that
+  // same file, so a self-hosted layout can be described in one place.
   const endpointBaseUrl =
-    process.env.COGNIGY_ENDPOINT_BASE_URL ||
+    usableEnv(process.env.COGNIGY_ENDPOINT_BASE_URL) ||
+    fileConfig.COGNIGY_ENDPOINT_BASE_URL ||
     deriveEndpointBaseUrl(normalizedApiBaseUrl);
 
   const webchatBaseUrl =
-    process.env.COGNIGY_WEBCHAT_BASE_URL ||
+    usableEnv(process.env.COGNIGY_WEBCHAT_BASE_URL) ||
+    fileConfig.COGNIGY_WEBCHAT_BASE_URL ||
     deriveWebchatBaseUrl(normalizedApiBaseUrl);
 
   const staticFilesBaseUrl =
-    process.env.COGNIGY_STATIC_FILES_BASE_URL ||
+    usableEnv(process.env.COGNIGY_STATIC_FILES_BASE_URL) ||
+    fileConfig.COGNIGY_STATIC_FILES_BASE_URL ||
     deriveStaticFilesBaseUrl(normalizedApiBaseUrl);
+
+  // Without a recognisable "api" segment every derived URL silently equals
+  // the API URL, and the first symptom is talk_to_agent posting endpoint
+  // traffic at service-api. Say so at boot, once, where the MCP log shows it.
+  if (
+    hostDerivationFailed(normalizedApiBaseUrl) &&
+    endpointBaseUrl === normalizedApiBaseUrl
+  ) {
+    console.error(
+      `[config] Could not derive the endpoint host from ${normalizedApiBaseUrl} ` +
+        `(no "api" segment in the hostname); endpoint requests will go to the ` +
+        `API host. Set COGNIGY_ENDPOINT_BASE_URL (and COGNIGY_WEBCHAT_BASE_URL, ` +
+        `COGNIGY_STATIC_FILES_BASE_URL) if your deployment uses other hosts.`,
+    );
+  }
 
   return {
     apiBaseUrl: normalizedApiBaseUrl,
