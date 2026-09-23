@@ -78,9 +78,10 @@ function nodeLabel(n: ChartNode | undefined): string {
 
 // Label as drawn on the node itself — disabled nodes are skipped at runtime,
 // so mark them where the reader looks.
+const DISABLED_SUFFIX = " (disabled)";
 function shownLabel(n: ChartNode | undefined): string {
   const l = nodeLabel(n);
-  return n?.isDisabled ? `${l} (disabled)` : l;
+  return n?.isDisabled ? l + DISABLED_SUFFIX : l;
 }
 
 function index(chart: Chart): Indexed {
@@ -202,8 +203,10 @@ function mmId(raw: string): string {
   return "n_" + raw.replace(/[^a-zA-Z0-9_]/g, "_");
 }
 
-function mmLabel(s: string): string {
-  return s.replace(/"/g, "'").slice(0, 40);
+// `suffix` is appended after the length cap so markers like " (disabled)"
+// survive on long labels.
+function mmLabel(s: string, suffix = ""): string {
+  return s.replace(/"/g, "'").slice(0, 40) + suffix;
 }
 
 // Shape category a node type maps to. Keep in sync with mmShape/GLYPH.
@@ -225,8 +228,13 @@ function shapeCat(type: string | undefined): ShapeCat {
   }
 }
 
-function mmShape(type: string | undefined, id: string, label: string): string {
-  const l = `"${mmLabel(label)}"`;
+function mmShape(
+  type: string | undefined,
+  id: string,
+  label: string,
+  suffix = "",
+): string {
+  const l = `"${mmLabel(label, suffix)}"`;
   switch (shapeCat(type)) {
     case "start":
       return `${id}((${l}))`;
@@ -405,8 +413,15 @@ export function chartToMermaid(
   for (const n of chart.nodes ?? []) visit(nodeId(n)); // any orphans
 
   for (const id of order) {
+    const n = byId.get(id);
     lines.push(
-      "  " + mmShape(byId.get(id)?.type, mmId(id), shownLabel(byId.get(id))),
+      "  " +
+        mmShape(
+          n?.type,
+          mmId(id),
+          nodeLabel(n),
+          n?.isDisabled ? DISABLED_SUFFIX : "",
+        ),
     );
   }
 

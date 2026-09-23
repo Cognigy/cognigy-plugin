@@ -2883,6 +2883,36 @@ describe("ToolHandlers v2", () => {
       expect(result.mermaid).toContain("Greet (disabled)");
       expect(result.mermaid).toContain("classDef disabled");
     });
+
+    it("render keeps the (disabled) marker on labels past the mermaid length cap", async () => {
+      const startId = "60d5ec49f1a2c8b1a4e0f023";
+      const longLabel = "Send the customer a very long confirmation message";
+      api.get
+        .mockResolvedValueOnce({
+          nodes: [
+            { _id: startId, type: "start" },
+            { _id: sayNodeId, type: "say" },
+          ],
+          relations: [
+            { node: startId, next: sayNodeId },
+            { node: sayNodeId, next: null },
+          ],
+        })
+        .mockResolvedValueOnce({
+          items: [
+            { _id: startId, type: "start", label: "Start" },
+            { _id: sayNodeId, type: "say", label: longLabel, isDisabled: true },
+          ],
+        });
+
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "render",
+        flowId: ID.flow,
+        format: "mermaid",
+      });
+
+      expect(result.mermaid).toContain(`${longLabel.slice(0, 40)} (disabled)`);
+    });
   });
 
   describe("manage_flow_nodes — Code Node runtime hints", () => {
