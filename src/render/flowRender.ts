@@ -21,6 +21,7 @@ export interface ChartNode {
   type?: string;
   label?: string;
   preview?: string | { text?: string | string[]; aiAgentName?: string };
+  isDisabled?: boolean;
 }
 
 export interface ChartRelation {
@@ -73,6 +74,14 @@ function nodeLabel(n: ChartNode | undefined): string {
         : p?.text;
   if (prev && prev.trim()) return prev.trim();
   return n.type ?? "node";
+}
+
+// Label as drawn on the node itself — disabled nodes are skipped at runtime,
+// so mark them where the reader looks.
+const DISABLED_SUFFIX = " (disabled)";
+function shownLabel(n: ChartNode | undefined): string {
+  const l = nodeLabel(n);
+  return n?.isDisabled ? l + DISABLED_SUFFIX : l;
 }
 
 function index(chart: Chart): Indexed {
@@ -135,7 +144,7 @@ export function chartToAscii(chart: Chart, focus?: string | string[]): string {
 
   const label = (id: string) => nodeLabel(byId.get(id));
   const line = (id: string, prefix: string, conn: string) =>
-    `${prefix}${conn}${glyph(byId.get(id)?.type)} ${label(id)}` +
+    `${prefix}${conn}${glyph(byId.get(id)?.type)} ${shownLabel(byId.get(id))}` +
     (focused.has(id) ? "  «here»" : "");
 
   // Follow the `next` chain from a node, guarding loops.
@@ -194,8 +203,10 @@ function mmId(raw: string): string {
   return "n_" + raw.replace(/[^a-zA-Z0-9_]/g, "_");
 }
 
-function mmLabel(s: string): string {
-  return s.replace(/"/g, "'").slice(0, 40);
+// `suffix` is appended after the length cap so markers like " (disabled)"
+// survive on long labels.
+function mmLabel(s: string, suffix = ""): string {
+  return s.replace(/"/g, "'").slice(0, 40) + suffix;
 }
 
 // Shape category a node type maps to. Keep in sync with mmShape/GLYPH.
@@ -217,8 +228,13 @@ function shapeCat(type: string | undefined): ShapeCat {
   }
 }
 
-function mmShape(type: string | undefined, id: string, label: string): string {
-  const l = `"${mmLabel(label)}"`;
+function mmShape(
+  type: string | undefined,
+  id: string,
+  label: string,
+  suffix = "",
+): string {
+  const l = `"${mmLabel(label, suffix)}"`;
   switch (shapeCat(type)) {
     case "start":
       return `${id}((${l}))`;
@@ -397,8 +413,15 @@ export function chartToMermaid(
   for (const n of chart.nodes ?? []) visit(nodeId(n)); // any orphans
 
   for (const id of order) {
+    const n = byId.get(id);
     lines.push(
-      "  " + mmShape(byId.get(id)?.type, mmId(id), nodeLabel(byId.get(id))),
+      "  " +
+        mmShape(
+          n?.type,
+          mmId(id),
+          nodeLabel(n),
+          n?.isDisabled ? DISABLED_SUFFIX : "",
+        ),
     );
   }
 
@@ -414,6 +437,15 @@ export function chartToMermaid(
     }
   }
 
+  const disabled = order.filter((id) => byId.get(id)?.isDisabled);
+  if (disabled.length) {
+    lines.push(
+      `  classDef disabled fill:#e5e7eb,stroke:#9ca3af,stroke-dasharray:4 3,color:#6b7280;`,
+    );
+    lines.push(`  class ${disabled.map(mmId).join(",")} disabled;`);
+  }
+
+  // Emitted after `disabled` so a focused disabled node shows the highlight.
   const focused = [...focusSet(focus)].filter((id) => byId.has(id));
   if (focused.length) {
     // Explicit dark text color so the label stays readable on the light fill

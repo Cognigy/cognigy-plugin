@@ -23,7 +23,12 @@ Use `manage_flow_nodes` to add logic nodes **inside tool branches only**. Nodes 
 5. List all nodes — manage_flow_nodes { operation: 'list', flowId }
 6. Update a node — manage_flow_nodes { operation: 'update', flowId, nodeId: '<id>', config: { text: 'Updated!' } }
 7. Delete a node — manage_flow_nodes { operation: 'delete', flowId, nodeId: '<id>' }
+8. Disable / re-enable a node — manage_flow_nodes { operation: 'update', flowId, nodeId: '<id>', isDisabled: true | false }
 ```
+
+## Disabling a node
+
+`isDisabled` is a node-level flag (not part of `config`), the same as the editor's "Disable node" toggle. A disabled node stays in the chart with its config intact but is skipped at runtime. When the user wants to switch a node off temporarily ("disable", "turn off", "skip for now"), use `update` with `isDisabled: true` rather than `delete`; `isDisabled: false` turns it back on. It can be sent alone or together with `label`/`config`. `list` and `get` report `isDisabled: true` on disabled nodes (the field is omitted when enabled), and `render` marks them `(disabled)`.
 
 ## Placement
 
