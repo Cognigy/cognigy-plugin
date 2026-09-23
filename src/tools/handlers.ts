@@ -5177,6 +5177,7 @@ export class ToolHandlers {
             label: n.label,
             parentId: n.parentId ?? null,
             isEntryPoint: n.isEntryPoint ?? false,
+            ...(n.isDisabled ? { isDisabled: true } : {}),
           })),
         };
       }
@@ -5434,15 +5435,23 @@ export class ToolHandlers {
           );
         }
 
-        if (!data.config && !data.label) {
+        if (!data.config && !data.label && data.isDisabled === undefined) {
           return withHints(
-            { error: "Nothing to update. Provide at least label or config." },
+            {
+              error:
+                "Nothing to update. Provide at least label, config, or isDisabled.",
+            },
             { action: "Include fields to update in the request." },
           );
         }
 
         const patchPayload: any = {};
         if (data.label) patchPayload.label = data.label;
+        // Node-level flag (not part of config): a disabled node stays in the
+        // chart but is skipped at runtime, same as the editor's toggle.
+        if (data.isDisabled !== undefined) {
+          patchPayload.isDisabled = data.isDisabled;
+        }
         // Declared outside the `if` so the post-write Code Node hints below
         // can see the type fetched here.
         let nodeType = "";
@@ -5510,6 +5519,9 @@ export class ToolHandlers {
                 updated: true,
                 nodeId: data.nodeId,
                 ...(data.label ? { label: data.label } : {}),
+                ...(data.isDisabled !== undefined
+                  ? { isDisabled: data.isDisabled }
+                  : {}),
                 ...(data.config
                   ? { configUpdated: Object.keys(data.config) }
                   : {}),
@@ -5533,6 +5545,9 @@ export class ToolHandlers {
           updated: true,
           nodeId: data.nodeId,
           ...(data.label ? { label: data.label } : {}),
+          ...(data.isDisabled !== undefined
+            ? { isDisabled: data.isDisabled }
+            : {}),
           ...(data.config ? { configUpdated: Object.keys(data.config) } : {}),
         };
 
@@ -5629,13 +5644,13 @@ export class ToolHandlers {
           );
           const items = list.items ?? list;
           if (Array.isArray(items)) {
-            const labelById = new Map<string, string>(
-              items.map((n: any) => [n._id || n.id, n.label]),
+            const byId = new Map<string, any>(
+              items.map((n: any) => [n._id || n.id, n]),
             );
             for (const n of chart.nodes ?? []) {
-              const id = n._id || n.id;
-              const lbl = labelById.get(id);
-              if (!n.label && lbl) n.label = lbl;
+              const listed = byId.get(n._id || n.id);
+              if (!n.label && listed?.label) n.label = listed.label;
+              if (listed?.isDisabled) n.isDisabled = true;
             }
           }
         } catch {

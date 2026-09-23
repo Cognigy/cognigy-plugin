@@ -21,6 +21,7 @@ export interface ChartNode {
   type?: string;
   label?: string;
   preview?: string | { text?: string | string[]; aiAgentName?: string };
+  isDisabled?: boolean;
 }
 
 export interface ChartRelation {
@@ -73,6 +74,13 @@ function nodeLabel(n: ChartNode | undefined): string {
         : p?.text;
   if (prev && prev.trim()) return prev.trim();
   return n.type ?? "node";
+}
+
+// Label as drawn on the node itself — disabled nodes are skipped at runtime,
+// so mark them where the reader looks.
+function shownLabel(n: ChartNode | undefined): string {
+  const l = nodeLabel(n);
+  return n?.isDisabled ? `${l} (disabled)` : l;
 }
 
 function index(chart: Chart): Indexed {
@@ -135,7 +143,7 @@ export function chartToAscii(chart: Chart, focus?: string | string[]): string {
 
   const label = (id: string) => nodeLabel(byId.get(id));
   const line = (id: string, prefix: string, conn: string) =>
-    `${prefix}${conn}${glyph(byId.get(id)?.type)} ${label(id)}` +
+    `${prefix}${conn}${glyph(byId.get(id)?.type)} ${shownLabel(byId.get(id))}` +
     (focused.has(id) ? "  «here»" : "");
 
   // Follow the `next` chain from a node, guarding loops.
@@ -398,7 +406,7 @@ export function chartToMermaid(
 
   for (const id of order) {
     lines.push(
-      "  " + mmShape(byId.get(id)?.type, mmId(id), nodeLabel(byId.get(id))),
+      "  " + mmShape(byId.get(id)?.type, mmId(id), shownLabel(byId.get(id))),
     );
   }
 
@@ -414,6 +422,15 @@ export function chartToMermaid(
     }
   }
 
+  const disabled = order.filter((id) => byId.get(id)?.isDisabled);
+  if (disabled.length) {
+    lines.push(
+      `  classDef disabled fill:#e5e7eb,stroke:#9ca3af,stroke-dasharray:4 3,color:#6b7280;`,
+    );
+    lines.push(`  class ${disabled.map(mmId).join(",")} disabled;`);
+  }
+
+  // Emitted after `disabled` so a focused disabled node shows the highlight.
   const focused = [...focusSet(focus)].filter((id) => byId.has(id));
   if (focused.length) {
     // Explicit dark text color so the label stays readable on the light fill
