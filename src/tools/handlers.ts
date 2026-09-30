@@ -48,6 +48,7 @@ import {
   chartToMermaid,
   chartToHtml,
   chartLegend,
+  omitDisabled,
 } from "../render/flowRender.js";
 
 // The self-contained mermaid UMD build, inlined into rich flow-viz HTML so it
@@ -5435,23 +5436,15 @@ export class ToolHandlers {
           );
         }
 
-        if (!data.config && !data.label && data.isDisabled === undefined) {
+        if (!data.config && !data.label) {
           return withHints(
-            {
-              error:
-                "Nothing to update. Provide at least label, config, or isDisabled.",
-            },
+            { error: "Nothing to update. Provide at least label or config." },
             { action: "Include fields to update in the request." },
           );
         }
 
         const patchPayload: any = {};
         if (data.label) patchPayload.label = data.label;
-        // Node-level flag (not part of config): a disabled node stays in the
-        // chart but is skipped at runtime, same as the editor's toggle.
-        if (data.isDisabled !== undefined) {
-          patchPayload.isDisabled = data.isDisabled;
-        }
         // Declared outside the `if` so the post-write Code Node hints below
         // can see the type fetched here.
         let nodeType = "";
@@ -5519,9 +5512,6 @@ export class ToolHandlers {
                 updated: true,
                 nodeId: data.nodeId,
                 ...(data.label ? { label: data.label } : {}),
-                ...(data.isDisabled !== undefined
-                  ? { isDisabled: data.isDisabled }
-                  : {}),
                 ...(data.config
                   ? { configUpdated: Object.keys(data.config) }
                   : {}),
@@ -5545,9 +5535,6 @@ export class ToolHandlers {
           updated: true,
           nodeId: data.nodeId,
           ...(data.label ? { label: data.label } : {}),
-          ...(data.isDisabled !== undefined
-            ? { isDisabled: data.isDisabled }
-            : {}),
           ...(data.config ? { configUpdated: Object.keys(data.config) } : {}),
         };
 
@@ -5656,6 +5643,8 @@ export class ToolHandlers {
         } catch {
           // Labels are optional — the serializer falls back to preview/type.
         }
+        // Disabled nodes are skipped at runtime, so they are not drawn.
+        chart = omitDisabled(chart);
 
         const format = data.format ?? "both";
         const showLegend = data.legend ?? true;

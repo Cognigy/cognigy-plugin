@@ -488,7 +488,6 @@ export const manageFlowNodesSchema = z.object({
   parentNodeId: idSchema.optional(),
   mode: z.enum(["append", "appendChild"]).optional(),
   config: z.record(z.any()).optional(),
-  isDisabled: z.boolean().optional(),
   // render operation
   focus: z.union([idSchema, z.array(idSchema)]).optional(),
   format: z.enum(["ascii", "mermaid", "both"]).optional(),

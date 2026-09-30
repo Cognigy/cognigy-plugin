@@ -2747,67 +2747,9 @@ describe("ToolHandlers v2", () => {
   // =========================================================================
   describe("manage_flow_nodes — isDisabled", () => {
     const sayNodeId = "60d5ec49f1a2c8b1a4e0f021";
-
-    it("disables a node with isDisabled alone, without touching config", async () => {
-      api.patch.mockResolvedValueOnce({ _id: sayNodeId });
-
-      const result = await h.handleToolCall("manage_flow_nodes", {
-        operation: "update",
-        flowId: ID.flow,
-        nodeId: sayNodeId,
-        isDisabled: true,
-      });
-
-      expect(result.updated).toBe(true);
-      expect(result.isDisabled).toBe(true);
-      expect(result).not.toHaveProperty("configUpdated");
-      // No config → no read-merge round trip.
-      expect(api.get).not.toHaveBeenCalled();
-      expect(api.patch).toHaveBeenCalledWith(
-        `/v2.0/flows/${ID.flow}/chart/nodes/${sayNodeId}`,
-        { isDisabled: true },
-      );
-    });
-
-    it("re-enables a node with isDisabled: false", async () => {
-      api.patch.mockResolvedValueOnce({ _id: sayNodeId });
-
-      const result = await h.handleToolCall("manage_flow_nodes", {
-        operation: "update",
-        flowId: ID.flow,
-        nodeId: sayNodeId,
-        isDisabled: false,
-      });
-
-      expect(result.isDisabled).toBe(false);
-      expect(api.patch).toHaveBeenCalledWith(
-        `/v2.0/flows/${ID.flow}/chart/nodes/${sayNodeId}`,
-        { isDisabled: false },
-      );
-    });
-
-    it("sends isDisabled at node level alongside a config change", async () => {
-      api.get.mockResolvedValueOnce({
-        _id: sayNodeId,
-        type: "say",
-        config: {},
-      });
-      api.patch.mockResolvedValueOnce({ _id: sayNodeId });
-
-      await h.handleToolCall("manage_flow_nodes", {
-        operation: "update",
-        flowId: ID.flow,
-        nodeId: sayNodeId,
-        label: "Old greeting",
-        isDisabled: true,
-        config: { text: "Hi" },
-      });
-
-      const payload = api.patch.mock.calls[0][1];
-      expect(payload.isDisabled).toBe(true);
-      expect(payload.label).toBe("Old greeting");
-      expect(payload.config).not.toHaveProperty("isDisabled");
-    });
+    const startId = "60d5ec49f1a2c8b1a4e0f023";
+    const endId = "60d5ec49f1a2c8b1a4e0f024";
+    const childId = "60d5ec49f1a2c8b1a4e0f025";
 
     it("reports isDisabled in list and get only when the node is disabled", async () => {
       api.get.mockResolvedValueOnce({
@@ -2842,34 +2784,28 @@ describe("ToolHandlers v2", () => {
       expect(got.isDisabled).toBe(true);
     });
 
-    it("still rejects an update with no label, config, or isDisabled", async () => {
-      const result = await h.handleToolCall("manage_flow_nodes", {
-        operation: "update",
-        flowId: ID.flow,
-        nodeId: sayNodeId,
-      });
-
-      expect(result.error).toContain("Nothing to update");
-      expect(api.patch).not.toHaveBeenCalled();
-    });
-
-    it("render marks disabled nodes using the node list", async () => {
-      const startId = "60d5ec49f1a2c8b1a4e0f023";
+    it("render omits disabled nodes and their branches, wiring past them", async () => {
       api.get
         .mockResolvedValueOnce({
           nodes: [
             { _id: startId, type: "start" },
             { _id: sayNodeId, type: "say" },
+            { _id: childId, type: "say" },
+            { _id: endId, type: "end" },
           ],
           relations: [
             { node: startId, next: sayNodeId },
-            { node: sayNodeId, next: null },
+            { node: sayNodeId, next: endId, children: [childId] },
+            { node: childId, next: null },
+            { node: endId, next: null },
           ],
         })
         .mockResolvedValueOnce({
           items: [
             { _id: startId, type: "start", label: "Start" },
             { _id: sayNodeId, type: "say", label: "Greet", isDisabled: true },
+            { _id: childId, type: "say", label: "Inside" },
+            { _id: endId, type: "end", label: "Finish" },
           ],
         });
 
@@ -2878,40 +2814,13 @@ describe("ToolHandlers v2", () => {
         flowId: ID.flow,
       });
 
-      expect(result.ascii).toContain("Greet (disabled)");
-      expect(result.ascii).not.toContain("Start (disabled)");
-      expect(result.mermaid).toContain("Greet (disabled)");
-      expect(result.mermaid).toContain("classDef disabled");
-    });
-
-    it("render keeps the (disabled) marker on labels past the mermaid length cap", async () => {
-      const startId = "60d5ec49f1a2c8b1a4e0f023";
-      const longLabel = "Send the customer a very long confirmation message";
-      api.get
-        .mockResolvedValueOnce({
-          nodes: [
-            { _id: startId, type: "start" },
-            { _id: sayNodeId, type: "say" },
-          ],
-          relations: [
-            { node: startId, next: sayNodeId },
-            { node: sayNodeId, next: null },
-          ],
-        })
-        .mockResolvedValueOnce({
-          items: [
-            { _id: startId, type: "start", label: "Start" },
-            { _id: sayNodeId, type: "say", label: longLabel, isDisabled: true },
-          ],
-        });
-
-      const result = await h.handleToolCall("manage_flow_nodes", {
-        operation: "render",
-        flowId: ID.flow,
-        format: "mermaid",
-      });
-
-      expect(result.mermaid).toContain(`${longLabel.slice(0, 40)} (disabled)`);
+      for (const out of [result.ascii, result.mermaid]) {
+        expect(out).toContain("Start");
+        expect(out).toContain("Finish");
+        expect(out).not.toContain("Greet");
+        expect(out).not.toContain("Inside");
+      }
+      expect(result.mermaid).toContain(`n_${startId} --> n_${endId}`);
     });
   });
 
