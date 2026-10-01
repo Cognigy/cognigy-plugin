@@ -102,6 +102,7 @@ describe("Agents V2 preview", () => {
       projectId: ID.project,
       name: "Bot",
       instructions: "Be helpful",
+      largeLanguageModelReferenceId: "5a255e2f-94b9-46ab-bfb7-4e407e68ef69",
       httpTool: {
         name: "Weather",
         description: "Get weather",
@@ -143,6 +144,7 @@ describe("Agents V2 preview", () => {
       instructions: "Be helpful",
       agentType: "text",
       toolReferenceIds: ["tool-ref"],
+      largeLanguageModelReferenceId: "5a255e2f-94b9-46ab-bfb7-4e407e68ef69",
     });
 
     expect(api.post.mock.calls[2][0]).toBe("/v2.0/endpoints");

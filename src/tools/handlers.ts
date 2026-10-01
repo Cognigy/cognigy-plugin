@@ -3274,6 +3274,18 @@ export class ToolHandlers {
         result.rawResponse = response.data;
       }
 
+      // An Agents V2 endpoint answers 200 with an `error` object when the turn
+      // failed (e.g. the agent's LLM connection is not set up). Surface it
+      // instead of the generic empty-response guess.
+      const turnError = response.data.error;
+      if (!agentResponse && turnError?.message) {
+        result.error = turnError;
+        return withHints(result, {
+          likely_cause: `The platform reported: ${turnError.message}`,
+          action:
+            "Fix the reported problem (for an Agents V2 agent: bind a working LLM via largeLanguageModelReferenceId or the project default), then send the message again with the same sessionId.",
+        });
+      }
       if (!agentResponse) {
         return withHints(result, {
           likely_cause:

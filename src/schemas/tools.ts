@@ -995,4 +995,5 @@ export const createAgentV2Schema = z.object({
     })
     .optional(),
   createEndpoint: z.boolean().optional(),
+  largeLanguageModelReferenceId: z.string().uuid().optional(),
 });

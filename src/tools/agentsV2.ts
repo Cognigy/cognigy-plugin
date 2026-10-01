@@ -30,6 +30,8 @@ export interface CreateAgentV2Input {
   instructions?: string;
   httpTool?: HttpToolSpec;
   createEndpoint?: boolean;
+  /** LLM to bind; omitted = the project's default LLM. */
+  largeLanguageModelReferenceId?: string;
 }
 
 async function resolveLocaleReferenceId(
@@ -148,6 +150,9 @@ export async function createAgentV2(
     instructions: data.instructions ?? data.description ?? "",
     agentType: "text",
     toolReferenceIds: tool ? [tool.referenceId] : [],
+    ...(data.largeLanguageModelReferenceId
+      ? { largeLanguageModelReferenceId: data.largeLanguageModelReferenceId }
+      : {}),
   });
   let endpoint: any = null;
   if (data.createEndpoint !== false) {

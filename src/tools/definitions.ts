@@ -1991,6 +1991,11 @@ ADDRESSING: Pass aiAgentId for normal agents. Pass flowId only for LLM Prompt fl
           description:
             "Create a REST endpoint targeting the agent (default true).",
         },
+        largeLanguageModelReferenceId: {
+          type: "string",
+          description:
+            "referenceId of an llm_model in the project to bind to the agent. Omit to use the project default. If talk_to_agent reports the language model is not configured, re-create or PATCH with a working one (list_resources { resourceType: 'llm_model', projectId }).",
+        },
       },
       required: ["projectId", "name"],
     },
