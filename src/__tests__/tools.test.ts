@@ -2742,6 +2742,88 @@ describe("ToolHandlers v2", () => {
     });
   });
 
+  // =========================================================================
+  // manage_flow_nodes — disabling nodes
+  // =========================================================================
+  describe("manage_flow_nodes — isDisabled", () => {
+    const sayNodeId = "60d5ec49f1a2c8b1a4e0f021";
+    const startId = "60d5ec49f1a2c8b1a4e0f023";
+    const endId = "60d5ec49f1a2c8b1a4e0f024";
+    const childId = "60d5ec49f1a2c8b1a4e0f025";
+
+    it("reports isDisabled in list and get only when the node is disabled", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [
+          { _id: sayNodeId, type: "say", label: "Off", isDisabled: true },
+          { _id: "60d5ec49f1a2c8b1a4e0f022", type: "say", label: "On" },
+        ],
+      });
+
+      const list = await h.handleToolCall("manage_flow_nodes", {
+        operation: "list",
+        flowId: ID.flow,
+      });
+
+      expect(list.nodes[0].isDisabled).toBe(true);
+      expect(list.nodes[1]).not.toHaveProperty("isDisabled");
+
+      api.get.mockResolvedValueOnce({
+        _id: sayNodeId,
+        type: "say",
+        label: "Off",
+        isDisabled: true,
+        config: { text: "Hi" },
+      });
+
+      const got = await h.handleToolCall("manage_flow_nodes", {
+        operation: "get",
+        flowId: ID.flow,
+        nodeId: sayNodeId,
+      });
+
+      expect(got.isDisabled).toBe(true);
+    });
+
+    it("render omits disabled nodes and their branches, wiring past them", async () => {
+      api.get
+        .mockResolvedValueOnce({
+          nodes: [
+            { _id: startId, type: "start" },
+            { _id: sayNodeId, type: "say" },
+            { _id: childId, type: "say" },
+            { _id: endId, type: "end" },
+          ],
+          relations: [
+            { node: startId, next: sayNodeId },
+            { node: sayNodeId, next: endId, children: [childId] },
+            { node: childId, next: null },
+            { node: endId, next: null },
+          ],
+        })
+        .mockResolvedValueOnce({
+          items: [
+            { _id: startId, type: "start", label: "Start" },
+            { _id: sayNodeId, type: "say", label: "Greet", isDisabled: true },
+            { _id: childId, type: "say", label: "Inside" },
+            { _id: endId, type: "end", label: "Finish" },
+          ],
+        });
+
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "render",
+        flowId: ID.flow,
+      });
+
+      for (const out of [result.ascii, result.mermaid]) {
+        expect(out).toContain("Start");
+        expect(out).toContain("Finish");
+        expect(out).not.toContain("Greet");
+        expect(out).not.toContain("Inside");
+      }
+      expect(result.mermaid).toContain(`n_${startId} --> n_${endId}`);
+    });
+  });
+
   describe("manage_flow_nodes — Code Node runtime hints", () => {
     const codeNodeId = "60d5ec49f1a2c8b1a4e0f013";
     const toolNodeId = "60d5ec49f1a2c8b1a4e0f014";

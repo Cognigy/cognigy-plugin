@@ -48,6 +48,7 @@ import {
   chartToMermaid,
   chartToHtml,
   chartLegend,
+  omitDisabled,
 } from "../render/flowRender.js";
 
 // The self-contained mermaid UMD build, inlined into rich flow-viz HTML so it
@@ -5177,6 +5178,7 @@ export class ToolHandlers {
             label: n.label,
             parentId: n.parentId ?? null,
             isEntryPoint: n.isEntryPoint ?? false,
+            ...(n.isDisabled ? { isDisabled: true } : {}),
           })),
         };
       }
@@ -5629,18 +5631,20 @@ export class ToolHandlers {
           );
           const items = list.items ?? list;
           if (Array.isArray(items)) {
-            const labelById = new Map<string, string>(
-              items.map((n: any) => [n._id || n.id, n.label]),
+            const byId = new Map<string, any>(
+              items.map((n: any) => [n._id || n.id, n]),
             );
             for (const n of chart.nodes ?? []) {
-              const id = n._id || n.id;
-              const lbl = labelById.get(id);
-              if (!n.label && lbl) n.label = lbl;
+              const listed = byId.get(n._id || n.id);
+              if (!n.label && listed?.label) n.label = listed.label;
+              if (listed?.isDisabled) n.isDisabled = true;
             }
           }
         } catch {
           // Labels are optional — the serializer falls back to preview/type.
         }
+        // Disabled nodes are skipped at runtime, so they are not drawn.
+        chart = omitDisabled(chart);
 
         const format = data.format ?? "both";
         const showLegend = data.legend ?? true;
