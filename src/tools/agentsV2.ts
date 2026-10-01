@@ -139,25 +139,57 @@ export async function createAgentV2(
   data: CreateAgentV2Input,
 ): Promise<any> {
   const localeReferenceId = await resolveLocaleReferenceId(api, data.projectId);
-  const tool = data.httpTool
-    ? await createHttpTool(api, v1, data.projectId, data.httpTool)
-    : null;
-  const agent: any = await api.post(`${v1}/v1/agents`, {
-    projectId: data.projectId,
-    localeReferenceId,
-    name: data.name,
-    description: data.description ?? "",
-    instructions: data.instructions ?? data.description ?? "",
-    agentType: "text",
-    toolReferenceIds: tool ? [tool.referenceId] : [],
-    ...(data.largeLanguageModelReferenceId
-      ? { largeLanguageModelReferenceId: data.largeLanguageModelReferenceId }
-      : {}),
-  });
+  // Compensating deletes, newest first, so a failure half-way does not leave
+  // an orphaned tool or agent behind (a retry would otherwise create duplicates).
+  const undo: { kind: string; url: string }[] = [];
+  const rollback = async (cause: Error): Promise<never> => {
+    const outcome: string[] = [];
+    for (const u of undo.reverse()) {
+      try {
+        await api.delete(u.url);
+        outcome.push(`${u.kind} deleted`);
+      } catch (e: any) {
+        outcome.push(`${u.kind} NOT deleted (${e.message})`);
+      }
+    }
+    throw new Error(
+      `create_agent_v2 failed: ${cause.message}` +
+        (outcome.length ? ` — rolled back: ${outcome.join(", ")}` : ""),
+    );
+  };
+  let tool: any = null;
+  let agent: any;
   let endpoint: any = null;
-  if (data.createEndpoint !== false) {
-    endpoint = (await findOrCreateAgentEndpoint(api, data.projectId, agent))
-      .endpoint;
+  try {
+    if (data.httpTool) {
+      tool = await createHttpTool(api, v1, data.projectId, data.httpTool);
+      undo.push({
+        kind: "tool",
+        url: `${v1}/v1/tools/${tool.id}?projectId=${data.projectId}`,
+      });
+    }
+    agent = await api.post(`${v1}/v1/agents`, {
+      projectId: data.projectId,
+      localeReferenceId,
+      name: data.name,
+      description: data.description ?? "",
+      instructions: data.instructions ?? data.description ?? "",
+      agentType: "text",
+      toolReferenceIds: tool ? [tool.referenceId] : [],
+      ...(data.largeLanguageModelReferenceId
+        ? { largeLanguageModelReferenceId: data.largeLanguageModelReferenceId }
+        : {}),
+    });
+    undo.push({
+      kind: "agent",
+      url: `${v1}/v1/agents/${agent.id}?projectId=${data.projectId}`,
+    });
+    if (data.createEndpoint !== false) {
+      endpoint = (await findOrCreateAgentEndpoint(api, data.projectId, agent))
+        .endpoint;
+    }
+  } catch (e: any) {
+    await rollback(e);
   }
   return {
     projectId: data.projectId,

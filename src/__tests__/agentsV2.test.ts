@@ -157,6 +157,31 @@ describe("Agents V2 preview", () => {
     expect(result.tool.referenceId).toBe("tool-ref");
   });
 
+  it("rolls back the HTTP tool when agent creation fails", async () => {
+    api.get
+      .mockResolvedValueOnce({ items: [{ referenceId: "loc-1" }] })
+      .mockResolvedValueOnce(descriptor);
+    api.post
+      .mockResolvedValueOnce({
+        id: "tool-1",
+        referenceId: "tool-ref",
+        name: "Weather",
+      })
+      .mockRejectedValueOnce(new Error("boom"));
+    api.delete.mockResolvedValue({});
+
+    await expect(
+      h.handleToolCall("create_agent_v2", {
+        projectId: ID.project,
+        name: "Bot",
+        httpTool: { name: "Weather", description: "d", url: "https://x.test/" },
+      }),
+    ).rejects.toThrow(/boom.*tool deleted/);
+    expect(api.delete).toHaveBeenCalledWith(
+      `${V1}/v1/tools/tool-1?projectId=${ID.project}`,
+    );
+  });
+
   it("reuses an existing REST endpoint that targets the agent", async () => {
     api.get.mockResolvedValueOnce({
       items: [

@@ -3277,7 +3277,11 @@ export class ToolHandlers {
       // An Agents V2 endpoint answers 200 with an `error` object when the turn
       // failed (e.g. the agent's LLM connection is not set up). Surface it
       // instead of the generic empty-response guess.
-      const turnError = response.data.error;
+      const rawTurnError = response.data.error;
+      const turnError =
+        typeof rawTurnError === "string"
+          ? { message: rawTurnError }
+          : rawTurnError;
       if (!agentResponse && turnError?.message) {
         result.error = turnError;
         return withHints(result, {
