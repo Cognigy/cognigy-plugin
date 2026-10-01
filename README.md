@@ -292,7 +292,7 @@ IDs before falling back to `setup_llm`.
 > new Agents V2 editor (service-agents). It is **not** merged to `main`; run it from source:
 >
 > ```sh
-> git fetch origin pull/<PR>/head:agents-v2 && git checkout agents-v2
+> git fetch origin pull/52/head:agents-v2 && git checkout agents-v2
 > npm ci && npm run plugin:dev        # installs cognigy@cognigy-dev serving this working tree
 > # in Claude Code: /reload-plugins
 > npm run plugin:dev:off               # back to the published plugin
