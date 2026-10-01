@@ -286,23 +286,17 @@ For knowledge workflows, the MCP should import the full required source-project 
 in one pass, reuse shared connections only once, and try the imported same-project model
 IDs before falling back to `setup_llm`.
 
-### 9. Agents V2 preview (this branch only)
+### 9. Agents V2 preview (PR #52, not released)
 
-> Not released. This branch adds `create_agent_v2` and `talk_to_agent { agentV2Id }` for the
-> new Agents V2 editor (service-agents). It is **not** merged to `main`; run it from source:
+> Lives on the `feat/agents-v2` branch ([PR #52](https://github.com/Cognigy/cognigy-plugin/pull/52)),
+> not in the published plugin. Check out the branch and run it as the dev plugin, see
+> [docs/TESTING.md § 1 "Local Dev Loop"](docs/TESTING.md#1-local-dev-loop-dev--the-fast-path):
+> `npm ci && npm run plugin:dev`, then `/plugin configure cognigy@cognigy-dev` and `/reload-plugins`
+> in Claude Code; `npm run plugin:dev:off` restores the published plugin.
 >
-> ```sh
-> git fetch origin pull/52/head:agents-v2 && git checkout agents-v2
-> npm ci && npm run plugin:dev        # installs cognigy@cognigy-dev serving this working tree
-> # in Claude Code: /reload-plugins
-> npm run plugin:dev:off               # back to the published plugin
-> ```
->
-> Cluster prerequisites: Agents V2 enabled (`FEATURE_USE_AI_AGENT_V2`), service-agents reachable at
-> `https://api-<host>/v1/...` behind the auth gateway (your API key is accepted there), and an LLM
-> configured for the project. Check with
-> `curl -H "X-API-Key: $KEY" "https://api-<host>/v1/agents?projectId=<projectId>"` — a 404 or 401
-> means Agents V2 is not available for this key or cluster.
+> Needs a cluster with Agents V2 enabled (`FEATURE_USE_AI_AGENT_V2`, service-agents behind the auth
+> gateway) and a working LLM in the project. Check: `curl -H "X-API-Key: $KEY"
+"https://api-<host>/v1/agents?projectId=<projectId>"` must not answer 401 or 404.
 
 ```
 In project <projectId>, create an Agents V2 agent "Weather Bot" with an HTTP tool that GETs
