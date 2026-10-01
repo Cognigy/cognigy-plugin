@@ -43,6 +43,7 @@ import {
 } from "./voiceChecklist.js";
 import { z } from "zod";
 import * as schemas from "../schemas/tools.js";
+import { createAgentV2, resolveAgentV2Endpoint } from "./agentsV2.js";
 import {
   chartToAscii,
   chartToMermaid,
@@ -1207,6 +1208,8 @@ export class ToolHandlers {
     private endpointBaseUrl: string,
     private webchatBaseUrl: string = "",
     private staticFilesBaseUrl: string = "",
+    /** Agents V2 preview: `https://api-<host>` (service-agents root). */
+    private agentsV2BaseUrl: string = "",
   ) {}
 
   private sanitizeArgs(args: Record<string, any>): Record<string, any> {
@@ -2963,6 +2966,17 @@ export class ToolHandlers {
   // =========================================================================
   // Tool 4: talk_to_agent
   // =========================================================================
+  /** Agents V2 preview (branch only). */
+  async handleCreateAgentV2(args: any): Promise<any> {
+    const data = schemas.createAgentV2Schema.parse(args);
+    return createAgentV2(
+      this.apiClient,
+      this.agentsV2BaseUrl,
+      this.endpointBaseUrl,
+      data,
+    );
+  }
+
   async handleTalkToAgent(args: any): Promise<any> {
     const data = schemas.talkToAgentSchema.parse(args);
 
@@ -2979,6 +2993,37 @@ export class ToolHandlers {
       resolved?: boolean;
       endpointId?: string;
     } = {};
+
+    if (!endpointUrl && data.agentV2Id) {
+      // Agents V2 preview: the endpoint targets the agent, no flow involved.
+      const { endpoint, autoCreated } = await resolveAgentV2Endpoint(
+        this.apiClient,
+        this.agentsV2BaseUrl,
+        data.agentV2Id,
+        data.projectId!,
+      );
+      resolvedToken = endpoint.URLToken || undefined;
+      endpointUrl = resolvedToken
+        ? `${this.endpointBaseUrl}/${resolvedToken}`
+        : undefined;
+      endpointMeta = {
+        autoCreated,
+        resolved: !autoCreated,
+        endpointId: endpoint._id || endpoint.id,
+      };
+      if (!endpointUrl) {
+        return withHints(
+          {
+            error: "Endpoint found/created but URL token not available.",
+            sessionId,
+          },
+          {
+            action:
+              "Try list_resources { resourceType: 'endpoint', projectId } to check endpoint status.",
+          },
+        );
+      }
+    }
 
     if (!endpointUrl && data.aiAgentId) {
       const resolved = await resolveFlowForAgent(
@@ -3229,6 +3274,22 @@ export class ToolHandlers {
         result.rawResponse = response.data;
       }
 
+      // An Agents V2 endpoint answers 200 with an `error` object when the turn
+      // failed (e.g. the agent's LLM connection is not set up). Surface it
+      // instead of the generic empty-response guess.
+      const rawTurnError = response.data.error;
+      const turnError =
+        typeof rawTurnError === "string"
+          ? { message: rawTurnError }
+          : rawTurnError;
+      if (!agentResponse && turnError?.message) {
+        result.error = turnError;
+        return withHints(result, {
+          likely_cause: `The platform reported: ${turnError.message}`,
+          action:
+            "Fix the reported problem (for an Agents V2 agent: bind a working LLM via largeLanguageModelReferenceId or the project default), then send the message again with the same sessionId.",
+        });
+      }
       if (!agentResponse) {
         return withHints(result, {
           likely_cause:
@@ -7708,6 +7769,9 @@ export class ToolHandlers {
           break;
         case "talk_to_agent":
           result = await this.handleTalkToAgent(args);
+          break;
+        case "create_agent_v2":
+          result = await this.handleCreateAgentV2(args);
           break;
         case "list_resources":
           result = await this.handleListResources(args);

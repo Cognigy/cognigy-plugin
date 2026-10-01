@@ -261,7 +261,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "talk_to_agent",
     description:
-      "Send a message to a Cognigy AI Agent and get its response. Use this to test agent behavior during iterative development.\n\nTwo modes:\n1. DIRECT: Provide endpointUrl (from create_ai_agent or list_resources { resourceType: 'endpoint' }).\n2. BY AGENT: Provide aiAgentId — the tool automatically finds or creates a REST endpoint for the agent's flow.\n\nUse the same sessionId across calls for multi-turn conversations.\n\nBILLING: messages are sent in Cognigy Endpoint Test Mode by default (the /test/<token> URL variant), which keeps them out of the customer's billable conversation count. Cognigy documents a fair-use limit of 600 test messages per hour (scope and enforcement unspecified), so keep automated runs (e.g. red-team probes) within that budget. The tool NEVER sends a billable message on its own: a failure on the test-mode URL is returned as an error with status-aware _hints and is not re-sent, because an HTTP error does not prove the message was not processed (a REST endpoint's Execution Finished transformer can set any status after the flow ran, and a gateway timeout can hide a completed execution), so a replay could execute tools twice. Before re-sending anything, check the original outcome as the hints describe. A billable send happens only with testMode: false, after that check and with the user's consent.\n\nReturns: agentResponse text, sessionId, the regular endpointUrl and testMode (the test-mode URL itself is never returned). Add verbose: true for the full raw API response.",
+      "Send a message to a Cognigy AI Agent and get its response. Use this to test agent behavior during iterative development.\n\nThree modes:\n1. DIRECT: Provide endpointUrl (from create_ai_agent or list_resources { resourceType: 'endpoint' }).\n2. BY AGENT: Provide aiAgentId — the tool automatically finds or creates a REST endpoint for the agent's flow.\n3. BY AGENTS V2 AGENT (preview): Provide agentV2Id + projectId — finds or creates a REST endpoint targeting the Agents V2 agent (no flow).\n\nUse the same sessionId across calls for multi-turn conversations.\n\nBILLING: messages are sent in Cognigy Endpoint Test Mode by default (the /test/<token> URL variant), which keeps them out of the customer's billable conversation count. Cognigy documents a fair-use limit of 600 test messages per hour (scope and enforcement unspecified), so keep automated runs (e.g. red-team probes) within that budget. The tool NEVER sends a billable message on its own: a failure on the test-mode URL is returned as an error with status-aware _hints and is not re-sent, because an HTTP error does not prove the message was not processed (a REST endpoint's Execution Finished transformer can set any status after the flow ran, and a gateway timeout can hide a completed execution), so a replay could execute tools twice. Before re-sending anything, check the original outcome as the hints describe. A billable send happens only with testMode: false, after that check and with the user's consent.\n\nReturns: agentResponse text, sessionId, the regular endpointUrl and testMode (the test-mode URL itself is never returned). Add verbose: true for the full raw API response.",
     annotations: {
       title: "Talk to Agent",
       readOnlyHint: false,
@@ -281,6 +281,11 @@ export const tools: ToolDefinition[] = [
           type: "string",
           description:
             "24-char hex AI Agent ID. When endpointUrl is omitted, the tool finds or auto-creates a REST endpoint for this agent's flow.",
+        },
+        agentV2Id: {
+          type: "string",
+          description:
+            "Agents V2 preview: 24-char hex id of an agent created with create_agent_v2 (or in the Agents V2 editor). Requires projectId. The tool finds or auto-creates a REST endpoint that targets the agent directly (no flow).",
         },
         projectId: {
           type: "string",
@@ -1927,6 +1932,72 @@ ADDRESSING: Pass aiAgentId for normal agents. Pass flowId only for LLM Prompt fl
         },
       },
       required: ["operation", "projectId"],
+    },
+  },
+  // Agents V2 preview (branch only)
+  {
+    name: "create_agent_v2",
+    description:
+      "PREVIEW (Agents V2 / service-agents). Create an Agents V2 agent in a project, optionally with one HTTP Request tool attached, and a REST endpoint that targets the agent directly (no flow, no job node). Returns agent, tool, endpoint and endpointUrl; then use talk_to_agent { agentV2Id, projectId, message }.\n\nREQUIREMENTS on the cluster: Agents V2 enabled (FEATURE_USE_AI_AGENT_V2), service-agents reachable at https://api-<host>/v1 through the auth gateway, and an LLM configured for the project (reuse one or run setup_llm). If /v1/agents answers 404 or 401, Agents V2 is not available for this key or cluster.\n\nHTTP TOOL: httpTool fixes method, url and headers; the LLM fills the JSON payload for POST/PUT/PATCH. Authentication headers go through a Connection, not here — set the tool's auth parameter in the Agents V2 editor if needed.",
+    annotations: {
+      title: "Create Agents V2 Agent (preview)",
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: {
+          type: "string",
+          description: "24-char hex project ID (required; no auto-create).",
+        },
+        name: { type: "string", description: "Agent name (1-200 chars)" },
+        description: {
+          type: "string",
+          description: "Short description shown in the UI.",
+        },
+        instructions: {
+          type: "string",
+          description:
+            "System instructions fed to the LLM. Falls back to description.",
+        },
+        httpTool: {
+          type: "object",
+          description:
+            "Optional HTTP Request tool to create and attach. url and method are fixed; headers optional.",
+          properties: {
+            name: { type: "string" },
+            description: {
+              type: "string",
+              description: "Tells the LLM when to call this tool.",
+            },
+            url: { type: "string", description: "Full URL incl. https://" },
+            method: {
+              type: "string",
+              enum: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+            },
+            headers: {
+              type: "object",
+              description:
+                "Static headers, e.g. { Accept: 'application/json' }",
+            },
+          },
+          required: ["name", "description", "url"],
+        },
+        createEndpoint: {
+          type: "boolean",
+          description:
+            "Create a REST endpoint targeting the agent (default true).",
+        },
+        largeLanguageModelReferenceId: {
+          type: "string",
+          description:
+            "referenceId of an llm_model in the project to bind to the agent. Omit to use the project default. If talk_to_agent reports the language model is not configured, re-create or PATCH with a working one (list_resources { resourceType: 'llm_model', projectId }).",
+        },
+      },
+      required: ["projectId", "name"],
     },
   },
 ];

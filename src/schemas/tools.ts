@@ -256,6 +256,7 @@ export const talkToAgentSchema = z
   .object({
     endpointUrl: z.string().url().optional(),
     aiAgentId: idSchema.optional(),
+    agentV2Id: idSchema.optional(),
     projectId: idSchema.optional(),
     message: z.string().min(1),
     sessionId: z.string().optional(),
@@ -264,9 +265,13 @@ export const talkToAgentSchema = z
     verbose: z.boolean().optional(),
     testMode: z.boolean().optional(),
   })
-  .refine((d) => d.endpointUrl || d.aiAgentId, {
-    message: "Either endpointUrl or aiAgentId must be provided",
+  .refine((d) => d.endpointUrl || d.aiAgentId || d.agentV2Id, {
+    message: "Either endpointUrl, aiAgentId or agentV2Id must be provided",
     path: ["endpointUrl"],
+  })
+  .refine((d) => !d.agentV2Id || d.projectId, {
+    message: "agentV2Id requires projectId",
+    path: ["projectId"],
   });
 
 /** Actor values Cognigy records in `auditEvent.performedBy.actor`. */
@@ -969,3 +974,26 @@ export const manageSnapshotsSchema = z.discriminatedUnion("operation", [
     taskId: idSchema,
   }),
 ]);
+
+// Agents V2 preview (branch only, see README "Agents V2 preview").
+export const createAgentV2Schema = z.object({
+  projectId: idSchema,
+  name: z.string().min(1).max(200),
+  description: z.string().optional(),
+  instructions: z.string().optional(),
+  httpTool: z
+    .object({
+      name: z.string().min(1).max(200),
+      description: z.string().min(1),
+      url: z.string().url(),
+      method: z
+        .string()
+        .transform((m) => m.toUpperCase())
+        .pipe(z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]))
+        .optional(),
+      headers: z.record(z.string()).optional(),
+    })
+    .optional(),
+  createEndpoint: z.boolean().optional(),
+  largeLanguageModelReferenceId: z.string().uuid().optional(),
+});
