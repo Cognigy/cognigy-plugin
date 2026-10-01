@@ -286,27 +286,56 @@ For knowledge workflows, the MCP should import the full required source-project 
 in one pass, reuse shared connections only once, and try the imported same-project model
 IDs before falling back to `setup_llm`.
 
+### 9. Agents V2 preview (this branch only)
+
+> Not released. This branch adds `create_agent_v2` and `talk_to_agent { agentV2Id }` for the
+> new Agents V2 editor (service-agents). It is **not** merged to `main`; run it from source:
+>
+> ```sh
+> git fetch origin pull/<PR>/head:agents-v2 && git checkout agents-v2
+> npm ci && npm run plugin:dev        # installs cognigy@cognigy-dev serving this working tree
+> # in Claude Code: /reload-plugins
+> npm run plugin:dev:off               # back to the published plugin
+> ```
+>
+> Cluster prerequisites: Agents V2 enabled (`FEATURE_USE_AI_AGENT_V2`), service-agents reachable at
+> `https://api-<host>/v1/...` behind the auth gateway (your API key is accepted there), and an LLM
+> configured for the project. Check with
+> `curl -H "X-API-Key: $KEY" "https://api-<host>/v1/agents?projectId=<projectId>"` — a 404 or 401
+> means Agents V2 is not available for this key or cluster.
+
+```
+In project <projectId>, create an Agents V2 agent "Weather Bot" with an HTTP tool that GETs
+https://wttr.in/Berlin?format=j1, create its REST endpoint, then ask it what the weather is.
+```
+
+`create_agent_v2` creates the agent (`POST /v1/agents`), one builtin `http-request` tool with
+fixed method/url/headers (`POST /v1/tools`), attaches it, and a REST endpoint with
+`targetType: "agent"`. `talk_to_agent { agentV2Id, projectId, message }` finds or creates that
+endpoint and sends the message in endpoint test mode as usual.
+
 ## Tools
 
-| Tool                   | Type  | Description                                                                                                    |
-| ---------------------- | ----- | -------------------------------------------------------------------------------------------------------------- |
-| `create_ai_agent`      | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint                             |
-| `update_ai_agent`      | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature)                                    |
-| `setup_llm`            | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation                     |
-| `talk_to_agent`        | Write | Send a message to an AI Agent and get its response (uses Endpoint Test Mode, so it is not counted as billable) |
-| `list_resources`       | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more                                      |
-| `get_resource`         | Read  | Get detailed information about a single resource                                                               |
-| `delete_resource`      | Write | Permanently delete a resource                                                                                  |
-| `manage_knowledge`     | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG                                    |
-| `create_tool`          | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node                                                |
-| `update_tool`          | Write | Update an existing tool node's configuration                                                                   |
-| `manage_webchat`       | Write | Create or configure a Webchat v3 endpoint for website deployment                                               |
-| `manage_flow_nodes`    | Write | Create, update, delete, or list flow nodes for conversation logic                                              |
-| `manage_packages`      | Write | List exportable resources, upload, inspect, import, export, and download Cognigy package zip files             |
-| `manage_voice_gateway` | Write | Create or configure a Voice Gateway endpoint with WebRTC for browser-based voice interaction                   |
-| `manage_settings`      | Write | Manage project-level settings including voice preview and Knowledge AI configuration                           |
-| `audit_voice_agent`    | Write | Audit a voice agent against the Go-Live Checklist; reports by default, applies safe fixes on demand            |
-| `manage_snapshots`     | Write | Create and restore project Snapshots so agent changes can be rolled back                                       |
+| Tool                                     | Type  | Description                                                                                                                                          |
+| ---------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create_ai_agent`                        | Write | Create a complete AI Agent with auto-provisioned flow, job node, and REST endpoint                                                                   |
+| `update_ai_agent`                        | Write | Update persona, guardrails, job config (role, procedures, LLM, temperature)                                                                          |
+| `setup_llm`                              | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation                                                           |
+| `talk_to_agent`                          | Write | Send a message to an AI Agent and get its response (uses Endpoint Test Mode, so it is not counted as billable)                                       |
+| `create_agent_v2` (preview, this branch) | Write | Agents V2: create a service-agents agent with an optional HTTP Request tool and a REST endpoint targeting it; talk via `talk_to_agent { agentV2Id }` |
+| `list_resources`                         | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more                                                                            |
+| `get_resource`                           | Read  | Get detailed information about a single resource                                                                                                     |
+| `delete_resource`                        | Write | Permanently delete a resource                                                                                                                        |
+| `manage_knowledge`                       | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG                                                                          |
+| `create_tool`                            | Write | Add a tool (HTTP, knowledge, email, MCP) to an agent's job node                                                                                      |
+| `update_tool`                            | Write | Update an existing tool node's configuration                                                                                                         |
+| `manage_webchat`                         | Write | Create or configure a Webchat v3 endpoint for website deployment                                                                                     |
+| `manage_flow_nodes`                      | Write | Create, update, delete, or list flow nodes for conversation logic                                                                                    |
+| `manage_packages`                        | Write | List exportable resources, upload, inspect, import, export, and download Cognigy package zip files                                                   |
+| `manage_voice_gateway`                   | Write | Create or configure a Voice Gateway endpoint with WebRTC for browser-based voice interaction                                                         |
+| `manage_settings`                        | Write | Manage project-level settings including voice preview and Knowledge AI configuration                                                                 |
+| `audit_voice_agent`                      | Write | Audit a voice agent against the Go-Live Checklist; reports by default, applies safe fixes on demand                                                  |
+| `manage_snapshots`                       | Write | Create and restore project Snapshots so agent changes can be rolled back                                                                             |
 
 Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, flow nodes, packages, settings, LLM providers, tools, troubleshooting) ships as **skills** that load automatically when your request matches, in clients that support them (e.g. Claude Code) — see the **Skills** column in the client table under [Installation](#installation).
 
