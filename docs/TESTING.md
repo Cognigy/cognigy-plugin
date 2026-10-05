@@ -10,7 +10,7 @@ You will need:
 - A Cognigy API base URL
 - A Cognigy API key
 - Node.js 20+
-- A supported client — Claude Code or Codex today (more to come). The steps below use Claude Code.
+- A supported client — Claude Code, Claude Desktop, ChatGPT + Codex, or Antigravity. The steps below use Claude Code.
 
 ## 1. Local Dev Loop (dev — the fast path)
 
@@ -101,6 +101,21 @@ Then:
 
 There is no `init --client` installer, `.mcpb` bundle, or standalone-client config — the paths above
 are the only test paths.
+
+### ChatGPT + Codex
+
+Test the Codex plugin manifests from a pushed branch (Codex reads the repo's
+`.claude-plugin/marketplace.json`, so any branch works):
+
+```bash
+codex plugin marketplace add Cognigy/cognigy-plugin --ref <branch>
+```
+
+then install **cognigy** via `/plugins` in a Codex session and confirm the skills
+list and the `platform` tools respond (creds must exist — run `cognigy-setup
+--client codex` first or write `~/.cognigy-plugin/config.json`). The installer
+path itself: `npx -y -p @cognigy/plugin-engine@latest cognigy-setup --client codex …`,
+then check `~/.codex/config.toml` for the `[mcp_servers.cognigy]` block.
 
 ## 3. Run Automated Checks
 

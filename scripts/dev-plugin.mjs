@@ -113,6 +113,9 @@ function generateDevPlugin() {
   const copied = [];
   for (const entry of readdirSync(join(repoRoot, "plugin"))) {
     if (entry === ".claude-plugin") continue;
+    // Codex manifests carry the prod-pinned npx engine — never serve them
+    // from the dev marketplace (the dev loop is Claude-Code-only anyway).
+    if (entry === ".codex-plugin") continue;
     const target = join(repoRoot, "plugin", entry);
     const link = join(devRoot, "plugin", entry);
     try {

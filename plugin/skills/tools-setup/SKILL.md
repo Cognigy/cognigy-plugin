@@ -19,6 +19,17 @@ Tools give an AI Agent capabilities beyond conversation — calling APIs, execut
 
 Rule of thumb: each tool in an agent flow should have a unique `toolId`. If you need more logic, parameters, validation, or HTTP calls for that tool, add them inside the same tool branch instead of creating another tool with the same `toolId`.
 
+## Parameter schema rules (config.parameters)
+
+`parameters` is a JSON Schema string that Cognigy passes VERBATIM to the LLM provider. create_tool / update_tool validate it and reject violations, because a broken schema either fails every conversation turn with a provider 400 (strict models) or is silently dropped (the tool is called with no arguments). The contract:
+
+- Top level: `{"type":"object","properties":{...},"required":[...]}` — `required` is mandatory (use `[]` if nothing is required).
+- EVERY property needs `"type"` AND `"description"`. Allowed types: `string`, `number`, `integer`, `boolean`, `object`, `array`, `null`.
+- `array` properties need `"items"`. Nested objects with `"properties"` also need their own `"required"`.
+- `"additionalProperties": false` is injected automatically at every object level.
+- Strict-mode models (OpenAI Responses API, e.g. gpt-5.x, where strict is forced on): list EVERY property key in `required`; make a parameter optional with a nullable type — `{"type":["string","null"],"description":"..."}`. Non-strict providers ignore this, so it is the safe default.
+- Nested object properties and `integer` are valid at runtime but not renderable by the Cognigy UI's graphical parameter builder — the node's Parameters section then shows the raw JSON editor. That is cosmetic; prefer flat schemas when you don't need nesting.
+
 ## Tool types (create_tool)
 
 ### tool — General-purpose tool with custom logic
@@ -31,7 +42,7 @@ name: "Fetch Weather",
 config: {
 toolId: "fetch_weather",
 description: "Fetches current weather for a city",
-parameters: '{"type":"object","properties":{"city":{"type":"string"}}}',
+parameters: '{"type":"object","properties":{"city":{"type":"string","description":"City to fetch the weather for"}},"required":["city"]}',
 toolResponseValue: "{{JSON.stringify(input.result)}}"
 }
 }
@@ -153,7 +164,7 @@ name: "Get Weather",
 config: {
 toolId: "get_weather",
 description: "Fetches current weather for a location",
-parameters: '{"type":"object","properties":{"city":{"type":"string"}}}',
+parameters: '{"type":"object","properties":{"city":{"type":"string","description":"City to fetch the weather for"}},"required":["city"]}',
 url: "https://api.weather.com/v1/current?q={{input.aiAgent.toolArgs.city}}",
 method: "GET",
 headers: { "X-Api-Key": "your-api-key" },
@@ -172,7 +183,7 @@ name: "Create Order",
 config: {
 toolId: "create_order",
 description: "Creates a new order in the order management system",
-parameters: '{"type":"object","properties":{"items":{"type":"array"},"customerId":{"type":"string"}}}',
+parameters: '{"type":"object","properties":{"items":{"type":"array","description":"Ordered items","items":{"type":"string","description":"SKU of one item"}},"customerId":{"type":"string","description":"Customer identifier"}},"required":["items","customerId"]}',
 url: "https://api.example.com/orders",
 method: "POST",
 headers: { "Authorization": "Bearer {{context.apiToken}}" },
@@ -209,6 +220,15 @@ Inside AI Agent tool branches, the LLM's tool call arguments are at `input.aiAge
 - Code nodes: `input.aiAgent.toolArgs.city`
 - CognigyScript fields (URLs, body templates): `{{input.aiAgent.toolArgs.city}}`
 
+**Under an LLM Prompt (`llmPromptV2`) node the path is different:** args land at `input.llmPrompt.toolArgs`, and `input.aiAgent` is `null`. Reading `input.aiAgent.toolArgs` there yields `undefined` — the tool then runs with no arguments and silently falls back (mock/default) with no error. For tools that may run under either node type, read defensively:
+
+```js
+const args =
+  (input.llmPrompt && input.llmPrompt.toolArgs) ||
+  (input.aiAgent && input.aiAgent.toolArgs) ||
+  {};
+```
+
 ## Adding logic inside tools (manage_flow_nodes)
 
 After creating a `toolType: "tool"`, you can add flow nodes inside the tool's branch to build custom logic. This is the recommended way to add conversation logic — nodes should live inside tools, not as standalone nodes in the flow.
@@ -234,7 +254,7 @@ create_tool {
   config: {
     toolId: "check_order_status",
     description: "Looks up the status of a customer order",
-    parameters: '{"type":"object","properties":{"orderId":{"type":"string"}}}'
+    parameters: '{"type":"object","properties":{"orderId":{"type":"string","description":"Order number to look up"}},"required":["orderId"]}'
   }
 }
 → returns toolNodeId: "abc123..."
@@ -305,6 +325,19 @@ If the tool was originally created without `preProcessCode` / `postProcessCode`,
 - Update: update_tool { aiAgentId, toolNodeId, name?, config? }
 - Tool IDs come from create_tool response or list_resources
 - Tool IDs must be unique within an agent flow. If a tool already exists for an action, reuse it.
+
+## Tools under an LLM Prompt node (flowId addressing)
+
+LLM Prompt (`llmPromptV2`) flows have no agent resource, so address their tools by `flowId`:
+
+- Create: create_tool { flowId, toolType, name, config }
+- List: list_resources { resourceType: "tool", flowId }
+- Update: update_tool { flowId, toolNodeId, ... }
+- Remove: delete_resource { resourceType: "tool", id: toolId, flowId }
+
+Tools attach to the flow's aiAgentJob node when one exists, otherwise to its llmPromptV2 node. Under an LLM Prompt node, only `tool`, `mcp`, and `http` are supported. Branch logic works the same, **but the tool arguments arrive at `input.llmPrompt.toolArgs`, not `input.aiAgent.toolArgs`** (`input.aiAgent` is `null` in an LLM Prompt branch). Code and CognigyScript inside these tool branches must read `input.llmPrompt.toolArgs.<param>`; the `input.aiAgent.toolArgs` examples above apply only to AI Agent Job flows. See the flow-nodes guide's Notes for the defensive read that covers both.
+
+Create LLM Prompt nodes only on explicit user request; see the flow-nodes guide.
 
 ## Prerequisites
 

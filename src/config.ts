@@ -15,6 +15,11 @@ export interface Config {
   serverName: string;
   serverVersion: string;
   logLevel: "debug" | "info" | "warn" | "error";
+  /**
+   * Whether to declare plugin-performed actions as the `mcp-plugin` actor in
+   * Cognigy's audit events (see utils/actorContext.ts). On by default.
+   */
+  auditAttribution: boolean;
   rateLimit: {
     maxRequests: number;
     windowMs: number;
@@ -59,20 +64,55 @@ function normalizeApiBaseUrl(raw: string): string {
 }
 
 /**
+ * The "api" word of a Cognigy API hostname, wherever a deployment puts it:
+ * a leading segment ("api-dev.cognigy.ai"), a segment after a tenant prefix
+ * ("cognigy-api-na1.nicecxone.com"), or a whole DNS label ("api.test", the
+ * shape a local cluster uses because its hostnames have no environment
+ * suffix to hang a hyphen on). The lookbehind/lookahead keep "myapi-dev" and
+ * "rapid.example" untouched — "api" must be bounded on both sides.
+ */
+const API_HOST_SEGMENT = /(^|-)api(?=[-.])/;
+
+/**
+ * Derive a sibling base URL from the API base URL by swapping the "api"
+ * segment of the hostname for another one (e.g. "endpoint", "static"):
+ * api-dev.cognigy.ai -> endpoint-dev.cognigy.ai,
+ * cognigy-api-na1.nicecxone.com -> cognigy-endpoint-na1.nicecxone.com,
+ * api.test -> endpoint.test. A hostname with no such segment is returned as
+ * is — callers must then rely on the explicit COGNIGY_*_BASE_URL overrides.
+ */
+function deriveHostBaseUrl(apiBaseUrl: string, replacement: string): string {
+  try {
+    const url = new URL(apiBaseUrl);
+    url.hostname = url.hostname.replace(API_HOST_SEGMENT, `$1${replacement}`);
+    // `host`, not `hostname`: a local cluster often listens on a non-default
+    // port, and the sibling services sit behind the same ingress port.
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    // Not a parseable URL: fall back to a host-scoped replace on the
+    // scheme://host portion only, leaving any path/query untouched.
+    const schemeMatch = apiBaseUrl.match(/^([a-z]+:\/\/)([^/?#]*)(.*)$/i);
+    if (!schemeMatch) return apiBaseUrl;
+    const [, scheme, host, rest] = schemeMatch;
+    return `${scheme}${host.replace(API_HOST_SEGMENT, `$1${replacement}`)}${rest}`;
+  }
+}
+
+/** True when derivation found no "api" segment to swap. */
+function hostDerivationFailed(apiBaseUrl: string): boolean {
+  try {
+    return !API_HOST_SEGMENT.test(new URL(apiBaseUrl).hostname);
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Derive the endpoint base URL from the API base URL.
  * Pattern: https://api-{env}.cognigy.ai -> https://endpoint-{env}.cognigy.ai
  */
 function deriveEndpointBaseUrl(apiBaseUrl: string): string {
-  try {
-    const url = new URL(apiBaseUrl);
-    const match = url.hostname.match(/^api-(.+)$/);
-    if (match) {
-      return `${url.protocol}//endpoint-${match[1]}`;
-    }
-  } catch {
-    // fall through
-  }
-  return apiBaseUrl.replace(/\/api-/, "/endpoint-");
+  return deriveHostBaseUrl(apiBaseUrl, "endpoint");
 }
 
 /**
@@ -80,16 +120,7 @@ function deriveEndpointBaseUrl(apiBaseUrl: string): string {
  * Pattern: https://api-{env}.cognigy.ai -> https://static-{env}.cognigy.ai
  */
 function deriveStaticFilesBaseUrl(apiBaseUrl: string): string {
-  try {
-    const url = new URL(apiBaseUrl);
-    const match = url.hostname.match(/^api-(.+)$/);
-    if (match) {
-      return `${url.protocol}//static-${match[1]}`;
-    }
-  } catch {
-    // fall through
-  }
-  return apiBaseUrl.replace(/\/api-/, "/static-");
+  return deriveHostBaseUrl(apiBaseUrl, "static");
 }
 
 /**
@@ -97,19 +128,55 @@ function deriveStaticFilesBaseUrl(apiBaseUrl: string): string {
  * Pattern: https://api-{env}.cognigy.ai -> https://webchat-{env}.cognigy.ai
  */
 function deriveWebchatBaseUrl(apiBaseUrl: string): string {
-  try {
-    const url = new URL(apiBaseUrl);
-    const match = url.hostname.match(/^api-(.+)$/);
-    if (match) {
-      return `${url.protocol}//webchat-${match[1]}`;
-    }
-  } catch {
-    // fall through
-  }
-  return apiBaseUrl.replace(/\/api-/, "/webchat-");
+  return deriveHostBaseUrl(apiBaseUrl, "webchat");
+}
+
+/**
+ * True for a value that is nothing but an unexpanded `${...}` placeholder.
+ *
+ * `userConfig` is a Claude Code extension to the plugin manifest: Claude Code
+ * prompts for the values and substitutes them into `mcpServers.*.env`. Hosts
+ * that only implement the portable subset (VS Code / Copilot, Kiro, …) copy
+ * the manifest text through verbatim, so the engine receives the literal
+ * "${user_config.cognigy_api_key}". Those strings are non-empty, which means
+ * that without this check they (a) reach axios as a real base URL and fail with
+ * ERR_INVALID_URL, and (b) shadow the on-disk fallback written by the setup CLI.
+ *
+ * Deliberately anchored to the whole (trimmed) value: a real API key or URL is
+ * never entirely wrapped in `${…}`, so this cannot discard a genuine credential.
+ */
+function isUnexpandedPlaceholder(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.startsWith("${") && trimmed.endsWith("}");
+}
+
+/** An env value, or undefined when absent or an unexpanded placeholder. */
+function usableEnv(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return isUnexpandedPlaceholder(value) ? undefined : value;
+}
+
+/**
+ * Extra sentence for the "not set" errors when the host handed us a
+ * placeholder. Without it the message reads as "not set" to someone looking
+ * straight at a manifest that plainly does set it.
+ */
+function placeholderHint(raw: string | undefined): string {
+  if (!raw || !isUnexpandedPlaceholder(raw)) return "";
+  return (
+    ` This host did not substitute the plugin manifest placeholder ${raw.trim()} ` +
+    `(it does not support userConfig), so the value never arrived.`
+  );
 }
 
 const VALID_LOG_LEVELS = new Set<string>(["debug", "info", "warn", "error"]);
+
+/** True for the usual affirmative env spellings. */
+function isEnvFlagSet(value: string | undefined): boolean {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
 
 function parseIntWithDefault(
   envVar: string | undefined,
@@ -131,45 +198,71 @@ function parseIntWithDefault(
  */
 export function loadConfig(): Config {
   // Environment variables win (terminal install stores them via userConfig /
-  // keychain). Only when one is missing do we consult the on-disk fallback
-  // written by the `cognigy-setup` CLI — this is the path GUI users take
-  // when their installer never prompted for credentials.
-  const fileConfig =
-    process.env.COGNIGY_API_BASE_URL && process.env.COGNIGY_API_KEY
-      ? {}
-      : readUserConfigFile();
+  // keychain). Only when one is missing — or arrived as an unexpanded
+  // `${user_config.*}` placeholder, which is the same thing — do we consult the
+  // on-disk fallback written by the `cognigy-setup` CLI. That is the path hosts
+  // take when their installer never prompted for credentials.
+  const envApiBaseUrl = usableEnv(process.env.COGNIGY_API_BASE_URL);
+  const envApiKey = usableEnv(process.env.COGNIGY_API_KEY);
 
-  const apiBaseUrl =
-    process.env.COGNIGY_API_BASE_URL || fileConfig.COGNIGY_API_BASE_URL;
-  const apiKey = process.env.COGNIGY_API_KEY || fileConfig.COGNIGY_API_KEY;
+  const fileConfig = envApiBaseUrl && envApiKey ? {} : readUserConfigFile();
+
+  const apiBaseUrl = envApiBaseUrl || fileConfig.COGNIGY_API_BASE_URL;
+  const apiKey = envApiKey || fileConfig.COGNIGY_API_KEY;
 
   if (!apiBaseUrl) {
     throw new Error(
-      `COGNIGY_API_BASE_URL is not set. Provide it via the plugin install prompt, ` +
+      `COGNIGY_API_BASE_URL is not set.` +
+        placeholderHint(process.env.COGNIGY_API_BASE_URL) +
+        ` Provide it via the plugin install prompt, ` +
         `or run "npx -y -p @cognigy/plugin-engine cognigy-setup" to write ${USER_CONFIG_FILE}.`,
     );
   }
 
   if (!apiKey) {
     throw new Error(
-      `COGNIGY_API_KEY is not set. Provide it via the plugin install prompt, ` +
+      `COGNIGY_API_KEY is not set.` +
+        placeholderHint(process.env.COGNIGY_API_KEY) +
+        ` Provide it via the plugin install prompt, ` +
         `or run "npx -y -p @cognigy/plugin-engine cognigy-setup" to write ${USER_CONFIG_FILE}.`,
     );
   }
 
   const normalizedApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
 
+  // The sibling hosts (endpoint, webchat, static) are normally derived from the
+  // API host. Explicit overrides win, from the environment or — for hosts whose
+  // credentials already come from the setup file, i.e. GUI clients — from that
+  // same file, so a self-hosted layout can be described in one place.
   const endpointBaseUrl =
-    process.env.COGNIGY_ENDPOINT_BASE_URL ||
+    usableEnv(process.env.COGNIGY_ENDPOINT_BASE_URL) ||
+    fileConfig.COGNIGY_ENDPOINT_BASE_URL ||
     deriveEndpointBaseUrl(normalizedApiBaseUrl);
 
   const webchatBaseUrl =
-    process.env.COGNIGY_WEBCHAT_BASE_URL ||
+    usableEnv(process.env.COGNIGY_WEBCHAT_BASE_URL) ||
+    fileConfig.COGNIGY_WEBCHAT_BASE_URL ||
     deriveWebchatBaseUrl(normalizedApiBaseUrl);
 
   const staticFilesBaseUrl =
-    process.env.COGNIGY_STATIC_FILES_BASE_URL ||
+    usableEnv(process.env.COGNIGY_STATIC_FILES_BASE_URL) ||
+    fileConfig.COGNIGY_STATIC_FILES_BASE_URL ||
     deriveStaticFilesBaseUrl(normalizedApiBaseUrl);
+
+  // Without a recognisable "api" segment every derived URL silently equals
+  // the API URL, and the first symptom is talk_to_agent posting endpoint
+  // traffic at service-api. Say so at boot, once, where the MCP log shows it.
+  if (
+    hostDerivationFailed(normalizedApiBaseUrl) &&
+    endpointBaseUrl === normalizedApiBaseUrl
+  ) {
+    console.error(
+      `[config] Could not derive the endpoint host from ${normalizedApiBaseUrl} ` +
+        `(no "api" segment in the hostname); endpoint requests will go to the ` +
+        `API host. Set COGNIGY_ENDPOINT_BASE_URL (and COGNIGY_WEBCHAT_BASE_URL, ` +
+        `COGNIGY_STATIC_FILES_BASE_URL) if your deployment uses other hosts.`,
+    );
+  }
 
   return {
     apiBaseUrl: normalizedApiBaseUrl,
@@ -189,6 +282,12 @@ export function loadConfig(): Config {
       }
       return raw as Config["logLevel"];
     })(),
+    // Opt-out only: attributing the plugin in a customer's audit log is the
+    // desirable default, but it changes what gets recorded, so leave an escape
+    // hatch.
+    auditAttribution: !isEnvFlagSet(
+      process.env.COGNIGY_DISABLE_AUDIT_ATTRIBUTION,
+    ),
     rateLimit: {
       maxRequests: parseIntWithDefault(
         process.env.RATE_LIMIT_MAX_REQUESTS,

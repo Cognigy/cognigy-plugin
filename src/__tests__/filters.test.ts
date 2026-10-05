@@ -413,3 +413,101 @@ describe("filterList", () => {
     ]);
   });
 });
+
+describe("snapshot filter", () => {
+  const marker = "cognigy-plugin:auto-backup";
+
+  it("marks a plugin backup", () => {
+    const result = filterResponse("snapshot", {
+      _id: "60d5ec49f1a2c8b1a4e0fa01",
+      name: "[AI Backup] pre-update — 2026-08-20 13-00-17",
+      description: `Automatic backup.\n${marker}`,
+      createdAt: 1750000000,
+      createdBy: "user1",
+      hash: "abc123",
+      packageExpiresAt: 999,
+      size: 4096,
+    });
+
+    expect(result.isPluginBackup).toBe(true);
+    expect(result.id).toBe("60d5ec49f1a2c8b1a4e0fa01");
+    // Download-only noise stays out of the LLM's context.
+    expect(result.hash).toBeUndefined();
+    expect(result.packageExpiresAt).toBeUndefined();
+    expect(result.size).toBeUndefined();
+  });
+
+  it("still marks a backup written with the older :v1 marker", () => {
+    const result = filterResponse("snapshot", {
+      _id: "60d5ec49f1a2c8b1a4e0fa02",
+      name: "[AI Backup] pre-update — 2026-08-20 13-00-17",
+      description: `Automatic backup.\n${marker}:v1`,
+      createdAt: 1750000000,
+    });
+
+    // Descriptions are immutable: if the marker literal ever stopped matching,
+    // these backups would become undeletable and invisible to the limit check.
+    expect(result.isPluginBackup).toBe(true);
+  });
+
+  it("exposes the version parsed out of the name", () => {
+    const versioned = filterResponse("snapshot", {
+      _id: "60d5ec49f1a2c8b1a4e0fa04",
+      name: "[AI Backup] v7 pre-update — 2026-08-20 13-00-17",
+      description: `Automatic backup.\n${marker}`,
+      createdAt: 1750000000,
+    });
+    const unversioned = filterResponse("snapshot", {
+      _id: "60d5ec49f1a2c8b1a4e0fa05",
+      name: "[AI Backup] pre-update — 2026-08-20 13-00-17",
+      description: `Automatic backup.\n${marker}`,
+      createdAt: 1750000000,
+    });
+
+    expect(versioned.version).toBe(7);
+    expect(unversioned.version).toBeNull();
+  });
+
+  it("reports no version for a human snapshot that mimics the name", () => {
+    const result = filterResponse("snapshot", {
+      _id: "60d5ec49f1a2c8b1a4e0fa06",
+      name: "[AI Backup] v9 test",
+      description: "Written by a person, no marker here.",
+      createdAt: 1750000000,
+    });
+
+    // version 9 next to isPluginBackup false invites "restore v9" for a
+    // snapshot outside the plugin's numbering.
+    expect(result.isPluginBackup).toBe(false);
+    expect(result.version).toBeNull();
+  });
+
+  it("does not mark a human snapshot", () => {
+    const result = filterResponse("snapshot", {
+      _id: "60d5ec49f1a2c8b1a4e0fa03",
+      name: "Release 2026-01",
+      description: "Prepared by hand.",
+      createdAt: 1750000000,
+    });
+
+    expect(result.isPluginBackup).toBe(false);
+  });
+
+  it("requires BOTH markers, so a name lookalike is still protected", () => {
+    expect(
+      filterResponse("snapshot", {
+        _id: "60d5ec49f1a2c8b1a4e0fa04",
+        name: "[AI Backup] hand-made lookalike",
+        description: "No marker here.",
+      }).isPluginBackup,
+    ).toBe(false);
+
+    expect(
+      filterResponse("snapshot", {
+        _id: "60d5ec49f1a2c8b1a4e0fa05",
+        name: "Renamed by a person",
+        description: `something\n${marker}`,
+      }).isPluginBackup,
+    ).toBe(false);
+  });
+});

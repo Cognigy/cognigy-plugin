@@ -28,11 +28,13 @@ import {
   fallbackCommands,
 } from "../install/claudeCode.js";
 import { quoteWinArgs, resolveNpmCli } from "../install/npmRunner.js";
+import * as antigravity from "../install/antigravity.js";
 import {
   DESKTOP_LAUNCHER_SOURCE,
   writeDesktopLauncher,
 } from "../install/desktopLauncher.js";
 import {
+  detectClients,
   isMainModule,
   parseClientSelection,
   parseFlags,
@@ -289,6 +291,39 @@ describe("writeDesktopLauncher", () => {
     // stdout must never be written to — diagnostics go to stderr only.
     expect(DESKTOP_LAUNCHER_SOURCE).not.toContain("process.stdout.write");
   });
+
+  it("re-stages the Antigravity plugin before handing off, and only on a bump", () => {
+    // Antigravity ships no update command and no marketplace, so this step is
+    // the only thing that makes its skills and agents track the engine.
+    expect(DESKTOP_LAUNCHER_SOURCE).toContain("syncAntigravityPlugin");
+    expect(DESKTOP_LAUNCHER_SOURCE).toContain(
+      '"dist", "install", "antigravity.js"',
+    );
+    // Version-gated: once per release, not every boot.
+    expect(DESKTOP_LAUNCHER_SOURCE).toContain("staged === engine");
+    // Must run before the engine import, which never returns.
+    expect(
+      DESKTOP_LAUNCHER_SOURCE.indexOf("await syncAntigravityPlugin()"),
+    ).toBeLessThan(
+      DESKTOP_LAUNCHER_SOURCE.indexOf("pathToFileURL(engineEntry)"),
+    );
+    // A failure here must never take the server down with it.
+    expect(DESKTOP_LAUNCHER_SOURCE).toContain(
+      "could not refresh Antigravity plugin files",
+    );
+  });
+
+  it("calls only symbols antigravity.ts actually exports", () => {
+    // The launcher is a STRING — tsc cannot see these calls, so a rename in
+    // antigravity.ts would break auto-update silently at runtime.
+    const called = [
+      ...DESKTOP_LAUNCHER_SOURCE.matchAll(/\bmod\.([A-Za-z0-9_]+)/g),
+    ].map((m) => m[1]);
+    expect(called.length).toBeGreaterThan(0);
+    for (const name of called) {
+      expect(Object.keys(antigravity)).toContain(name);
+    }
+  });
 });
 
 describe("isMainModule", () => {
@@ -347,8 +382,54 @@ describe("parseFlags", () => {
     expect(f.apiKey).toBe("k");
   });
 
-  it("ignores unknown --client values", () => {
-    expect(parseFlags(["--client", "codex"]).clients).toEqual([]);
+  it("accepts the codex client and dedupes repeats", () => {
+    expect(
+      parseFlags(["--client", "codex", "--client=codex", "--client", "codex"])
+        .clients,
+    ).toEqual(["codex"]);
+  });
+
+  it("records unknown --client values instead of silently dropping them", () => {
+    // A dropped value is dangerous on uninstall: an empty selection falls
+    // through to "all clients". `gemini` is the live case — retired targets
+    // must fail loudly, not uninstall everything else.
+    const f = parseFlags(["--client", "cursor", "--client=gemini"]);
+    expect(f.clients).toEqual([]);
+    expect(f.invalidClients).toEqual(["cursor", "gemini"]);
+  });
+
+  it("treats an empty or missing --client value as invalid", () => {
+    // `--client=$CLIENT` with the variable unset, or a trailing `--client`,
+    // must not leave the selection silently empty — same fall-through hazard.
+    expect(parseFlags(["--client=", "--yes"]).invalidClients).toEqual([
+      "(empty)",
+    ]);
+    expect(parseFlags(["--yes", "--client"]).invalidClients).toEqual([
+      "(empty)",
+    ]);
+    expect(parseFlags(["--client=", "--client"]).invalidClients).toEqual([
+      "(empty)",
+    ]);
+  });
+
+  it("accepts the other-hosts target", () => {
+    expect(parseFlags(["--client=other-hosts"]).clients).toEqual([
+      "other-hosts",
+    ]);
+  });
+});
+
+describe("detectClients", () => {
+  // Writing a plaintext API key to disk is opt-in: 'other-hosts' must never be
+  // auto-detected, because detected clients become the pre-checked defaults.
+  it("never pre-selects other-hosts", () => {
+    expect(detectClients()["other-hosts"]).toBe(false);
+  });
+
+  it("accepts antigravity alongside the Claude clients", () => {
+    expect(
+      parseFlags(["--client=antigravity", "--client", "claude-code"]).clients,
+    ).toEqual(["antigravity", "claude-code"]);
   });
 });
 
@@ -368,6 +449,23 @@ describe("parseClientSelection", () => {
 
   it("dedupes and drops out-of-range/garbage", () => {
     expect(parseClientSelection("1 1 9 x", [...menu])).toEqual(["claude-code"]);
+  });
+
+  it("handles the full four-client menu", () => {
+    const full = [
+      "claude-code",
+      "claude-desktop",
+      "codex",
+      "antigravity",
+    ] as const;
+    expect(parseClientSelection("3,4", [...full])).toEqual([
+      "codex",
+      "antigravity",
+    ]);
+    expect(parseClientSelection("4 1", [...full])).toEqual([
+      "antigravity",
+      "claude-code",
+    ]);
   });
 });
 

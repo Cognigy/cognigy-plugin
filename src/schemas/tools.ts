@@ -2,18 +2,47 @@ import { z } from "zod";
 
 const idSchema = z.string().regex(/^[a-f0-9]{24}$/, "Must be a 24-char hex ID");
 
+const NOT_BOTH_IDS_MESSAGE =
+  "Pass either aiAgentId or flowId, not both. Use aiAgentId for a normal agent; use flowId only for a flow driven by an LLM Prompt node (which has no agent resource).";
+
 const paginationSchema = {
   limit: z.number().int().min(1).max(100).optional(),
   skip: z.number().int().min(0).optional(),
 };
 
 // Tool 1: create_ai_agent
-export const createAiAgentSchema = z.object({
-  projectId: idSchema.optional(),
-  name: z.string().min(1).max(200),
-  description: z.string().optional(),
-  knowledgeStoreReferenceId: z.string().optional(),
-});
+export const createAiAgentSchema = z
+  .object({
+    projectId: idSchema.optional(),
+    name: z.string().min(1).max(200),
+    description: z.string().optional(),
+    knowledgeStoreReferenceId: z.string().optional(),
+    agentNodeType: z.enum(["aiAgent", "llmPrompt"]).optional(),
+    systemPrompt: z.string().optional(),
+  })
+  .refine(
+    (d) => !(d.agentNodeType === "llmPrompt" && d.knowledgeStoreReferenceId),
+    {
+      message:
+        "knowledgeStoreReferenceId is not supported with agentNodeType 'llmPrompt' — LLM Prompt nodes only support 'tool', 'mcp', and 'http' tools.",
+      path: ["knowledgeStoreReferenceId"],
+    },
+  )
+  .refine(
+    (d) =>
+      d.agentNodeType !== "llmPrompt" ||
+      Boolean(d.systemPrompt?.trim() || d.description?.trim()),
+    {
+      message:
+        "agentNodeType 'llmPrompt' requires a systemPrompt (or description) — the prompt is the LLM Prompt node's entire persona and guardrails.",
+      path: ["systemPrompt"],
+    },
+  )
+  .refine((d) => !d.systemPrompt || d.agentNodeType === "llmPrompt", {
+    message:
+      "systemPrompt is only used with agentNodeType 'llmPrompt'. For a normal AI Agent, put the persona in description and refine it with update_ai_agent.",
+    path: ["systemPrompt"],
+  });
 
 // Tool 2: update_ai_agent
 export const updateAiAgentSchema = z.object({
@@ -34,16 +63,193 @@ export const updateAiAgentSchema = z.object({
 });
 
 // Tool 3: setup_llm
-export const setupLlmSchema = z.object({
-  projectId: idSchema,
-  provider: z.enum(["openAI", "azureOpenAI", "anthropic", "google", "mistral"]),
-  modelType: z.string().min(1),
-  name: z.string().optional(),
-  apiKey: z.string().optional(),
-  connectionId: z.string().optional(),
-  isDefault: z.boolean().optional(),
-  dangerouslySkipConnectionTest: z.boolean().optional(),
-});
+
+export const SETUP_LLM_PROVIDERS = [
+  "openAI",
+  "azureOpenAI",
+  "anthropic",
+  "google",
+  "mistral",
+  "openAICompatible",
+  "awsBedrock",
+] as const;
+
+export const BEDROCK_LOCATIONS = ["region", "geo", "global"] as const;
+
+// Which providers may use which provider-specific setup_llm field.
+const SETUP_LLM_FIELD_PROVIDERS = {
+  baseCustomUrl: ["openAICompatible"],
+  customModel: ["openAICompatible", "awsBedrock"],
+  customAuthHeader: ["openAICompatible"],
+  apiType: ["openAI", "azureOpenAI", "openAICompatible"],
+  region: ["awsBedrock"],
+  location: ["awsBedrock"],
+  geo: ["awsBedrock"],
+  accessKeyId: ["awsBedrock"],
+  secretAccessKey: ["awsBedrock"],
+  roleArn: ["awsBedrock"],
+} as const;
+
+export const setupLlmSchema = z
+  .object({
+    projectId: idSchema,
+    provider: z.enum(SETUP_LLM_PROVIDERS),
+    modelType: z.string().min(1),
+    name: z.string().optional(),
+    apiKey: z.string().optional(),
+    connectionId: z.string().optional(),
+    isDefault: z.boolean().optional(),
+    baseCustomUrl: z.string().url().optional(),
+    customModel: z.string().min(1).optional(),
+    customAuthHeader: z.string().min(1).optional(),
+    apiType: z.enum(["chatCompletion", "responses"]).optional(),
+    region: z.string().min(1).optional(),
+    location: z.enum(BEDROCK_LOCATIONS).optional(),
+    geo: z.string().min(1).optional(),
+    accessKeyId: z.string().min(1).optional(),
+    secretAccessKey: z.string().min(1).optional(),
+    roleArn: z.string().min(1).optional(),
+    dangerouslySkipConnectionTest: z.boolean().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (
+      data.connectionId &&
+      (data.apiKey || data.accessKeyId || data.secretAccessKey || data.roleArn)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["connectionId"],
+        message:
+          "Provide either inline credentials (apiKey / accessKeyId + secretAccessKey / roleArn) OR connectionId, not both — inline credentials would be ignored.",
+      });
+    }
+
+    for (const [field, providers] of Object.entries(
+      SETUP_LLM_FIELD_PROVIDERS,
+    )) {
+      if (
+        data[field as keyof typeof SETUP_LLM_FIELD_PROVIDERS] !== undefined &&
+        !(providers as readonly string[]).includes(data.provider)
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: `${field} is only supported for provider(s) ${providers
+            .map((p) => `'${p}'`)
+            .join(", ")}.`,
+        });
+      }
+    }
+
+    if (data.provider === "openAICompatible") {
+      if (!data.baseCustomUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["baseCustomUrl"],
+          message:
+            "Provider 'openAICompatible' requires baseCustomUrl — the provider's OpenAI-compatible API base URL (e.g. https://my-llm-host.example.com/v1).",
+        });
+      }
+      if (!data.customModel) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["customModel"],
+          message:
+            "Provider 'openAICompatible' requires customModel — the model name as known by the provider (e.g. 'llama-3.3-70b-instruct').",
+        });
+      }
+      if (
+        data.modelType !== "custom-model" &&
+        data.modelType !== "custom-embedding-model"
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["modelType"],
+          message:
+            "Provider 'openAICompatible' requires modelType 'custom-model' (chat) or 'custom-embedding-model' (embedding). Put the provider's model name in customModel instead.",
+        });
+      }
+      if (
+        data.modelType === "custom-embedding-model" &&
+        data.apiType !== undefined
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["apiType"],
+          message:
+            "apiType is only supported for chat models; omit it when modelType is 'custom-embedding-model'.",
+        });
+      }
+    }
+
+    if (data.provider === "awsBedrock") {
+      if (!data.region) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["region"],
+          message:
+            "Provider 'awsBedrock' requires region — the AWS region of the Bedrock deployment (e.g. 'us-east-1').",
+        });
+      }
+      if (data.apiKey) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["apiKey"],
+          message:
+            "Provider 'awsBedrock' does not use apiKey. Provide accessKeyId + secretAccessKey (access-key auth) or roleArn (IAM-role auth) instead.",
+        });
+      }
+      if (data.roleArn && (data.accessKeyId || data.secretAccessKey)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["roleArn"],
+          message:
+            "Provide either accessKeyId + secretAccessKey OR roleArn, not both.",
+        });
+      }
+      if (
+        (data.accessKeyId && !data.secretAccessKey) ||
+        (!data.accessKeyId && data.secretAccessKey)
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [data.accessKeyId ? "secretAccessKey" : "accessKeyId"],
+          message: "accessKeyId and secretAccessKey must be provided together.",
+        });
+      }
+      if (data.customModel && data.modelType !== "custom-model") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["modelType"],
+          message:
+            "customModel requires modelType 'custom-model' for provider 'awsBedrock'. Use a named modelType (e.g. 'amazon.nova-pro-v1:0') without customModel, or modelType 'custom-model' with the Bedrock model id in customModel.",
+        });
+      }
+      if (data.modelType === "custom-model" && !data.customModel) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["customModel"],
+          message:
+            "modelType 'custom-model' requires customModel — the Bedrock model id or inference profile id (e.g. 'eu.anthropic.claude-sonnet-4-6').",
+        });
+      }
+      if (data.location === "geo" && !data.geo) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["geo"],
+          message:
+            "location 'geo' requires geo — the geographic boundary requests may be routed within (e.g. 'us', 'eu', 'apac').",
+        });
+      }
+      if (data.geo && data.location !== "geo") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["geo"],
+          message: "geo is only supported when location is 'geo'.",
+        });
+      }
+    }
+  });
 
 // Tool 4: talk_to_agent
 export const talkToAgentSchema = z
@@ -56,41 +262,75 @@ export const talkToAgentSchema = z
     userId: z.string().optional(),
     data: z.record(z.any()).optional(),
     verbose: z.boolean().optional(),
+    testMode: z.boolean().optional(),
   })
   .refine((d) => d.endpointUrl || d.aiAgentId, {
     message: "Either endpointUrl or aiAgentId must be provided",
     path: ["endpointUrl"],
   });
 
+/** Actor values Cognigy records in `auditEvent.performedBy.actor`. */
+export const AUDIT_ACTORS = [
+  "human",
+  "ask-ai",
+  "mcp-plugin",
+  "system",
+] as const;
+
+/** Audit event operation types (`auditEvent.type`). */
+export const AUDIT_EVENT_TYPES = [
+  "action",
+  "create",
+  "replace",
+  "patch",
+  "delete",
+  "authentication",
+  "authorization",
+] as const;
+
 // Tool 5: list_resources
-export const listResourcesSchema = z.object({
-  resourceType: z.enum([
-    "project",
-    "agent",
-    "flow",
-    "endpoint",
-    "llm_model",
-    "knowledge_store",
-    "conversation",
-    "extension",
-    "function",
-    "tool",
-  ]),
-  projectId: idSchema.optional(),
-  aiAgentId: idSchema.optional(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-  channel: z.string().optional(),
-  useCase: z.string().optional(),
-  sort: z
-    .string()
-    .regex(
-      /^[A-Za-z][A-Za-z0-9_]*:(asc|desc)$/,
-      "Must be 'field:direction', e.g. 'lastChanged:desc'",
-    )
-    .optional(),
-  ...paginationSchema,
-});
+export const listResourcesSchema = z
+  .object({
+    resourceType: z.enum([
+      "project",
+      "agent",
+      "flow",
+      "endpoint",
+      "llm_model",
+      "knowledge_store",
+      "conversation",
+      "extension",
+      "function",
+      "tool",
+      "audit_event",
+    ]),
+    projectId: idSchema.optional(),
+    aiAgentId: idSchema.optional(),
+    flowId: idSchema.optional(),
+    startDate: z.string().optional(),
+    endDate: z.string().optional(),
+    channel: z.string().optional(),
+    useCase: z.string().optional(),
+    // audit_event filters. `actor` and `eventType` are sent as repeatable query
+    // params (actor[]=…), which the platform supports from 2026.17.0 onwards.
+    // Named `eventType` rather than `type` so it cannot be confused with
+    // `resourceType` at the call site.
+    actor: z.array(z.enum(AUDIT_ACTORS)).nonempty().optional(),
+    eventType: z.array(z.enum(AUDIT_EVENT_TYPES)).nonempty().optional(),
+    user: z.string().min(1).optional(),
+    sort: z
+      .string()
+      .regex(
+        /^[A-Za-z][A-Za-z0-9_]*:(asc|desc)$/,
+        "Must be 'field:direction', e.g. 'lastChanged:desc'",
+      )
+      .optional(),
+    ...paginationSchema,
+  })
+  .refine((d) => !(d.aiAgentId && d.flowId), {
+    message: NOT_BOTH_IDS_MESSAGE,
+    path: ["flowId"],
+  });
 
 // Tool 6: get_resource
 export const getResourceSchema = z.object({
@@ -106,6 +346,7 @@ export const getResourceSchema = z.object({
     "extension",
     "function",
     "user",
+    "audit_event",
   ]),
   id: z.string().min(1),
   projectId: idSchema.optional(),
@@ -113,21 +354,28 @@ export const getResourceSchema = z.object({
 });
 
 // Tool 7: delete_resource
-export const deleteResourceSchema = z.object({
-  resourceType: z.enum([
-    "agent",
-    "flow",
-    "endpoint",
-    "llm_model",
-    "knowledge_store",
-    "function",
-    "tool",
-  ]),
-  id: idSchema,
-  projectId: idSchema.optional(),
-  aiAgentId: idSchema.optional(),
-  cascade: z.boolean().optional(),
-});
+export const deleteResourceSchema = z
+  .object({
+    resourceType: z.enum([
+      "agent",
+      "flow",
+      "project",
+      "endpoint",
+      "llm_model",
+      "knowledge_store",
+      "function",
+      "tool",
+    ]),
+    id: idSchema,
+    projectId: idSchema.optional(),
+    aiAgentId: idSchema.optional(),
+    flowId: idSchema.optional(),
+    cascade: z.boolean().optional(),
+  })
+  .refine((d) => !(d.aiAgentId && d.flowId), {
+    message: NOT_BOTH_IDS_MESSAGE,
+    path: ["flowId"],
+  });
 
 // Tool 8: manage_knowledge
 export const manageKnowledgeSchema = z.object({
@@ -171,41 +419,14 @@ const a2aToolConfigSchema = {
   cacheCard: z.boolean().optional(),
 };
 
-export const createToolSchema = z.object({
-  aiAgentId: idSchema,
-  toolType: z.enum(["tool", "knowledge", "send_email", "mcp", "http", "a2a"]),
-  name: z.string().min(1).max(200),
-  config: z.object({
-    toolId: z.string().optional(),
-    description: z.string().optional(),
-    parameters: z.string().optional(),
-    knowledgeStoreId: z.string().optional(),
-    topK: z.number().int().min(1).max(50).optional(),
-    recipient: z.string().optional(),
-    mcpServerUrl: z.string().optional(),
-    mcpName: z.string().optional(),
-    timeout: z.number().optional(),
-    url: z.string().optional(),
-    method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
-    headers: z.record(z.string()).optional(),
-    body: z.string().optional(),
-    preProcessCode: z.string().optional(),
-    postProcessCode: z.string().optional(),
-    toolResponseValue: z.string().optional(),
-    ...a2aToolConfigSchema,
-  }),
-});
-
-// Tool 10: update_tool
-export const updateToolSchema = z.object({
-  aiAgentId: idSchema,
-  toolNodeId: idSchema,
-  name: z.string().min(1).max(200).optional(),
-  toolType: z
-    .enum(["tool", "knowledge", "send_email", "mcp", "http", "a2a"])
-    .optional(),
-  config: z
-    .object({
+export const createToolSchema = z
+  .object({
+    aiAgentId: idSchema.optional(),
+    flowId: idSchema.optional(),
+    parentNodeId: idSchema.optional(),
+    toolType: z.enum(["tool", "knowledge", "send_email", "mcp", "http", "a2a"]),
+    name: z.string().min(1).max(200),
+    config: z.object({
       toolId: z.string().optional(),
       description: z.string().optional(),
       parameters: z.string().optional(),
@@ -222,14 +443,62 @@ export const updateToolSchema = z.object({
       preProcessCode: z.string().optional(),
       postProcessCode: z.string().optional(),
       toolResponseValue: z.string().optional(),
-      httpNodeId: idSchema.optional(),
-      preProcessNodeId: idSchema.optional(),
-      postProcessNodeId: idSchema.optional(),
-      resolveNodeId: idSchema.optional(),
       ...a2aToolConfigSchema,
-    })
-    .optional(),
-});
+    }),
+  })
+  .refine((d) => d.aiAgentId || d.flowId, {
+    message: "Either aiAgentId or flowId must be provided",
+    path: ["aiAgentId"],
+  })
+  .refine((d) => !(d.aiAgentId && d.flowId), {
+    message: NOT_BOTH_IDS_MESSAGE,
+    path: ["flowId"],
+  });
+
+// Tool 10: update_tool
+export const updateToolSchema = z
+  .object({
+    aiAgentId: idSchema.optional(),
+    flowId: idSchema.optional(),
+    toolNodeId: idSchema,
+    name: z.string().min(1).max(200).optional(),
+    toolType: z
+      .enum(["tool", "knowledge", "send_email", "mcp", "http", "a2a"])
+      .optional(),
+    config: z
+      .object({
+        toolId: z.string().optional(),
+        description: z.string().optional(),
+        parameters: z.string().optional(),
+        knowledgeStoreId: z.string().optional(),
+        topK: z.number().int().min(1).max(50).optional(),
+        recipient: z.string().optional(),
+        mcpServerUrl: z.string().optional(),
+        mcpName: z.string().optional(),
+        timeout: z.number().optional(),
+        url: z.string().optional(),
+        method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
+        headers: z.record(z.string()).optional(),
+        body: z.string().optional(),
+        preProcessCode: z.string().optional(),
+        postProcessCode: z.string().optional(),
+        toolResponseValue: z.string().optional(),
+        httpNodeId: idSchema.optional(),
+        preProcessNodeId: idSchema.optional(),
+        postProcessNodeId: idSchema.optional(),
+        resolveNodeId: idSchema.optional(),
+        ...a2aToolConfigSchema,
+      })
+      .optional(),
+  })
+  .refine((d) => d.aiAgentId || d.flowId, {
+    message: "Either aiAgentId or flowId must be provided",
+    path: ["aiAgentId"],
+  })
+  .refine((d) => !(d.aiAgentId && d.flowId), {
+    message: NOT_BOTH_IDS_MESSAGE,
+    path: ["flowId"],
+  });
 
 // Tool 12: manage_flow_nodes
 export const manageFlowNodesSchema = z.object({
@@ -676,7 +945,54 @@ export const auditVoiceAgentSchema = z
     path: ["aiAgentId"],
   });
 
-// Tool 17: manage_a2a_server
+// Tool 17: manage_snapshots
+//
+// `create` deliberately takes a short `label`, not a full `name`: the plugin
+// owns the name so the "[AI Backup] " marker prefix can never be omitted by the
+// caller, and so the timestamp that keeps names unique is always present.
+const snapshotTimeoutSchema = z.number().int().min(1000).max(3600000);
+
+export const manageSnapshotsSchema = z.discriminatedUnion("operation", [
+  z.object({
+    operation: z.literal("list"),
+    projectId: idSchema,
+    ...paginationSchema,
+  }),
+  z.object({
+    operation: z.literal("create"),
+    projectId: idSchema,
+    label: z.string().min(1).max(120).optional(),
+    confirmDeleteOldest: z.boolean().optional(),
+    waitForCompletion: z.boolean().optional(),
+    timeoutMs: snapshotTimeoutSchema.optional(),
+  }),
+  z.object({
+    operation: z.literal("restore"),
+    projectId: idSchema,
+    snapshotId: idSchema,
+    confirm: z.boolean().optional(),
+    waitForCompletion: z.boolean().optional(),
+    timeoutMs: snapshotTimeoutSchema.optional(),
+  }),
+  z.object({
+    operation: z.literal("delete"),
+    projectId: idSchema,
+    snapshotId: idSchema,
+    waitForCompletion: z.boolean().optional(),
+    timeoutMs: snapshotTimeoutSchema.optional(),
+  }),
+  z.object({
+    operation: z.literal("decline"),
+    projectId: idSchema,
+  }),
+  z.object({
+    operation: z.literal("read_task"),
+    projectId: idSchema,
+    taskId: idSchema,
+  }),
+]);
+
+// Tool 18: manage_a2a_server
 const a2aSkillSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),

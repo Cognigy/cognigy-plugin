@@ -79,6 +79,98 @@ describe("loadConfig", () => {
     expect(config.webchatBaseUrl).toBe("https://webchat-trial.cognigy.ai");
   });
 
+  it("derives endpoint/static/webchat URLs from a tenant host with a prefixed api- segment", () => {
+    process.env.COGNIGY_API_BASE_URL = "https://cognigy-api-na1.nicecxone.com";
+    process.env.COGNIGY_API_KEY = "test-key";
+    const config = loadConfig();
+    expect(config.apiBaseUrl).toBe("https://cognigy-api-na1.nicecxone.com");
+    expect(config.endpointBaseUrl).toBe(
+      "https://cognigy-endpoint-na1.nicecxone.com",
+    );
+    expect(config.webchatBaseUrl).toBe(
+      "https://cognigy-webchat-na1.nicecxone.com",
+    );
+    expect(config.staticFilesBaseUrl).toBe(
+      "https://cognigy-static-na1.nicecxone.com",
+    );
+  });
+
+  it("does not match 'api-' occurring mid-segment instead of at a segment boundary", () => {
+    process.env.COGNIGY_API_BASE_URL = "https://myapi-dev.example.com";
+    process.env.COGNIGY_API_KEY = "test-key";
+    const config = loadConfig();
+    expect(config.endpointBaseUrl).toBe("https://myapi-dev.example.com");
+    expect(config.webchatBaseUrl).toBe("https://myapi-dev.example.com");
+    expect(config.staticFilesBaseUrl).toBe("https://myapi-dev.example.com");
+  });
+
+  it("derives sibling hosts when 'api' is a whole DNS label (local cluster)", () => {
+    // A local cluster has no environment suffix, so its hostnames are
+    // api.test / endpoint.test rather than api-dev / endpoint-dev.
+    process.env.COGNIGY_API_BASE_URL = "https://api.test";
+    process.env.COGNIGY_API_KEY = "test-key";
+    const config = loadConfig();
+    expect(config.apiBaseUrl).toBe("https://api.test");
+    expect(config.endpointBaseUrl).toBe("https://endpoint.test");
+    expect(config.webchatBaseUrl).toBe("https://webchat.test");
+    expect(config.staticFilesBaseUrl).toBe("https://static.test");
+  });
+
+  it("derives sibling hosts when 'api' is the first of several labels", () => {
+    process.env.COGNIGY_API_BASE_URL = "https://api.cognigy.local:8443";
+    process.env.COGNIGY_API_KEY = "test-key";
+    const config = loadConfig();
+    expect(config.endpointBaseUrl).toBe("https://endpoint.cognigy.local:8443");
+  });
+
+  it("does not treat a label that merely starts with 'api' as the api segment", () => {
+    process.env.COGNIGY_API_BASE_URL = "https://apix.example.com";
+    process.env.COGNIGY_API_KEY = "test-key";
+    const config = loadConfig();
+    expect(config.endpointBaseUrl).toBe("https://apix.example.com");
+  });
+
+  it("warns at boot when no sibling host can be derived and no override is set", () => {
+    process.env.COGNIGY_API_BASE_URL = "https://cognigy.example.com";
+    process.env.COGNIGY_API_KEY = "test-key";
+    delete process.env.COGNIGY_ENDPOINT_BASE_URL;
+    const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      loadConfig();
+      expect(spy).toHaveBeenCalledWith(
+        expect.stringContaining("Could not derive the endpoint host"),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("does not warn when the endpoint host is overridden explicitly", () => {
+    process.env.COGNIGY_API_BASE_URL = "https://cognigy.example.com";
+    process.env.COGNIGY_API_KEY = "test-key";
+    process.env.COGNIGY_ENDPOINT_BASE_URL = "https://chat.example.com";
+    const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      loadConfig();
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("reads sibling-host overrides from the setup file when credentials come from it", () => {
+    delete process.env.COGNIGY_API_BASE_URL;
+    delete process.env.COGNIGY_API_KEY;
+    delete process.env.COGNIGY_ENDPOINT_BASE_URL;
+    readUserConfigFile.mockReturnValue({
+      COGNIGY_API_BASE_URL: "https://cognigy.example.com",
+      COGNIGY_API_KEY: "file-key",
+      COGNIGY_ENDPOINT_BASE_URL: "https://chat.example.com",
+    });
+    const config = loadConfig();
+    expect(config.endpointBaseUrl).toBe("https://chat.example.com");
+  });
+
   it("uses explicit COGNIGY_ENDPOINT_BASE_URL if provided", () => {
     process.env.COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai";
     process.env.COGNIGY_API_KEY = "test-key";
@@ -167,6 +259,30 @@ describe("loadConfig", () => {
     expect(config.rateLimit.windowMs).toBe(60000);
   });
 
+  it("enables audit attribution by default", () => {
+    process.env.COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai";
+    process.env.COGNIGY_API_KEY = "test-key";
+    delete process.env.COGNIGY_DISABLE_AUDIT_ATTRIBUTION;
+    expect(loadConfig().auditAttribution).toBe(true);
+  });
+
+  it.each(["1", "true", "TRUE", "yes"])(
+    "disables audit attribution when COGNIGY_DISABLE_AUDIT_ATTRIBUTION=%s",
+    (value) => {
+      process.env.COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai";
+      process.env.COGNIGY_API_KEY = "test-key";
+      process.env.COGNIGY_DISABLE_AUDIT_ATTRIBUTION = value;
+      expect(loadConfig().auditAttribution).toBe(false);
+    },
+  );
+
+  it("keeps audit attribution on for a falsy opt-out value", () => {
+    process.env.COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai";
+    process.env.COGNIGY_API_KEY = "test-key";
+    process.env.COGNIGY_DISABLE_AUDIT_ATTRIBUTION = "false";
+    expect(loadConfig().auditAttribution).toBe(true);
+  });
+
   describe("on-disk fallback (setup CLI)", () => {
     it("does not read the fallback file when both env vars are set", () => {
       process.env.COGNIGY_API_BASE_URL = "https://api-dev.cognigy.ai";
@@ -203,6 +319,59 @@ describe("loadConfig", () => {
       delete process.env.COGNIGY_API_BASE_URL;
       delete process.env.COGNIGY_API_KEY;
       expect(() => loadConfig()).toThrow(/setup/);
+    });
+  });
+
+  // Hosts that don't implement the `userConfig` manifest extension (VS Code,
+  // Kiro, …) pass "${user_config.cognigy_api_key}" through verbatim. Those
+  // strings are non-empty, so without this handling they both masquerade as
+  // real credentials and shadow the on-disk fallback.
+  describe("unexpanded userConfig placeholders", () => {
+    const BASE_PLACEHOLDER = "${user_config.cognigy_api_base_url}";
+    const KEY_PLACEHOLDER = "${user_config.cognigy_api_key}";
+
+    it("treats placeholder env values as unset and reads the file instead", () => {
+      process.env.COGNIGY_API_BASE_URL = BASE_PLACEHOLDER;
+      process.env.COGNIGY_API_KEY = KEY_PLACEHOLDER;
+      readUserConfigFile.mockReturnValue({
+        COGNIGY_API_BASE_URL: "https://api-trial.cognigy.ai",
+        COGNIGY_API_KEY: "file-key",
+      });
+      const config = loadConfig();
+      expect(config.apiBaseUrl).toBe("https://api-trial.cognigy.ai");
+      expect(config.apiKey).toBe("file-key");
+    });
+
+    it("does not use a placeholder as the API base URL", () => {
+      process.env.COGNIGY_API_BASE_URL = BASE_PLACEHOLDER;
+      process.env.COGNIGY_API_KEY = "real-key";
+      readUserConfigFile.mockReturnValue({
+        COGNIGY_API_BASE_URL: "https://api-trial.cognigy.ai",
+      });
+      // Previously the placeholder survived normalisation and reached axios as
+      // a baseURL, producing ERR_INVALID_URL on the first request.
+      expect(loadConfig().apiBaseUrl).toBe("https://api-trial.cognigy.ai");
+    });
+
+    it("explains the placeholder in the error when no fallback exists", () => {
+      process.env.COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai";
+      process.env.COGNIGY_API_KEY = KEY_PLACEHOLDER;
+      expect(() => loadConfig()).toThrow(/did not substitute/);
+    });
+
+    it("tolerates surrounding whitespace around a placeholder", () => {
+      process.env.COGNIGY_API_BASE_URL = `  ${BASE_PLACEHOLDER}  `;
+      process.env.COGNIGY_API_KEY = "real-key";
+      readUserConfigFile.mockReturnValue({
+        COGNIGY_API_BASE_URL: "https://api-trial.cognigy.ai",
+      });
+      expect(loadConfig().apiBaseUrl).toBe("https://api-trial.cognigy.ai");
+    });
+
+    it("keeps real values that merely contain a dollar sign", () => {
+      process.env.COGNIGY_API_BASE_URL = "https://api-trial.cognigy.ai";
+      process.env.COGNIGY_API_KEY = "ab$c{def}";
+      expect(loadConfig().apiKey).toBe("ab$c{def}");
     });
   });
 });

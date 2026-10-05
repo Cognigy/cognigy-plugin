@@ -1,3 +1,123 @@
+## [1.21.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.20.1...v1.21.0) (2026-10-01)
+
+### Features
+
+* **flow-nodes:** show disabled nodes in list and omit them from render ([#51](https://github.com/Cognigy/cognigy-plugin/issues/51)) ([c8179e3](https://github.com/Cognigy/cognigy-plugin/commit/c8179e3c3da8ffbd696dc5e897afe6d74c8635dd))
+
+## [1.20.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.20.0...v1.20.1) (2026-09-22)
+
+### Bug Fixes
+
+* **config:** derive sibling hosts when "api" is a whole DNS label ([#49](https://github.com/Cognigy/cognigy-plugin/issues/49)) ([ce778b5](https://github.com/Cognigy/cognigy-plugin/commit/ce778b576ad909e6f7fcac5d4328615d0d17afa8))
+
+## [1.20.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.19.0...v1.20.0) (2026-09-21)
+
+### Features
+
+* **tools:** send talk_to_agent messages in Cognigy Endpoint Test Mode ([#46](https://github.com/Cognigy/cognigy-plugin/issues/46)) ([96d1b52](https://github.com/Cognigy/cognigy-plugin/commit/96d1b524598d9e9376b17419504cc076fc18fde2))
+
+## [1.19.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.18.0...v1.19.0) (2026-09-15)
+
+### Features
+
+* **tools:** hint when Code Node code uses APIs the runtime does not have ([#45](https://github.com/Cognigy/cognigy-plugin/issues/45)) ([1b03482](https://github.com/Cognigy/cognigy-plugin/commit/1b03482587414e1c4a95f93873171ae2b0489f20)), closes [#41](https://github.com/Cognigy/cognigy-plugin/issues/41)
+
+## [1.18.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.17.0...v1.18.0) (2026-09-15)
+
+### Features
+
+* **tools:** support AWS Bedrock LLM provider in setup_llm ([#22](https://github.com/Cognigy/cognigy-plugin/issues/22)) ([ac1f3d9](https://github.com/Cognigy/cognigy-plugin/commit/ac1f3d916a9d936d3fa12700abcd3a12210c017b))
+
+## [1.17.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.16.0...v1.17.0) (2026-09-15)
+
+### Features
+
+* **installer:** drop Gemini CLI support (superseded by Antigravity) ([#32](https://github.com/Cognigy/cognigy-plugin/issues/32)) ([b622f0b](https://github.com/Cognigy/cognigy-plugin/commit/b622f0b258cc0ca4cac8aa5ca506b3dbe483c5e1))
+
+## [1.16.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.15.1...v1.16.0) (2026-09-15)
+
+### Features
+
+* **tools:** support the LLM Prompt node on explicit user request ([#42](https://github.com/Cognigy/cognigy-plugin/issues/42)) ([7798e9f](https://github.com/Cognigy/cognigy-plugin/commit/7798e9f36798a6ebb141164ccefb0b9cb78cd70f))
+
+## [1.15.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.15.0...v1.15.1) (2026-09-08)
+
+### Bug Fixes
+
+* **api:** tunnel Cognigy requests through corporate proxies ([#47](https://github.com/Cognigy/cognigy-plugin/issues/47)) ([4520406](https://github.com/Cognigy/cognigy-plugin/commit/45204061dd2965e33d21909236b16f870eb87860))
+
+## [1.15.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.14.0...v1.15.0) (2026-09-01)
+
+### Features
+
+* attribute plugin changes in Cognigy audit events ([#38](https://github.com/Cognigy/cognigy-plugin/issues/38)) [skip ci] ([9760d20](https://github.com/Cognigy/cognigy-plugin/commit/9760d201b3581e1dab95e409fc9f441c8750d98f)), closes [Cognigy/cognigy#13652](https://github.com/Cognigy/cognigy/issues/13652)
+
+### Bug Fixes
+
+* **tools:** hold all concurrent first-change calls behind the backup gate ([#40](https://github.com/Cognigy/cognigy-plugin/issues/40)) ([d4dcb05](https://github.com/Cognigy/cognigy-plugin/commit/d4dcb058b36ce9af930dc3c513e6269e11cd46bf))
+* **tools:** validate and normalize tool parameter schemas ([#39](https://github.com/Cognigy/cognigy-plugin/issues/39)) [skip ci] ([8c7255a](https://github.com/Cognigy/cognigy-plugin/commit/8c7255a8ed8ef95f7e32864c77d5e7aecbc4b982))
+
+## [1.14.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.13.0...v1.14.0) (2026-08-27)
+
+### Features
+
+* **tools:** support OpenAI-compatible LLM providers in setup_llm ([#20](https://github.com/Cognigy/cognigy-plugin/issues/20)) ([45170a0](https://github.com/Cognigy/cognigy-plugin/commit/45170a050d4884fa76f1115a527cb80c18a6cc1d))
+
+## [1.13.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.12.0...v1.13.0) (2026-08-26)
+
+### Features
+
+* **plugin:** ship Agent Plugins spec 1.0.0 manifests ([#34](https://github.com/Cognigy/cognigy-plugin/issues/34)) [skip ci] ([0440782](https://github.com/Cognigy/cognigy-plugin/commit/04407822fd31a44ba1b6ae150556bc0af78a3c1c)), closes [#35](https://github.com/Cognigy/cognigy-plugin/issues/35)
+* **skills:** run red-teaming in the main session and deliver the report ([#33](https://github.com/Cognigy/cognigy-plugin/issues/33)) ([8258c91](https://github.com/Cognigy/cognigy-plugin/commit/8258c91b911199abe133da22c60b6a5c49a61f1c))
+* **tools:** rename flows/projects/agents with DELETE_ prefix instead of deleting ([#21](https://github.com/Cognigy/cognigy-plugin/issues/21)) [skip ci] ([044df44](https://github.com/Cognigy/cognigy-plugin/commit/044df44807f6dcbf6d306aa0eacdf4425e6bf0cb))
+
+### Bug Fixes
+
+* **endpoints:** store the locale referenceId in localeId on endpoint creation ([#37](https://github.com/Cognigy/cognigy-plugin/issues/37)) [skip ci] ([132f22b](https://github.com/Cognigy/cognigy-plugin/commit/132f22bef0cc509b2178b18aa9f32c483045f0a8))
+
+## [1.12.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.11.0...v1.12.0) (2026-08-21)
+
+### Features
+
+* **snapshots:** add manage_snapshots for backup and rollback ([#31](https://github.com/Cognigy/cognigy-plugin/issues/31)) ([1892215](https://github.com/Cognigy/cognigy-plugin/commit/1892215bcf6488a3a01def43e9e4194aa7ecc2c9))
+
+## [1.11.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.10.1...v1.11.0) (2026-08-20)
+
+### Features
+
+* **skills:** agent-red-team skill and red-team agent ([#24](https://github.com/Cognigy/cognigy-plugin/issues/24)) ([1c34fb8](https://github.com/Cognigy/cognigy-plugin/commit/1c34fb8f2c42799a9497948fd5537a7a4f9df270))
+
+## [1.10.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.10.0...v1.10.1) (2026-08-19)
+
+### Bug Fixes
+
+* make auto-updates actually reach users on ChatGPT + Codex and Antigravity ([#30](https://github.com/Cognigy/cognigy-plugin/issues/30)) ([aec1634](https://github.com/Cognigy/cognigy-plugin/commit/aec16343daae1d6435df8bf43626973f8833a68a)), closes [openai/codex#17425](https://github.com/openai/codex/issues/17425)
+
+## [1.10.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.9.0...v1.10.0) (2026-08-18)
+
+### Features
+
+* **installer:** native Antigravity plugin support (IDE + agy CLI) ([#27](https://github.com/Cognigy/cognigy-plugin/issues/27)) ([151629f](https://github.com/Cognigy/cognigy-plugin/commit/151629fae397eef6f2ddce4dab69fcf90781e23a))
+
+## [1.9.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.8.3...v1.9.0) (2026-08-18)
+
+### Features
+
+* full plugin-platform support for ChatGPT + Codex and Google Gemini CLI ([#18](https://github.com/Cognigy/cognigy-plugin/issues/18)) ([922efdc](https://github.com/Cognigy/cognigy-plugin/commit/922efdcffcbac3e612d27452683bc876eeb151a0)), closes [#4A0D8F](https://github.com/Cognigy/cognigy-plugin/issues/4A0D8F) [#6001FF](https://github.com/Cognigy/cognigy-plugin/issues/6001FF) [#26](https://github.com/Cognigy/cognigy-plugin/issues/26) [#26](https://github.com/Cognigy/cognigy-plugin/issues/26) [#26](https://github.com/Cognigy/cognigy-plugin/issues/26)
+
+## [1.8.3](https://github.com/Cognigy/cognigy-plugin/compare/v1.8.2...v1.8.3) (2026-08-18)
+
+### Bug Fixes
+
+* **config:** derive endpoint/webchat/static URLs for prefixed tenant … ([#12](https://github.com/Cognigy/cognigy-plugin/issues/12)) [skip ci] ([31ac010](https://github.com/Cognigy/cognigy-plugin/commit/31ac010ad8266922f6762e713bb0f42e3f35cb78))
+* make credentials work on hosts without userConfig support (VS Code, Cursor) ([#26](https://github.com/Cognigy/cognigy-plugin/issues/26)) ([ec83a97](https://github.com/Cognigy/cognigy-plugin/commit/ec83a9726c4dc8d76aa5be6ff1ab7274ec047463))
+
+## [1.8.2](https://github.com/Cognigy/cognigy-plugin/compare/v1.8.1...v1.8.2) (2026-08-17)
+
+### Bug Fixes
+
+* **server:** shut down on stdin close, not just SIGINT/SIGTERM ([#28](https://github.com/Cognigy/cognigy-plugin/issues/28)) ([fa8591f](https://github.com/Cognigy/cognigy-plugin/commit/fa8591f8633b8effe212d05074b81ce6a54bb061))
+
 ## [1.8.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.8.0...v1.8.1) (2026-07-31)
 
 ### Documentation

@@ -2,6 +2,12 @@ import { describe, it, expect, beforeEach, jest } from "@jest/globals";
 import { CognigyApiClient } from "../api/client.js";
 import { ToolHandlers } from "../tools/handlers.js";
 
+// The backup gate holds the first change to an existing agent until the user
+// answers; suites that are not testing the gate answer it up front. The answer
+// is recorded per project — a call whose project cannot be determined falls
+// back to "answered anywhere this session".
+const PROJECT_FOR_GATE = "60d5ec49f1a2c8b1a4e0f000";
+
 const ID = {
   project: "507f1f77bcf86cd799439011",
   agent: "60d5ec49f1a2c8b1a4e0f001",
@@ -37,6 +43,7 @@ describe("create_tool – HTTP tool path", () => {
       put: jest.fn(),
     } as any;
     h = new ToolHandlers(api, "https://endpoint-trial.cognigy.ai");
+    (h as any).backupDeclinedForProject.add(PROJECT_FOR_GATE);
   });
 
   function mockFlowWithJobNode() {
@@ -64,6 +71,22 @@ describe("create_tool – HTTP tool path", () => {
       chain = chain.mockResolvedValueOnce({ _id: ids[i] });
     }
   }
+
+  it("writes pre/post-process code that uses unavailable runtime APIs and hints about it", async () => {
+    mockFlowWithJobNode();
+    mockPostSequence(
+      MOCK_IDS.toolNode,
+      MOCK_IDS.resolveNode,
+      MOCK_IDS.httpNode,
+      MOCK_IDS.postNode,
+    );
+    const result = await h.handleToolCall(
+      "create_tool",
+      baseArgs({ postProcessCode: "const r = await fetch('https://x');" }),
+    );
+    expect(result.childNodes.postProcessNodeId).toBe(MOCK_IDS.postNode);
+    expect(result._hints?.warning).toContain("fetch()/XMLHttpRequest");
+  });
 
   it("creates HTTP tool with basic GET request (url only)", async () => {
     mockFlowWithJobNode();
@@ -387,6 +410,7 @@ describe("update_tool – HTTP child-node resolution", () => {
       put: jest.fn(),
     } as any;
     h = new ToolHandlers(api, "https://endpoint-trial.cognigy.ai");
+    (h as any).backupDeclinedForProject.add(PROJECT_FOR_GATE);
   });
 
   // Real /chart/nodes responses do NOT include parentId on nodes — the tree
@@ -419,6 +443,19 @@ describe("update_tool – HTTP child-node resolution", () => {
       ],
     });
   }
+
+  it("hints about unavailable runtime APIs in written post-process code", async () => {
+    mockFlowAndChildren();
+    api.patch.mockResolvedValueOnce({ _id: MOCK_IDS.postNode });
+    const result = await h.handleToolCall("update_tool", {
+      aiAgentId: ID.agent,
+      toolNodeId: MOCK_IDS.toolNode,
+      toolType: "http",
+      config: { postProcessCode: "import axios from 'axios';" },
+    });
+    expect(result.updatedFields).toContain("postProcessCode");
+    expect(result._hints?.warning).toContain("require()/import");
+  });
 
   it("resolves post-process Code node by label prefix", async () => {
     mockFlowAndChildren();

@@ -1,0 +1,16 @@
+{
+  "name": "cognigy",
+  "owner": {
+    "name": "Cognigy"
+  },
+  "metadata": {
+    "description": "NiCE Cognigy Plugin — create, test, and manage AI Agents on the NiCE Cognigy platform"
+  },
+  "plugins": [
+    {
+      "name": "cognigy",
+      "source": "plugin",
+      "description": "Create, configure, test, and deploy AI Agents on the NiCE Cognigy platform over the Cognigy REST API."
+    }
+  ]
+}

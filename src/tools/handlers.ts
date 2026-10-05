@@ -14,16 +14,26 @@ import { basename, dirname, isAbsolute, join } from "path";
 import { randomUUID } from "crypto";
 import { pathToFileURL } from "url";
 import axios from "axios";
+import { applyProxyToRedirect, getProxyAxiosOptions } from "../utils/proxy.js";
 import { CognigyApiClient } from "../api/client.js";
+import {
+  endpointUrlFor,
+  hasEndpointToken,
+  toProductionEndpointUrl,
+  toTestModeEndpointUrl,
+} from "../utils/endpointUrl.js";
 import { logger } from "../utils/logger.js";
 import {
   filterResponse,
   filterList,
   filterFlowNodeDetail,
   withHints,
+  type ResponseHints,
 } from "./filters.js";
 import { buildWebchatSettings, deepMerge } from "./webchatSettings.js";
+import { normalizeToolParameters } from "./toolParameters.js";
 import { getNodeEntry, supportedNodeTypes } from "./nodeRegistry.js";
+import { codeNodeWarnings } from "./codeNodeHints.js";
 import {
   evaluateChecks,
   summarize,
@@ -31,12 +41,14 @@ import {
   type VoiceCheck,
   type VoiceFix,
 } from "./voiceChecklist.js";
+import { z } from "zod";
 import * as schemas from "../schemas/tools.js";
 import {
   chartToAscii,
   chartToMermaid,
   chartToHtml,
   chartLegend,
+  omitDisabled,
 } from "../render/flowRender.js";
 
 // The self-contained mermaid UMD build, inlined into rich flow-viz HTML so it
@@ -88,12 +100,32 @@ import {
   buildPackageImportPreview,
   normalizeTask,
 } from "./packageManagement.js";
+import {
+  AUTO_BACKUP_NAME_PREFIX,
+  buildAutoBackupFields,
+  buildRestorePreflight,
+  evaluateSnapshotLimit,
+  isAutoBackup,
+  nextBackupVersion,
+  RESTORE_WARNINGS,
+  SNAPSHOT_EXCLUSIONS,
+  SNAPSHOT_IN_USE_FAIL_REASON,
+  SNAPSHOT_LIMIT_FAIL_REASON,
+  summarizeSnapshot,
+  type SnapshotSummary,
+} from "./snapshotManagement.js";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const DEFAULT_AGENT_IMAGE = "default-avatar:1";
+
+// Prefix applied to agents/flows/projects instead of deleting them.
+const DELETE_PREFIX = "DELETE_";
+
+// Cognigy resource names are capped at 200 chars (see schemas/tools.ts).
+const MAX_RESOURCE_NAME_LENGTH = 200;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -397,15 +429,31 @@ function transformConfigForApi(
   }
 }
 
-function identifyFailedStep(
-  agentId: string | null,
-  flowId: string | null,
-  endpointId: string | null,
-): string {
-  if (!agentId) return "agent";
-  if (!flowId) return "flow";
-  if (!endpointId) return "endpoint";
-  return "node";
+/**
+ * Combine several hint sets into one. `withHints` overwrites `_hints` rather
+ * than accumulating, so a response that has to report two independent
+ * problems (say: the knowledge tool failed to provision AND the LLM the node
+ * was assigned has no connection) must merge them before that single call, or
+ * one of the two warnings is silently dropped.
+ */
+function mergeHints(
+  ...sets: (ResponseHints | null | undefined)[]
+): ResponseHints {
+  const merged: ResponseHints = {};
+  for (const set of sets) {
+    if (!set) continue;
+    for (const key of [
+      "hint",
+      "warning",
+      "likely_cause",
+      "action",
+    ] as (keyof ResponseHints)[]) {
+      const value = set[key];
+      if (!value) continue;
+      merged[key] = merged[key] ? `${merged[key]} ${value}` : value;
+    }
+  }
+  return merged;
 }
 
 const TOOL_TYPE_MAP: Record<string, { type: string; extension: string }> = {
@@ -416,6 +464,116 @@ const TOOL_TYPE_MAP: Record<string, { type: string; extension: string }> = {
   http: { type: "aiAgentJobTool", extension: "@cognigy/basic-nodes" },
   a2a: { type: "aiAgentJobA2AAgent", extension: "@cognigy/basic-nodes" },
 };
+
+// Tool child descriptors when the parent is an LLM Prompt (llmPromptV2) node
+// instead of an AI Agent Job node. LLM Prompt only supports plain tools and
+// MCP tools (docs: node-reference/service/llm-prompt) — knowledge/send_email
+// descriptors do not exist under it. The resolve nodes (aiAgentToolAnswer,
+// aiAgentJobCallMCPTool) are shared descriptors and work in both branches
+// (verified against the live chart API).
+const LLM_PROMPT_TOOL_TYPE_MAP: Record<
+  string,
+  { type: string; extension: string }
+> = {
+  tool: { type: "llmPromptTool", extension: "@cognigy/basic-nodes" },
+  mcp: { type: "llmPromptMCPTool", extension: "@cognigy/basic-nodes" },
+  http: { type: "llmPromptTool", extension: "@cognigy/basic-nodes" },
+};
+
+type ToolKind = "tool" | "knowledge" | "send_email" | "mcp" | "a2a";
+
+/**
+ * The tool kind (create_tool's `toolType` vocabulary) that a tool node's chart
+ * type belongs to. `http` tools are plain `aiAgentJobTool` / `llmPromptTool`
+ * nodes as well, so they report as "tool" — their HTTP fields live on child
+ * nodes, not on the tool node.
+ */
+const TOOL_NODE_TYPE_KIND: Record<string, ToolKind> = {
+  aiAgentJobTool: "tool",
+  llmPromptTool: "tool",
+  aiAgentJobMCPTool: "mcp",
+  llmPromptMCPTool: "mcp",
+  knowledgeTool: "knowledge",
+  sendEmailTool: "send_email",
+  aiAgentJobA2AAgent: "a2a",
+};
+
+/** Tool-node config keys update_tool can PATCH, per tool kind. */
+const TOOL_CONFIG_KEYS_BY_KIND: Record<ToolKind, string[]> = {
+  tool: ["toolId", "description", "parameters"],
+  knowledge: ["knowledgeStoreId", "toolId", "description", "topK"],
+  send_email: ["toolId", "description", "recipient"],
+  mcp: ["mcpName", "mcpServerUrl", "timeout"],
+  // The remaining A2A fields are applied by applyA2AToolConfig.
+  a2a: ["toolId", "timeout"],
+};
+
+/** Every tool-node config key, in the order they are mapped. */
+const TOOL_NODE_CONFIG_KEYS = [
+  "toolId",
+  "description",
+  "parameters",
+  "knowledgeStoreId",
+  "topK",
+  "recipient",
+  "mcpName",
+  "mcpServerUrl",
+  "timeout",
+];
+
+/**
+ * Config keys that exist only on an AI-Agent-family tool node. They are the
+ * reason update_tool has to know a node's real family before PATCHing: under
+ * an LLM Prompt node there is no descriptor that owns them, and the platform
+ * stores unknown keys and then ignores them, so a blind PATCH looks like a
+ * successful update that changed nothing.
+ */
+const AI_AGENT_ONLY_CONFIG_KEYS = [
+  "knowledgeStoreId",
+  "topK",
+  "recipient",
+  "agentBaseUrl",
+];
+
+/**
+ * Map the caller's tool config onto the node config keys the given tool kind
+ * owns. Keys belonging to another kind are reported in `ignored` instead of
+ * being PATCHed, so the caller hears about them rather than getting a silent
+ * no-op.
+ */
+function buildToolNodeConfig(
+  kind: ToolKind,
+  cfg: Record<string, any>,
+): {
+  nodeConfig: Record<string, any>;
+  ignored: string[];
+  parameterWarnings: string[];
+} {
+  const allowed = new Set(TOOL_CONFIG_KEYS_BY_KIND[kind]);
+  const nodeConfig: Record<string, any> = {};
+  const ignored: string[] = [];
+  let parameterWarnings: string[] = [];
+  for (const key of TOOL_NODE_CONFIG_KEYS) {
+    const value = cfg[key];
+    if (!value) continue;
+    if (!allowed.has(key)) {
+      ignored.push(key);
+      continue;
+    }
+    if (key === "parameters") {
+      const normalized = normalizeToolParameters(value);
+      nodeConfig.useParameters = true;
+      nodeConfig.parameters = normalized.parameters;
+      parameterWarnings = normalized.warnings;
+    } else if (key === "mcpName") {
+      // The MCP descriptor calls it `name`.
+      nodeConfig.name = value;
+    } else {
+      nodeConfig[key] = value;
+    }
+  }
+  return { nodeConfig, ignored, parameterWarnings };
+}
 
 const RESOLVE_NODE_MAP: Record<string, { type: string; label: string } | null> =
   {
@@ -492,6 +650,9 @@ const AI_AGENT_TOOL_TYPES = new Set([
   "handoverToHumanAgentTool",
   "sendEmailTool",
   "executeWorkflowTool",
+  "llmPromptDefault",
+  "llmPromptTool",
+  "llmPromptMCPTool",
 ]);
 
 const MCP_MANAGED_TOOL_TYPES = new Set([
@@ -500,14 +661,156 @@ const MCP_MANAGED_TOOL_TYPES = new Set([
   "aiAgentJobA2AAgent",
   "knowledgeTool",
   "sendEmailTool",
+  "llmPromptTool",
+  "llmPromptMCPTool",
 ]);
 
-const PROVIDER_CONNECTION_TYPE: Record<string, string> = {
-  openAI: "OpenAIProvider",
-  azureOpenAI: "AzureOpenAIProviderV2",
-  anthropic: "AnthropicProvider",
-  google: "GoogleVertexAIProvider",
-  mistral: "MistralProvider",
+/** Node types that can parent tool nodes, in order of preference. */
+const TOOL_PARENT_NODE_TYPES = ["aiAgentJob", "llmPromptV2"] as const;
+
+/**
+ * A chart node's parent id as a plain string, whatever shape the API used
+ * for it: `parentId`, `parent_id`, a string-valued `parent`, or an
+ * object-valued `parent` carrying `_id` / `id`. Undefined for a node without
+ * a parent reference (e.g. top-level nodes, where `parentId` is null).
+ * Always compare parents through this — a raw `node.parent` may be an
+ * object, which never equals an id string.
+ */
+function nodeParentId(node: any): string | undefined {
+  if (!node) return undefined;
+  const raw =
+    node.parentId ??
+    node.parent_id ??
+    (node.parent !== null && typeof node.parent === "object"
+      ? (node.parent._id ?? node.parent.id)
+      : node.parent);
+  return raw === undefined || raw === null || raw === ""
+    ? undefined
+    : String(raw);
+}
+
+/**
+ * Matches the model strings of embedding models. Embedding models cannot
+ * generate text, so wiring one into an agent node yields silent empty
+ * replies. The platform's own `useCase` filter is the primary defence (see
+ * fetchLlmsForUseCase); this local check is the belt-and-braces fallback for
+ * platforms that do not support that filter, so it has to be generous:
+ * Cognigy's catalogue spells the family in several ways
+ * ("text-embedding-3-large", "amazon.titan-embed-text-v2:0",
+ * "Pharia-1-Embedding-4608"), hence a case-insensitive "embed" substring
+ * rather than the literal word "embedding".
+ */
+const EMBEDDING_MODEL_PATTERN = /embed/i;
+
+function isEmbeddingModel(llm: any): boolean {
+  // For openAICompatible and awsBedrock providers `modelType` can be the
+  // generic "custom-model", with the real model string under the provider
+  // metadata's customModel (e.g. "amazon.titan-embed-text-v2:0").
+  return [
+    llm?.modelType,
+    llm?.openAICompatible?.customModel,
+    llm?.awsBedrock?.customModel,
+  ].some(
+    (value) => typeof value === "string" && EMBEDDING_MODEL_PATTERN.test(value),
+  );
+}
+
+/**
+ * Fetch the project's LLMs that the platform considers valid for a given node
+ * type. Cognigy makes exactly that distinction through the `useCase` query
+ * parameter on /new/v2.0/largelanguagemodels — the same call
+ * list_resources { resourceType: "llm_model", useCase } makes, and what the
+ * UI's model dropdowns are built from — which is far more reliable than
+ * guessing from a model string. Older platforms do not know the parameter, so
+ * a failed request falls back to the unfiltered list rather than aborting the
+ * whole agent creation; pickDefaultLlm's own embedding check then does the
+ * filtering locally.
+ */
+async function fetchLlmsForUseCase(
+  apiClient: CognigyApiClient,
+  projectId: string,
+  useCase: "aiAgent" | "promptNode",
+): Promise<any> {
+  try {
+    return await apiClient.get("/new/v2.0/largelanguagemodels", {
+      params: { projectId, useCase },
+    });
+  } catch (error: any) {
+    logger.debug(
+      "useCase-filtered LLM lookup failed — refetching the unfiltered list",
+      { useCase, error: error?.message },
+    );
+    return await apiClient.get("/v2.0/largelanguagemodels", {
+      params: { projectId },
+    });
+  }
+}
+
+/**
+ * Pick the LLM to auto-assign to a new agent node from a
+ * largelanguagemodels list response. An LLM without its connection cannot
+ * answer — the node then fails silently (default errorHandling "continue"
+ * with an empty message) — so prefer connected models over the bare
+ * isDefault flag. Embedding models are never candidates: they cannot generate
+ * text, so a project that only has embedding models gets no pick (undefined)
+ * and the caller reports llmStatus "unknown" with the LLM setup guidance
+ * instead of wiring the node to a model that can never answer.
+ *
+ * Every returned fact ends up in the caller's create result, because
+ * preferring a connected model means the project's designated default can be
+ * passed over and the user has to be able to see that:
+ *   - `connected`: false when even the pick has no connection (no usable
+ *     model had one), so the node still cannot answer.
+ *   - `isDefault`: whether the pick is the project's default model.
+ *   - `defaultSkipped` / `skippedDefaultRefId`: set when a text-capable
+ *     default existed but was passed over for having no connection.
+ */
+function pickDefaultLlm(llmList: any):
+  | {
+      refId: string;
+      connected: boolean;
+      isDefault: boolean;
+      defaultSkipped: boolean;
+      skippedDefaultRefId?: string;
+    }
+  | undefined {
+  const llmItems = llmList?.items ?? llmList;
+  if (!Array.isArray(llmItems) || llmItems.length === 0) return undefined;
+  const pool = llmItems.filter((l: any) => !isEmbeddingModel(l));
+  if (pool.length === 0) return undefined;
+  const connected = pool.filter((l: any) => l.connectionId);
+  const candidates = connected.length > 0 ? connected : pool;
+  const chosen = candidates.find((l: any) => l.isDefault) ?? candidates[0];
+  const refId = chosen?.referenceId ?? chosen?._id;
+  if (!refId) return undefined;
+  const isDefault = Boolean(chosen.isDefault);
+  const projectDefault = isDefault
+    ? undefined
+    : pool.find((l: any) => l.isDefault);
+  const skippedDefaultRefId = projectDefault
+    ? (projectDefault.referenceId ?? projectDefault._id)
+    : undefined;
+  return {
+    refId: String(refId),
+    connected: Boolean(chosen.connectionId),
+    isDefault,
+    defaultSkipped: Boolean(projectDefault),
+    ...(skippedDefaultRefId
+      ? { skippedDefaultRefId: String(skippedDefaultRefId) }
+      : {}),
+  };
+}
+
+// Connection types accepted per setup_llm provider; the first entry is the
+// type auto-created from an apiKey.
+const PROVIDER_CONNECTION_TYPES: Record<string, readonly string[]> = {
+  openAI: ["OpenAIProvider"],
+  azureOpenAI: ["AzureOpenAIProviderV2"],
+  anthropic: ["AnthropicProvider"],
+  google: ["GoogleVertexAIProvider"],
+  mistral: ["MistralProvider"],
+  openAICompatible: ["OpenAICompatibleProvider"],
+  awsBedrock: ["AwsBedrockProvider", "AwsBedrockProviderIamRole"],
 };
 
 /**
@@ -587,9 +890,216 @@ async function resolveFlowForAgent(
   return null;
 }
 
+/**
+ * Resolve the flow a tool operation targets. Tools historically addressed the
+ * flow via aiAgentId; flows whose "agent" is an LLM Prompt node have no agent
+ * resource, so a direct flowId is accepted as the alternative.
+ */
+async function resolveToolFlow(
+  apiClient: CognigyApiClient,
+  aiAgentId: string | undefined,
+  flowId: string | undefined,
+): Promise<{ flowId: string; agent?: any } | null> {
+  if (flowId && aiAgentId) {
+    // Both were given — refuse rather than pick one silently: if they name
+    // different flows the follow-up hints would address the wrong flow.
+    throw new Error(
+      "Pass either aiAgentId or flowId, not both. Use aiAgentId for a normal agent; use flowId only for a flow driven by an LLM Prompt node (which has no agent resource).",
+    );
+  }
+  if (flowId) return { flowId };
+  if (!aiAgentId) return null;
+  const resolved = await resolveFlowForAgent(apiClient, aiAgentId);
+  return resolved ? { flowId: resolved.flowId, agent: resolved.agent } : null;
+}
+
+/**
+ * Find the node tools attach to: the AI Agent Job node when present, else an
+ * LLM Prompt (llmPromptV2) node. aiAgentJob wins when a flow has both — the
+ * AI Agent node is always the preferred agent construct.
+ */
+function findToolParentNode(allNodes: any[]): any | undefined {
+  for (const type of TOOL_PARENT_NODE_TYPES) {
+    const match = allNodes.find((n: any) => n.type === type);
+    if (match) return match;
+  }
+  return undefined;
+}
+
+/**
+ * Resolve the value to store in `endpoint.localeId` when creating an endpoint.
+ *
+ * `localeId` must be a locale *referenceId* (a UUID): the Endpoint Editor
+ * matches its locale dropdown on `referenceId`, and an endpoint with an empty
+ * or wrong `localeId` leaves "Open Demo Webchat" / "Open Demo Widget"
+ * permanently disabled (the editor never backfills an empty value).
+ */
+async function resolveEndpointLocaleId(
+  apiClient: CognigyApiClient,
+  projectId: string,
+  flowId?: string,
+): Promise<string | undefined> {
+  let locales: any[] = [];
+  try {
+    const resp: any = await apiClient.get("/v2.0/locales", {
+      params: { projectId, limit: 100 },
+    });
+    const items = resp?.items ?? resp;
+    // `/v2.0/locales` silently widens to EVERY project the key can see when
+    // `projectId` is not one of them (e.g. a snapshot id) — never pick a
+    // foreign project's locale.
+    if (Array.isArray(items))
+      locales = items.filter(
+        (l: any) =>
+          (!l?.projectReference || String(l.projectReference) === projectId) &&
+          typeof l?.referenceId === "string" &&
+          l.referenceId.length > 0,
+      );
+  } catch {
+    return undefined;
+  }
+  if (locales.length === 0) return undefined;
+
+  // Prefer the flow's locale — only worth the extra calls when the project
+  // actually has more than one to choose from.
+  if (flowId && locales.length > 1) {
+    let flow: any = null;
+    try {
+      if (/^[0-9a-f]{24}$/i.test(flowId)) {
+        flow = await apiClient.get(`/v2.0/flows/${flowId}`);
+      } else {
+        const flows: any = await apiClient.get("/v2.0/flows", {
+          params: { projectId, limit: 100 },
+        });
+        const items = flows?.items ?? flows;
+        const match = (Array.isArray(items) ? items : []).find(
+          (f: any) => f.referenceId === flowId,
+        );
+        const mongoId = match?._id ?? match?.id;
+        if (mongoId) flow = await apiClient.get(`/v2.0/flows/${mongoId}`);
+      }
+    } catch {
+      // fall through to the primary locale
+    }
+    const flowLocale = flow?.localeReference;
+    if (flowLocale) {
+      const match = locales.find(
+        (l: any) =>
+          String(l._id ?? l.id) === String(flowLocale) ||
+          l.referenceId === flowLocale,
+      );
+      if (match) return match.referenceId;
+    }
+  }
+
+  return (locales.find((l: any) => l.primary) ?? locales[0]).referenceId;
+}
+
+/**
+ * Thrown when the PLATFORM reported the task as failed/cancelled — i.e. the
+ * operation itself definitively did not happen. Everything else that can go
+ * wrong while polling (network blip, 5xx after the client's retries, a task
+ * body we could not read) leaves the outcome UNKNOWN, and callers must not
+ * treat the two the same: a snapshot delete whose status we merely lost is
+ * still very possibly deleted.
+ */
+/**
+ * Tools that change an EXISTING agent or its project, and so warrant a backup
+ * offer. create_ai_agent is deliberately absent: creating is additive, so there
+ * is nothing to roll back to, and the same reasoning exempts setup_llm and
+ * package import. Exported so a surface test can assert every tool is
+ * classified — a new tool 18 must land here, be read-only, or be listed as an
+ * explicit exemption.
+ */
+export const BACKUP_WORTHY_TOOLS = new Set([
+  "update_ai_agent",
+  "create_tool",
+  "update_tool",
+  "manage_flow_nodes",
+  "delete_resource",
+  // Rewrites node configs and prepends flow nodes — the bulkiest single change
+  // the plugin can make. Only in apply mode; see isBackupWorthyCall.
+  "audit_voice_agent",
+  // Project settings (voice preview, Knowledge AI models) ARE snapshot-covered.
+  "manage_settings",
+]);
+
+export class TaskFailedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TaskFailedError";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // ToolHandlers
 // ---------------------------------------------------------------------------
+
+/**
+ * Hints for a failed talk_to_agent request. Nothing is ever replayed
+ * automatically (see handleTalkToAgent), so the caller decides what to do, and
+ * the one thing every branch insists on is establishing whether the original
+ * message was processed BEFORE re-sending anything: a REST endpoint's Execution
+ * Finished transformer runs after the flow and can set any HTTP status, and a
+ * gateway timeout can hide a completed execution. Waiting or reusing the
+ * sessionId does not prevent a duplicate. Cognigy documents the
+ * 600-test-messages-per-hour cap but not how exceeding it is signalled, so no
+ * status is equated with "budget exhausted".
+ */
+function talkToAgentFailureHints(
+  status: number | undefined,
+  sessionId: string,
+  testMode: boolean,
+): Record<string, string> {
+  const checkOutcome = `FIRST establish whether the original message was processed: get_resource { resourceType: 'conversation', id: '${sessionId}' } returns the transcript when the endpoint collects conversations; otherwise continue this same sessionId with a neutral follow-up ("what did you just do?") or verify the side effects of the agent's tools. Re-send only if it was NOT processed.`;
+  const billable = testMode
+    ? " Re-sending with testMode: false is a billable production message and is not a way around an error: only after the outcome check, only once the test-mode cause is confirmed, and only with the user's explicit consent."
+    : "";
+  const warning =
+    "An HTTP error does not prove the message was not processed. A REST endpoint's Execution Finished transformer runs after the flow and can set any status, and a gateway timeout can hide a completed execution. A blind re-send can execute tools or advance the conversation twice; waiting or reusing the sessionId does not prevent that.";
+  const where = testMode ? "the test-mode URL" : "the endpoint";
+  const verifyEndpoint =
+    "verify the endpoint with list_resources { resourceType: 'endpoint' } (channel rest, URLToken present)";
+
+  let likely_cause: string;
+  let action: string;
+  if (status === undefined) {
+    likely_cause =
+      `Network-level failure (timeout, DNS, connection reset) before any HTTP response from ${where}.` +
+      (testMode
+        ? " This is not a test-mode rejection; the regular URL would fail the same way."
+        : "");
+    action = `${checkOutcome} Then check connectivity and the endpoint base URL before sending anything else.`;
+  } else if (status === 400) {
+    likely_cause =
+      "HTTP 400: Cognigy answers this for an unknown URL token and for an invalid payload; an Execution Finished transformer can also set it after the flow ran." +
+      (testMode ? " It does NOT by itself mean test mode is unsupported." : "");
+    action = `${checkOutcome} Then ${verifyEndpoint} and check the payload against detail.${billable}`;
+  } else if (status === 401 || status === 403) {
+    likely_cause = `HTTP ${status}: the platform refused the request (authorization, IP or WAF block, endpoint restriction), or a transformer set the status. Do not read it as an exhausted test-message budget; Cognigy does not document how that cap is signalled.`;
+    action = `${checkOutcome} Then fix the cause named in detail; it would apply to the regular URL too.${billable}`;
+  } else if (status === 404) {
+    likely_cause = testMode
+      ? "HTTP 404 has three possible meanings that the response alone cannot separate: the /test/ route does not exist (platform older than Cognigy 4.27), the URL token is unknown (the regular URL would 404 too), or an Execution Finished transformer returned 404 AFTER the flow ran."
+      : "HTTP 404: the URL token is unknown, the endpoint was deleted, or an Execution Finished transformer returned 404 after the flow ran.";
+    action = testMode
+      ? `${checkOutcome} Then confirm route absence independently before even considering a billable send: the Cognigy release is older than 4.27 (Admin Center or release notes), AND get_resource { resourceType: 'endpoint', id, raw: true } shows the URLToken matches and no Execution Finished transformer is enabled.${billable}`
+      : `${checkOutcome} Then ${verifyEndpoint}.`;
+  } else if (status === 429) {
+    likely_cause =
+      "HTTP 429: the platform is throttling this caller, either general rate limiting or the documented fair-use limit of 600 test messages per hour; Cognigy does not document which, nor the limit's scope.";
+    action = `${checkOutcome} Then pause before sending anything else. Do not switch to testMode: false to get around throttling.${billable}`;
+  } else if (status >= 500) {
+    likely_cause =
+      `HTTP ${status} from the endpoint or a gateway in front of it; the request may have reached the flow before failing.` +
+      (testMode ? " This is not evidence that test mode is unsupported." : "");
+    action = `${checkOutcome} Only if it was not processed, retry later in the same mode.${billable}`;
+  } else {
+    likely_cause = `Unexpected HTTP ${status} from ${where}. Read detail.`;
+    action = `${checkOutcome} Then ${verifyEndpoint}.${billable}`;
+  }
+  return { likely_cause, warning, action };
+}
 
 export class ToolHandlers {
   private static readonly SENSITIVE_KEYS = new Set([
@@ -600,7 +1110,137 @@ export class ToolHandlers {
     "postProcessCode",
   ]);
   private static readonly DEFAULT_PACKAGE_TIMEOUT_MS = 600000;
+  /** Pagination guard for listAllSnapshots (100 per page). */
+  private static readonly MAX_SNAPSHOT_PAGES = 20;
   private static readonly TASK_POLL_INTERVAL_MS = 3000;
+
+  /**
+   * Resource types a snapshot does NOT capture. Deleting one of these is not
+   * protected by a backup at all, so holding the call would offer a rollback
+   * that does not exist — and it would be inconsistent with manage_webchat and
+   * manage_knowledge, which are exempt for exactly this reason.
+   */
+  private static readonly SNAPSHOT_EXCLUDED_RESOURCE_TYPES = new Set([
+    "endpoint",
+    "knowledge_store",
+  ]);
+
+  /**
+   * Schemas of the gated tools. The gate runs before the handler validates, so
+   * without this an INVALID first call would consume the one-shot hold: the
+   * caller sees backup_not_offered instead of its validation error, fixes the
+   * args, retries — and proceeds unprotected, because the hold is spent.
+   */
+  private static readonly GATED_TOOL_SCHEMAS: Record<string, z.ZodTypeAny> = {
+    update_ai_agent: schemas.updateAiAgentSchema,
+    create_tool: schemas.createToolSchema,
+    update_tool: schemas.updateToolSchema,
+    manage_flow_nodes: schemas.manageFlowNodesSchema,
+    delete_resource: schemas.deleteResourceSchema,
+    audit_voice_agent: schemas.auditVoiceAgentSchema,
+    manage_settings: schemas.manageSettingsSchema,
+  };
+
+  /** Operations on multi-operation tools above that only READ. */
+  private static readonly READ_ONLY_OPERATIONS = new Set([
+    "get",
+    "list",
+    "render",
+  ]);
+
+  /**
+   * A backup is only worth offering before something is actually changed, so a
+   * read-only operation on an otherwise-mutating tool (manage_flow_nodes get /
+   * list / render) must not trigger the offer.
+   */
+  private static isBackupWorthyCall(toolName: string, args: any): boolean {
+    if (!BACKUP_WORTHY_TOOLS.has(toolName)) return false;
+
+    // A call that cannot run must not consume the one-shot hold.
+    const schema = ToolHandlers.GATED_TOOL_SCHEMAS[toolName];
+    if (schema && !schema.safeParse(args).success) return false;
+
+    // audit_voice_agent rewrites an existing agent's nodes and settings, but
+    // only in apply mode; its default dry-run mutates nothing.
+    if (toolName === "audit_voice_agent") return args?.apply === true;
+
+    // Deleting something a snapshot never contained is not backup-protectable.
+    if (
+      toolName === "delete_resource" &&
+      ToolHandlers.SNAPSHOT_EXCLUDED_RESOURCE_TYPES.has(args?.resourceType)
+    ) {
+      return false;
+    }
+
+    const operation = args?.operation;
+    return (
+      typeof operation !== "string" ||
+      !ToolHandlers.READ_ONLY_OPERATIONS.has(operation)
+    );
+  }
+
+  /** Whether the call targets something this session created. */
+  private targetsNewResource(args: any): boolean {
+    if (!this.resourcesCreatedThisSession.size) return false;
+    // projectId is matched only against ids actually recorded, so passing an
+    // EXISTING project to a later call cannot false-match its way past the gate.
+    for (const key of ["aiAgentId", "flowId", "id", "projectId"]) {
+      const value = args?.[key];
+      if (
+        typeof value === "string" &&
+        this.resourcesCreatedThisSession.has(value)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Session state for the backup gate below. The plugin speaks MCP over stdio,
+  // which means one server process per client session — so instance lifetime is
+  // session lifetime and this state is exactly "this session".
+  //
+  // The answer is kept PER PROJECT: a user who declines a backup on a sandbox
+  // must still be asked before the first change to a production project. Only
+  // the anti-deadlock hold falls back to session-wide state for calls whose
+  // project cannot be determined (see backupGateFor).
+  private readonly snapshotCreatedForProject = new Set<string>();
+  private readonly backupDeclinedForProject = new Set<string>();
+  /**
+   * Call signatures (tool + args) the gate has already held, per project. The
+   * anti-deadlock release is keyed on the SIGNATURE, not the project: a client
+   * that ignores the offer and retries the same call proceeds, but a client
+   * that issues several DIFFERENT mutations in parallel has each of them held
+   * until the offer is answered — otherwise only the first of a concurrent
+   * burst would be held and the rest would mutate the project unprotected.
+   * Known limitation: an IDENTICAL duplicate issued concurrently is
+   * indistinguishable from a retry by signature and is let through.
+   */
+  private readonly backupGateHeldCallsForProject = new Map<
+    string,
+    Set<string>
+  >();
+  private readonly backupGateHeldCallsWithoutProject = new Set<string>();
+  /**
+   * projectId of resources seen this session, so the gate can tell which
+   * project a call like update_ai_agent { aiAgentId } belongs to WITHOUT
+   * spending an API call. Filled from reads the model already makes
+   * (list_resources / get_resource) and from what this session created.
+   */
+  private readonly projectOfResource = new Map<string, string>();
+  /**
+   * Agent and flow ids this session created. Changes to brand-new material are
+   * additive — there is no prior state to roll back to — so the backup gate
+   * must not hold them. Without this, cognigy-agent-builder gets held on its
+   * own step 5 (`update_ai_agent` right after `create_ai_agent`).
+   */
+  private readonly resourcesCreatedThisSession = new Set<string>();
+  /**
+   * Highest backup version this session handed out. Version numbers come from
+   * the project's existing backups, so without this floor a create → delete →
+   * create would reuse a number and make "restore v3" ambiguous.
+   */
+  private highestBackupVersionThisSession = 0;
 
   constructor(
     private apiClient: CognigyApiClient,
@@ -647,15 +1287,15 @@ export class ToolHandlers {
     }
 
     if (task.status === "error") {
-      throw new Error(task.failReason || `Task ${taskId} failed`);
+      throw new TaskFailedError(task.failReason || `Task ${taskId} failed`);
     }
 
     if (task.status === "cancelled" || task.status === "cancelling") {
-      throw new Error(`Task ${taskId} was cancelled`);
+      throw new TaskFailedError(`Task ${taskId} was cancelled`);
     }
 
     if (task.status !== "done") {
-      throw new Error(
+      throw new TaskFailedError(
         `Task ${taskId} ended with unexpected status "${task.status}"`,
       );
     }
@@ -706,6 +1346,7 @@ export class ToolHandlers {
 
   private sanitizePackageFileName(name: string): string {
     const cleaned = name
+      // eslint-disable-next-line no-control-regex -- strip control chars from file names
       .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
       .trim()
       .replace(/\s+/g, " ");
@@ -1224,25 +1865,33 @@ export class ToolHandlers {
   async handleCreateAiAgent(args: any): Promise<any> {
     const data = schemas.createAiAgentSchema.parse(args);
 
+    // Explicit opt-in only: build the flow around an LLM Prompt node instead
+    // of an AI Agent resource + Job node. Never chosen by default.
+    if (data.agentNodeType === "llmPrompt") {
+      return this.createLlmPromptAgent(data);
+    }
+
     let projectId = data.projectId ?? null;
     let createdProject = false;
     let agentId: string | null = null;
     let flowId: string | null = null;
     let endpointId: string | null = null;
+    // Which step is in flight. The job node is created BEFORE the endpoint
+    // here, so the failed step cannot be derived from which ids are set — a
+    // node-stage failure would look like an endpoint failure. Same tracker and
+    // same step names as createLlmPromptAgent, so both paths report a given
+    // stage identically.
+    let step: "project" | "agent" | "flow" | "node" | "endpoint" = "project";
 
     try {
       // Step 0: Auto-create project if none provided
       if (!projectId) {
-        const project: any = await this.apiClient.post("/v2.0/projects", {
-          name: data.name,
-          color: "blue",
-          locale: "en-US",
-        });
-        projectId = project._id || project.id;
+        projectId = await this.createProjectFor(data.name);
         createdProject = true;
       }
 
       // Step 1: Create agent resource
+      step = "agent";
       const agentPayload: any = {
         projectId,
         name: data.name,
@@ -1256,16 +1905,18 @@ export class ToolHandlers {
       );
       agentId = agent._id || agent.id;
 
-      // Step 2: Create flow
-      const flow: any = await this.apiClient.post("/v2.0/flows", {
-        projectId,
-        name: `${data.name} Flow`,
-        description: `Auto-generated flow for ${data.name}`,
-      });
-      flowId = flow._id || flow.id;
-
-      // Step 3: Find entry node (with retry)
-      const entryNode = await retryGetEntryNode(this.apiClient, flowId!);
+      // Steps 2-3: Create flow and find its entry node (with retry)
+      step = "flow";
+      const provisioned = await this.createFlowFor(
+        projectId!,
+        data.name,
+        (id) => {
+          flowId = id;
+        },
+      );
+      const { flow, entryNode } = provisioned;
+      flowId = provisioned.flowId;
+      step = "node";
 
       // Step 4: Create AI Agent Job Node
       const jobNode: any = await this.apiClient.post(
@@ -1293,30 +1944,34 @@ export class ToolHandlers {
       // avatar. So we always re-send `aiAgent` alongside any config change to
       // force the backend to regenerate the proper avatar preview object.
       let llmAutoAssigned = false;
+      let llmConnected = true;
+      let llmRefId: string | undefined;
+      let llmIsDefault = false;
+      let llmDefaultSkipped = false;
+      let skippedDefaultRefId: string | undefined;
       try {
-        const llmList: any = await this.apiClient.get(
-          "/v2.0/largelanguagemodels",
-          {
-            params: { projectId },
-          },
+        const llmList: any = await fetchLlmsForUseCase(
+          this.apiClient,
+          projectId!,
+          "aiAgent",
         );
-        const llmItems = llmList.items ?? llmList;
-        if (Array.isArray(llmItems) && llmItems.length > 0) {
-          const defaultLlm =
-            llmItems.find((l: any) => l.isDefault) ?? llmItems[0];
-          const llmRefId = defaultLlm.referenceId ?? defaultLlm._id;
-          if (llmRefId) {
-            await this.apiClient.patch(
-              `/v2.0/flows/${flowId}/chart/nodes/${jobNodeId}`,
-              {
-                config: {
-                  aiAgent: agent.referenceId,
-                  llmProviderReferenceId: llmRefId,
-                },
+        const picked = pickDefaultLlm(llmList);
+        if (picked) {
+          llmRefId = picked.refId;
+          llmConnected = picked.connected;
+          llmIsDefault = picked.isDefault;
+          llmDefaultSkipped = picked.defaultSkipped;
+          skippedDefaultRefId = picked.skippedDefaultRefId;
+          await this.apiClient.patch(
+            `/v2.0/flows/${flowId}/chart/nodes/${jobNodeId}`,
+            {
+              config: {
+                aiAgent: agent.referenceId,
+                llmProviderReferenceId: picked.refId,
               },
-            );
-            llmAutoAssigned = true;
-          }
+            },
+          );
+          llmAutoAssigned = true;
         }
       } catch (llmErr: any) {
         logger.warn(
@@ -1327,66 +1982,12 @@ export class ToolHandlers {
 
       // Step 4d: Remove backend-created placeholder child tools that are only
       // used for UI preview and should not exist in Cognigy MCP flows.
-      try {
-        let placeholderTools: any[] = [];
-
-        try {
-          const chart: any = await this.apiClient.get(
-            `/new/v2.0/flows/${flowId}/chart`,
-            (flow?.localeReference ?? flow?.localeId)
-              ? {
-                  params: {
-                    preferredLocaleId: flow.localeReference ?? flow.localeId,
-                  },
-                }
-              : undefined,
-          );
-          const chartNodes = chart.nodes ?? [];
-          const chartRelations = chart.relations ?? [];
-          const jobRelation = (
-            Array.isArray(chartRelations) ? chartRelations : []
-          ).find((relation: any) => relation.node === jobNodeId);
-          const childNodeIds = new Set(jobRelation?.children ?? []);
-
-          placeholderTools = (
-            Array.isArray(chartNodes) ? chartNodes : []
-          ).filter(
-            (n: any) =>
-              childNodeIds.has(n._id || n.id) && n.preview === "unlock_account",
-          );
-        } catch {
-          // Fall back to the regular node list when the chart endpoint is not available.
-        }
-
-        if (placeholderTools.length === 0) {
-          const nodeList: any = await this.apiClient.get(
-            `/v2.0/flows/${flowId}/chart/nodes`,
-            {
-              params: { limit: 200 },
-            },
-          );
-          const nodeItems = nodeList.items ?? nodeList;
-          placeholderTools = (Array.isArray(nodeItems) ? nodeItems : []).filter(
-            (n: any) =>
-              (n.parentId === jobNodeId || n.parent === jobNodeId) &&
-              (n.label === "unlock_account" ||
-                n.config?.toolId === "unlock_account"),
-          );
-        }
-
-        for (const placeholderTool of placeholderTools) {
-          const placeholderToolId = placeholderTool._id || placeholderTool.id;
-          if (!placeholderToolId) continue;
-          await this.apiClient.delete(
-            `/v2.0/flows/${flowId}/chart/nodes/${placeholderToolId}`,
-          );
-        }
-      } catch (placeholderCleanupError: any) {
-        logger.warn(
-          "Failed to remove backend-created placeholder tool from agent flow",
-          { error: placeholderCleanupError.message },
-        );
-      }
+      await this.removePlaceholderTools(
+        flowId!,
+        jobNodeId,
+        "aiAgentJobTool",
+        flow?.localeReference ?? flow?.localeId,
+      );
 
       // Step 4e: If knowledge store provided, create a knowledge tool on the job node
       let knowledgeToolId: string | null = null;
@@ -1418,12 +2019,12 @@ export class ToolHandlers {
       }
 
       // Step 5: Create REST endpoint
-      const endpoint: any = await this.apiClient.post("/v2.0/endpoints", {
-        projectId,
-        channel: "rest",
-        flowId: flow.referenceId,
-        name: `${data.name} REST Endpoint`,
-      });
+      step = "endpoint";
+      const endpoint: any = await this.createRestEndpointFor(
+        projectId!,
+        flow,
+        data.name,
+      );
       endpointId = endpoint._id || endpoint.id;
 
       // Step 6: LLM status — derived from the auto-assign attempt in Step 4a
@@ -1433,6 +2034,25 @@ export class ToolHandlers {
       const llmStatus: "configured" | "unknown" = llmAutoAssigned
         ? "configured"
         : "unknown";
+
+      // Remember what this session minted so the backup gate leaves it alone.
+      // The project counts too when we created it: holding a change to a
+      // seconds-old project contradicts the exemption's own rationale, and a
+      // backup of it would eat one of that project's ~10 snapshot slots.
+      for (const id of [
+        agentId,
+        agent.referenceId,
+        flowId,
+        flow.referenceId,
+        ...(createdProject ? [projectId] : []),
+      ]) {
+        if (id) this.resourcesCreatedThisSession.add(String(id));
+      }
+
+      // Scope the gate for later calls that name only the agent or the flow.
+      for (const resource of [agent, flow]) {
+        this.rememberProjectOf(resource, String(projectId));
+      }
 
       const result: any = {
         projectId,
@@ -1444,6 +2064,18 @@ export class ToolHandlers {
           ? `${this.endpointBaseUrl}/${endpoint.URLToken}`
           : "URL not available",
         llmStatus,
+        // Which model the job node ended up on. Always reported, because the
+        // pick can differ from the project default (see pickDefaultLlm) and
+        // the caller can only notice that if it is in the response.
+        ...(llmRefId
+          ? {
+              llm: {
+                referenceId: llmRefId,
+                isDefault: llmIsDefault,
+                connected: llmConnected,
+              },
+            }
+          : {}),
       };
 
       if (knowledgeToolId) {
@@ -1453,85 +2085,476 @@ export class ToolHandlers {
         };
       }
 
-      if (data.knowledgeStoreReferenceId && !knowledgeToolId) {
-        return withHints(result, {
-          warning: "Agent created but knowledge tool failed to provision.",
-          action: `Create it manually: create_tool { aiAgentId: "${agentId}", toolType: "knowledge", name: "Search Knowledge", config: { knowledgeStoreId: "${data.knowledgeStoreReferenceId}", toolId: "search_knowledge", description: "Search the knowledge base" } }`,
-        });
-      }
+      // The LLM verdict is computed here — before the knowledge-failure
+      // return below — and merged into whatever that return says. Computing it
+      // afterwards meant a knowledge failure short-circuited the "do not call
+      // talk_to_agent" guidance in exactly the case it matters most: an
+      // unconnected LLM plus a missing knowledge tool.
+      let llmHints: ResponseHints | null = null;
 
       if (llmStatus === "unknown") {
         const nextAction = createdProject
           ? `A new project was auto-created as "${projectId}". Immediately inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Choose only source-project llm_model entries with a non-empty connectionId, transfer the required LLM resources plus their shared connection resource(s) via manage_packages export/upload_and_inspect/import, verify the import with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and do not call talk_to_agent until the import is confirmed. If this workflow will use knowledge, transfer the source project's embedding model and exact Knowledge Search model together before calling manage_settings. Only use setup_llm if no reusable LLM with connectionId exists or package transfer fails.`
           : `Inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Choose only source-project llm_model entries with a non-empty connectionId, transfer the required LLM resources plus their shared connection resource(s) via manage_packages export/upload_and_inspect/import, verify the import with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and do not call talk_to_agent until the import is confirmed. If this workflow will use knowledge, transfer the source project's embedding model and exact Knowledge Search model together before calling manage_settings. Only use setup_llm if no reusable LLM with connectionId exists or package transfer fails.`;
-        return withHints(result, {
+        llmHints = {
           warning:
             "Could not verify LLM resource in project. Agent may not generate responses.",
           action: nextAction,
-        });
+        };
+      } else if (!llmConnected) {
+        // Assigned a real LLM, but one without a connection — the agent will
+        // answer with empty messages until the connection is fixed.
+        result.llmConnected = false;
+        llmHints = {
+          warning: `The AI Agent Job node was assigned LLM "${llmRefId}", but that model has no connection (no connectionId) — the agent will return empty responses until the connection is fixed.`,
+          action: `Attach a connection to that LLM, or import a connected one from another project via manage_packages export/import, then assign it with update_ai_agent { aiAgentId: "${agentId}", jobConfig: { llmProviderReferenceId: "<llm referenceId>" } }. Do not call talk_to_agent before that.`,
+        };
+      } else if (llmDefaultSkipped) {
+        // The project has a designated default model, but it has no
+        // connection, so a connected model was used instead. Nothing is
+        // broken, yet the agent is not on the model the user chose — say so
+        // rather than let it be discovered later.
+        llmHints = {
+          warning: `The project default LLM${skippedDefaultRefId ? ` "${skippedDefaultRefId}"` : ""} has no connection, so the AI Agent Job node was assigned the connected model "${llmRefId}" instead.`,
+          action: `This agent works as it is. To move it onto the project default, attach a connection to that default LLM and then re-point the node with update_ai_agent { aiAgentId: "${agentId}", jobConfig: { llmProviderReferenceId: "${skippedDefaultRefId ?? "<default llm referenceId>"}" } }.`,
+        };
+      }
+
+      if (data.knowledgeStoreReferenceId && !knowledgeToolId) {
+        return withHints(
+          result,
+          mergeHints(
+            {
+              warning: "Agent created but knowledge tool failed to provision.",
+              action: `Create it manually: create_tool { aiAgentId: "${agentId}", toolType: "knowledge", name: "Search Knowledge", config: { knowledgeStoreId: "${data.knowledgeStoreReferenceId}", toolId: "search_knowledge", description: "Search the knowledge base" } }`,
+            },
+            llmHints,
+          ),
+        );
+      }
+
+      if (llmHints) {
+        return withHints(result, llmHints);
       }
 
       return result;
     } catch (error: any) {
-      const rolledBack: string[] = [];
-      const rollbackFailed: string[] = [];
-
-      if (endpointId) {
-        try {
-          await this.apiClient.delete(`/v2.0/endpoints/${endpointId}`);
-          rolledBack.push("endpoint");
-        } catch {
-          rollbackFailed.push("endpoint");
-        }
-      }
-      if (flowId) {
-        try {
-          await this.apiClient.delete(`/v2.0/flows/${flowId}`);
-          rolledBack.push("flow");
-        } catch {
-          rollbackFailed.push("flow");
-        }
-      }
-      if (agentId) {
-        try {
-          await this.apiClient.delete(`/v2.0/aiagents/${agentId}`);
-          rolledBack.push("agent");
-        } catch {
-          rollbackFailed.push("agent");
-        }
-      }
-      if (createdProject && projectId) {
-        try {
-          await this.apiClient.delete(`/v2.0/projects/${projectId}`);
-          rolledBack.push("project");
-        } catch {
-          rollbackFailed.push("project");
-        }
-      }
-
-      const likelyCause =
-        rollbackFailed.length > 0
-          ? `Orchestration failed. Rolled back: [${rolledBack.join(", ")}]. FAILED to roll back: [${rollbackFailed.join(", ")}] — these are orphaned and should be deleted manually.`
-          : "Orchestration failed. All created resources were rolled back.";
-
-      const action =
-        rollbackFailed.length > 0
-          ? `Delete orphaned resources with delete_resource, then retry create_ai_agent.`
-          : "Read the troubleshooting guide, then retry create_ai_agent.";
-
       return withHints(
         {
           failed: {
-            step: identifyFailedStep(agentId, flowId, endpointId),
+            step,
             error: error.message,
           },
         },
-        {
-          likely_cause: likelyCause,
-          action,
-        },
+        await this.rollbackProvisioned({
+          endpointId,
+          flowId,
+          agentId,
+          projectId: createdProject ? projectId : null,
+        }),
       );
     }
+  }
+
+  /** Auto-create a project named after the agent; returns its id. */
+  private async createProjectFor(name: string): Promise<string> {
+    const project: any = await this.apiClient.post("/v2.0/projects", {
+      name,
+      color: "blue",
+      locale: "en-US",
+    });
+    return project._id || project.id;
+  }
+
+  /**
+   * Create the agent's flow and locate its entry node (with retry).
+   * `onCreated` fires as soon as the flow exists so the caller can record
+   * the id for rollback even if the entry-node lookup fails afterwards.
+   */
+  private async createFlowFor(
+    projectId: string,
+    name: string,
+    onCreated: (flowId: string) => void,
+  ): Promise<{ flow: any; flowId: string; entryNode: any }> {
+    const flow: any = await this.apiClient.post("/v2.0/flows", {
+      projectId,
+      name: `${name} Flow`,
+      description: `Auto-generated flow for ${name}`,
+    });
+    const flowId: string = flow._id || flow.id;
+    onCreated(flowId);
+    const entryNode = await retryGetEntryNode(this.apiClient, flowId);
+    return { flow, flowId, entryNode };
+  }
+
+  /** Create the REST endpoint that talk_to_agent uses to reach the flow. */
+  private async createRestEndpointFor(
+    projectId: string,
+    flow: any,
+    name: string,
+  ): Promise<any> {
+    return this.apiClient.post("/v2.0/endpoints", {
+      projectId,
+      channel: "rest",
+      flowId: flow.referenceId,
+      name: `${name} REST Endpoint`,
+    });
+  }
+
+  /**
+   * Roll back whatever create_ai_agent provisioned before it failed
+   * (endpoint → flow → agent → project; pass `projectId` only when this call
+   * created the project) and describe the outcome as hints.
+   */
+  private async rollbackProvisioned(ids: {
+    endpointId: string | null;
+    flowId: string | null;
+    agentId?: string | null;
+    projectId: string | null;
+  }): Promise<{ likely_cause: string; action: string }> {
+    const rolledBack: string[] = [];
+    const rollbackFailed: string[] = [];
+    const steps: Array<[string, string | null | undefined]> = [
+      ["endpoint", ids.endpointId && `/v2.0/endpoints/${ids.endpointId}`],
+      ["flow", ids.flowId && `/v2.0/flows/${ids.flowId}`],
+      ["agent", ids.agentId && `/v2.0/aiagents/${ids.agentId}`],
+      ["project", ids.projectId && `/v2.0/projects/${ids.projectId}`],
+    ];
+    for (const [label, path] of steps) {
+      if (!path) continue;
+      try {
+        await this.apiClient.delete(path);
+        rolledBack.push(label);
+      } catch {
+        rollbackFailed.push(label);
+      }
+    }
+    return {
+      likely_cause:
+        rollbackFailed.length > 0
+          ? `Orchestration failed. Rolled back: [${rolledBack.join(", ")}]. FAILED to roll back: [${rollbackFailed.join(", ")}] — these are orphaned and should be deleted manually.`
+          : "Orchestration failed. All created resources were rolled back.",
+      action:
+        rollbackFailed.length > 0
+          ? "Delete orphaned resources with delete_resource, then retry create_ai_agent."
+          : "Read the troubleshooting guide, then retry create_ai_agent.",
+    };
+  }
+
+  /**
+   * create_ai_agent with agentNodeType "llmPrompt": provision project + flow +
+   * LLM Prompt (llmPromptV2) node + REST endpoint. There is NO /v2.0/aiagents
+   * resource in this mode — the "agent" is just the flow, so update_ai_agent
+   * does not apply (the prompt is edited via manage_flow_nodes update) and
+   * tools are addressed via create_tool { flowId }.
+   */
+  private async createLlmPromptAgent(
+    data: z.infer<typeof schemas.createAiAgentSchema>,
+  ): Promise<any> {
+    let projectId = data.projectId ?? null;
+    let createdProject = false;
+    let flowId: string | null = null;
+    let endpointId: string | null = null;
+    // Which step is in flight — the node is created BEFORE the endpoint here,
+    // so the failed step cannot be derived from which ids are set.
+    let step: "project" | "flow" | "node" | "endpoint" = "project";
+
+    try {
+      // Step 0: Auto-create project if none provided
+      if (!projectId) {
+        projectId = await this.createProjectFor(data.name);
+        createdProject = true;
+      }
+
+      // Steps 1-2: Create flow and find its entry node (with retry)
+      step = "flow";
+      const provisioned = await this.createFlowFor(
+        projectId!,
+        data.name,
+        (id) => {
+          flowId = id;
+        },
+      );
+      const { flow, entryNode } = provisioned;
+      flowId = provisioned.flowId;
+      step = "node";
+
+      // Step 3: Resolve the LLM up front so it can be set atomically in the
+      // create payload (no follow-up PATCH, no preview gotcha). See
+      // pickDefaultLlm for why connected models win over isDefault.
+      let llmRefId: string | undefined;
+      // False when the only usable models have no connection — the node is
+      // then wired to an LLM that cannot answer.
+      let llmConnected = true;
+      let llmIsDefault = false;
+      let llmDefaultSkipped = false;
+      let skippedDefaultRefId: string | undefined;
+      try {
+        const llmList: any = await fetchLlmsForUseCase(
+          this.apiClient,
+          projectId!,
+          "promptNode",
+        );
+        const picked = pickDefaultLlm(llmList);
+        if (picked) {
+          llmRefId = picked.refId;
+          llmConnected = picked.connected;
+          llmIsDefault = picked.isDefault;
+          llmDefaultSkipped = picked.defaultSkipped;
+          skippedDefaultRefId = picked.skippedDefaultRefId;
+        }
+      } catch (llmErr: any) {
+        logger.warn(
+          "Failed to look up an LLM for the LLM Prompt node — it will use the project default",
+          { error: llmErr.message },
+        );
+      }
+
+      // Step 4: Create the LLM Prompt node. The freeform system prompt is the
+      // node's entire persona/behavior definition.
+      const promptNode: any = await this.apiClient.post(
+        `/v2.0/flows/${flowId}/chart/nodes`,
+        {
+          mode: "append",
+          target: entryNode._id,
+          type: "llmPromptV2",
+          extension: "@cognigy/basic-nodes",
+          label: data.name,
+          config: {
+            // Prefer whichever field actually has text: a systemPrompt of
+            // nothing but whitespace would otherwise provision a node with an
+            // empty persona while a usable description sat unused.
+            prompt: data.systemPrompt?.trim() || data.description?.trim() || "",
+            storeLocation: "stream",
+            // No immediateOutput here. The Cognigy UI only offers "Output
+            // result immediately" for the "Store in Input" and "Store in
+            // Context" locations — in stream mode the result is already
+            // streamed to the user, so the flag means nothing, and leaving it
+            // set would silently apply once someone switched storeLocation.
+            ...(llmRefId ? { llmProviderReferenceId: llmRefId } : {}),
+          },
+        },
+      );
+      const promptNodeId = promptNode._id || promptNode.id;
+
+      // Step 4a: The backend auto-creates an llmPromptDefault branch plus a
+      // placeholder "unlock_account" tool (UI preview cruft, same as for
+      // aiAgentJob). llmPromptDefault is not deletable.
+      await this.removePlaceholderTools(
+        flowId!,
+        promptNodeId,
+        "llmPromptTool",
+        flow?.localeReference ?? flow?.localeId,
+      );
+
+      // Step 5: Create REST endpoint (flow-keyed, no agent involved)
+      step = "endpoint";
+      const endpoint: any = await this.createRestEndpointFor(
+        projectId!,
+        flow,
+        data.name,
+      );
+      endpointId = endpoint._id || endpoint.id;
+
+      const llmStatus: "configured" | "unknown" = llmRefId
+        ? "configured"
+        : "unknown";
+
+      // Remember what this session minted so the backup gate leaves it alone.
+      for (const id of [
+        flowId,
+        flow.referenceId,
+        ...(createdProject ? [projectId] : []),
+      ]) {
+        if (id) this.resourcesCreatedThisSession.add(String(id));
+      }
+      this.rememberProjectOf(flow, String(projectId));
+
+      const result: any = {
+        projectId,
+        projectCreated: createdProject,
+        agentNodeType: "llmPrompt",
+        flow: filterResponse("flow", flow),
+        promptNode: {
+          nodeId: promptNodeId,
+          type: "llmPromptV2",
+          label: data.name,
+        },
+        endpoint: filterResponse("endpoint", endpoint),
+        endpointUrl: endpoint.URLToken
+          ? `${this.endpointBaseUrl}/${endpoint.URLToken}`
+          : "URL not available",
+        llmStatus,
+        // Which model the prompt node ended up on. Always reported, because
+        // the pick can differ from the project default (see pickDefaultLlm)
+        // and the caller can only notice that if it is in the response.
+        ...(llmRefId
+          ? {
+              llm: {
+                referenceId: llmRefId,
+                isDefault: llmIsDefault,
+                connected: llmConnected,
+              },
+            }
+          : {}),
+      };
+
+      const usageHint = `LLM Prompt flow created — there is NO agent resource in this mode. Edit the system prompt with manage_flow_nodes { operation: "update", flowId: "${flowId}", nodeId: "${promptNodeId}", config: { prompt: "..." } } (NOT update_ai_agent). Add tools with create_tool { flowId: "${flowId}", ... }. Test with talk_to_agent { endpointUrl }. If the first reply right after creation is empty, wait a few seconds and retry with a NEW sessionId — endpoint config propagates briefly, and a session that first hit the stale config stays cached as broken.`;
+
+      if (llmStatus === "unknown") {
+        return withHints(result, {
+          hint: usageHint,
+          warning:
+            "Could not verify LLM resource in project. The LLM Prompt node will fall back to the project's default Generative AI model — if none is configured, it cannot generate responses.",
+          action: `Inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Reuse an existing LLM (with its connection) via manage_packages export/import, verify with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and only use setup_llm if no reusable LLM exists.`,
+        });
+      }
+
+      if (!llmConnected) {
+        // The node points at a real LLM, but one without a connection — it
+        // will answer with an empty message, which is NOT the propagation
+        // hiccup the usage hint describes.
+        result.llmConnected = false;
+        return withHints(result, {
+          hint: usageHint,
+          warning: `The LLM Prompt node was assigned LLM "${llmRefId}", but that model has no connection (no connectionId) — the node will fail silently with an empty reply until the connection is fixed. Do not treat empty replies as endpoint propagation.`,
+          action: `Attach a connection to that LLM, or import a connected one: list_resources { resourceType: "llm_model", projectId } in other projects, transfer an entry with a non-empty connectionId plus its connection via manage_packages export/import, then set it with manage_flow_nodes { operation: "update", flowId: "${flowId}", nodeId: "${promptNodeId}", config: { llmProviderReferenceId: "<referenceId>" } }.`,
+        });
+      }
+
+      if (llmDefaultSkipped) {
+        // The project has a designated default model, but it has no
+        // connection, so a connected model was used instead. Nothing is
+        // broken, yet the node is not on the model the user chose.
+        return withHints(result, {
+          hint: usageHint,
+          warning: `The project default LLM${skippedDefaultRefId ? ` "${skippedDefaultRefId}"` : ""} has no connection, so the LLM Prompt node was assigned the connected model "${llmRefId}" instead.`,
+          action: `This flow works as it is. To move it onto the project default, attach a connection to that default LLM and then re-point the node with manage_flow_nodes { operation: "update", flowId: "${flowId}", nodeId: "${promptNodeId}", config: { llmProviderReferenceId: "${skippedDefaultRefId ?? "<default llm referenceId>"}" } }.`,
+        });
+      }
+
+      return withHints(result, { hint: usageHint });
+    } catch (error: any) {
+      return withHints(
+        {
+          failed: {
+            step,
+            error: error.message,
+          },
+        },
+        await this.rollbackProvisioned({
+          endpointId,
+          flowId,
+          projectId: createdProject ? projectId : null,
+        }),
+      );
+    }
+  }
+
+  /**
+   * Remove the placeholder "unlock_account" tool the backend auto-creates
+   * under a new tool parent (aiAgentJob / llmPromptV2) — UI preview cruft the
+   * LLM would otherwise see as a real tool. Scoped to direct children of
+   * `parentNodeId`; matched either by the placeholder's own markers
+   * (preview/label/toolId "unlock_account") or, because the llmPromptV2
+   * placeholder carries none of those, by a bare `childType` match.
+   *
+   * The bare type match is only sound while the parent has no real tools yet,
+   * so that half is capped rather than assumed: it deletes only when it
+   * selects a single child. Two or more type-only children mean the parent
+   * already has real tools (a repair op, a retried partial create, a
+   * `manage_flow_nodes` op re-targeting an existing node), and the type sweep
+   * is skipped with a warning instead of wiping them. Marker-matched children
+   * are still deleted in that case.
+   *
+   * Reads the chart with the flow's locale when known (relations are
+   * per-locale) and falls back to the node list. Failures are non-fatal.
+   * Returns the ids actually deleted so callers can surface them.
+   */
+  private async removePlaceholderTools(
+    flowId: string,
+    parentNodeId: string,
+    childType: "aiAgentJobTool" | "llmPromptTool",
+    preferredLocaleId?: string,
+  ): Promise<string[]> {
+    // Without the parent id the child filters below would match unrelated
+    // nodes (e.g. every node lacking parentId) — better to leave the
+    // placeholder in place than to delete real tools.
+    if (!parentNodeId) return [];
+    const isMarkedPlaceholder = (n: any) =>
+      n.preview === "unlock_account" ||
+      n.label === "unlock_account" ||
+      n.config?.toolId === "unlock_account";
+    const isCandidate = (n: any) =>
+      isMarkedPlaceholder(n) || n.type === childType;
+
+    const deletedIds: string[] = [];
+    try {
+      let candidates: any[] = [];
+
+      try {
+        const chart: any = await this.apiClient.get(
+          `/new/v2.0/flows/${flowId}/chart`,
+          preferredLocaleId ? { params: { preferredLocaleId } } : undefined,
+        );
+        const chartNodes = chart.nodes ?? [];
+        const chartRelations = chart.relations ?? [];
+        const parentRelation = (
+          Array.isArray(chartRelations) ? chartRelations : []
+        ).find((relation: any) => relation.node === parentNodeId);
+        const childNodeIds = new Set(parentRelation?.children ?? []);
+
+        candidates = (Array.isArray(chartNodes) ? chartNodes : []).filter(
+          (n: any) => childNodeIds.has(n._id || n.id) && isCandidate(n),
+        );
+      } catch {
+        // Fall back to the regular node list when the chart endpoint is not available.
+      }
+
+      if (candidates.length === 0) {
+        const nodeList: any = await this.apiClient.get(
+          `/v2.0/flows/${flowId}/chart/nodes`,
+          { params: { limit: 200 } },
+        );
+        const nodeItems = nodeList.items ?? nodeList;
+        candidates = (Array.isArray(nodeItems) ? nodeItems : []).filter(
+          (n: any) => nodeParentId(n) === parentNodeId && isCandidate(n),
+        );
+      }
+
+      const marked = candidates.filter(isMarkedPlaceholder);
+      const typeOnly = candidates.filter((n: any) => !isMarkedPlaceholder(n));
+
+      let placeholderTools = marked;
+      if (typeOnly.length === 1) {
+        placeholderTools = [...marked, ...typeOnly];
+      } else if (typeOnly.length > 1) {
+        logger.warn(
+          "Skipped the placeholder sweep by node type: this parent already has real tool children",
+          {
+            flowId,
+            parentNodeId,
+            childType,
+            typeOnlyChildren: typeOnly.length,
+          },
+        );
+      }
+
+      for (const placeholderTool of placeholderTools) {
+        const placeholderToolId = placeholderTool._id || placeholderTool.id;
+        if (!placeholderToolId) continue;
+        await this.apiClient.delete(
+          `/v2.0/flows/${flowId}/chart/nodes/${placeholderToolId}`,
+        );
+        deletedIds.push(String(placeholderToolId));
+      }
+    } catch (placeholderCleanupError: any) {
+      logger.warn(
+        "Failed to remove backend-created placeholder tool from flow",
+        { error: placeholderCleanupError.message, flowId, parentNodeId },
+      );
+    }
+    return deletedIds;
   }
 
   // =========================================================================
@@ -1684,9 +2707,19 @@ export class ToolHandlers {
   async handleSetupLlm(args: any): Promise<any> {
     const data = schemas.setupLlmSchema.parse(args);
 
-    if (!data.apiKey && !data.connectionId) {
+    const hasInlineCredentials =
+      data.provider === "awsBedrock"
+        ? Boolean((data.accessKeyId && data.secretAccessKey) || data.roleArn)
+        : Boolean(data.apiKey);
+
+    if (!hasInlineCredentials && !data.connectionId) {
       return withHints(
-        { error: "Either apiKey or connectionId must be provided." },
+        {
+          error:
+            data.provider === "awsBedrock"
+              ? "Either accessKeyId + secretAccessKey, roleArn, or connectionId must be provided."
+              : "Either apiKey or connectionId must be provided.",
+        },
         {
           action: "Read the provider guide for credential requirements.",
         },
@@ -1720,8 +2753,28 @@ export class ToolHandlers {
               projectId: data.projectId,
             },
             {
+              action: `Import the LLM and its connection into the target project with manage_packages, or provide ${
+                data.provider === "awsBedrock"
+                  ? "accessKeyId + secretAccessKey (or roleArn)"
+                  : "an apiKey"
+              } / a same-project connectionId.`,
+            },
+          );
+        }
+
+        const allowedTypes = PROVIDER_CONNECTION_TYPES[data.provider];
+        if (match.type && !allowedTypes.includes(match.type)) {
+          return withHints(
+            {
+              error: `The provided connectionId is a '${match.type}' connection, which cannot be used with provider '${data.provider}' (expected ${allowedTypes
+                .map((type) => `'${type}'`)
+                .join(" or ")}).`,
+              connectionId: connectionRefId,
+              projectId: data.projectId,
+            },
+            {
               action:
-                "Import the LLM and its connection into the target project with manage_packages, or provide an apiKey / same-project connectionId.",
+                "Pass a same-project connectionId of a matching type, or provide inline credentials to auto-create one.",
             },
           );
         }
@@ -1743,15 +2796,28 @@ export class ToolHandlers {
       }
     }
 
-    // If apiKey is provided, auto-create a Connection first
-    if (data.apiKey && !connectionRefId) {
+    // If inline credentials are provided, auto-create a Connection first
+    if (hasInlineCredentials && !connectionRefId) {
+      let connectionType = PROVIDER_CONNECTION_TYPES[data.provider][0];
+      let connectionFields: Record<string, string> = { apiKey: data.apiKey! };
+      if (data.provider === "awsBedrock") {
+        if (data.roleArn) {
+          connectionType = "AwsBedrockProviderIamRole";
+          connectionFields = { roleArn: data.roleArn };
+        } else {
+          connectionFields = {
+            accessKeyId: data.accessKeyId!,
+            secretAccessKey: data.secretAccessKey!,
+          };
+        }
+      }
       try {
         const connection: any = await this.apiClient.post("/v2.0/connections", {
           projectId: data.projectId,
-          name: `${data.provider} - auto`,
-          type: PROVIDER_CONNECTION_TYPE[data.provider] ?? data.provider,
+          name: `${data.provider} - auto - ${randomUUID()}`,
+          type: connectionType,
           extension: "@cognigy/generative-ai-provider",
-          fields: { apiKey: data.apiKey },
+          fields: connectionFields,
         });
         connectionRefId =
           connection.referenceId || connection._id || connection.id;
@@ -1759,13 +2825,38 @@ export class ToolHandlers {
         return withHints(
           { error: `Failed to create connection: ${connError.message}` },
           {
-            action: "Check API key and provider, then retry.",
+            action:
+              connectionType === "AwsBedrockProviderIamRole"
+                ? "IAM-role connections are feature-gated per installation. If the platform reports the type is not enabled, retry with accessKeyId + secretAccessKey instead of roleArn."
+                : "Check credentials and provider, then retry.",
           },
         );
       }
     }
 
-    const displayName = data.name || data.modelType;
+    const displayName = data.name || data.customModel || data.modelType;
+
+    // Provider-specific metadata. For openAICompatible the actual model name
+    // and endpoint live here — modelType is just "custom-model" / "custom-embedding-model".
+    // For awsBedrock the region, routing location, and optionally a custom
+    // Bedrock model id live here.
+    const providerMeta =
+      data.provider === "openAICompatible"
+        ? {
+            customModel: data.customModel,
+            baseCustomUrl: data.baseCustomUrl,
+            ...(data.customAuthHeader
+              ? { customAuthHeader: data.customAuthHeader }
+              : {}),
+          }
+        : data.provider === "awsBedrock"
+          ? {
+              region: data.region,
+              ...(data.location ? { location: data.location } : {}),
+              ...(data.geo ? { geo: data.geo } : {}),
+              ...(data.customModel ? { customModel: data.customModel } : {}),
+            }
+          : {};
 
     let result: any;
     try {
@@ -1776,7 +2867,8 @@ export class ToolHandlers {
         provider: data.provider,
         connectionId: connectionRefId,
         isDefault: data.isDefault ?? true,
-        [data.provider]: {},
+        ...(data.apiType ? { apiType: data.apiType } : {}),
+        [data.provider]: providerMeta,
       });
     } catch (error: any) {
       return withHints(
@@ -1869,7 +2961,9 @@ export class ToolHandlers {
           },
           {
             action:
-              "Verify your API key and model type are correct, then retry.",
+              data.provider === "awsBedrock"
+                ? "Verify accessKeyId + secretAccessKey (or roleArn), region, and model id are correct, then retry."
+                : "Verify your API key and model type are correct, then retry.",
           },
         );
       }
@@ -1917,6 +3011,9 @@ export class ToolHandlers {
 
     // --- Endpoint resolution ---
     let endpointUrl: string | undefined = data.endpointUrl;
+    // Set when the handler resolved the endpoint itself; lets the request URL
+    // be built from base + token instead of inferred from a finished URL.
+    let resolvedToken: string | undefined;
     let endpointMeta: {
       autoCreated?: boolean;
       resolved?: boolean;
@@ -1997,8 +3094,9 @@ export class ToolHandlers {
       }
 
       if (existingEndpoint) {
-        endpointUrl = existingEndpoint.URLToken
-          ? `${this.endpointBaseUrl}/${existingEndpoint.URLToken}`
+        resolvedToken = existingEndpoint.URLToken || undefined;
+        endpointUrl = resolvedToken
+          ? `${this.endpointBaseUrl}/${resolvedToken}`
           : undefined;
         endpointMeta = {
           resolved: true,
@@ -2014,8 +3112,9 @@ export class ToolHandlers {
             flowId: flowRef,
             name: `${agent.name} REST Endpoint`,
           });
-          endpointUrl = endpoint.URLToken
-            ? `${this.endpointBaseUrl}/${endpoint.URLToken}`
+          resolvedToken = endpoint.URLToken || undefined;
+          endpointUrl = resolvedToken
+            ? `${this.endpointBaseUrl}/${resolvedToken}`
             : undefined;
           endpointMeta = {
             autoCreated: true,
@@ -2056,13 +3155,98 @@ export class ToolHandlers {
     const payload: any = { userId, sessionId, text: data.message };
     if (data.data) payload.data = data.data;
 
+    // Test mode (see utils/endpointUrl.ts) keeps plugin traffic out of the
+    // customer's billable conversation count, so it is the default. It is a
+    // pure URL variant, so the handler stays stateless.
+    //
+    // There is deliberately NO automatic fallback to the regular (billable)
+    // URL. An HTTP error from the test-mode URL never proves the message was
+    // not processed: a REST endpoint's Execution Finished transformer runs
+    // after the flow and can set any status (a 404 included), and a gateway
+    // timeout can hide a completed execution. Replaying would then execute
+    // tools or advance the conversation twice, against production, billed.
+    // Nor can route absence (platform older than Cognigy 4.27) be told apart
+    // from an unknown URL token or a transformer-set status by the response
+    // alone: the platform answers an empty 400 for an unknown token on either
+    // path. So a failure is returned with status-aware hints
+    // (talkToAgentFailureHints) that require the original outcome to be
+    // checked first, and a billable send only ever happens when the caller
+    // passes testMode: false.
+    //
+    // The request URL is built from base + token when the handler resolved the
+    // endpoint itself (exact, whatever path prefix the base carries). Only a
+    // caller-supplied URL goes through the segment-based helpers. Results carry
+    // the regular endpointUrl and a testMode flag; the test-mode URL is a
+    // transport detail and is never returned, so it cannot be handed on as
+    // "the endpoint URL".
+    const useTestMode = data.testMode !== false;
+    let targetUrl: string;
     try {
-      const response = await axios.post(endpointUrl!, payload, {
+      if (resolvedToken) {
+        endpointUrl = endpointUrlFor(
+          this.endpointBaseUrl,
+          resolvedToken,
+          false,
+        );
+        targetUrl = endpointUrlFor(
+          this.endpointBaseUrl,
+          resolvedToken,
+          useTestMode,
+        );
+      } else {
+        if (!hasEndpointToken(endpointUrl!)) {
+          return withHints(
+            {
+              error: "Endpoint URL has no URL token.",
+              endpointUrl,
+              sessionId,
+            },
+            {
+              likely_cause:
+                "Only the endpoint base URL was passed; a REST endpoint URL ends in the endpoint's URLToken.",
+              action:
+                "Pass the full endpointUrl from create_ai_agent or list_resources { resourceType: 'endpoint' } (channel rest), or pass aiAgentId instead.",
+            },
+          );
+        }
+        endpointUrl = toProductionEndpointUrl(endpointUrl!);
+        targetUrl = useTestMode
+          ? toTestModeEndpointUrl(endpointUrl)
+          : endpointUrl;
+      }
+    } catch (urlErr: any) {
+      // A caller-supplied endpointUrl is schema-validated, so this is almost
+      // always a malformed COGNIGY_ENDPOINT_BASE_URL. Return it structured
+      // instead of letting the URL parser's TypeError escape the tool.
+      return withHints(
+        {
+          error: "Endpoint URL is not a valid absolute URL.",
+          detail: urlErr?.message,
+          endpointUrl,
+          sessionId,
+        },
+        {
+          likely_cause:
+            "COGNIGY_ENDPOINT_BASE_URL is misconfigured (it must be an absolute https URL), or the endpointUrl argument is malformed.",
+          action:
+            "Check the endpoint base URL in the server configuration, or pass a full endpointUrl from list_resources { resourceType: 'endpoint' }.",
+        },
+      );
+    }
+
+    try {
+      const response = await axios.post(targetUrl, payload, {
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
         timeout: 30000,
+        // Endpoint traffic does not go through CognigyApiClient, so it needs
+        // the proxy wiring of its own. Resolved per call rather than cached:
+        // the endpoint host differs from the API host and may be excluded by
+        // NO_PROXY independently.
+        ...getProxyAxiosOptions(endpointUrl!),
+        beforeRedirect: applyProxyToRedirect,
       });
 
       let agentResponse = response.data.text || "";
@@ -2072,7 +3256,12 @@ export class ToolHandlers {
         .map((o: any) => o.text);
       if (textOutputs.length > 0) agentResponse = textOutputs.join(" ");
 
-      const result: any = { agentResponse, sessionId, endpointUrl };
+      const result: any = {
+        agentResponse,
+        sessionId,
+        endpointUrl,
+        testMode: useTestMode,
+      };
       if (endpointMeta.autoCreated) result.endpointAutoCreated = true;
       if (endpointMeta.resolved) result.endpointResolved = true;
 
@@ -2087,24 +3276,22 @@ export class ToolHandlers {
           action: "Read the troubleshooting guide for diagnostic steps.",
         });
       }
-
       return result;
     } catch (error: any) {
+      const status: number | undefined = error.response?.status;
       const detail =
         error.response?.data?.error ||
         error.response?.data?.message ||
         error.message;
       return withHints(
         {
-          error: `Request failed with status ${error.response?.status ?? "unknown"}`,
+          error: `Request failed with status ${status ?? "unknown"}`,
           detail,
           sessionId,
+          endpointUrl,
+          testMode: useTestMode,
         },
-        {
-          likely_cause: "Endpoint URL invalid or expired.",
-          action:
-            "Verify endpoint with list_resources { resourceType: 'endpoint' }.",
-        },
+        talkToAgentFailureHints(status, sessionId, useTestMode),
       );
     }
   }
@@ -2114,7 +3301,18 @@ export class ToolHandlers {
   // =========================================================================
   async handleListResources(args: any): Promise<any> {
     const data = schemas.listResourcesSchema.parse(args);
-    const { resourceType, projectId, aiAgentId, limit, skip, sort } = data;
+    const {
+      resourceType,
+      projectId,
+      aiAgentId,
+      flowId: requestedFlowId,
+      limit,
+      skip,
+      sort,
+      actor,
+      eventType,
+      user,
+    } = data;
     // `sort` rides along with paging so every server-backed list endpoint gets
     // it. 'tool' builds its own params and has no server-side sort.
     const paging = {
@@ -2123,8 +3321,14 @@ export class ToolHandlers {
       ...(sort ? { sort } : {}),
     };
 
-    // Validate projectId requirement
-    if (resourceType !== "project" && resourceType !== "tool" && !projectId) {
+    // Validate projectId requirement. 'project' and 'audit_event' are
+    // organisation-scoped; 'tool' takes aiAgentId (or flowId) instead.
+    if (
+      resourceType !== "project" &&
+      resourceType !== "tool" &&
+      resourceType !== "audit_event" &&
+      !projectId
+    ) {
       return withHints(
         { error: `projectId is required for resourceType '${resourceType}'.` },
         {
@@ -2133,18 +3337,21 @@ export class ToolHandlers {
         },
       );
     }
-    if (resourceType === "tool" && !aiAgentId) {
+    if (resourceType === "tool" && !aiAgentId && !requestedFlowId) {
       return withHints(
-        { error: "aiAgentId is required for resourceType 'tool'." },
+        { error: "aiAgentId or flowId is required for resourceType 'tool'." },
         {
           action:
-            "Use list_resources { resourceType: 'agent', projectId } to find agents first.",
+            "Use list_resources { resourceType: 'agent', projectId } to find agents first, or pass flowId directly (LLM Prompt flows have no agent resource).",
         },
       );
     }
 
     let items: any[];
     let total: number | undefined;
+    // Set when the platform rejected the audit_event filters and this plugin
+    // applied them instead, so the response can say so.
+    let filteredClientSide = false;
 
     switch (resourceType) {
       case "project": {
@@ -2237,13 +3444,18 @@ export class ToolHandlers {
         break;
       }
       case "tool": {
-        const resolved = await resolveFlowForAgent(this.apiClient, aiAgentId!);
+        const resolved = await resolveToolFlow(
+          this.apiClient,
+          aiAgentId,
+          requestedFlowId,
+        );
         if (!resolved) {
           return withHints(
             { error: "Could not find a flow associated with this agent." },
             {
               likely_cause: "Agent was not created via create_ai_agent.",
-              action: "Create the agent with create_ai_agent first.",
+              action:
+                "Create the agent with create_ai_agent first, or pass flowId directly.",
             },
           );
         }
@@ -2261,12 +3473,66 @@ export class ToolHandlers {
             toolId: n._id || n.id,
             name: n.label || n.name,
             toolType: n.type,
+            // Which aiAgentJob / llmPromptV2 node the tool hangs off — a flow
+            // can have more than one. Always a string id, whichever shape
+            // the API returned the parent in.
+            parentNodeId: nodeParentId(n),
             description: n.config?.description,
             ...(n.config?.knowledgeStoreId
               ? { knowledgeStoreId: n.config.knowledgeStoreId }
               : {}),
           }));
         total = items.length;
+        break;
+      }
+      case "audit_event": {
+        // Organisation-scoped, so no projectId. `actor` / `type` are sent as
+        // repeatable params (axios serialises arrays as `actor[]=…`), matching
+        // what GET /v2.0/auditevents documents. Both filters need the platform
+        // at 2026.17.0 or newer; the catch below covers older ones.
+        try {
+          const res: any = await this.apiClient.get("/v2.0/auditevents", {
+            params: {
+              ...paging,
+              ...(actor ? { actor } : {}),
+              ...(eventType ? { type: eventType } : {}),
+              ...(user ? { user } : {}),
+            },
+          });
+          items = res.items ?? res;
+          total = res.total;
+        } catch (error: any) {
+          // A 400 while either filter is set is most likely a platform older
+          // than 2026.17.0 rejecting the repeatable actor[]/type[] params.
+          // Recover by doing what the alternative would only have *told* the
+          // caller to do — refetch without the filters and apply them here —
+          // rather than sniffing the free-text error message, which misfires
+          // both ways (a rejected `sort` field reads as "type", and an old
+          // platform's 400 need not name either filter). If the refetch fails
+          // too, the 400 was about something else and the original stands.
+          if (error?.status === 400 && (actor || eventType)) {
+            let retried: any;
+            try {
+              retried = await this.apiClient.get("/v2.0/auditevents", {
+                params: { ...paging, ...(user ? { user } : {}) },
+              });
+            } catch {
+              throw error;
+            }
+            const raw = retried?.items ?? retried;
+            items = (Array.isArray(raw) ? raw : []).filter(
+              (e: any) =>
+                // `performedBy` is absent on human-performed events.
+                (!actor || actor.includes(e?.performedBy?.actor ?? "human")) &&
+                (!eventType || eventType.includes(e?.type)),
+            );
+            total = items.length;
+            filteredClientSide = true;
+            break;
+          }
+          if (error?.status === 403) return this.auditEventForbidden(error);
+          throw error;
+        }
         break;
       }
       default:
@@ -2286,6 +3552,15 @@ export class ToolHandlers {
 
     const result: any = { items: filtered, total: total ?? filtered.length };
 
+    if (filteredClientSide) {
+      return withHints(result, {
+        warning:
+          "actor / eventType were applied by this plugin, not by the platform: this Cognigy version rejected the actor[]/type[] query filters, which need 2026.17.0 or newer.",
+        action:
+          "Only the requested page was fetched and then filtered, so `total` counts matches within that page, not across the whole audit log. Raise `limit` or page through with `skip` to see more.",
+      });
+    }
+
     if (sort && resourceType === "tool") {
       return withHints(result, {
         warning:
@@ -2300,6 +3575,23 @@ export class ToolHandlers {
     }
 
     return result;
+  }
+
+  /**
+   * Audit events live above any project, so a 403 here is about the API key's
+   * user lacking Admin Center access rather than anything project-scoped —
+   * knowledge the list and get paths both need, kept in one place so they
+   * cannot drift apart.
+   */
+  private auditEventForbidden(error: any): any {
+    return withHints(
+      { error: error.message },
+      {
+        likely_cause:
+          "Audit events are organisation-scoped; the API key's user lacks the required admin permission.",
+        action: "Use an API key belonging to a user with Admin Center access.",
+      },
+    );
   }
 
   // =========================================================================
@@ -2324,12 +3616,20 @@ export class ToolHandlers {
       // API key belongs to, so `createdBy` / `lastChangedBy` ids can be
       // attributed instead of guessed.
       user: `/v2.0/users/${id}`,
+      audit_event: `/v2.0/auditevents/${id}`,
     };
 
     const url = endpointMap[resourceType];
     if (!url) throw new Error(`Unknown resourceType: ${resourceType}`);
 
-    const result = await this.apiClient.get(url);
+    let result: any;
+    try {
+      result = await this.apiClient.get(url);
+    } catch (error: any) {
+      if (resourceType === "audit_event" && error?.status === 403)
+        return this.auditEventForbidden(error);
+      throw error;
+    }
     if (raw) return result;
 
     const filtered = RESOURCE_FILTERS_GET[resourceType]
@@ -2348,24 +3648,46 @@ export class ToolHandlers {
   // =========================================================================
   async handleDeleteResource(args: any): Promise<any> {
     const data = schemas.deleteResourceSchema.parse(args);
-    const { resourceType, id, aiAgentId, cascade } = data;
+    const { resourceType, id, aiAgentId, flowId, cascade } = data;
 
     if (resourceType === "tool") {
-      if (!aiAgentId) {
+      if (!aiAgentId && !flowId) {
         return withHints(
-          { error: "aiAgentId is required for resourceType 'tool'." },
+          { error: "aiAgentId or flowId is required for resourceType 'tool'." },
           {
             action:
-              "Provide aiAgentId so the handler can resolve the agent's flow.",
+              "Provide aiAgentId so the handler can resolve the agent's flow, or flowId directly (LLM Prompt flows have no agent resource).",
           },
         );
       }
-      const resolved = await resolveFlowForAgent(this.apiClient, aiAgentId);
+      const resolved = await resolveToolFlow(this.apiClient, aiAgentId, flowId);
       if (!resolved) {
         return withHints(
           { error: "Could not find a flow associated with this agent." },
           {
-            action: "Ensure agent was created via create_ai_agent.",
+            action:
+              "Ensure agent was created via create_ai_agent, or pass flowId directly.",
+          },
+        );
+      }
+      // The auto-created Default branches (aiAgentJobDefault, llmPromptDefault)
+      // show up in the tool listing but the platform refuses to delete them.
+      let node: any = null;
+      try {
+        node = await this.apiClient.get(
+          `/v2.0/flows/${resolved.flowId}/chart/nodes/${id}`,
+        );
+      } catch {
+        // Let the DELETE below produce the authoritative error.
+      }
+      if (typeof node?.type === "string" && node.type.endsWith("Default")) {
+        return withHints(
+          {
+            error: `Node ${id} is the ${node.type} branch, which the platform creates automatically and does not allow deleting.`,
+          },
+          {
+            action:
+              "Leave the Default branch in place; delete only the tool nodes you created.",
           },
         );
       }
@@ -2375,18 +3697,39 @@ export class ToolHandlers {
       return { deleted: true, resourceType: "tool", id };
     }
 
-    // Agent deletion requires cascade: endpoints → flow → agent.
-    // The Cognigy API rejects agent deletion while referencing resources exist.
+    // Agents, flows and projects are never hard-deleted — they are renamed
+    // with the DELETE_ prefix to mark them for manual deletion.
     if (resourceType === "agent") {
       if (cascade === false) {
-        await this.apiClient.delete(`/v2.0/aiagents/${id}`);
-        return { deleted: true, resourceType, id };
+        const agent: any = await this.apiClient.get(`/v2.0/aiagents/${id}`);
+        const rename = await this.renameForDeletion(
+          `/v2.0/aiagents/${id}`,
+          agent?.name,
+          `agent ${id}`,
+        );
+        return withHints(
+          {
+            markedForDeletion: true,
+            alreadyMarked: rename.alreadyMarked || undefined,
+            resourceType,
+            id,
+            name: rename.name,
+          },
+          {
+            warning:
+              "Agents cannot be deleted via this plugin. The agent was renamed to mark it for manual deletion; its endpoints and flow were left untouched (cascade: false).",
+            action: "Delete the agent manually in the Cognigy UI.",
+          },
+        );
       }
-      return this.cascadeDeleteAgent(id);
+      return this.softDeleteAgent(id);
+    }
+
+    if (resourceType === "flow" || resourceType === "project") {
+      return this.markForDeletion(resourceType, id);
     }
 
     const deleteMap: Record<string, string> = {
-      flow: `/v2.0/flows/${id}`,
       endpoint: `/v2.0/endpoints/${id}`,
       llm_model: `/v2.0/largelanguagemodels/${id}`,
       knowledge_store: `/v2.0/knowledgestores/${id}`,
@@ -2401,18 +3744,209 @@ export class ToolHandlers {
   }
 
   /**
-   * Cascade-delete an AI Agent and all resources provisioned alongside it:
-   * 1. Resolve the agent's flow
-   * 2. Delete every endpoint pointing at that flow
-   * 3. Delete the flow itself
-   * 4. Delete the agent resource
+   * Rename a resource to DELETE_<name> to mark it for manual deletion.
+   * Idempotent: an already-prefixed name is left unchanged.
    */
-  private async cascadeDeleteAgent(agentId: string): Promise<any> {
-    const deleted: string[] = [];
+  private async renameForDeletion(
+    url: string,
+    currentName: string | undefined,
+    resource: string,
+  ): Promise<{ name: string; alreadyMarked: boolean }> {
+    const name = currentName ?? "";
+    if (!name.trim()) {
+      throw new Error(
+        `Cannot mark ${resource} for deletion: it has no name to prefix.`,
+      );
+    }
+    if (name.startsWith(DELETE_PREFIX)) {
+      return { name, alreadyMarked: true };
+    }
+    const newName = `${DELETE_PREFIX}${name}`.slice(
+      0,
+      MAX_RESOURCE_NAME_LENGTH,
+    );
+    await this.apiClient.patch(url, { name: newName });
+    return { name: newName, alreadyMarked: false };
+  }
+
+  /**
+   * Deactivate (active: false) every endpoint that references a flow, so the
+   * flow stops serving traffic. Reversible in the Cognigy UI — endpoints are
+   * never deleted here. `checked: false` means enumeration never ran, so
+   * endpoints may still be live.
+   */
+  private async deactivateEndpointsForFlow(
+    projectId: string,
+    flowId: string,
+    flowReferenceId: string | undefined,
+  ): Promise<{
+    deactivated: string[];
+    failed: { resource: string; error: string }[];
+    checked: boolean;
+  }> {
+    const deactivated: string[] = [];
+    const failed: { resource: string; error: string }[] = [];
+
+    if (!flowReferenceId) {
+      return { deactivated, failed, checked: false };
+    }
+
+    try {
+      const limit = 100;
+      let offset = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const eps: any = await this.apiClient.get("/v2.0/endpoints", {
+          params: { projectId, limit, offset },
+        });
+        const epItems = eps.items ?? eps;
+        if (!Array.isArray(epItems) || epItems.length === 0) {
+          break;
+        }
+
+        for (const ep of epItems) {
+          if (ep.flowId === flowReferenceId || ep.flowId === flowId) {
+            const epId = ep._id || ep.id;
+            try {
+              await this.apiClient.patch(`/v2.0/endpoints/${epId}`, {
+                active: false,
+              });
+              deactivated.push(`endpoint:${epId}`);
+            } catch (e: any) {
+              failed.push({
+                resource: `endpoint:${epId}`,
+                error: e.message ?? String(e),
+              });
+            }
+          }
+        }
+
+        if (epItems.length < limit) {
+          hasMore = false;
+        } else {
+          offset += limit;
+        }
+      }
+    } catch (e: any) {
+      failed.push({
+        resource: `endpoints:list:${projectId}`,
+        error: e?.message ?? String(e),
+      });
+    }
+
+    return { deactivated, failed, checked: true };
+  }
+
+  /**
+   * Flows and projects cannot be deleted via the plugin — rename them to
+   * DELETE_<name> so a human can delete them manually in the Cognigy UI.
+   * Flows are also taken offline first by deactivating their endpoints;
+   * projects are rename-only (everything inside stays live).
+   */
+  private async markForDeletion(
+    resourceType: "flow" | "project",
+    id: string,
+  ): Promise<any> {
+    const url =
+      resourceType === "flow" ? `/v2.0/flows/${id}` : `/v2.0/projects/${id}`;
+    const current: any = await this.apiClient.get(url);
+
+    let endpoints: {
+      deactivated: string[];
+      failed: { resource: string; error: string }[];
+      checked: boolean;
+    } | null = null;
+    if (resourceType === "flow") {
+      const projectId =
+        current?.projectId ??
+        current?.projectReference ??
+        current?.project?._id ??
+        current?.project?.id;
+      endpoints = projectId
+        ? await this.deactivateEndpointsForFlow(
+            projectId,
+            id,
+            current?.referenceId,
+          )
+        : { deactivated: [], failed: [], checked: false };
+    }
+
+    const rename = await this.renameForDeletion(
+      url,
+      current?.name,
+      `${resourceType} ${id}`,
+    );
+
+    const parts = [
+      `${resourceType === "flow" ? "Flows" : "Projects"} cannot be deleted via this plugin. ${
+        rename.alreadyMarked
+          ? `The ${resourceType} is already marked for manual deletion as "${rename.name}".`
+          : `The ${resourceType} was renamed to "${rename.name}" to mark it for manual deletion.`
+      }`,
+    ];
+    if (endpoints) {
+      if (endpoints.failed.length > 0) {
+        parts.push(
+          "Endpoint deactivation was incomplete — the flow may still be reachable via its endpoints (see cascade.failed).",
+        );
+      } else if (!endpoints.checked) {
+        parts.push(
+          "The flow's endpoints could not be enumerated — the flow may still be reachable via its endpoints.",
+        );
+      } else if (endpoints.deactivated.length > 0) {
+        parts.push(
+          `${endpoints.deactivated.length} endpoint(s) referencing the flow were deactivated (reversible in the Cognigy UI) to take it offline.`,
+        );
+      } else {
+        parts.push("No endpoints referenced the flow.");
+      }
+    }
+    if (resourceType === "project") {
+      parts.push(
+        "The rename takes nothing offline: flows, endpoints and agents inside the project remain live and reachable. Deactivate or delete them individually if the project must stop serving traffic.",
+      );
+    }
+
+    return withHints(
+      {
+        markedForDeletion: true,
+        alreadyMarked: rename.alreadyMarked || undefined,
+        resourceType,
+        id,
+        name: rename.name,
+        cascade: endpoints
+          ? {
+              deactivated: endpoints.deactivated,
+              failed:
+                endpoints.failed.length > 0 ? endpoints.failed : undefined,
+            }
+          : undefined,
+      },
+      {
+        warning: parts.join(" "),
+        action: `Delete the ${resourceType} manually in the Cognigy UI when appropriate.`,
+      },
+    );
+  }
+
+  /**
+   * Soft-delete an AI Agent. Nothing is hard-deleted:
+   * 1. Resolve the agent's flow
+   * 2. Deactivate every endpoint pointing at that flow (takes the agent
+   *    offline; reversible in the Cognigy UI)
+   * 3. Rename the flow to DELETE_<name>
+   * 4. Rename the agent to DELETE_<name>
+   */
+  private async softDeleteAgent(agentId: string): Promise<any> {
+    const deactivated: string[] = [];
+    const renamed: string[] = [];
     const failed: { resource: string; error: string }[] = [];
 
     const resolved = await resolveFlowForAgent(this.apiClient, agentId);
-    const agent = resolved?.agent;
+    const agent: any =
+      resolved?.agent ??
+      (await this.apiClient.get(`/v2.0/aiagents/${agentId}`));
     const flowId = resolved?.flowId;
     const projectId =
       agent?.projectReference ??
@@ -2420,63 +3954,42 @@ export class ToolHandlers {
       agent?.project?._id ??
       agent?.project?.id;
 
-    // Step 1: delete endpoints that reference the agent's flow
-    if (flowId && projectId) {
+    let flow: any;
+    if (flowId) {
       try {
-        const flowRef =
-          agent?.flowReferenceId ??
-          ((await this.apiClient.get(`/v2.0/flows/${flowId}`)) as any)
-            .referenceId;
-        if (flowRef) {
-          const limit = 100;
-          let offset = 0;
-          let hasMore = true;
-
-          while (hasMore) {
-            const eps: any = await this.apiClient.get("/v2.0/endpoints", {
-              params: { projectId, limit, offset },
-            });
-            const epItems = eps.items ?? eps;
-            if (!Array.isArray(epItems) || epItems.length === 0) {
-              break;
-            }
-
-            for (const ep of epItems) {
-              if (ep.flowId === flowRef || ep.flowId === flowId) {
-                const epId = ep._id || ep.id;
-                try {
-                  await this.apiClient.delete(`/v2.0/endpoints/${epId}`);
-                  deleted.push(`endpoint:${epId}`);
-                } catch (e: any) {
-                  failed.push({
-                    resource: `endpoint:${epId}`,
-                    error: e.message ?? String(e),
-                  });
-                }
-              }
-            }
-
-            if (epItems.length < limit) {
-              hasMore = false;
-            } else {
-              offset += limit;
-            }
-          }
-        }
+        flow = await this.apiClient.get(`/v2.0/flows/${flowId}`);
       } catch (e: any) {
-        // best-effort — continue with flow/agent deletion, but record partial failure
         failed.push({
-          resource: `endpoints:list:${projectId}`,
+          resource: `flow:${flowId}`,
           error: e?.message ?? String(e),
         });
       }
     }
 
-    // Step 2: delete the flow
-    if (flowId) {
+    // Step 1: deactivate endpoints that reference the agent's flow
+    let endpointsChecked = false;
+    if (flowId && projectId) {
+      const flowRef = agent?.flowReferenceId ?? flow?.referenceId;
+      const eps = await this.deactivateEndpointsForFlow(
+        projectId,
+        flowId,
+        flowRef,
+      );
+      endpointsChecked = eps.checked;
+      deactivated.push(...eps.deactivated);
+      failed.push(...eps.failed);
+    }
+
+    // Step 2: rename the flow (flows are never deleted)
+    let flowRename: { name: string; alreadyMarked: boolean } | undefined;
+    if (flowId && flow) {
       try {
-        await this.apiClient.delete(`/v2.0/flows/${flowId}`);
-        deleted.push(`flow:${flowId}`);
+        flowRename = await this.renameForDeletion(
+          `/v2.0/flows/${flowId}`,
+          flow?.name,
+          `flow ${flowId}`,
+        );
+        if (!flowRename.alreadyMarked) renamed.push(`flow:${flowId}`);
       } catch (e: any) {
         failed.push({
           resource: `flow:${flowId}`,
@@ -2485,10 +3998,15 @@ export class ToolHandlers {
       }
     }
 
-    // Step 3: delete the agent
+    // Step 3: rename the agent (agents are never deleted)
+    let agentRename: { name: string; alreadyMarked: boolean } | undefined;
     try {
-      await this.apiClient.delete(`/v2.0/aiagents/${agentId}`);
-      deleted.push(`agent:${agentId}`);
+      agentRename = await this.renameForDeletion(
+        `/v2.0/aiagents/${agentId}`,
+        agent?.name,
+        `agent ${agentId}`,
+      );
+      if (!agentRename.alreadyMarked) renamed.push(`agent:${agentId}`);
     } catch (e: any) {
       failed.push({
         resource: `agent:${agentId}`,
@@ -2496,14 +4014,66 @@ export class ToolHandlers {
       });
     }
 
-    const allSucceeded =
-      failed.length === 0 && deleted.includes(`agent:${agentId}`);
-    return {
-      deleted: allSucceeded,
-      resourceType: "agent",
-      id: agentId,
-      cascade: { deleted, failed: failed.length > 0 ? failed : undefined },
-    };
+    // Compose the warning from what actually happened — never claim the
+    // agent is offline unless endpoint deactivation fully succeeded.
+    const agentMarked = agentRename !== undefined;
+    const endpointFailed = failed.some(
+      (f) =>
+        f.resource.startsWith("endpoint:") ||
+        f.resource.startsWith("endpoints:"),
+    );
+
+    const parts = ["Agents and flows cannot be deleted via this plugin."];
+    parts.push(
+      !agentMarked
+        ? "The agent could not be renamed and is NOT marked for deletion (see cascade.failed)."
+        : agentRename?.alreadyMarked
+          ? "The agent already carried the DELETE_ prefix and was left unchanged."
+          : "The agent was renamed with the DELETE_ prefix to mark it for manual deletion.",
+    );
+    if (flowRename) {
+      parts.push(
+        flowRename.alreadyMarked
+          ? "Its flow already carried the DELETE_ prefix and was left unchanged."
+          : "Its flow was renamed with the DELETE_ prefix as well.",
+      );
+    } else if (flowId) {
+      parts.push("Its flow could not be renamed (see cascade.failed).");
+    }
+    if (endpointFailed) {
+      parts.push(
+        "Endpoint deactivation was incomplete — the agent may still be reachable (see cascade.failed).",
+      );
+    } else if (!endpointsChecked) {
+      parts.push(
+        "The agent's flow/endpoints could not be resolved, so no endpoints were deactivated — the agent may still be reachable.",
+      );
+    } else if (deactivated.length > 0) {
+      parts.push(
+        `${deactivated.length} endpoint(s) were deactivated (reversible in the Cognigy UI) to take the agent offline.`,
+      );
+    } else {
+      parts.push("No endpoints referenced the agent's flow.");
+    }
+
+    return withHints(
+      {
+        markedForDeletion: agentMarked,
+        alreadyMarked: agentRename?.alreadyMarked || undefined,
+        resourceType: "agent",
+        id: agentId,
+        name: agentRename?.name,
+        cascade: {
+          deactivated,
+          renamed,
+          failed: failed.length > 0 ? failed : undefined,
+        },
+      },
+      {
+        warning: parts.join(" "),
+        action: "Delete the renamed resources manually in the Cognigy UI.",
+      },
+    );
   }
 
   // =========================================================================
@@ -2778,42 +4348,158 @@ export class ToolHandlers {
   async handleCreateTool(args: any): Promise<any> {
     const data = schemas.createToolSchema.parse(args);
 
-    // Step 1: Resolve the agent's flow
-    const resolved = await resolveFlowForAgent(this.apiClient, data.aiAgentId);
+    // Step 1: Resolve the target flow (via aiAgentId, or directly via flowId
+    // for LLM Prompt flows that have no agent resource)
+    const resolved = await resolveToolFlow(
+      this.apiClient,
+      data.aiAgentId,
+      data.flowId,
+    );
     if (!resolved) {
       return withHints(
         { error: "Could not find a flow associated with this agent." },
         {
           likely_cause:
-            "create_tool requires an agent created via create_ai_agent (which auto-provisions the flow).",
+            "create_tool requires an agent created via create_ai_agent (which auto-provisions the flow), or an explicit flowId.",
           action:
-            "Read the tools guide, ensure agent was created via create_ai_agent, then retry.",
+            "Read the tools guide, ensure agent was created via create_ai_agent, then retry — or pass flowId directly.",
         },
       );
     }
     const { flowId } = resolved;
 
-    // Step 2: Find the AI Agent Job Node
+    // Step 2: Find the tool parent node (AI Agent Job, or LLM Prompt)
     const nodes: any = await this.apiClient.get(
       `/v2.0/flows/${flowId}/chart/nodes`,
       {
         params: { limit: 100 },
       },
     );
-    const allNodes = nodes.items ?? nodes;
-    const jobNode = (Array.isArray(allNodes) ? allNodes : []).find(
-      (n: any) => n.type === "aiAgentJob",
+    const allNodes: any[] = Array.isArray(nodes.items ?? nodes)
+      ? (nodes.items ?? nodes)
+      : [];
+    const parentCandidates = allNodes.filter((n: any) =>
+      (TOOL_PARENT_NODE_TYPES as readonly string[]).includes(n.type),
     );
+    let jobNode: any;
+    if (data.parentNodeId) {
+      jobNode = parentCandidates.find(
+        (n: any) => (n._id || n.id) === data.parentNodeId,
+      );
+      if (!jobNode) {
+        return withHints(
+          {
+            error: `parentNodeId "${data.parentNodeId}" is not an aiAgentJob or llmPromptV2 node in this flow.`,
+          },
+          {
+            action: `Pick one of: ${parentCandidates.map((n: any) => `${n._id || n.id} (${n.type})`).join(", ") || "none — the flow has no tool parent node"}.`,
+          },
+        );
+      }
+    } else {
+      // A flow can hold both an AI Agent Job node and an LLM Prompt node
+      // (manage_flow_nodes can add the latter to an existing flow). When the
+      // caller named the agent, the AI Agent Job node is unambiguously the
+      // one meant. When the caller addressed the flow by flowId — documented
+      // as the way to reach an LLM Prompt flow — there is no such signal, and
+      // quietly preferring the AI Agent Job node would attach the tool to the
+      // parent the caller was least likely to mean. Refuse and list both.
+      const parentTypes = [
+        ...new Set(parentCandidates.map((n: any) => n.type)),
+      ];
+      if (!data.aiAgentId && parentTypes.length > 1) {
+        return withHints(
+          {
+            error: `The flow has ${parentCandidates.length} nodes tools can attach to, of more than one type (${parentTypes.join(", ")}); pass parentNodeId to choose.`,
+            candidates: parentCandidates.map((n: any) => ({
+              nodeId: n._id || n.id,
+              type: n.type,
+              label: n.label,
+            })),
+          },
+          {
+            action:
+              "Retry create_tool with parentNodeId set to the node the tool belongs to.",
+          },
+        );
+      }
+
+      // The AI Agent Job node wins when a flow has both parent types (see
+      // findToolParentNode); only several nodes of the preferred type are
+      // ambiguous.
+      const preferred = findToolParentNode(allNodes);
+      const sameType = parentCandidates.filter(
+        (n: any) => n.type === preferred?.type,
+      );
+      if (sameType.length <= 1) {
+        jobNode = preferred;
+      } else if (
+        preferred.type === "aiAgentJob" &&
+        resolved.agent?.referenceId
+      ) {
+        // Several AI Agent Job nodes (e.g. a handover pattern) — pick the one
+        // bound to the addressed agent. The node list carries no config, so
+        // read each candidate.
+        for (const candidate of sameType) {
+          let full: any = null;
+          try {
+            full = await this.apiClient.get(
+              `/v2.0/flows/${flowId}/chart/nodes/${candidate._id || candidate.id}`,
+            );
+          } catch {
+            // Unreadable candidate — skip it.
+          }
+          if (full?.config?.aiAgent === resolved.agent.referenceId) {
+            jobNode = candidate;
+            break;
+          }
+        }
+      }
+      if (!jobNode && sameType.length > 1) {
+        return withHints(
+          {
+            error: `The flow has ${sameType.length} ${preferred.type} nodes that tools can attach to; pass parentNodeId to choose.`,
+            candidates: sameType.map((n: any) => ({
+              nodeId: n._id || n.id,
+              type: n.type,
+              label: n.label,
+            })),
+          },
+          {
+            action:
+              "Retry create_tool with parentNodeId set to the node the tool belongs to.",
+          },
+        );
+      }
+    }
 
     if (!jobNode) {
       return withHints(
         {
           error:
-            "No aiAgentJob node found in the flow. Tools must be children of an AI Agent Job node.",
+            "No aiAgentJob or llmPromptV2 node found in the flow. Tools must be children of an AI Agent Job node (or an LLM Prompt node).",
         },
         {
           action:
             "Ensure the agent was created via create_ai_agent (which provisions the aiAgentJob node).",
+        },
+      );
+    }
+    const jobNodeId = jobNode._id || jobNode.id;
+
+    const parentIsLlmPrompt = jobNode.type === "llmPromptV2";
+    if (parentIsLlmPrompt && !(data.toolType in LLM_PROMPT_TOOL_TYPE_MAP)) {
+      return withHints(
+        {
+          error: `toolType "${data.toolType}" is not supported under an LLM Prompt node — it only supports ${Object.keys(
+            LLM_PROMPT_TOOL_TYPE_MAP,
+          )
+            .map((t) => `"${t}"`)
+            .join(", ")} tools.`,
+        },
+        {
+          action:
+            "Use toolType 'tool' with custom logic nodes instead, or build the agent with an AI Agent node (create_ai_agent), which supports knowledge and send_email tools.",
         },
       );
     }
@@ -2825,9 +4511,20 @@ export class ToolHandlers {
         : undefined;
 
     if (requestedToolId) {
-      const duplicateTool = (Array.isArray(allNodes) ? allNodes : []).find(
+      // Scoped to the chosen parent: the same toolId under another tool
+      // parent in the flow is a different tool, not a duplicate. That scoping
+      // needs the node list to carry parent references, though — on a
+      // projection that omits them every child looks unparented, no child can
+      // ever match the parent id, and a real duplicate would slip through as a
+      // second node. When NO node in the list carries any parent reference at
+      // all, fall back to matching flow-wide (the behaviour before scoping).
+      const listHasParentRefs = allNodes.some(
+        (node: any) => nodeParentId(node) !== undefined,
+      );
+      const duplicateTool = allNodes.find(
         (node: any) =>
           MCP_MANAGED_TOOL_TYPES.has(node.type) &&
+          (!listHasParentRefs || nodeParentId(node) === jobNodeId) &&
           (node.config?.toolId === requestedToolId ||
             node.label === requestedToolId ||
             node.name === requestedToolId),
@@ -2835,18 +4532,25 @@ export class ToolHandlers {
 
       if (duplicateTool) {
         const duplicateToolNodeId = duplicateTool._id || duplicateTool.id;
+        const duplicateParentId = nodeParentId(duplicateTool) ?? jobNodeId;
+        const duplicateParent =
+          allNodes.find((n: any) => (n._id || n.id) === duplicateParentId) ??
+          jobNode;
         return withHints(
           {
             toolId: duplicateToolNodeId,
             toolNodeId: duplicateToolNodeId,
             requestedToolId,
+            parentNodeId: duplicateParentId,
+            parentNodeType: duplicateParent.type,
             name: duplicateTool.label || duplicateTool.name || data.name,
             toolType:
               duplicateTool.type === "knowledgeTool"
                 ? "knowledge"
                 : duplicateTool.type === "sendEmailTool"
                   ? "send_email"
-                  : duplicateTool.type === "aiAgentJobMCPTool"
+                  : duplicateTool.type === "aiAgentJobMCPTool" ||
+                      duplicateTool.type === "llmPromptMCPTool"
                     ? "mcp"
                     : duplicateTool.type === "aiAgentJobA2AAgent"
                       ? "a2a"
@@ -2855,7 +4559,7 @@ export class ToolHandlers {
           },
           {
             warning: `A tool with toolId "${requestedToolId}" already exists in this agent flow, so the existing tool was reused instead of creating a duplicate.`,
-            action: `Continue by adding logic inside that tool with manage_flow_nodes using parentNodeId "${duplicateToolNodeId}", or modify it with update_tool { aiAgentId: "${data.aiAgentId}", toolNodeId: "${duplicateToolNodeId}", ... }.`,
+            action: `Continue by adding logic inside that tool with manage_flow_nodes using parentNodeId "${duplicateToolNodeId}", or modify it with update_tool { ${data.aiAgentId ? `aiAgentId: "${data.aiAgentId}"` : `flowId: "${flowId}"`}, toolNodeId: "${duplicateToolNodeId}", ... }.`,
           },
         );
       }
@@ -2869,17 +4573,22 @@ export class ToolHandlers {
     }
 
     // Step 3: Create the tool node
-    const mapping = TOOL_TYPE_MAP[data.toolType];
+    const mapping = parentIsLlmPrompt
+      ? LLM_PROMPT_TOOL_TYPE_MAP[data.toolType]
+      : TOOL_TYPE_MAP[data.toolType];
     if (!mapping) throw new Error(`Unknown toolType: ${data.toolType}`);
 
     const nodeConfig: any = {};
+    let parameterWarnings: string[] = [];
     switch (data.toolType) {
       case "tool":
         if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
         if (cfg.description) nodeConfig.description = cfg.description;
         if (cfg.parameters) {
+          const normalized = normalizeToolParameters(cfg.parameters);
           nodeConfig.useParameters = true;
-          nodeConfig.parameters = cfg.parameters;
+          nodeConfig.parameters = normalized.parameters;
+          parameterWarnings = normalized.warnings;
         }
         break;
       case "knowledge":
@@ -2903,8 +4612,10 @@ export class ToolHandlers {
         if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
         if (cfg.description) nodeConfig.description = cfg.description;
         if (cfg.parameters) {
+          const normalized = normalizeToolParameters(cfg.parameters);
           nodeConfig.useParameters = true;
-          nodeConfig.parameters = cfg.parameters;
+          nodeConfig.parameters = normalized.parameters;
+          parameterWarnings = normalized.warnings;
         }
         break;
       case "a2a":
@@ -2960,12 +4671,19 @@ export class ToolHandlers {
           if (resolveNodeId) createdNodeIds.push(resolveNodeId);
         }
 
-        return {
+        const created = {
           toolId: toolNodeId,
           name: data.name,
           toolType: data.toolType,
+          // Which parent the tool actually landed under — a flow can hold
+          // more than one, so the caller must be able to see the choice.
+          parentNodeId: jobNodeId,
+          parentNodeType: jobNode.type,
           ...(resolveNodeId ? { resolveNodeId } : {}),
         };
+        return parameterWarnings.length > 0
+          ? withHints(created, { warning: parameterWarnings.join(" ") })
+          : created;
       } catch (error: any) {
         const rolledBack: string[] = [];
         const rollbackFailed: string[] = [];
@@ -2981,7 +4699,7 @@ export class ToolHandlers {
         }
         const action =
           rollbackFailed.length > 0
-            ? `Rollback partially failed — orphaned node IDs: [${rollbackFailed.join(", ")}]. Delete them with delete_resource { resourceType: 'tool', id, aiAgentId }, then retry.`
+            ? `Rollback partially failed — orphaned node IDs: [${rollbackFailed.join(", ")}]. Delete them with delete_resource { resourceType: 'tool', id, ${data.aiAgentId ? `aiAgentId: "${data.aiAgentId}"` : `flowId: "${flowId}"`} }, then retry.`
             : "Check tool type and config, then retry.";
         return withHints({ error: error.message }, { action });
       }
@@ -3091,10 +4809,12 @@ export class ToolHandlers {
         if (postProcessNodeId) createdNodeIds.push(postProcessNodeId);
       }
 
-      return {
+      const createdHttp = {
         toolId: toolNodeId,
         name: data.name,
         toolType: "http",
+        parentNodeId: jobNodeId,
+        parentNodeType: jobNode.type,
         childNodes: {
           ...(preProcessNodeId ? { preProcessNodeId } : {}),
           httpNodeId,
@@ -3102,6 +4822,14 @@ export class ToolHandlers {
           resolveNodeId,
         },
       };
+      // Hints about runtime APIs the pre/post-process code uses but the Code
+      // Node runtime does not have (the code was written regardless).
+      for (const code of [cfg.preProcessCode, cfg.postProcessCode]) {
+        if (code) parameterWarnings.push(...codeNodeWarnings(code));
+      }
+      return parameterWarnings.length > 0
+        ? withHints(createdHttp, { warning: parameterWarnings.join(" ") })
+        : createdHttp;
     } catch (error: any) {
       const rolledBack: string[] = [];
       const rollbackFailed: string[] = [];
@@ -3117,7 +4845,7 @@ export class ToolHandlers {
       }
       const action =
         rollbackFailed.length > 0
-          ? `Rollback partially failed — orphaned node IDs: [${rollbackFailed.join(", ")}]. Delete them with delete_resource { resourceType: 'tool', id, aiAgentId }, then retry.`
+          ? `Rollback partially failed — orphaned node IDs: [${rollbackFailed.join(", ")}]. Delete them with delete_resource { resourceType: 'tool', id, ${data.aiAgentId ? `aiAgentId: "${data.aiAgentId}"` : `flowId: "${flowId}"`} }, then retry.`
           : "Check HTTP config and code snippets, then retry.";
       return withHints({ error: error.message }, { action });
     }
@@ -3129,14 +4857,19 @@ export class ToolHandlers {
   async handleUpdateTool(args: any): Promise<any> {
     const data = schemas.updateToolSchema.parse(args);
 
-    const resolved = await resolveFlowForAgent(this.apiClient, data.aiAgentId);
+    const resolved = await resolveToolFlow(
+      this.apiClient,
+      data.aiAgentId,
+      data.flowId,
+    );
     if (!resolved) {
       return withHints(
         { error: "Could not find a flow associated with this agent." },
         {
           likely_cause:
-            "update_tool requires an agent created via create_ai_agent.",
-          action: "Ensure agent was created via create_ai_agent, then retry.",
+            "update_tool requires an agent created via create_ai_agent, or an explicit flowId.",
+          action:
+            "Ensure agent was created via create_ai_agent, then retry — or pass flowId directly.",
         },
       );
     }
@@ -3150,6 +4883,7 @@ export class ToolHandlers {
     }
 
     const updatedFields: string[] = [];
+    const skippedUpdates: string[] = [];
     const cfg = data.config;
     const toolType = data.toolType;
 
@@ -3163,47 +4897,105 @@ export class ToolHandlers {
     const hasChildUpdates =
       hasHttpUpdates || hasCodeUpdates || hasResolveUpdate;
 
+    // Which family the tool node belongs to decides which config keys can
+    // apply to it. The caller's toolType is a hint at best — it is optional,
+    // and a flow can hold both an AI Agent Job node and an LLM Prompt node —
+    // so the node's own type is the authority. Reading it costs a round-trip,
+    // so only do it when the request actually carries keys that exist in one
+    // family and not the other; everything else maps the same either way.
+    const requestedAiAgentOnlyKeys = cfg
+      ? AI_AGENT_ONLY_CONFIG_KEYS.filter((key) => (cfg as any)[key])
+      : [];
+    const needsNodeFamily =
+      !!cfg &&
+      (requestedAiAgentOnlyKeys.length > 0 ||
+        toolType === "knowledge" ||
+        toolType === "send_email" ||
+        toolType === "a2a");
+
+    let fetchedToolNode: any;
+    if (needsNodeFamily) {
+      try {
+        fetchedToolNode = await this.apiClient.get(
+          `/v2.0/flows/${flowId}/chart/nodes/${data.toolNodeId}`,
+        );
+      } catch (error: any) {
+        // Non-fatal: without the node type we fall back to the caller's
+        // toolType, which is what this handler did before the family check
+        // existed. A read failure must not turn a valid update into a throw.
+        logger.debug("update_tool could not read the tool node", {
+          flowId,
+          toolNodeId: data.toolNodeId,
+          error: error?.message,
+        });
+      }
+    }
+    const nodeType: string | undefined =
+      typeof fetchedToolNode?.type === "string"
+        ? fetchedToolNode.type
+        : undefined;
+    // Dispatch on the node's real type; fall back to the caller's toolType,
+    // and to the plain-tool keys when it was omitted (as before).
+    const effectiveKind: ToolKind =
+      (nodeType ? TOOL_NODE_TYPE_KIND[nodeType] : undefined) ??
+      (toolType && toolType !== "http" ? (toolType as ToolKind) : "tool");
+
     // Step 1: Update the tool node itself (label and/or tool-node config)
     const patchPayload: any = {};
+    let parameterWarnings: string[] = [];
+    let ignoredConfigKeys: string[] = [];
     if (data.name) patchPayload.label = data.name;
 
     if (cfg) {
-      const nodeConfig: any = {};
+      const mapped = buildToolNodeConfig(effectiveKind, cfg as any);
+      if (effectiveKind === "a2a") {
+        if (data.name) mapped.nodeConfig.name = data.name;
+        applyA2AToolConfig(mapped.nodeConfig, cfg);
+      }
+      parameterWarnings = mapped.parameterWarnings;
+      ignoredConfigKeys = mapped.ignored;
+      if (Object.keys(mapped.nodeConfig).length > 0) {
+        patchPayload.config = mapped.nodeConfig;
+      }
+    }
 
-      if (toolType === "tool" || toolType === "http" || !toolType) {
-        if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
-        if (cfg.description) nodeConfig.description = cfg.description;
-        if (cfg.parameters) {
-          nodeConfig.useParameters = true;
-          nodeConfig.parameters = cfg.parameters;
-        }
-      }
-      if (toolType === "knowledge") {
-        if (cfg.knowledgeStoreId)
-          nodeConfig.knowledgeStoreId = cfg.knowledgeStoreId;
-        if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
-        if (cfg.description) nodeConfig.description = cfg.description;
-        if (cfg.topK) nodeConfig.topK = cfg.topK;
-      }
-      if (toolType === "send_email") {
-        if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
-        if (cfg.description) nodeConfig.description = cfg.description;
-        if (cfg.recipient) nodeConfig.recipient = cfg.recipient;
-      }
-      if (toolType === "mcp") {
-        if (cfg.mcpName) nodeConfig.name = cfg.mcpName;
-        if (cfg.mcpServerUrl) nodeConfig.mcpServerUrl = cfg.mcpServerUrl;
-        if (cfg.timeout) nodeConfig.timeout = cfg.timeout;
-      }
-      if (toolType === "a2a") {
-        if (data.name) nodeConfig.name = data.name;
-        if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
-        applyA2AToolConfig(nodeConfig, cfg);
-      }
-
-      if (Object.keys(nodeConfig).length > 0) {
-        patchPayload.config = nodeConfig;
-      }
+    // Nothing the caller asked for can land on this node. Say so instead of
+    // reporting a successful update that changed nothing — the platform
+    // stores unknown config keys and then ignores them, so a blind PATCH
+    // would leave the tool silently doing nothing.
+    if (
+      ignoredConfigKeys.length > 0 &&
+      !patchPayload.config &&
+      !data.name &&
+      !hasChildUpdates
+    ) {
+      const fields = ignoredConfigKeys.map((k) => `"${k}"`).join(", ");
+      const isLlmPromptNode = !!nodeType && nodeType.startsWith("llmPrompt");
+      return withHints(
+        {
+          error: isLlmPromptNode
+            ? `config ${fields} is not supported under an LLM Prompt node — it only supports ${Object.keys(
+                LLM_PROMPT_TOOL_TYPE_MAP,
+              )
+                .map((t) => `"${t}"`)
+                .join(", ")} tools.`
+            : `config ${fields} does not apply to a ${
+                nodeType ?? effectiveKind
+              } tool node.`,
+          toolId: data.toolNodeId,
+          ...(nodeType ? { nodeType } : {}),
+          updated: false,
+          updatedFields: [],
+        },
+        {
+          warning: `No update was applied: ${fields} ${
+            ignoredConfigKeys.length === 1 ? "is not a field" : "are not fields"
+          } of ${nodeType ? `a ${nodeType} node` : `a "${effectiveKind}" tool`}.`,
+          action: isLlmPromptNode
+            ? "Update only toolId/description/parameters (plain tools) or mcpName/mcpServerUrl/timeout (MCP tools) on this node, or build the agent with an AI Agent node (create_ai_agent), which supports knowledge and send_email tools."
+            : "Check the tool's type with manage_flow_nodes { operation: 'get' } and retry with the fields that node supports.",
+        },
+      );
     }
 
     if (Object.keys(patchPayload).length > 0) {
@@ -3214,9 +5006,17 @@ export class ToolHandlers {
       if (data.name) updatedFields.push("name");
       if (patchPayload.config) updatedFields.push("config");
     }
+    if (ignoredConfigKeys.length > 0) {
+      skippedUpdates.push(
+        `${ignoredConfigKeys.join(", ")} ${
+          ignoredConfigKeys.length === 1 ? "is not a field" : "are not fields"
+        } of ${nodeType ? `a ${nodeType} node` : `a "${effectiveKind}" tool`} and ${
+          ignoredConfigKeys.length === 1 ? "was" : "were"
+        } ignored`,
+      );
+    }
 
     // Step 2: Update child nodes for http tools (httpRequest + Code nodes)
-    const skippedUpdates: string[] = [];
     if (hasChildUpdates && cfg) {
       const nodes: any = await this.apiClient.get(
         `/v2.0/flows/${flowId}/chart/nodes`,
@@ -3227,9 +5027,10 @@ export class ToolHandlers {
       const rawNodes = nodes.items ?? nodes;
       const allNodes = Array.isArray(rawNodes) ? rawNodes : [];
 
-      const toolNode = allNodes.find(
-        (n) => (n._id || n.id) === data.toolNodeId,
-      );
+      // Reuse the node already read above rather than a second per-node GET.
+      const toolNode =
+        allNodes.find((n) => (n._id || n.id) === data.toolNodeId) ??
+        fetchedToolNode;
       const toolLabel: string = toolNode?.label ?? "";
 
       const findById = (id?: string) =>
@@ -3358,22 +5159,55 @@ export class ToolHandlers {
       }
     }
 
+    // `updated: true` with an empty updatedFields would read as success while
+    // nothing changed — report the no-op instead.
+    const nothingApplied =
+      updatedFields.length === 0 && skippedUpdates.length === 0;
     const response: any = {
       toolId: data.toolNodeId,
       name: data.name ?? undefined,
-      updated: true,
+      updated: !nothingApplied,
       updatedFields,
     };
 
-    if (skippedUpdates.length > 0) {
+    // Hints about runtime APIs the written pre/post-process code uses but
+    // the Code Node runtime does not have.
+    for (const field of ["preProcessCode", "postProcessCode"] as const) {
+      const code = cfg?.[field];
+      if (typeof code === "string" && updatedFields.includes(field)) {
+        parameterWarnings.push(...codeNodeWarnings(code));
+      }
+    }
+
+    if (nothingApplied) {
       return withHints(response, {
-        warning: `Some updates were skipped: ${skippedUpdates.join("; ")}`,
+        warning:
+          "No update was applied — none of the provided fields map onto this tool node.",
         action:
-          "Child nodes may not exist yet. Use create_tool with http type to create the full node tree, or verify the tool structure.",
+          "Read the node with manage_flow_nodes { operation: 'get' } and retry with the fields it supports.",
       });
     }
 
-    return response;
+    if (skippedUpdates.length > 0) {
+      // The config-key skip is pushed first, so it is the only entry when
+      // nothing else was skipped — and then the child-node advice would be
+      // beside the point.
+      const onlyConfigKeysSkipped =
+        ignoredConfigKeys.length > 0 && skippedUpdates.length === 1;
+      return withHints(response, {
+        warning: [
+          `Some updates were skipped: ${skippedUpdates.join("; ")}`,
+          ...parameterWarnings,
+        ].join(" "),
+        action: onlyConfigKeysSkipped
+          ? "Check the tool's type with manage_flow_nodes { operation: 'get' } and retry with the fields that node supports."
+          : "Child nodes may not exist yet. Use create_tool with http type to create the full node tree, or verify the tool structure.",
+      });
+    }
+
+    return parameterWarnings.length > 0
+      ? withHints(response, { warning: parameterWarnings.join(" ") })
+      : response;
   }
 
   // =========================================================================
@@ -3402,6 +5236,7 @@ export class ToolHandlers {
             label: n.label,
             parentId: n.parentId ?? null,
             isEntryPoint: n.isEntryPoint ?? false,
+            ...(n.isDisabled ? { isDisabled: true } : {}),
           })),
         };
       }
@@ -3506,10 +5341,12 @@ export class ToolHandlers {
 
         // Auto-rewrite appendChild → append for node types where appendChild
         // creates orphaned nodes (parentId: null).  This covers:
-        //   • aiAgentJobTool — so nodes land in the tool's execution chain
+        //   • aiAgentJobTool / llmPromptTool — so nodes land in the tool's
+        //     execution chain
         //   • then / else / case / default — branching children of if and switch
         const REWRITE_TYPES = new Set([
           "aiAgentJobTool",
+          "llmPromptTool",
           "then",
           "else",
           "case",
@@ -3572,11 +5409,29 @@ export class ToolHandlers {
         );
 
         const nodeId = createdNode._id || createdNode.id;
-        const actualParentId =
-          createdNode.parentId ??
-          createdNode.parent_id ??
-          (createdNode.parent &&
-            (createdNode.parent._id || createdNode.parent.id));
+        const actualParentId = nodeParentId(createdNode);
+
+        // The backend auto-creates a placeholder "unlock_account" tool (plus a
+        // non-deletable llmPromptDefault branch) under a new LLM Prompt node —
+        // UI preview cruft the LLM would otherwise see as a real tool.
+        let placeholderToolsRemoved: string[] = [];
+        if (entry.type === "llmPromptV2") {
+          let preferredLocaleId: string | undefined;
+          try {
+            const flowMeta: any = await this.apiClient.get(
+              `/v2.0/flows/${flowId}`,
+            );
+            preferredLocaleId = flowMeta?.localeReference ?? flowMeta?.localeId;
+          } catch {
+            // Locale is an optimization for multi-locale flows; proceed without it.
+          }
+          placeholderToolsRemoved = await this.removePlaceholderTools(
+            flowId,
+            nodeId,
+            "llmPromptTool",
+            preferredLocaleId,
+          );
+        }
 
         const result = {
           nodeId,
@@ -3586,7 +5441,30 @@ export class ToolHandlers {
           targetNodeId,
           mode,
           configApplied: data.config ? Object.keys(data.config) : [],
+          // Only when something was actually deleted — a node whose children
+          // the server pruned should say which ones.
+          ...(placeholderToolsRemoved.length > 0
+            ? { placeholderToolsRemoved }
+            : {}),
         };
+
+        // Hints about runtime APIs the code uses but the Code Node runtime
+        // does not have; the node was created regardless.
+        const codeWarnings =
+          entry.type === "code" && typeof data.config?.code === "string"
+            ? codeNodeWarnings(data.config.code)
+            : [];
+        if (codeWarnings.length > 0) {
+          return withRenderSuggestion(
+            withHints(result, {
+              warning: codeWarnings.join(" "),
+              action:
+                "The node was created. If the flagged call is real, replace it with manage_flow_nodes update.",
+            }),
+            flowId,
+            nodeId,
+          );
+        }
 
         if (missingInitAppSession) {
           return withRenderSuggestion(
@@ -3625,11 +5503,14 @@ export class ToolHandlers {
 
         const patchPayload: any = {};
         if (data.label) patchPayload.label = data.label;
+        // Declared outside the `if` so the post-write Code Node hints below
+        // can see the type fetched here.
+        let nodeType = "";
         if (data.config) {
           const existingNode: any = await this.apiClient.get(
             `/v2.0/flows/${flowId}/chart/nodes/${data.nodeId}`,
           );
-          const nodeType = existingNode?.type ?? "";
+          nodeType = existingNode?.type ?? "";
 
           // Strip server-computed, read-only fields before merging them back
           // into the PATCH. `transpiled` (a code node's compiled JS) can be
@@ -3715,6 +5596,13 @@ export class ToolHandlers {
           ...(data.config ? { configUpdated: Object.keys(data.config) } : {}),
         };
 
+        // Hints about runtime APIs the code uses but the Code Node runtime
+        // does not have; the node was updated regardless.
+        const codeWarnings =
+          nodeType === "code" && typeof data.config?.code === "string"
+            ? codeNodeWarnings(data.config.code)
+            : [];
+
         // The PATCH response echoes the input config without the server-computed
         // `hasError` (transpilation runs after the write). When code was edited,
         // read the node back to detect a transpile failure and surface it.
@@ -3726,8 +5614,10 @@ export class ToolHandlers {
             if (saved?.config?.hasError) {
               return withRenderSuggestion(
                 withHints(result, {
-                  warning:
+                  warning: [
                     "Node saved, but config.hasError is true — the code failed to transpile (TypeScript/syntax error).",
+                    ...codeWarnings,
+                  ].join(" "),
                   action: "Fix the code and update again.",
                 }),
                 flowId,
@@ -3737,6 +5627,17 @@ export class ToolHandlers {
           } catch {
             // Non-fatal — the update itself succeeded.
           }
+        }
+        if (codeWarnings.length > 0) {
+          return withRenderSuggestion(
+            withHints(result, {
+              warning: codeWarnings.join(" "),
+              action:
+                "The node was updated. If the flagged call is real, replace it with another update.",
+            }),
+            flowId,
+            data.nodeId,
+          );
         }
         return withRenderSuggestion(result, flowId, data.nodeId);
       }
@@ -3788,18 +5689,20 @@ export class ToolHandlers {
           );
           const items = list.items ?? list;
           if (Array.isArray(items)) {
-            const labelById = new Map<string, string>(
-              items.map((n: any) => [n._id || n.id, n.label]),
+            const byId = new Map<string, any>(
+              items.map((n: any) => [n._id || n.id, n]),
             );
             for (const n of chart.nodes ?? []) {
-              const id = n._id || n.id;
-              const lbl = labelById.get(id);
-              if (!n.label && lbl) n.label = lbl;
+              const listed = byId.get(n._id || n.id);
+              if (!n.label && listed?.label) n.label = listed.label;
+              if (listed?.isDisabled) n.isDisabled = true;
             }
           }
         } catch {
           // Labels are optional — the serializer falls back to preview/type.
         }
+        // Disabled nodes are skipped at runtime, so they are not drawn.
+        chart = omitDisabled(chart);
 
         const format = data.format ?? "both";
         const showLegend = data.legend ?? true;
@@ -3912,9 +5815,10 @@ export class ToolHandlers {
         );
       }
 
-      const localeId = await this.resolveEndpointLocaleId(
-        data.flowId,
+      const localeId = await resolveEndpointLocaleId(
+        this.apiClient,
         data.projectId,
+        data.flowId,
       );
 
       const createPayload: any = {
@@ -4087,9 +5991,10 @@ export class ToolHandlers {
         );
       }
 
-      const localeId = await this.resolveEndpointLocaleId(
-        data.flowId,
+      const localeId = await resolveEndpointLocaleId(
+        this.apiClient,
         data.projectId,
+        data.flowId,
       );
 
       const createPayload: any = {
@@ -4337,49 +6242,6 @@ export class ToolHandlers {
     return deepMerge(existing, updates);
   }
 
-  /**
-   * Resolve the locale UUID an endpoint's `localeId` field actually expects.
-   * `flow.localeReference` is the locale document's Mongo _id, NOT its
-   * referenceId — sending it as-is leaves Studio's "Open Demo Webchat" (and
-   * the voice preview) silently disabled with no visible error, since the
-   * endpoint's locale never resolves. Falls back to the project's first
-   * locale if the flow lookup fails.
-   */
-  private async resolveEndpointLocaleId(
-    flowId: string,
-    projectId?: string,
-  ): Promise<string | undefined> {
-    try {
-      const flow: any = await this.apiClient.get(`/v2.0/flows/${flowId}`);
-      const localeDocId = flow?.localeReference;
-      if (localeDocId) {
-        try {
-          const locale: any = await this.apiClient.get(
-            `/v2.0/locales/${localeDocId}`,
-          );
-          return locale?.referenceId ?? locale?._id ?? localeDocId;
-        } catch {
-          return localeDocId;
-        }
-      }
-    } catch {
-      // fall through to project locale list
-    }
-    if (!projectId) return undefined;
-    try {
-      const locales: any = await this.apiClient.get("/v2.0/locales", {
-        params: { projectId },
-      });
-      const items = locales?.items ?? locales;
-      if (Array.isArray(items) && items.length > 0) {
-        return items[0].referenceId ?? items[0]._id;
-      }
-    } catch {
-      // Non-critical — endpoint will be created without locale
-    }
-    return undefined;
-  }
-
   private async safeGetEndpoint(endpointId: string): Promise<any> {
     try {
       return await this.apiClient.get(`/v2.0/endpoints/${endpointId}`);
@@ -4433,10 +6295,11 @@ export class ToolHandlers {
         );
       }
 
-      // Resolve locale — try flow first, fall back to project's primary locale
-      const localeId = await this.resolveEndpointLocaleId(
-        data.flowId,
+      // Resolve locale — the flow's when the project has several, else primary
+      const localeId = await resolveEndpointLocaleId(
+        this.apiClient,
         data.projectId,
+        data.flowId,
       );
 
       // Step 1: Create voiceGateway2 endpoint
@@ -5126,6 +6989,996 @@ export class ToolHandlers {
   }
 
   // =========================================================================
+  // Tool 17: manage_snapshots
+  // =========================================================================
+
+  /**
+   * Intercept the FIRST change to an existing agent in a session so the user
+   * gets the chance to take a backup while a backup is still worth taking.
+   *
+   * This has to happen BEFORE the handler runs. An earlier version attached an
+   * advisory hint to the RESULT instead, which could not work: by the time a
+   * result exists the change has already been made, so a snapshot taken from
+   * that hint captured the already-changed state. The offer has to interrupt,
+   * not annotate.
+   *
+   * Returns the offer to send back instead of performing the call, or null to
+   * let the call through. Deliberately trips only ONCE per session: if the
+   * client retries without creating or declining, the retry proceeds. A gate
+   * that held out for compliance could deadlock an automated subagent, and one
+   * forced pause is what "ask at the start of the session" actually needs.
+   */
+  /** Record which project a resource belongs to, for gate scoping. */
+  private rememberProjectOf(resource: any, projectId?: string): void {
+    const project = projectId ?? resource?.projectId;
+    if (typeof project !== "string" || !project) return;
+    for (const key of ["_id", "id", "referenceId"]) {
+      const value = resource?.[key];
+      if (typeof value === "string" && value) {
+        this.projectOfResource.set(value, project);
+      }
+    }
+  }
+
+  /**
+   * Learn resource → project links from a tool result. Reads the model makes
+   * anyway (list_resources, get_resource) are enough to scope the gate for the
+   * calls that carry no projectId of their own.
+   */
+  private learnProjectIds(result: any): void {
+    if (!result || typeof result !== "object") return;
+    const items = (result as any).items;
+    if (Array.isArray(items)) {
+      for (const item of items) this.rememberProjectOf(item);
+    }
+    this.rememberProjectOf(result);
+  }
+
+  /**
+   * The project a gated call acts on, or null when it cannot be told. Pure
+   * lookup — the gate never spends an API call to answer this.
+   */
+  private projectForCall(args: any): string | null {
+    if (typeof args?.projectId === "string" && args.projectId) {
+      return args.projectId;
+    }
+    for (const key of ["aiAgentId", "flowId", "id", "endpointId"]) {
+      const value = args?.[key];
+      if (typeof value === "string") {
+        const project = this.projectOfResource.get(value);
+        if (project) return project;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Once the offer is answered for a project, the answered-check in
+   * backupGateFor short-circuits before the held sets are consulted — so the
+   * accumulated signatures are dead weight and can be dropped. The
+   * without-project set is likewise never consulted once any answer exists.
+   */
+  private releaseBackupGateHolds(projectId: string): void {
+    this.backupGateHeldCallsForProject.delete(projectId);
+    this.backupGateHeldCallsWithoutProject.clear();
+  }
+
+  private backupGateFor(toolName: string, args: any): any | null {
+    const projectId = this.projectForCall(args);
+    // Held calls are remembered by signature so a retry of a call that was
+    // already held proceeds (anti-deadlock), while a concurrent DIFFERENT
+    // mutation is held too. Marking happens synchronously, before any await,
+    // so parallel calls in one client message cannot slip past each other.
+    const signature = `${toolName} ${JSON.stringify(args ?? null)}`;
+
+    if (projectId) {
+      // Answered for THIS project? Let it through. An answer given for another
+      // project says nothing about this one.
+      if (
+        this.snapshotCreatedForProject.has(projectId) ||
+        this.backupDeclinedForProject.has(projectId)
+      ) {
+        return null;
+      }
+      // Anti-deadlock: hold each distinct call once. A client that ignores
+      // the offer and retries proceeds rather than looping forever.
+      const held = this.backupGateHeldCallsForProject.get(projectId);
+      if (held?.has(signature)) return null;
+      if (held) held.add(signature);
+      else
+        this.backupGateHeldCallsForProject.set(projectId, new Set([signature]));
+    } else {
+      // Project unknown (e.g. delete_resource on a resource never read this
+      // session). Fall back to session-wide state: any answer, anywhere, and
+      // one hold per distinct call.
+      if (
+        this.snapshotCreatedForProject.size ||
+        this.backupDeclinedForProject.size ||
+        this.backupGateHeldCallsWithoutProject.has(signature)
+      ) {
+        return null;
+      }
+      this.backupGateHeldCallsWithoutProject.add(signature);
+    }
+
+    return withHints(
+      {
+        error: "backup_not_offered",
+        tool: toolName,
+        changed: false,
+        ...(projectId ? { projectId } : {}),
+      },
+      {
+        warning: `NOTHING WAS CHANGED. This is the first change to an existing agent in this session, and no backup exists yet — so ${toolName} was not run.`,
+        action:
+          'Ask the user, in one short line, whether they want a restorable backup first — mentioning that it covers the whole project but not Endpoints or Knowledge AI. If yes: manage_snapshots { operation: "create", projectId, label: "<why>" }. If no: manage_snapshots { operation: "decline", projectId }. Then retry this exact call. If you do not have the projectId, read it from get_resource { resourceType: "agent", id: "<aiAgentId>" } — or, when the call is addressed by flowId (LLM Prompt flows have no agent resource), from get_resource { resourceType: "flow", id: "<flowId>" }.',
+      },
+    );
+  }
+
+  /** Read a snapshot, or return null when the platform 404s. */
+  private async readSnapshot(snapshotId: string): Promise<any | null> {
+    try {
+      return await this.apiClient.get(`/new/v2.0/snapshots/${snapshotId}`);
+    } catch (error: any) {
+      if (error?.status === 404) return null;
+      throw error;
+    }
+  }
+
+  private async listSnapshots(
+    projectId: string,
+    params: Record<string, any> = {},
+  ): Promise<any[]> {
+    const response: any = await this.apiClient.get("/new/v2.0/snapshots", {
+      params: { projectId, limit: 100, ...params },
+    });
+    const items = response?.items ?? response;
+    return Array.isArray(items) ? items : [];
+  }
+
+  /**
+   * Every snapshot in the project, following pagination. The limit evaluation
+   * and the ownership check both have to see ALL of them: a page-sized view
+   * reports "room left" on a full project and can hide the oldest backup, which
+   * is the one we are required to evict first.
+   */
+  private async listAllSnapshots(projectId: string): Promise<any[]> {
+    const pageSize = 100;
+    const all: any[] = [];
+
+    for (let page = 0; page < ToolHandlers.MAX_SNAPSHOT_PAGES; page++) {
+      const items = await this.listSnapshots(projectId, {
+        limit: pageSize,
+        skip: page * pageSize,
+      });
+      all.push(...items);
+      if (items.length < pageSize) break;
+    }
+
+    return all;
+  }
+
+  /**
+   * restore and delete address a snapshot by id ALONE — the platform resolves
+   * the project from the snapshot itself (the restore POST carries no body), so
+   * a snapshotId belonging to another project would act on that project while
+   * every warning, preflight and hint in our response names the passed one, and
+   * waitForTask would poll the task with the wrong projectId. The snapshot
+   * object carries no project reference of its own (REST schema exposes only
+   * name/description/isPackaged/_id/hash/createdBy/createdAt), so ownership is
+   * established the only way the API allows: membership in the project's list.
+   */
+  private async snapshotBelongsToProject(
+    snapshotId: string,
+    projectId: string,
+  ): Promise<boolean> {
+    const items = await this.listAllSnapshots(projectId);
+    return items.some((s: any) => (s?._id ?? s?.id) === snapshotId);
+  }
+
+  /** Shared response for a snapshotId that is not in the passed project. */
+  private snapshotProjectMismatchResult(
+    operation: "restore" | "delete",
+    projectId: string,
+    snapshotId: string,
+    snapshot: any,
+  ): any {
+    return withHints(
+      {
+        operation,
+        error: "snapshot_project_mismatch",
+        projectId,
+        snapshotId,
+        ...(operation === "restore" ? { applied: false } : { deleted: false }),
+        snapshot: summarizeSnapshot(snapshot),
+      },
+      {
+        warning: `Snapshot "${snapshot?.name ?? snapshotId}" does not belong to project ${projectId}, so nothing was done. Acting on it would have ${operation === "restore" ? "rolled back a DIFFERENT project" : "deleted another project's snapshot"}.`,
+        action: `Confirm which project the user means, then use manage_snapshots { operation: "list", projectId: "${projectId}" } to get a snapshot id from THAT project.`,
+      },
+    );
+  }
+
+  /**
+   * Run a snapshot task to completion. Snapshot create/restore/delete all return
+   * 202 + a task id, exactly like packages, so this leans on the existing
+   * waitForTask poller. The one wrinkle: waitForTask THROWS on a failed task,
+   * but several snapshot failures are things we want to report as structured
+   * results rather than as exceptions (hitting the snapshot cap, deleting a
+   * snapshot that an endpoint is using). So catch and hand the reason back.
+   */
+  private async runSnapshotTask(
+    taskResponse: any,
+    projectId: string,
+    opts: { waitForCompletion?: boolean; timeoutMs?: number },
+  ): Promise<{
+    taskId: string;
+    task: any | null;
+    timedOut: boolean;
+    failReason: string | null;
+    pollFailed: boolean;
+    pollError: string | null;
+  }> {
+    const taskId = taskResponse?._id ?? taskResponse?.id;
+    if (!taskId) {
+      throw new Error("Snapshot operation did not return a task ID");
+    }
+
+    if (opts.waitForCompletion === false) {
+      return {
+        taskId,
+        task: null,
+        timedOut: false,
+        failReason: null,
+        pollFailed: false,
+        pollError: null,
+      };
+    }
+
+    try {
+      const { task, timedOut } = await this.waitForTask(
+        taskId,
+        projectId,
+        opts.timeoutMs ?? ToolHandlers.DEFAULT_PACKAGE_TIMEOUT_MS,
+      );
+      return {
+        taskId,
+        task: normalizeTask(task),
+        timedOut,
+        failReason: null,
+        pollFailed: false,
+        pollError: null,
+      };
+    } catch (error: any) {
+      // Only a TaskFailedError means the operation itself failed. A polling
+      // error says nothing about the operation — reporting it as a failure is
+      // what let a create claim "nothing was backed up" for a snapshot that
+      // exists, and let freeSnapshotSlot delete a second backup after the
+      // first one had already gone.
+      if (error instanceof TaskFailedError) {
+        return {
+          taskId,
+          task: null,
+          timedOut: false,
+          failReason: error.message,
+          pollFailed: false,
+          pollError: null,
+        };
+      }
+
+      return {
+        taskId,
+        task: null,
+        timedOut: false,
+        failReason: null,
+        pollFailed: true,
+        pollError: error?.message ?? "Could not read the task status",
+      };
+    }
+  }
+
+  /** Remaining budget against a shared deadline, floored at zero. */
+  private static remainingMs(deadline: number): number {
+    return Math.max(0, deadline - Date.now());
+  }
+
+  /**
+   * The task was accepted but its status could not be read. The operation may
+   * well have succeeded, so the caller must be told to poll rather than told it
+   * failed.
+   */
+  private snapshotPollFailedResult(
+    operation: "create" | "restore" | "delete",
+    projectId: string,
+    taskId: string,
+    pollError: string,
+    extra: Record<string, any> = {},
+  ): any {
+    const subject =
+      operation === "create"
+        ? "The backup may or may not exist"
+        : operation === "restore"
+          ? "The project may be mid-restore or fully restored"
+          : "The snapshot may or may not be deleted";
+
+    return withHints(
+      {
+        operation,
+        projectId,
+        error: "task_status_unknown",
+        outcomeUnknown: true,
+        taskId,
+        pollError,
+        ...extra,
+      },
+      {
+        warning: `The ${operation} task was started, but its status could not be read (${pollError}). ${subject} — do NOT assume either way.`,
+        action: `Poll manage_snapshots { operation: "read_task", projectId: "${projectId}", taskId: "${taskId}" } until it reports done or error, and only then tell the user what happened.${operation === "create" ? " Do not create another backup before that resolves — a duplicate eats a snapshot slot." : ""}`,
+      },
+    );
+  }
+
+  private snapshotLimitResult(
+    projectId: string,
+    evaluation: ReturnType<typeof evaluateSnapshotLimit>,
+    detail?: string,
+    // A slot may ALREADY have been freed before this result is built (the
+    // installation cap turned out lower than assumedMax, or a racing create
+    // took the freed slot). That deletion is irreversible, so it must appear in
+    // the response and the warning must not claim nothing was deleted.
+    eviction?: { freedSlot: SnapshotSummary | null; skippedCandidates: any[] },
+  ): any {
+    const oldest = evaluation.oldestDeletable;
+    const freedSlot = eviction?.freedSlot ?? null;
+    const evictionFields = {
+      ...(freedSlot ? { deletedToFreeSlot: freedSlot } : {}),
+      ...(eviction?.skippedCandidates?.length
+        ? { skippedCandidates: eviction.skippedCandidates }
+        : {}),
+    };
+    const nothingDeleted = freedSlot
+      ? `A backup ("${freedSlot.name}") was already permanently deleted to free a slot, but the snapshot still could not be created.`
+      : "No snapshot was created and nothing was deleted.";
+
+    if (!oldest) {
+      return withHints(
+        {
+          operation: "create",
+          error: "snapshot_limit_reached",
+          projectId,
+          created: false,
+          count: evaluation.count,
+          assumedMax: evaluation.assumedMax,
+          deletableBackups: [],
+          ...evictionFields,
+          ...(detail ? { detail } : {}),
+        },
+        {
+          warning: `The project is at its snapshot limit (${evaluation.count}) and none of the remaining snapshots were created by this plugin. ${nothingDeleted}`,
+          action:
+            "Do NOT delete any snapshot. Tell the user the plugin only ever deletes its own [AI Backup] snapshots, and ask them to delete one themselves in the Cognigy UI under Deploy > Snapshots, then retry.",
+        },
+      );
+    }
+
+    return withHints(
+      {
+        operation: "create",
+        error: "snapshot_limit_reached",
+        projectId,
+        created: false,
+        count: evaluation.count,
+        assumedMax: evaluation.assumedMax,
+        oldestDeletable: oldest,
+        deletableBackups: evaluation.deletable,
+        ...evictionFields,
+        ...(detail ? { detail } : {}),
+      },
+      {
+        warning: `The project is at its snapshot limit (${evaluation.count}). ${nothingDeleted}`,
+        action: `Ask the user whether to delete the oldest plugin-created backup ("${oldest.name}") to make room. Only if they agree, retry with manage_snapshots { operation: "create", projectId: "${projectId}", confirmDeleteOldest: true }.`,
+      },
+    );
+  }
+
+  /**
+   * Delete the oldest plugin-created backup to free a slot. A snapshot that an
+   * endpoint uses as its entrypoint cannot be deleted (the platform raises an
+   * InputOutputError that only surfaces on the task), so walk to the next-oldest
+   * candidate rather than giving up on the first refusal.
+   *
+   * Walking on is only safe when the platform DEFINITIVELY refused. If a delete
+   * timed out or its status could not be read, the snapshot may already be
+   * gone — moving to the next candidate would then destroy a second backup to
+   * free one slot. Those cases halt the loop instead.
+   *
+   * All candidates plus the create that follows share ONE deadline, so a call
+   * cannot stack N x timeoutMs.
+   */
+  private async freeSnapshotSlot(
+    projectId: string,
+    candidates: SnapshotSummary[],
+    opts: { deadline: number },
+  ): Promise<{
+    deleted: SnapshotSummary | null;
+    skipped: any[];
+    halted: {
+      kind: "timed_out" | "poll_failed" | "budget_exhausted";
+      snapshot: SnapshotSummary;
+      taskId: string | null;
+      reason: string | null;
+    } | null;
+  }> {
+    const skipped: any[] = [];
+
+    for (const candidate of candidates) {
+      if (!candidate.id) continue;
+
+      const remaining = ToolHandlers.remainingMs(opts.deadline);
+      if (remaining <= 0) {
+        return {
+          deleted: null,
+          skipped,
+          halted: {
+            kind: "budget_exhausted",
+            snapshot: candidate,
+            taskId: null,
+            reason: "No time budget left to attempt another deletion.",
+          },
+        };
+      }
+
+      const response = await this.apiClient.delete(
+        `/new/v2.0/snapshots/${candidate.id}`,
+      );
+      const { taskId, timedOut, failReason, pollFailed, pollError } =
+        await this.runSnapshotTask(response, projectId, {
+          waitForCompletion: true,
+          timeoutMs: remaining,
+        });
+
+      if (pollFailed || timedOut) {
+        return {
+          deleted: null,
+          skipped,
+          halted: {
+            kind: pollFailed ? "poll_failed" : "timed_out",
+            snapshot: candidate,
+            taskId,
+            reason: pollError,
+          },
+        };
+      }
+
+      if (!failReason) return { deleted: candidate, skipped, halted: null };
+
+      skipped.push({
+        snapshot: candidate,
+        reason: failReason,
+        ...(failReason.includes(SNAPSHOT_IN_USE_FAIL_REASON)
+          ? { inUseByEndpoint: true }
+          : {}),
+      });
+    }
+
+    return { deleted: null, skipped, halted: null };
+  }
+
+  async handleManageSnapshots(args: any): Promise<any> {
+    const data = schemas.manageSnapshotsSchema.parse(args);
+
+    switch (data.operation) {
+      case "list": {
+        // The limit view must describe the WHOLE project, never the caller's
+        // page: a paged count reads as "there is room" on a full project, and
+        // the eviction candidate we show has to really be the oldest backup.
+        // Pagination applies to the returned array only.
+        const all = await this.listAllSnapshots(data.projectId);
+        const evaluation = evaluateSnapshotLimit(all);
+        const skip = data.skip ?? 0;
+        const limit = data.limit ?? 100;
+        const page = all.slice(skip, skip + limit);
+
+        return {
+          operation: "list",
+          projectId: data.projectId,
+          count: evaluation.count,
+          assumedMax: evaluation.assumedMax,
+          atLimit: evaluation.atLimit,
+          snapshots: filterList("snapshot", page),
+          ...(page.length < evaluation.count
+            ? { shown: page.length, skip }
+            : {}),
+          oldestDeletableBackup: evaluation.oldestDeletable,
+        };
+      }
+
+      case "create": {
+        // One deadline for the whole call: every eviction attempt AND the
+        // create itself draw from it, so a single call can never stack
+        // candidates x timeoutMs.
+        const deadline =
+          Date.now() +
+          (data.timeoutMs ?? ToolHandlers.DEFAULT_PACKAGE_TIMEOUT_MS);
+        const existing = await this.listAllSnapshots(data.projectId);
+        const evaluation = evaluateSnapshotLimit(existing);
+        let freedSlot: SnapshotSummary | null = null;
+        let skippedCandidates: any[] = [];
+
+        // No deletable backup means there is nothing to confirm: report the
+        // limit rather than the "every delete failed" case, which would be
+        // misleading when nothing was ever attempted.
+        if (evaluation.atLimit) {
+          if (!data.confirmDeleteOldest || !evaluation.deletable.length) {
+            return this.snapshotLimitResult(data.projectId, evaluation);
+          }
+
+          const freed = await this.freeSnapshotSlot(
+            data.projectId,
+            evaluation.deletable,
+            { deadline },
+          );
+          freedSlot = freed.deleted;
+          skippedCandidates = freed.skipped;
+
+          // A deletion we could not confirm stops the eviction: the snapshot
+          // may already be gone, so neither claiming the slot was freed nor
+          // deleting the next backup is safe.
+          if (freed.halted) {
+            const halted = freed.halted;
+            const what =
+              halted.kind === "poll_failed"
+                ? `could not be confirmed (${halted.reason ?? "its task status could not be read"})`
+                : halted.kind === "timed_out"
+                  ? "is still running"
+                  : "was not attempted (the call ran out of time budget)";
+
+            return withHints(
+              {
+                operation: "create",
+                error: "eviction_incomplete",
+                projectId: data.projectId,
+                created: false,
+                count: evaluation.count,
+                assumedMax: evaluation.assumedMax,
+                haltedOn: halted,
+                ...(skippedCandidates.length ? { skippedCandidates } : {}),
+              },
+              {
+                warning: `Freeing a slot stopped: deleting "${halted.snapshot.name}" ${what}. That backup may or may not still exist, so no other backup was deleted and no snapshot was created.`,
+                action: halted.taskId
+                  ? `Poll manage_snapshots { operation: "read_task", projectId: "${data.projectId}", taskId: "${halted.taskId}" } until it resolves, then re-run manage_snapshots { operation: "list" } before retrying create.`
+                  : `Re-run manage_snapshots { operation: "list", projectId: "${data.projectId}" } to see the current state before retrying create.`,
+              },
+            );
+          }
+
+          if (!freedSlot) {
+            return withHints(
+              {
+                operation: "create",
+                error: "snapshot_limit_reached",
+                projectId: data.projectId,
+                created: false,
+                count: evaluation.count,
+                assumedMax: evaluation.assumedMax,
+                skippedCandidates,
+              },
+              {
+                warning:
+                  "Could not free a slot: every plugin-created backup failed to delete (a snapshot in use by an endpoint cannot be deleted).",
+                action:
+                  "Report the skippedCandidates reasons to the user and ask them to free a slot in the Cognigy UI under Deploy > Snapshots.",
+              },
+            );
+          }
+        }
+
+        const version = nextBackupVersion(
+          existing,
+          this.highestBackupVersionThisSession,
+        );
+        this.highestBackupVersionThisSession = version;
+        const fields = buildAutoBackupFields(data.label, new Date(), version);
+        const response: any = await this.apiClient.post("/new/v2.0/snapshots", {
+          projectId: data.projectId,
+          name: fields.name,
+          description: fields.description,
+        });
+
+        const { taskId, task, timedOut, failReason, pollFailed, pollError } =
+          await this.runSnapshotTask(response, data.projectId, {
+            waitForCompletion: data.waitForCompletion,
+            timeoutMs: ToolHandlers.remainingMs(deadline),
+          });
+
+        if (pollFailed) {
+          return this.snapshotPollFailedResult(
+            "create",
+            data.projectId,
+            taskId,
+            pollError!,
+            {
+              // NOT false: `created: false` is what every other outcome uses to
+              // mean "no backup exists, safe to retry", and a caller keying on
+              // the boolean would mint the duplicate this path exists to avoid.
+              created: null,
+              name: fields.name,
+              ...(freedSlot ? { deletedToFreeSlot: freedSlot } : {}),
+              ...(skippedCandidates.length ? { skippedCandidates } : {}),
+            },
+          );
+        }
+
+        // The cap is enforced inside the resources service, so a create that got
+        // past our pre-check (different installation limit, or a race) fails on
+        // the TASK rather than the POST. Translate it into the same shape the
+        // pre-check returns so the model only has one error to understand.
+        if (failReason?.includes(SNAPSHOT_LIMIT_FAIL_REASON)) {
+          const refreshed = evaluateSnapshotLimit(
+            await this.listAllSnapshots(data.projectId),
+          );
+          return this.snapshotLimitResult(
+            data.projectId,
+            refreshed,
+            failReason,
+            { freedSlot, skippedCandidates },
+          );
+        }
+
+        if (failReason) {
+          return withHints(
+            {
+              operation: "create",
+              projectId: data.projectId,
+              created: false,
+              taskId,
+              failReason,
+              ...(freedSlot ? { deletedToFreeSlot: freedSlot } : {}),
+            },
+            {
+              warning: "The snapshot creation task failed.",
+              action:
+                "Report the failReason to the user. Nothing was backed up, so do not proceed as if a backup exists.",
+            },
+          );
+        }
+
+        if (data.waitForCompletion === false || timedOut) {
+          return withHints(
+            {
+              operation: "create",
+              projectId: data.projectId,
+              created: false,
+              pending: true,
+              taskId,
+              name: fields.name,
+              task,
+              ...(freedSlot ? { deletedToFreeSlot: freedSlot } : {}),
+            },
+            {
+              warning:
+                "Snapshot creation is still running; the backup does not exist yet.",
+              action: `Poll manage_snapshots { operation: "read_task", projectId: "${data.projectId}", taskId: "${taskId}" } until it is done, then list to get the snapshot id.`,
+            },
+          );
+        }
+
+        // The create task does not carry the new snapshot's id — it is minted
+        // inside the resources controller — so resolve it by name. `filter` is a
+        // substring match on name, and the generated name carries a
+        // second-resolution timestamp, so this is unambiguous.
+        const matches = await this.listSnapshots(data.projectId, {
+          filter: fields.name,
+        });
+        // Exact match only. A near-match would put the WRONG snapshot id into
+        // the restore hint below — a restore to the wrong point in time wipes
+        // the very changes this backup was taken to protect. The null path
+        // already tells the caller to find the id with list.
+        const created = matches.find((s: any) => s?.name === fields.name);
+
+        this.snapshotCreatedForProject.add(data.projectId);
+        this.releaseBackupGateHolds(data.projectId);
+
+        return withHints(
+          {
+            operation: "create",
+            projectId: data.projectId,
+            created: true,
+            taskId,
+            snapshot: created ? summarizeSnapshot(created) : null,
+            name: fields.name,
+            notIncluded: SNAPSHOT_EXCLUSIONS,
+            ...(freedSlot ? { deletedToFreeSlot: freedSlot } : {}),
+            ...(skippedCandidates.length ? { skippedCandidates } : {}),
+          },
+          {
+            warning:
+              "This backup covers the WHOLE PROJECT but does NOT include Endpoints or Knowledge AI (stores, sources, chunks). Tell the user that, briefly, if the agent uses knowledge.",
+            action: created
+              ? `To roll back later, call manage_snapshots { operation: "restore", projectId: "${data.projectId}", snapshotId: "${summarizeSnapshot(created).id}" } for a preflight first.`
+              : 'The snapshot was created but could not be resolved by name; use manage_snapshots { operation: "list" } to find its id.',
+          },
+        );
+      }
+
+      case "restore": {
+        const snapshot = await this.readSnapshot(data.snapshotId);
+        if (!snapshot) {
+          return withHints(
+            {
+              operation: "restore",
+              error: "snapshot_not_found",
+              projectId: data.projectId,
+              snapshotId: data.snapshotId,
+              applied: false,
+            },
+            {
+              action: `Use manage_snapshots { operation: "list", projectId: "${data.projectId}" } to find valid snapshot ids.`,
+            },
+          );
+        }
+
+        if (
+          !(await this.snapshotBelongsToProject(
+            data.snapshotId,
+            data.projectId,
+          ))
+        ) {
+          return this.snapshotProjectMismatchResult(
+            "restore",
+            data.projectId,
+            data.snapshotId,
+            snapshot,
+          );
+        }
+
+        // Preflight: report and change nothing. This is the default on purpose —
+        // restore is irreversible.
+        if (!data.confirm) {
+          return withHints(buildRestorePreflight(snapshot, data.projectId), {
+            warning:
+              "PREFLIGHT ONLY — nothing has been changed. Restoring is irreversible.",
+            action: `Show the user the warnings above and get explicit agreement. Only then call manage_snapshots { operation: "restore", projectId: "${data.projectId}", snapshotId: "${data.snapshotId}", confirm: true }.`,
+          });
+        }
+
+        // No request body: the platform resolves the project from the snapshot
+        // id path param, and passing projectId here as well raises
+        // "ProjectId was specified in multiple locations".
+        const response: any = await this.apiClient.post(
+          `/new/v2.0/snapshots/${data.snapshotId}/restore`,
+        );
+
+        const { taskId, task, timedOut, failReason, pollFailed, pollError } =
+          await this.runSnapshotTask(response, data.projectId, {
+            waitForCompletion: data.waitForCompletion,
+            timeoutMs: data.timeoutMs,
+          });
+
+        if (pollFailed) {
+          return this.snapshotPollFailedResult(
+            "restore",
+            data.projectId,
+            taskId,
+            pollError!,
+            {
+              snapshotId: data.snapshotId,
+              warnings: RESTORE_WARNINGS,
+            },
+          );
+        }
+
+        if (failReason) {
+          return withHints(
+            {
+              operation: "restore",
+              projectId: data.projectId,
+              snapshotId: data.snapshotId,
+              applied: false,
+              taskId,
+              failReason,
+            },
+            {
+              warning:
+                "The restore task failed. The project may be in a partially restored state.",
+              action:
+                "Report the failReason and tell the user to check the project in the Cognigy UI before making further changes.",
+            },
+          );
+        }
+
+        if (data.waitForCompletion === false || timedOut) {
+          return withHints(
+            {
+              operation: "restore",
+              projectId: data.projectId,
+              snapshotId: data.snapshotId,
+              applied: true,
+              pending: true,
+              taskId,
+              task,
+            },
+            {
+              warning:
+                "The restore is running. The project is mid-rebuild — do not read or change resources until it finishes.",
+              action: `Poll manage_snapshots { operation: "read_task", projectId: "${data.projectId}", taskId: "${taskId}" } until it is done.`,
+            },
+          );
+        }
+
+        return withHints(
+          {
+            operation: "restore",
+            projectId: data.projectId,
+            snapshotId: data.snapshotId,
+            applied: true,
+            taskId,
+            task,
+            snapshot: summarizeSnapshot(snapshot),
+            warnings: RESTORE_WARNINGS,
+          },
+          {
+            warning:
+              "Every resource id in this project changed. Ids from earlier in this conversation are now stale.",
+            action:
+              "Re-list the project's agents and flows before doing anything else, and remind the user to check Endpoints on non-primary locales in the UI.",
+          },
+        );
+      }
+
+      case "delete": {
+        const snapshot = await this.readSnapshot(data.snapshotId);
+        if (!snapshot) {
+          return withHints(
+            {
+              operation: "delete",
+              error: "snapshot_not_found",
+              projectId: data.projectId,
+              snapshotId: data.snapshotId,
+              deleted: false,
+            },
+            {
+              action: `Use manage_snapshots { operation: "list", projectId: "${data.projectId}" } to find valid snapshot ids.`,
+            },
+          );
+        }
+
+        // The deletion gate. Only snapshots carrying BOTH plugin markers may be
+        // deleted here; a human-created snapshot is never the plugin's to remove.
+        if (!isAutoBackup(snapshot)) {
+          return withHints(
+            {
+              operation: "delete",
+              error: "not_a_plugin_backup",
+              projectId: data.projectId,
+              snapshotId: data.snapshotId,
+              deleted: false,
+              snapshot: summarizeSnapshot(snapshot),
+            },
+            {
+              warning: `"${snapshot.name}" was not created by this plugin, so the plugin will not delete it.`,
+              action: `Tell the user that only snapshots named "${AUTO_BACKUP_NAME_PREFIX}…" and created by this plugin can be deleted here, and that they can delete this one themselves in the Cognigy UI under Deploy > Snapshots.`,
+            },
+          );
+        }
+
+        if (
+          !(await this.snapshotBelongsToProject(
+            data.snapshotId,
+            data.projectId,
+          ))
+        ) {
+          return this.snapshotProjectMismatchResult(
+            "delete",
+            data.projectId,
+            data.snapshotId,
+            snapshot,
+          );
+        }
+
+        const response: any = await this.apiClient.delete(
+          `/new/v2.0/snapshots/${data.snapshotId}`,
+        );
+
+        const { taskId, task, timedOut, failReason, pollFailed, pollError } =
+          await this.runSnapshotTask(response, data.projectId, {
+            waitForCompletion: data.waitForCompletion,
+            timeoutMs: data.timeoutMs,
+          });
+
+        if (pollFailed) {
+          return this.snapshotPollFailedResult(
+            "delete",
+            data.projectId,
+            taskId,
+            pollError!,
+            { snapshotId: data.snapshotId, deleted: false },
+          );
+        }
+
+        if (failReason) {
+          const inUse = failReason.includes(SNAPSHOT_IN_USE_FAIL_REASON);
+          return withHints(
+            {
+              operation: "delete",
+              projectId: data.projectId,
+              snapshotId: data.snapshotId,
+              deleted: false,
+              taskId,
+              failReason,
+              ...(inUse ? { inUseByEndpoint: true } : {}),
+            },
+            {
+              warning: inUse
+                ? "This snapshot is deployed to an endpoint, so the platform refuses to delete it."
+                : "The snapshot deletion task failed.",
+              action: inUse
+                ? "Tell the user to point that endpoint at a different snapshot in the Cognigy UI first, then retry."
+                : "Report the failReason to the user.",
+            },
+          );
+        }
+
+        // waitForCompletion:false returns before the task runs, so the
+        // snapshot is NOT gone yet — same pending shape as create/restore.
+        const stillRunning = data.waitForCompletion === false || timedOut;
+        if (stillRunning) {
+          return withHints(
+            {
+              operation: "delete",
+              projectId: data.projectId,
+              snapshotId: data.snapshotId,
+              deleted: false,
+              pending: true,
+              taskId,
+              task,
+            },
+            {
+              warning:
+                "The deletion task is still running; the snapshot has not been deleted yet.",
+              action: `Poll manage_snapshots { operation: "read_task", projectId: "${data.projectId}", taskId: "${taskId}" } until it is done.`,
+            },
+          );
+        }
+
+        return {
+          operation: "delete",
+          projectId: data.projectId,
+          snapshotId: data.snapshotId,
+          deleted: true,
+          taskId,
+          task,
+        };
+      }
+
+      // Records that the user was asked and said no, so the backup gate stops
+      // holding calls FOR THIS PROJECT. Another project touched later in the
+      // same session is still held once. Touches no API.
+      case "decline": {
+        this.backupDeclinedForProject.add(data.projectId);
+        this.releaseBackupGateHolds(data.projectId);
+        return {
+          operation: "decline",
+          projectId: data.projectId,
+          acknowledged: true,
+          note: "No backup will be taken for this project. Changes to it are not reversible through this plugin. A different project touched later still gets its own backup offer.",
+        };
+      }
+
+      case "read_task": {
+        const task = await this.readTask(data.taskId, data.projectId);
+        return {
+          operation: "read_task",
+          projectId: data.projectId,
+          task: normalizeTask(task),
+        };
+      }
+    }
+  }
+
+  // =========================================================================
   // Main dispatcher
   // =========================================================================
   async handleToolCall(toolName: string, args: any): Promise<any> {
@@ -5134,6 +7987,20 @@ export class ToolHandlers {
     });
 
     try {
+      // Before anything mutates an existing agent, give the user one chance to
+      // take a backup. Must precede the switch — a post-hoc hint arrives after
+      // the change and is therefore useless.
+      if (
+        ToolHandlers.isBackupWorthyCall(toolName, args) &&
+        !this.targetsNewResource(args)
+      ) {
+        const gate = this.backupGateFor(toolName, args);
+        if (gate) {
+          logger.info(`Backup gate held ${toolName} for a backup offer`);
+          return gate;
+        }
+      }
+
       let result: any;
       switch (toolName) {
         case "create_ai_agent":
@@ -5187,9 +8054,17 @@ export class ToolHandlers {
         case "audit_voice_agent":
           result = await this.handleAuditVoiceAgent(args);
           break;
+        case "manage_snapshots":
+          result = await this.handleManageSnapshots(args);
+          break;
         default:
           throw new Error(`Unknown tool: ${toolName}`);
       }
+      // Reads teach the gate which project a resource belongs to, so a later
+      // update_ai_agent { aiAgentId } is scoped to the right project instead of
+      // falling back to session-wide state.
+      this.learnProjectIds(result);
+
       logger.info(`Tool call successful: ${toolName}`);
       return result;
     } catch (error: any) {

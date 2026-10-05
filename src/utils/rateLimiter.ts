@@ -19,8 +19,14 @@ export class RateLimiter {
 
   constructor(config: RateLimitConfig) {
     this.config = config;
-    // Clean up expired entries every minute
+    // Clean up expired entries every minute. `unref()` so this housekeeping
+    // timer can never by itself keep the Node event loop alive — without it, a
+    // server whose client disconnected would linger forever as an orphan
+    // process holding its whole heap. Safe to unref: `check()` already expires
+    // records lazily, so the sweep is a pure memory-hygiene optimisation and
+    // skipping it while the process is otherwise idle costs nothing.
     this.cleanupInterval = setInterval(() => this.cleanup(), 60000);
+    this.cleanupInterval.unref();
   }
 
   /**
@@ -84,4 +90,3 @@ export class RateLimiter {
     }
   }
 }
-

@@ -253,6 +253,18 @@ export interface DesktopUninstallResult {
 }
 
 /**
+ * Delete ~/.cognigy-plugin — the credentials file, the Desktop launcher and the
+ * engine prefix. Shared by every client (the engine falls back to the creds
+ * file when env vars are absent), so this is a global purge, not a per-client
+ * step. Returns whether anything was there to delete.
+ */
+export function purgeUserHome(): boolean {
+  if (!existsSync(USER_HOME_DIR)) return false;
+  rmSync(USER_HOME_DIR, { recursive: true, force: true });
+  return true;
+}
+
+/**
  * Remove the Cognigy connector from claude_desktop_config.json (leaving every
  * other server intact) and, when `purgeEngine` is set, delete the per-user
  * engine prefix + launcher under ~/.cognigy-plugin. Does not touch the app.
@@ -273,11 +285,7 @@ export function uninstallClaudeDesktop(
     removedEntry = removed;
   }
 
-  let removedEngine = false;
-  if (purgeEngine && existsSync(USER_HOME_DIR)) {
-    rmSync(USER_HOME_DIR, { recursive: true, force: true });
-    removedEngine = true;
-  }
+  const removedEngine = purgeEngine ? purgeUserHome() : false;
 
   return { configPath, removedEntry, removedEngine };
 }

@@ -102,6 +102,17 @@ update_ai_agent {
 
 Always use ALL relevant fields when configuring an agent. Do not put everything in `description` alone — distribute the configuration across the appropriate fields for best results.
 
+## LLM Prompt node — explicit request ONLY
+
+Use the **LLM Prompt** node only when the user asks for it by name, e.g. "create an agent using an LLM Prompt node." Otherwise, build agents with the AI Agent node.
+
+When (and only when) the user explicitly asked for it:
+
+- New agent: `create_ai_agent { name, agentNodeType: "llmPrompt", systemPrompt: "..." }` — provisions project + flow + LLM Prompt node + REST endpoint. There is NO agent resource in this mode.
+- `systemPrompt` is the full persona, job, and guardrail definition.
+- Iterate with `manage_flow_nodes { operation: "update", flowId, nodeId, config: { prompt } }` — NOT update_ai_agent (there is no agent to update).
+- Tools: `create_tool { flowId, ... }` (only tool/mcp/http types). Test with `talk_to_agent { endpointUrl }`.
+
 ## Key facts
 
 - create_ai_agent auto-provisions: flow, AI Agent Job Node, REST endpoint
@@ -111,5 +122,7 @@ Always use ALL relevant fields when configuring an agent. Do not put everything 
 - create_tool auto-provisions: flow nodes for tools. Do NOT create tool nodes manually.
 - Duplicate `toolId` values can cause empty or failed responses. Check the flow/tools before assuming the problem is the LLM or connection.
 - **Knowledge**: Always attach knowledge stores as tools (via create_tool { toolType: "knowledge" } or knowledgeStoreReferenceId on create_ai_agent). Knowledge tools give the agent a dedicated search capability. Only attach to the persona (via update_ai_agent) if the user explicitly requests persona-level knowledge.
+- **Changing an EXISTING agent**: the first such change in a session is HELD by the server and returns `error: "backup_not_offered"` without changing anything. Ask the user whether they want a backup, then call `manage_snapshots { operation: "create", projectId, label }` or `{ operation: "decline", projectId }`, then retry the held call — see the snapshot-backups skill. This does NOT fire for an agent you created in this same session, so the build flow above is unaffected.
 - Use same sessionId across talk_to_agent calls for multi-turn testing
 - endpointUrl uses a different base URL (endpoint-\*.cognigy.ai), not the API URL
+- talk_to_agent sends in Cognigy Endpoint Test Mode by default, so test messages are not counted as billable; the response reports `testMode` and the regular `endpointUrl`. It never falls back to a billable send on its own. If a send fails, read `_hints` and check whether the message was processed before re-sending it (see the troubleshooting skill). Cognigy documents a fair-use limit of 600 test messages per hour (scope unspecified).

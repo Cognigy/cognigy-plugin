@@ -44,8 +44,7 @@ describe("manage_a2a_server", () => {
 
   it("creates an endpoint and reports liveCheck when the Agent Card is reachable", async () => {
     api.get
-      .mockResolvedValueOnce({}) // flow lookup (no localeReference)
-      .mockResolvedValueOnce({ items: [] }) // locale fallback list (empty)
+      .mockResolvedValueOnce({ items: [] }) // project locales (empty)
       .mockResolvedValueOnce(mockEndpoint) // re-fetch after create
       .mockResolvedValueOnce(mockEndpoint); // re-fetch after settings patch
     api.post.mockResolvedValueOnce({ _id: ID.endpoint });
@@ -86,8 +85,7 @@ describe("manage_a2a_server", () => {
       },
     };
     api.get
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({ items: [] })
+      .mockResolvedValueOnce({ items: [] }) // project locales (empty)
       .mockResolvedValueOnce(authEndpoint)
       .mockResolvedValueOnce(authEndpoint);
     api.post.mockResolvedValueOnce({ _id: ID.endpoint });
@@ -108,8 +106,7 @@ describe("manage_a2a_server", () => {
 
   it("reports unreachable when the Agent Card fetch fails", async () => {
     api.get
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({ items: [] })
+      .mockResolvedValueOnce({ items: [] }) // project locales
       .mockResolvedValueOnce(mockEndpoint);
     api.post.mockResolvedValueOnce({ _id: ID.endpoint });
     axiosGet.mockRejectedValueOnce({ response: { status: 404 } });
@@ -154,8 +151,7 @@ describe("manage_a2a_server", () => {
 
   it("handles settings patch failure on create (partial success)", async () => {
     api.get
-      .mockResolvedValueOnce({}) // flow lookup (no localeReference)
-      .mockResolvedValueOnce({ items: [] }) // locale fallback list (empty)
+      .mockResolvedValueOnce({ items: [] }) // project locales (empty)
       .mockResolvedValueOnce(mockEndpoint); // re-fetch after create
     api.post.mockResolvedValueOnce({ _id: ID.endpoint });
     api.patch.mockRejectedValueOnce(new Error("Settings validation failed"));
@@ -173,7 +169,7 @@ describe("manage_a2a_server", () => {
   });
 
   it("returns error when creation fails", async () => {
-    api.get.mockResolvedValueOnce({}).mockResolvedValueOnce({ items: [] });
+    api.get.mockResolvedValueOnce({ items: [] }); // project locales (empty)
     api.post.mockRejectedValueOnce(new Error("Quota exceeded"));
 
     const result = await h.handleToolCall("manage_a2a_server", {
