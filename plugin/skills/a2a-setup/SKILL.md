@@ -8,7 +8,7 @@ description: "Use when the user wants multi-agent / agent-to-agent communication
 ## Read this first
 
 - **Gotcha (Cognigy targets only):** a `manage_a2a_server` endpoint lives at `/a2a/v1/<URLToken>`, not the plain endpoint URL. Always copy `agentBaseUrl` straight from that tool's response — don't build it yourself. External/third-party agents don't have this quirk; just use whatever base URL they publish.
-- **Always check `liveCheck.reachable`** on the `manage_a2a_server` response before telling the user the agent is ready. Every create/update fetches the Agent Card live, so `created: true` alone doesn't mean it's callable yet.
+- **Always check `liveCheck`** on the `manage_a2a_server` response before telling the user the agent is ready — `created: true` alone doesn't mean it's callable yet. For an unauthenticated endpoint, every create/update fetches the Agent Card live and returns `liveCheck.reachable`. For an endpoint that requires authentication there is no fetch: `liveCheck` is `{ skipped: true, reason }` and has no `reachable` field — tell the user reachability was not verified, don't claim it was.
 
 ## What is A2A here?
 
@@ -58,7 +58,7 @@ Only do this when the target you want to delegate to is a Cognigy agent you're b
      ],
      enableStreaming: true
    }
-   → returns agentBaseUrl, agentCardUrl, and liveCheck — CHECK liveCheck.reachable before telling the user it's ready
+   → returns agentBaseUrl, agentCardUrl, and liveCheck — CHECK liveCheck.reachable (or liveCheck.skipped for an authenticated endpoint) before telling the user it's ready
 ```
 
 Then wire the caller to it exactly like the external case above, using the returned `agentBaseUrl` VERBATIM:
@@ -125,7 +125,8 @@ Node structure created: `aiAgentJobA2AAgent` (the tool node the LLM sees, config
 ```text
 1. Create + configure each specialist agent (create_ai_agent, tools, persona)
 2. Deploy each specialist behind its own manage_a2a_server endpoint —
-   check liveCheck.reachable on each before proceeding
+   check liveCheck on each before proceeding (reachable: true, or skipped
+   for an authenticated endpoint — then verify it another way)
 3. Create the orchestrator agent (create_ai_agent) with a persona describing
    it delegates to registered specialist agents
 4. For each specialist, add one create_tool { toolType: "a2a" } on the
