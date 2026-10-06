@@ -1006,7 +1006,15 @@ export const manageA2AServerSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   agentName: z.string().optional(),
   agentDescription: z.string().optional(),
-  skills: z.array(a2aSkillSchema).optional(),
+  skills: z
+    .array(a2aSkillSchema)
+    .refine(
+      (skills) => new Set(skills.map((s) => s.id)).size === skills.length,
+      {
+        message: "Each skill id must be unique within the Agent Card",
+      },
+    )
+    .optional(),
   enableStreaming: z.boolean().optional(),
   authenticationType: z.enum(["none", "apiKey"]).optional(),
 });

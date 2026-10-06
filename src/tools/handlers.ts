@@ -528,11 +528,33 @@ const TOOL_NODE_CONFIG_KEYS = [
  * stores unknown keys and then ignores them, so a blind PATCH looks like a
  * successful update that changed nothing.
  */
-const AI_AGENT_ONLY_CONFIG_KEYS = [
-  "knowledgeStoreId",
-  "topK",
-  "recipient",
+const AI_AGENT_ONLY_CONFIG_KEYS = ["knowledgeStoreId", "topK", "recipient"];
+
+/**
+ * Config keys that exist only on an A2A Agent tool node (applied by
+ * applyA2AToolConfig). `timeout` is left out: MCP tools share it. Any of these
+ * in an update_tool request means the node's real type has to be read —
+ * without it the update falls back to the plain-tool keys and silently drops
+ * every A2A field.
+ */
+const A2A_ONLY_CONFIG_KEYS = [
   "agentBaseUrl",
+  "agentCardPath",
+  "executionMode",
+  "taskTimeout",
+  "maxAutonomousTurns",
+  "toolFilter",
+  "whitelist",
+  "blacklist",
+  "authType",
+  "apiKeyConnection",
+  "apiKeyHeader",
+  "bearerConnection",
+  "basicConnection",
+  "oAuth2Connection",
+  "authForDiscovery",
+  "agentHeaders",
+  "cacheCard",
 ];
 
 /**
@@ -638,6 +660,22 @@ function applyA2AToolConfig(nodeConfig: Record<string, any>, cfg: any): void {
     nodeConfig.authForDiscovery = cfg.authForDiscovery;
   if (cfg.agentHeaders) nodeConfig.agentHeaders = cfg.agentHeaders;
   if (cfg.cacheCard !== undefined) nodeConfig.cacheCard = cfg.cacheCard;
+}
+
+/**
+ * manage_a2a_server only manages a2aServer endpoints. Any other channel would
+ * get A2A settings patched onto it, or A2A URLs fabricated from its token.
+ */
+function notA2AServerEndpoint(endpointId: string, channel: unknown): any {
+  return withHints(
+    {
+      error: `Endpoint ${endpointId} is a "${String(channel)}" endpoint, not an A2A server (a2aServer) endpoint.`,
+    },
+    {
+      action:
+        "Pass the endpointId of an a2aServer endpoint (list_resources { resourceType: 'endpoint', projectId }), or omit endpointId and pass projectId + flowId to create one. Use manage_webchat / manage_voice_gateway for those channels.",
+    },
+  );
 }
 
 const AI_AGENT_TOOL_TYPES = new Set([
@@ -4530,6 +4568,30 @@ export class ToolHandlers {
             node.name === requestedToolId),
       );
 
+      // Reusing is only right when the existing node is the same kind of
+      // tool. An A2A request that hit a plain/MCP/knowledge node (or the
+      // reverse) would report success while none of the requested config
+      // exists on the node.
+      if (
+        duplicateTool &&
+        (duplicateTool.type === "aiAgentJobA2AAgent") !==
+          (data.toolType === "a2a")
+      ) {
+        const existingKind =
+          TOOL_NODE_TYPE_KIND[duplicateTool.type] ?? duplicateTool.type;
+        return withHints(
+          {
+            error: `toolId "${requestedToolId}" already belongs to a different kind of tool in this agent flow (existing: "${existingKind}", requested: "${data.toolType}"), so it cannot be reused.`,
+            existingToolNodeId: duplicateTool._id || duplicateTool.id,
+            existingToolType: existingKind,
+          },
+          {
+            action:
+              "Choose a different toolId, or update/delete the existing tool first.",
+          },
+        );
+      }
+
       if (duplicateTool) {
         const duplicateToolNodeId = duplicateTool._id || duplicateTool.id;
         const duplicateParentId = nodeParentId(duplicateTool) ?? jobNodeId;
@@ -4906,12 +4968,21 @@ export class ToolHandlers {
     const requestedAiAgentOnlyKeys = cfg
       ? AI_AGENT_ONLY_CONFIG_KEYS.filter((key) => (cfg as any)[key])
       : [];
+    // A2A keys count when present at all — taskTimeout: 0 and cacheCard:
+    // false are real values.
+    const requestedA2AKeys = cfg
+      ? A2A_ONLY_CONFIG_KEYS.filter((key) => (cfg as any)[key] !== undefined)
+      : [];
+    // A rename needs the family too: an A2A node keeps its name in
+    // config.name as well as in the label, and both must change together.
     const needsNodeFamily =
-      !!cfg &&
-      (requestedAiAgentOnlyKeys.length > 0 ||
-        toolType === "knowledge" ||
-        toolType === "send_email" ||
-        toolType === "a2a");
+      (!!cfg &&
+        (requestedAiAgentOnlyKeys.length > 0 ||
+          requestedA2AKeys.length > 0 ||
+          toolType === "knowledge" ||
+          toolType === "send_email")) ||
+      toolType === "a2a" ||
+      !!data.name;
 
     let fetchedToolNode: any;
     if (needsNodeFamily) {
@@ -4935,10 +5006,15 @@ export class ToolHandlers {
         ? fetchedToolNode.type
         : undefined;
     // Dispatch on the node's real type; fall back to the caller's toolType,
-    // and to the plain-tool keys when it was omitted (as before).
+    // then to "a2a" when only A2A keys could have been meant, and to the
+    // plain-tool keys otherwise (as before).
     const effectiveKind: ToolKind =
       (nodeType ? TOOL_NODE_TYPE_KIND[nodeType] : undefined) ??
-      (toolType && toolType !== "http" ? (toolType as ToolKind) : "tool");
+      (toolType && toolType !== "http"
+        ? (toolType as ToolKind)
+        : requestedA2AKeys.length > 0
+          ? "a2a"
+          : "tool");
 
     // Step 1: Update the tool node itself (label and/or tool-node config)
     const patchPayload: any = {};
@@ -4946,17 +5022,19 @@ export class ToolHandlers {
     let ignoredConfigKeys: string[] = [];
     if (data.name) patchPayload.label = data.name;
 
+    const nodeConfig: Record<string, any> = {};
     if (cfg) {
       const mapped = buildToolNodeConfig(effectiveKind, cfg as any);
-      if (effectiveKind === "a2a") {
-        if (data.name) mapped.nodeConfig.name = data.name;
-        applyA2AToolConfig(mapped.nodeConfig, cfg);
-      }
+      Object.assign(nodeConfig, mapped.nodeConfig);
+      if (effectiveKind === "a2a") applyA2AToolConfig(nodeConfig, cfg);
       parameterWarnings = mapped.parameterWarnings;
       ignoredConfigKeys = mapped.ignored;
-      if (Object.keys(mapped.nodeConfig).length > 0) {
-        patchPayload.config = mapped.nodeConfig;
-      }
+    }
+    // create_tool writes an A2A tool's name into config.name as well as the
+    // label; a rename that only changed the label would leave them apart.
+    if (effectiveKind === "a2a" && data.name) nodeConfig.name = data.name;
+    if (Object.keys(nodeConfig).length > 0) {
+      patchPayload.config = nodeConfig;
     }
 
     // Nothing the caller asked for can land on this node. Say so instead of
@@ -6014,7 +6092,18 @@ export class ToolHandlers {
           createPayload,
         );
         endpointId = createdEndpoint._id || createdEndpoint.id;
+      } catch (error: any) {
+        return withHints(
+          { error: `Failed to create A2A server endpoint: ${error.message}` },
+          {
+            action: "Check projectId and flowId, then retry.",
+          },
+        );
+      }
 
+      // The endpoint exists from here on. A failure below must not read as
+      // "creation failed" — a retry of the create would make a duplicate.
+      try {
         let endpoint: any = await this.apiClient.get(
           `/v2.0/endpoints/${endpointId}`,
         );
@@ -6049,9 +6138,19 @@ export class ToolHandlers {
         return response;
       } catch (error: any) {
         return withHints(
-          { error: `Failed to create A2A server endpoint: ${error.message}` },
           {
-            action: "Check projectId and flowId, then retry.",
+            created: true,
+            endpointId,
+            name: createPayload.name,
+            channel: "a2aServer",
+            error: `Endpoint created, but reading it back failed: ${error.message}`,
+          },
+          {
+            warning:
+              "The A2A server endpoint WAS created. Do not retry the create — that would add a second endpoint.",
+            action: `Call manage_a2a_server { endpointId: "${endpointId}" } to get its agentBaseUrl and live check${
+              hasSettings ? ", passing the Agent Card settings again" : ""
+            }.`,
           },
         );
       }
@@ -6060,6 +6159,9 @@ export class ToolHandlers {
     // UPDATE: patch existing endpoint
     if (!data.name && !data.flowId && !hasSettings) {
       const ep = await this.safeGetEndpoint(endpointId);
+      if (ep && ep.channel !== "a2aServer") {
+        return notA2AServerEndpoint(endpointId!, ep.channel);
+      }
       if (ep) {
         return await this.buildA2AServerResponse({
           endpointId: endpointId!,
@@ -6080,6 +6182,9 @@ export class ToolHandlers {
       const fullEndpoint: any = await this.apiClient.get(
         `/v2.0/endpoints/${endpointId}`,
       );
+      if (fullEndpoint?.channel !== "a2aServer") {
+        return notA2AServerEndpoint(endpointId!, fullEndpoint?.channel);
+      }
       const existingSettings = fullEndpoint.settings ?? {};
       const mergedSettings = deepMerge(existingSettings, settings);
 
@@ -6118,7 +6223,13 @@ export class ToolHandlers {
     skipped?: boolean;
   }> {
     try {
-      const res = await axios.get(agentCardUrl, { timeout: 5000 });
+      // Endpoint traffic does not go through CognigyApiClient, so it needs the
+      // proxy wiring of its own (same as talk_to_agent).
+      const res = await axios.get(agentCardUrl, {
+        timeout: 5000,
+        ...getProxyAxiosOptions(agentCardUrl),
+        beforeRedirect: applyProxyToRedirect,
+      });
       const card = res.data ?? {};
       return {
         reachable: true,
@@ -6162,7 +6273,7 @@ export class ToolHandlers {
     if (opts.updated) result.updated = true;
     result.endpointId = opts.endpointId;
     result.name = endpoint.name;
-    result.channel = endpoint.channel ?? "a2aServer";
+    result.channel = endpoint.channel;
     result.agentBaseUrl = agentBaseUrl;
     result.agentCardUrl = agentCardUrl;
     result.settings = {

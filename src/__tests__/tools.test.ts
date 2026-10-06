@@ -2261,6 +2261,61 @@ describe("ToolHandlers v2", () => {
       expect(api.post).not.toHaveBeenCalled();
     });
 
+    it("refuses to reuse a non-A2A tool that holds the requested toolId", async () => {
+      api.get.mockResolvedValueOnce({ flowId: ID.flow }).mockResolvedValueOnce({
+        items: [
+          { _id: ID.entry, isEntryPoint: true },
+          { _id: ID.node, type: "aiAgentJob" },
+          {
+            _id: ID.tool,
+            type: "aiAgentJobTool",
+            label: "flights_agent",
+            config: { toolId: "flights_agent" },
+          },
+        ],
+      });
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "a2a",
+        name: "Flights Agent",
+        config: {
+          toolId: "flights_agent",
+          agentBaseUrl: "https://endpoint-trial.cognigy.ai/a2a/v1/tok-abc123",
+        },
+      });
+
+      expect(result.error).toContain('existing: "tool", requested: "a2a"');
+      expect(result.existingToolNodeId).toBe(ID.tool);
+      expect(result.reusedExisting).toBeUndefined();
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it("refuses to reuse an A2A tool for a non-A2A tool with the same toolId", async () => {
+      api.get.mockResolvedValueOnce({ flowId: ID.flow }).mockResolvedValueOnce({
+        items: [
+          { _id: ID.entry, isEntryPoint: true },
+          { _id: ID.node, type: "aiAgentJob" },
+          {
+            _id: ID.tool,
+            type: "aiAgentJobA2AAgent",
+            label: "flights_agent",
+            config: { toolId: "flights_agent" },
+          },
+        ],
+      });
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "tool",
+        name: "Flights",
+        config: { toolId: "flights_agent", description: "Flights" },
+      });
+
+      expect(result.error).toContain('existing: "a2a", requested: "tool"');
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
     it("uses toolId as node label instead of display name", async () => {
       mockFlowWithJobNode();
       api.post.mockResolvedValue({ _id: ID.tool });

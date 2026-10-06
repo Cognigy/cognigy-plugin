@@ -71,9 +71,16 @@ describe("manage_a2a_server", () => {
       agentName: "Flights Agent",
       skills: ["book-flight"],
     });
+    // Endpoint traffic bypasses CognigyApiClient, so the probe carries its
+    // own proxy wiring — like talk_to_agent — instead of axios' built-in
+    // proxy handling, which cannot tunnel through a corporate proxy.
     expect(axiosGet).toHaveBeenCalledWith(
       "https://endpoint-trial.cognigy.ai/a2a/v1/tok-abc123/.well-known/agent.json",
-      { timeout: 5000 },
+      expect.objectContaining({
+        timeout: 5000,
+        proxy: false,
+        beforeRedirect: expect.any(Function),
+      }),
     );
   });
 
@@ -178,6 +185,64 @@ describe("manage_a2a_server", () => {
     });
 
     expect(result.error).toContain("Failed to create A2A server endpoint");
+  });
+
+  it("reports partial success, not failure, when the read-back after create fails", async () => {
+    api.get
+      .mockResolvedValueOnce({ items: [] }) // project locales (empty)
+      .mockRejectedValueOnce(new Error("Gateway timeout")); // read-back
+    api.post.mockResolvedValueOnce({ _id: ID.endpoint });
+
+    const result = await h.handleToolCall("manage_a2a_server", {
+      projectId: ID.project,
+      flowId: ID.flow,
+      agentName: "Flights Agent",
+    });
+
+    expect(result.created).toBe(true);
+    expect(result.endpointId).toBe(ID.endpoint);
+    expect(result._hints.warning).toContain("Do not retry the create");
+    expect(result._hints.action).toContain(`endpointId: "${ID.endpoint}"`);
+    expect(api.post).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses to update an endpoint that is not an a2aServer endpoint", async () => {
+    api.get.mockResolvedValueOnce({ ...mockEndpoint, channel: "webchat3" });
+
+    const result = await h.handleToolCall("manage_a2a_server", {
+      endpointId: ID.endpoint,
+      agentName: "Flights Agent",
+    });
+
+    expect(result.error).toContain('"webchat3" endpoint');
+    expect(api.patch).not.toHaveBeenCalled();
+    expect(axiosGet).not.toHaveBeenCalled();
+  });
+
+  it("refuses to report A2A info for a non-a2aServer endpoint on the no-change path", async () => {
+    api.get.mockResolvedValueOnce({ ...mockEndpoint, channel: "rest" });
+
+    const result = await h.handleToolCall("manage_a2a_server", {
+      endpointId: ID.endpoint,
+    });
+
+    expect(result.error).toContain('"rest" endpoint');
+    expect(result.agentBaseUrl).toBeUndefined();
+    expect(axiosGet).not.toHaveBeenCalled();
+  });
+
+  it("rejects duplicate skill ids before creating anything", async () => {
+    await expect(
+      h.handleToolCall("manage_a2a_server", {
+        projectId: ID.project,
+        flowId: ID.flow,
+        skills: [
+          { id: "book-flight", name: "book-flight" },
+          { id: "book-flight", name: "Book a flight" },
+        ],
+      }),
+    ).rejects.toThrow("Each skill id must be unique");
+    expect(api.post).not.toHaveBeenCalled();
   });
 
   it("returns error when update fails", async () => {

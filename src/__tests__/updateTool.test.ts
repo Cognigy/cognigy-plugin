@@ -190,6 +190,63 @@ describe("update_tool", () => {
     );
   });
 
+  it("applies A2A-only fields when toolType is omitted, by reading the node type", async () => {
+    mockAgentWithFlow();
+    api.get.mockResolvedValueOnce({ type: "aiAgentJobA2AAgent" }); // tool node
+    api.patch.mockResolvedValue({});
+
+    const result = await h.handleToolCall("update_tool", {
+      aiAgentId: ID.agent,
+      toolNodeId: ID.tool,
+      config: { taskTimeout: 120, executionMode: "blocking" },
+    });
+
+    expect(result.updated).toBe(true);
+    expect(api.get).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes/${ID.tool}`,
+    );
+    expect(api.patch).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes/${ID.tool}`,
+      { config: { taskTimeout: 120, executionMode: "blocking" } },
+    );
+  });
+
+  it("treats A2A-only fields as an a2a update when the node type cannot be read", async () => {
+    mockAgentWithFlow();
+    api.get.mockRejectedValueOnce(new Error("Not found")); // tool node read
+    api.patch.mockResolvedValue({});
+
+    const result = await h.handleToolCall("update_tool", {
+      aiAgentId: ID.agent,
+      toolNodeId: ID.tool,
+      config: { cacheCard: false },
+    });
+
+    expect(result.updated).toBe(true);
+    expect(api.patch).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes/${ID.tool}`,
+      { config: { cacheCard: false } },
+    );
+  });
+
+  it("keeps an A2A tool's config.name in sync on a name-only rename", async () => {
+    mockAgentWithFlow();
+    api.get.mockResolvedValueOnce({ type: "aiAgentJobA2AAgent" }); // tool node
+    api.patch.mockResolvedValue({});
+
+    const result = await h.handleToolCall("update_tool", {
+      aiAgentId: ID.agent,
+      toolNodeId: ID.tool,
+      name: "Hotels Agent",
+    });
+
+    expect(result.updated).toBe(true);
+    expect(api.patch).toHaveBeenCalledWith(
+      `/v2.0/flows/${ID.flow}/chart/nodes/${ID.tool}`,
+      { label: "Hotels Agent", config: { name: "Hotels Agent" } },
+    );
+  });
+
   it("returns error when no flow found for agent", async () => {
     mockAgentWithoutFlow();
 
