@@ -46,6 +46,7 @@ import * as schemas from "../schemas/tools.js";
 import {
   createAgentV2,
   listAgentsV2,
+  readAgentV2,
   resolveAgentV2Endpoint,
 } from "./agentsV2.js";
 import {
@@ -3675,7 +3676,22 @@ export class ToolHandlers {
   // =========================================================================
   async handleGetResource(args: any): Promise<any> {
     const data = schemas.getResourceSchema.parse(args);
-    const { resourceType, id, raw } = data;
+    const { resourceType, id, raw, projectId } = data;
+
+    // Agents V2 reads are project-scoped, so only try them with a projectId.
+    if (resourceType === "agent" && projectId) {
+      const v2 = await readAgentV2(
+        this.apiClient,
+        this.agentsV2BaseUrl,
+        id,
+        projectId,
+      );
+      if (v2) {
+        if (raw) return v2;
+        const f = RESOURCE_FILTERS_GET.agent_v2(v2);
+        return { kind: "v2", ...f, use: { agentV2Id: f.id } };
+      }
+    }
 
     const endpointMap: Record<string, string> = {
       agent: `/v2.0/aiagents/${id}`,
@@ -3715,6 +3731,7 @@ export class ToolHandlers {
     if (resourceType === "endpoint" && (result as any).URLToken) {
       filtered.endpointUrl = `${this.endpointBaseUrl}/${(result as any).URLToken}`;
     }
+    if (resourceType === "agent") filtered.kind = "v1";
 
     return filtered;
   }
@@ -7884,5 +7901,23 @@ export class ToolHandlers {
   }
 }
 
-// Reserved: per-type detail-view filters for get_resource (falls back to RESOURCE_FILTERS when empty)
-const RESOURCE_FILTERS_GET: Record<string, (raw: any) => any> = {};
+// Per-type detail-view filters for get_resource (falls back to RESOURCE_FILTERS).
+const RESOURCE_FILTERS_GET: Record<string, (raw: any) => any> = {
+  agent_v2: (r) => ({
+    id: r.id ?? r._id,
+    referenceId: r.referenceId,
+    name: r.name,
+    job: r.job,
+    description: r.description,
+    instructions: r.instructions,
+    agentType: r.agentType,
+    projectId: r.projectId,
+    largeLanguageModelReferenceId: r.largeLanguageModelReferenceId,
+    toolReferenceIds: r.toolReferenceIds,
+    disabledToolReferenceIds: r.disabledToolReferenceIds,
+    skillReferenceIds: r.skillReferenceIds,
+    personaReferenceId: r.personaReferenceId,
+    knowledge: r.knowledge,
+    guardrails: r.guardrails,
+  }),
+};

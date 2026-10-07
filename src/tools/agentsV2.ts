@@ -266,3 +266,21 @@ export async function resolveAgentV2Endpoint(
   });
   return findOrCreateAgentEndpoint(api, projectId, agent);
 }
+
+/**
+ * One Agents V2 agent, or null when it cannot be read for any reason (absent
+ * service, wrong kind, other project). Callers fall back to V1.
+ */
+export async function readAgentV2(
+  api: CognigyApiClient,
+  v1: string,
+  id: string,
+  projectId: string,
+): Promise<any | null> {
+  if (!v1) return null;
+  try {
+    return await api.get(`${v1}/v1/agents/${id}`, { params: { projectId } });
+  } catch {
+    return null;
+  }
+}

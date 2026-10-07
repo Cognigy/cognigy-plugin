@@ -236,3 +236,96 @@ describe("list_resources { resourceType: 'agent' }", () => {
     expect(r._hints.hint).toBe("No agents found.");
   });
 });
+
+describe("get_resource { resourceType: 'agent' }", () => {
+  function routedApi(v2: () => Promise<any>, v1: () => Promise<any>) {
+    return {
+      get: jest.fn(async (url: string) => {
+        if (url === `${V1}/v1/agents/${ID.agent}`) return v2();
+        if (url === `/v2.0/aiagents/${ID.agent}`) return v1();
+        throw new Error(`unexpected GET ${url}`);
+      }),
+      post: jest.fn(),
+      patch: jest.fn(),
+      delete: jest.fn(),
+    } as any;
+  }
+
+  it("returns the V2 agent first when projectId is given", async () => {
+    const api = routedApi(
+      async () => ({
+        ...v2Agent,
+        toolReferenceIds: ["t1"],
+        organisationId: "o",
+      }),
+      async () => {
+        throw new Error("V1 must not be called");
+      },
+    );
+    const h = new ToolHandlers(api, EP, "", "", V1);
+    const r: any = await h.handleToolCall("get_resource", {
+      resourceType: "agent",
+      id: ID.agent,
+      projectId: ID.project,
+    });
+
+    expect(r.kind).toBe("v2");
+    expect(r.use).toEqual({ agentV2Id: ID.agent });
+    expect(r.instructions).toBe("secret-ish long text");
+    expect(r.toolReferenceIds).toEqual(["t1"]);
+    expect(r).not.toHaveProperty("organisationId");
+    expect(api.get).toHaveBeenCalledWith(`${V1}/v1/agents/${ID.agent}`, {
+      params: { projectId: ID.project },
+    });
+  });
+
+  it("falls through to V1 when the V2 read 404s", async () => {
+    const api = routedApi(
+      async () => {
+        throw httpError(404);
+      },
+      async () => ({ ...v1Agent, _id: ID.agent }),
+    );
+    const h = new ToolHandlers(api, EP, "", "", V1);
+    const r: any = await h.handleToolCall("get_resource", {
+      resourceType: "agent",
+      id: ID.agent,
+      projectId: ID.project,
+    });
+
+    expect(r.kind).toBe("v1");
+    expect(r.name).toBe("Old FAQ Bot");
+  });
+
+  it("never calls service-agents without projectId", async () => {
+    const api = routedApi(
+      async () => {
+        throw new Error("V2 must not be called");
+      },
+      async () => ({ ...v1Agent, _id: ID.agent }),
+    );
+    const h = new ToolHandlers(api, EP, "", "", V1);
+    const r: any = await h.handleToolCall("get_resource", {
+      resourceType: "agent",
+      id: ID.agent,
+    });
+
+    expect(r.kind).toBe("v1");
+    expect(api.get).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns the raw V2 body with raw: true", async () => {
+    const api = routedApi(
+      async () => ({ ...v2Agent, organisationId: "o" }),
+      async () => ({}),
+    );
+    const h = new ToolHandlers(api, EP, "", "", V1);
+    const r: any = await h.handleToolCall("get_resource", {
+      resourceType: "agent",
+      id: ID.agent,
+      projectId: ID.project,
+      raw: true,
+    });
+    expect(r.organisationId).toBe("o");
+  });
+});
