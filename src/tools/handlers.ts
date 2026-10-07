@@ -44,6 +44,13 @@ import {
 import { z } from "zod";
 import * as schemas from "../schemas/tools.js";
 import {
+  annotateAgentKindMismatch,
+  createAgentV2,
+  listAgentsV2,
+  readAgentV2,
+  resolveAgentV2Endpoint,
+} from "./agentsV2.js";
+import {
   chartToAscii,
   chartToMermaid,
   chartToHtml,
@@ -1208,6 +1215,8 @@ export class ToolHandlers {
     private endpointBaseUrl: string,
     private webchatBaseUrl: string = "",
     private staticFilesBaseUrl: string = "",
+    /** Agents V2 preview: `https://api-<host>` (service-agents root). */
+    private agentsV2BaseUrl: string = "",
   ) {}
 
   private sanitizeArgs(args: Record<string, any>): Record<string, any> {
@@ -2964,6 +2973,17 @@ export class ToolHandlers {
   // =========================================================================
   // Tool 4: talk_to_agent
   // =========================================================================
+  /** Agents V2 preview (branch only). */
+  async handleCreateAgentV2(args: any): Promise<any> {
+    const data = schemas.createAgentV2Schema.parse(args);
+    return createAgentV2(
+      this.apiClient,
+      this.agentsV2BaseUrl,
+      this.endpointBaseUrl,
+      data,
+    );
+  }
+
   async handleTalkToAgent(args: any): Promise<any> {
     const data = schemas.talkToAgentSchema.parse(args);
 
@@ -2980,6 +3000,37 @@ export class ToolHandlers {
       resolved?: boolean;
       endpointId?: string;
     } = {};
+
+    if (!endpointUrl && data.agentV2Id) {
+      // Agents V2 preview: the endpoint targets the agent, no flow involved.
+      const { endpoint, autoCreated } = await resolveAgentV2Endpoint(
+        this.apiClient,
+        this.agentsV2BaseUrl,
+        data.agentV2Id,
+        data.projectId!,
+      );
+      resolvedToken = endpoint.URLToken || undefined;
+      endpointUrl = resolvedToken
+        ? `${this.endpointBaseUrl}/${resolvedToken}`
+        : undefined;
+      endpointMeta = {
+        autoCreated,
+        resolved: !autoCreated,
+        endpointId: endpoint._id || endpoint.id,
+      };
+      if (!endpointUrl) {
+        return withHints(
+          {
+            error: "Endpoint found/created but URL token not available.",
+            sessionId,
+          },
+          {
+            action:
+              "Try list_resources { resourceType: 'endpoint', projectId } to check endpoint status.",
+          },
+        );
+      }
+    }
 
     if (!endpointUrl && data.aiAgentId) {
       const resolved = await resolveFlowForAgent(
@@ -3230,6 +3281,22 @@ export class ToolHandlers {
         result.rawResponse = response.data;
       }
 
+      // An Agents V2 endpoint answers 200 with an `error` object when the turn
+      // failed (e.g. the agent's LLM connection is not set up). Surface it
+      // instead of the generic empty-response guess.
+      const rawTurnError = response.data.error;
+      const turnError =
+        typeof rawTurnError === "string"
+          ? { message: rawTurnError }
+          : rawTurnError;
+      if (!agentResponse && turnError?.message) {
+        result.error = turnError;
+        return withHints(result, {
+          likely_cause: `The platform reported: ${turnError.message}`,
+          action:
+            "Fix the reported problem (for an Agents V2 agent: bind a working LLM via largeLanguageModelReferenceId or the project default), then send the message again with the same sessionId.",
+        });
+      }
       if (!agentResponse) {
         return withHints(result, {
           likely_cause:
@@ -3308,6 +3375,8 @@ export class ToolHandlers {
       );
     }
 
+    if (resourceType === "agent") return this.listAgents(projectId!, paging);
+
     let items: any[];
     let total: number | undefined;
     // Set when the platform rejected the audit_event filters and this plugin
@@ -3318,14 +3387,6 @@ export class ToolHandlers {
       case "project": {
         const res: any = await this.apiClient.get("/v2.0/projects", {
           params: paging,
-        });
-        items = res.items ?? res;
-        total = res.total;
-        break;
-      }
-      case "agent": {
-        const res: any = await this.apiClient.get("/v2.0/aiagents", {
-          params: { projectId, ...paging },
         });
         items = res.items ?? res;
         total = res.total;
@@ -3529,13 +3590,70 @@ export class ToolHandlers {
       });
     }
 
-    if (filtered.length === 0 && resourceType === "agent") {
-      return withHints(result, {
-        hint: "No agents found.",
-      });
-    }
-
     return result;
+  }
+
+  /**
+   * Agents of both kinds. When the project has Agents V2 agents those are the
+   * project's agents (`items`) and V1 agents are demoted to `legacyAgents`;
+   * a V1-only project keeps the old shape. Decided by V2 `total`, not by the
+   * page, so paging past the V2 agents does not flip the mode.
+   */
+  private async listAgents(
+    projectId: string,
+    paging: { limit: number; skip: number; sort?: string },
+  ): Promise<any> {
+    const v2Sort = paging.sort
+      ? paging.sort.endsWith(":desc")
+        ? ("desc" as const)
+        : ("asc" as const)
+      : undefined;
+    const [v1Res, v2] = await Promise.all([
+      this.apiClient.get("/v2.0/aiagents", {
+        params: { projectId, ...paging },
+      }),
+      listAgentsV2(this.apiClient, this.agentsV2BaseUrl, projectId, {
+        limit: paging.limit,
+        skip: paging.skip,
+        ...(v2Sort ? { sort: v2Sort } : {}),
+      }),
+    ]);
+
+    const v1Raw = (v1Res as any)?.items ?? v1Res;
+    const v1Items = (Array.isArray(v1Raw) ? v1Raw : []).map((r: any) => {
+      const f = filterResponse("agent", r);
+      return { kind: "v1", ...f, use: { aiAgentId: f.id } };
+    });
+    const v1Total = (v1Res as any)?.total ?? v1Items.length;
+
+    const hints: ResponseHints = {};
+    const warnings: string[] = [];
+    if (!v2.available && v2.warning) warnings.push(v2.warning);
+
+    let result: any;
+    if (v2.available && v2.total > 0) {
+      result = {
+        items: v2.items.map((r: any) => {
+          const f = filterResponse("agent_v2", r);
+          return { kind: "v2", ...f, use: { agentV2Id: f.id } };
+        }),
+        total: v2.total,
+        legacyAgents: v1Items,
+        legacyTotal: v1Total,
+      };
+      hints.hint =
+        "This project uses Agents V2. The v2 agents in items are the project's agents; v1 entries under legacyAgents are legacy and are only used when the user names one. Pass an item's `use` argument (plus projectId) to talk_to_agent; read an agent with get_resource { resourceType: 'agent', id, projectId }.";
+      if (paging.sort)
+        warnings.push(
+          "Agents V2 agents are ordered by creation order only; just the direction of sort was applied to them.",
+        );
+    } else {
+      result = { items: v1Items, total: v1Total };
+      if (v1Items.length === 0) hints.hint = "No agents found.";
+    }
+    if (warnings.length) hints.warning = warnings.join(" ");
+
+    return Object.keys(hints).length ? withHints(result, hints) : result;
   }
 
   /**
@@ -3560,7 +3678,22 @@ export class ToolHandlers {
   // =========================================================================
   async handleGetResource(args: any): Promise<any> {
     const data = schemas.getResourceSchema.parse(args);
-    const { resourceType, id, raw } = data;
+    const { resourceType, id, raw, projectId } = data;
+
+    // Agents V2 reads are project-scoped, so only try them with a projectId.
+    if (resourceType === "agent" && projectId) {
+      const v2 = await readAgentV2(
+        this.apiClient,
+        this.agentsV2BaseUrl,
+        id,
+        projectId,
+      );
+      if (v2) {
+        if (raw) return v2;
+        const f = RESOURCE_FILTERS_GET.agent_v2(v2);
+        return { kind: "v2", ...f, use: { agentV2Id: f.id } };
+      }
+    }
 
     const endpointMap: Record<string, string> = {
       agent: `/v2.0/aiagents/${id}`,
@@ -3600,6 +3733,7 @@ export class ToolHandlers {
     if (resourceType === "endpoint" && (result as any).URLToken) {
       filtered.endpointUrl = `${this.endpointBaseUrl}/${(result as any).URLToken}`;
     }
+    if (resourceType === "agent") filtered.kind = "v1";
 
     return filtered;
   }
@@ -6725,9 +6859,12 @@ export class ToolHandlers {
    */
   private learnProjectIds(result: any): void {
     if (!result || typeof result !== "object") return;
-    const items = (result as any).items;
-    if (Array.isArray(items)) {
-      for (const item of items) this.rememberProjectOf(item);
+    // legacyAgents: V1 agents demoted by an Agents V2 project's listing.
+    for (const key of ["items", "legacyAgents"]) {
+      const items = (result as any)[key];
+      if (Array.isArray(items)) {
+        for (const item of items) this.rememberProjectOf(item);
+      }
     }
     this.rememberProjectOf(result);
   }
@@ -7713,6 +7850,9 @@ export class ToolHandlers {
         case "talk_to_agent":
           result = await this.handleTalkToAgent(args);
           break;
+        case "create_agent_v2":
+          result = await this.handleCreateAgentV2(args);
+          break;
         case "list_resources":
           result = await this.handleListResources(args);
           break;
@@ -7763,11 +7903,30 @@ export class ToolHandlers {
       logger.info(`Tool call successful: ${toolName}`);
       return result;
     } catch (error: any) {
+      annotateAgentKindMismatch(error);
       logger.error(`Tool call failed: ${toolName}`, { error: error.message });
       throw error;
     }
   }
 }
 
-// Reserved: per-type detail-view filters for get_resource (falls back to RESOURCE_FILTERS when empty)
-const RESOURCE_FILTERS_GET: Record<string, (raw: any) => any> = {};
+// Per-type detail-view filters for get_resource (falls back to RESOURCE_FILTERS).
+const RESOURCE_FILTERS_GET: Record<string, (raw: any) => any> = {
+  agent_v2: (r) => ({
+    id: r.id ?? r._id,
+    referenceId: r.referenceId,
+    name: r.name,
+    job: r.job,
+    description: r.description,
+    instructions: r.instructions,
+    agentType: r.agentType,
+    projectId: r.projectId,
+    largeLanguageModelReferenceId: r.largeLanguageModelReferenceId,
+    toolReferenceIds: r.toolReferenceIds,
+    disabledToolReferenceIds: r.disabledToolReferenceIds,
+    skillReferenceIds: r.skillReferenceIds,
+    personaReferenceId: r.personaReferenceId,
+    knowledge: r.knowledge,
+    guardrails: r.guardrails,
+  }),
+};

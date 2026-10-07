@@ -671,7 +671,7 @@ describe("talkToAgentSchema", () => {
       schemas.talkToAgentSchema.parse({
         message: "Hello",
       }),
-    ).toThrow("Either endpointUrl or aiAgentId must be provided");
+    ).toThrow("Either endpointUrl, aiAgentId or agentV2Id must be provided");
   });
 
   it("rejects invalid URL", () => {

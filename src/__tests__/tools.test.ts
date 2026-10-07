@@ -2499,6 +2499,7 @@ describe("ToolHandlers v2", () => {
         "createdAt",
         "description",
         "id",
+        "kind",
         "name",
         "projectId",
         "referenceId",

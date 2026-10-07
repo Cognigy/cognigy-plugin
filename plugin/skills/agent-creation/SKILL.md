@@ -41,6 +41,22 @@ description: "Use when the user wants to build, create, or set up a new Cognigy 
 10. Refine the agent using update_ai_agent — see "All configuration fields" below
 11. Repeat 9-10 until satisfied
 
+## Agents V2 (preview — only in the `feat/agents-v2` dev build)
+
+**Existing agents:** `list_resources { resourceType: 'agent', projectId }` returns both kinds. If the project has Agents V2 agents they are in `items` and are the project's agents; V1 agents are under `legacyAgents` and are only used when the user names one. Pass each item's `use` argument on. A pasted UUID is a `referenceId` — find the matching item in that list and use its `id`.
+
+Use this branch instead of steps 7-11 when the user asks for an **Agents V2** agent, the **new Agents editor**, or `create_agent_v2` by name. Never pick it by default.
+
+1. Steps 1-6 above still apply (project, working LLM with connectionId). Note the LLM's `referenceId`.
+2. create_agent_v2 { projectId, name, instructions, largeLanguageModelReferenceId: "<referenceId>", httpTool?: { name, description, url, method, headers } }
+   — Returns: agent, tool, endpoint, endpointUrl. No flow or job node exists; there is nothing to call update_ai_agent or create_tool on.
+   — Omit largeLanguageModelReferenceId only when the project default LLM is known to work.
+3. talk_to_agent { agentV2Id: "<agent.id>", projectId, message }
+   — If the result carries `error` (e.g. "language model isn't fully configured"), fix the LLM binding (re-create with largeLanguageModelReferenceId) before anything else.
+4. Further configuration (more tools, persona, knowledge) happens in the Agents V2 editor; this build has no update tool for V2 agents.
+
+If `/v1/agents` answers 404 or 401, the cluster has no Agents V2 for this key — fall back to the normal steps 7-11 and tell the user.
+
 ## Adding tools (optional)
 
 11. create_tool { aiAgentId, toolType, name, config }
