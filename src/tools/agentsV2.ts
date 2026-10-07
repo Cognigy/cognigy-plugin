@@ -15,6 +15,47 @@ export function agentsV2BaseUrl(apiBaseUrl: string): string {
   return new URL(apiBaseUrl).origin;
 }
 
+export type AgentsV2ListResult =
+  | { available: true; items: any[]; total: number }
+  | { available: false; warning?: string };
+
+const ABSENT_STATUSES = new Set([401, 403, 404]);
+const ABSENT_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
+
+/** Errors that mean "this cluster or key has no Agents V2", not "it broke". */
+export function isAgentsV2Absent(error: any): boolean {
+  if (typeof error?.status === "number")
+    return ABSENT_STATUSES.has(error.status);
+  return ABSENT_CODES.has(error?.code);
+}
+
+/**
+ * The project's Agents V2 agents. Never throws: Agents V2 is absent on most
+ * clusters, and list_resources must still return the V1 agents.
+ */
+export async function listAgentsV2(
+  api: CognigyApiClient,
+  v1: string,
+  projectId: string,
+  paging: { limit: number; skip: number; sort?: "asc" | "desc" },
+): Promise<AgentsV2ListResult> {
+  if (!v1) return { available: false };
+  try {
+    const res: any = await api.get(`${v1}/v1/agents`, {
+      params: { projectId, ...paging },
+    });
+    const items = Array.isArray(res?.items) ? res.items : [];
+    const total = typeof res?.total === "number" ? res.total : items.length;
+    return { available: true, items, total };
+  } catch (error: any) {
+    if (isAgentsV2Absent(error)) return { available: false };
+    return {
+      available: false,
+      warning: `Agents V2 agents could not be checked (${error?.status ?? error?.code ?? error?.message}); the list may be incomplete.`,
+    };
+  }
+}
+
 export interface HttpToolSpec {
   name: string;
   description: string;

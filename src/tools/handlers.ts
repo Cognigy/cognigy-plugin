@@ -43,7 +43,11 @@ import {
 } from "./voiceChecklist.js";
 import { z } from "zod";
 import * as schemas from "../schemas/tools.js";
-import { createAgentV2, resolveAgentV2Endpoint } from "./agentsV2.js";
+import {
+  createAgentV2,
+  listAgentsV2,
+  resolveAgentV2Endpoint,
+} from "./agentsV2.js";
 import {
   chartToAscii,
   chartToMermaid,
@@ -3368,6 +3372,8 @@ export class ToolHandlers {
       );
     }
 
+    if (resourceType === "agent") return this.listAgents(projectId!, paging);
+
     let items: any[];
     let total: number | undefined;
     // Set when the platform rejected the audit_event filters and this plugin
@@ -3378,14 +3384,6 @@ export class ToolHandlers {
       case "project": {
         const res: any = await this.apiClient.get("/v2.0/projects", {
           params: paging,
-        });
-        items = res.items ?? res;
-        total = res.total;
-        break;
-      }
-      case "agent": {
-        const res: any = await this.apiClient.get("/v2.0/aiagents", {
-          params: { projectId, ...paging },
         });
         items = res.items ?? res;
         total = res.total;
@@ -3589,13 +3587,70 @@ export class ToolHandlers {
       });
     }
 
-    if (filtered.length === 0 && resourceType === "agent") {
-      return withHints(result, {
-        hint: "No agents found.",
-      });
-    }
-
     return result;
+  }
+
+  /**
+   * Agents of both kinds. When the project has Agents V2 agents those are the
+   * project's agents (`items`) and V1 agents are demoted to `legacyAgents`;
+   * a V1-only project keeps the old shape. Decided by V2 `total`, not by the
+   * page, so paging past the V2 agents does not flip the mode.
+   */
+  private async listAgents(
+    projectId: string,
+    paging: { limit: number; skip: number; sort?: string },
+  ): Promise<any> {
+    const v2Sort = paging.sort
+      ? paging.sort.endsWith(":desc")
+        ? ("desc" as const)
+        : ("asc" as const)
+      : undefined;
+    const [v1Res, v2] = await Promise.all([
+      this.apiClient.get("/v2.0/aiagents", {
+        params: { projectId, ...paging },
+      }),
+      listAgentsV2(this.apiClient, this.agentsV2BaseUrl, projectId, {
+        limit: paging.limit,
+        skip: paging.skip,
+        ...(v2Sort ? { sort: v2Sort } : {}),
+      }),
+    ]);
+
+    const v1Raw = (v1Res as any)?.items ?? v1Res;
+    const v1Items = (Array.isArray(v1Raw) ? v1Raw : []).map((r: any) => {
+      const f = filterResponse("agent", r);
+      return { kind: "v1", ...f, use: { aiAgentId: f.id } };
+    });
+    const v1Total = (v1Res as any)?.total ?? v1Items.length;
+
+    const hints: ResponseHints = {};
+    const warnings: string[] = [];
+    if (!v2.available && v2.warning) warnings.push(v2.warning);
+
+    let result: any;
+    if (v2.available && v2.total > 0) {
+      result = {
+        items: v2.items.map((r: any) => {
+          const f = filterResponse("agent_v2", r);
+          return { kind: "v2", ...f, use: { agentV2Id: f.id } };
+        }),
+        total: v2.total,
+        legacyAgents: v1Items,
+        legacyTotal: v1Total,
+      };
+      hints.hint =
+        "This project uses Agents V2. The v2 agents in items are the project's agents; v1 entries under legacyAgents are legacy and are only used when the user names one. Pass each item's `use` argument to talk_to_agent / get_resource.";
+      if (paging.sort)
+        warnings.push(
+          "Agents V2 agents are ordered by creation order only; just the direction of sort was applied to them.",
+        );
+    } else {
+      result = { items: v1Items, total: v1Total };
+      if (v1Items.length === 0) hints.hint = "No agents found.";
+    }
+    if (warnings.length) hints.warning = warnings.join(" ");
+
+    return Object.keys(hints).length ? withHints(result, hints) : result;
   }
 
   /**
