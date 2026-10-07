@@ -7,7 +7,7 @@ CAPABILITIES:
 - Knowledge / RAG, custom tool logic, Webchat deployment, and Voice Gateway setup + go-live audit (audit_voice_agent).
 - Reuse LLMs and other resources across projects via manage_packages.
 - Back up and roll back a project with manage_snapshots (create / restore).
-- Agents V2 preview (this build only): create_agent_v2 creates a service-agents agent (+ optional HTTP Request tool + REST endpoint targeting the agent); talk_to_agent { agentV2Id, projectId } talks to it, and list_resources 'agent' lists V2 agents first (V1 as legacyAgents). Use it only when the user asks for Agents V2 / the new Agents editor, or the project already has V2 agents.
+- Agents V2 preview (this build only): create_agent_v2 creates a service-agents agent (+ optional HTTP Request tool + REST endpoint targeting the agent); talk_to_agent { agentV2Id, projectId } talks to it, and list_resources 'agent' lists V2 agents first (V1 as legacyAgents). Create one with create_agent_v2 only when the user asks for Agents V2 / the new Agents editor; when a project already has V2 agents, those are its agents for listing, reading and talking.
 
 TOOL TYPE SELECTION (create_tool):
 - Default to toolType "tool" for general requests (e.g., "unlock account", "check balance", "validate user"). This is the most common and versatile type.

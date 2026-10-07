@@ -3641,7 +3641,7 @@ export class ToolHandlers {
         legacyTotal: v1Total,
       };
       hints.hint =
-        "This project uses Agents V2. The v2 agents in items are the project's agents; v1 entries under legacyAgents are legacy and are only used when the user names one. Pass each item's `use` argument to talk_to_agent / get_resource.";
+        "This project uses Agents V2. The v2 agents in items are the project's agents; v1 entries under legacyAgents are legacy and are only used when the user names one. Pass an item's `use` argument (plus projectId) to talk_to_agent; read an agent with get_resource { resourceType: 'agent', id, projectId }.";
       if (paging.sort)
         warnings.push(
           "Agents V2 agents are ordered by creation order only; just the direction of sort was applied to them.",
@@ -6855,9 +6855,12 @@ export class ToolHandlers {
    */
   private learnProjectIds(result: any): void {
     if (!result || typeof result !== "object") return;
-    const items = (result as any).items;
-    if (Array.isArray(items)) {
-      for (const item of items) this.rememberProjectOf(item);
+    // legacyAgents: V1 agents demoted by an Agents V2 project's listing.
+    for (const key of ["items", "legacyAgents"]) {
+      const items = (result as any)[key];
+      if (Array.isArray(items)) {
+        for (const item of items) this.rememberProjectOf(item);
+      }
     }
     this.rememberProjectOf(result);
   }

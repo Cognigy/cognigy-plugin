@@ -1,6 +1,7 @@
 import { describe, it, expect, jest } from "@jest/globals";
 import * as schemas from "../schemas/tools.js";
 import { ToolHandlers } from "../tools/handlers.js";
+import { SERVER_INSTRUCTIONS } from "../instructions.js";
 import {
   annotateAgentKindMismatch,
   V1_AGENT_NOTE,
@@ -389,5 +390,68 @@ describe("wrong-kind notes", () => {
         message: "hi",
       }),
     ).rejects.toThrow(V2_AGENT_NOTE);
+  });
+});
+
+describe("backup gate with legacy agents", () => {
+  it("learns the project of a legacy V1 agent from a V2-mode listing", async () => {
+    const OTHER_PROJECT = "60d5ec49f1a2c8b1a4e0fbbb";
+    const api = makeApi({
+      v1: async () => ({
+        items: [{ ...v1Agent, projectReference: OTHER_PROJECT }],
+        total: 1,
+      }),
+      v2: async () => ({
+        items: [{ ...v2Agent, projectId: OTHER_PROJECT }],
+        total: 1,
+      }),
+    });
+    const h = new ToolHandlers(api, EP, "", "", V1);
+
+    await h.handleToolCall("manage_snapshots", {
+      operation: "decline",
+      projectId: ID.project,
+    });
+    await h.handleToolCall("list_resources", {
+      resourceType: "agent",
+      projectId: OTHER_PROJECT,
+    });
+    const result: any = await h.handleToolCall("update_ai_agent", {
+      aiAgentId: ID.agentV1,
+      description: "new persona",
+    });
+
+    // The decline was for ID.project; the legacy agent lives in OTHER_PROJECT.
+    expect(result.error).toBe("backup_not_offered");
+    expect(api.patch).not.toHaveBeenCalled();
+  });
+});
+
+describe("list hint wording", () => {
+  it("sends `use` to talk_to_agent only and shows how get_resource is called", async () => {
+    const api = makeApi({ v2: async () => ({ items: [v2Agent], total: 1 }) });
+    const r: any = await new ToolHandlers(api, EP, "", "", V1).handleToolCall(
+      "list_resources",
+      { resourceType: "agent", projectId: ID.project },
+    );
+
+    // get_resource takes id, not aiAgentId/agentV2Id — `use` would fail there.
+    expect(r._hints.hint).not.toContain("talk_to_agent / get_resource");
+    expect(r._hints.hint).toContain(
+      "get_resource { resourceType: 'agent', id, projectId }",
+    );
+    expect(r._hints.hint).toContain("plus projectId");
+  });
+});
+
+describe("always-on instructions", () => {
+  it("does not make create_agent_v2 a default because V2 agents exist", () => {
+    const line = SERVER_INSTRUCTIONS.split("\n").find((l) =>
+      l.includes("Agents V2 preview"),
+    )!;
+    expect(line).toContain(
+      "Create one with create_agent_v2 only when the user asks for Agents V2 / the new Agents editor",
+    );
+    expect(line).not.toContain("or the project already has V2 agents.");
   });
 });
