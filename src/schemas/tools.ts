@@ -2,6 +2,23 @@ import { z } from "zod";
 
 const idSchema = z.string().regex(/^[a-f0-9]{24}$/, "Must be a 24-char hex ID");
 
+export const AGENT_REFERENCE_ID_MESSAGE =
+  "This looks like a referenceId (UUID), not an agent id. Find the agent's 24-char hex id with list_resources { resourceType: 'agent', projectId } — each item carries both id and referenceId.";
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** 24-hex agent id; a pasted referenceId gets a message that says how to map it. */
+const agentIdSchema = z.string().superRefine((v, ctx) => {
+  if (/^[a-f0-9]{24}$/.test(v)) return;
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: UUID_RE.test(v)
+      ? AGENT_REFERENCE_ID_MESSAGE
+      : "Must be a 24-char hex ID",
+  });
+});
+
 const NOT_BOTH_IDS_MESSAGE =
   "Pass either aiAgentId or flowId, not both. Use aiAgentId for a normal agent; use flowId only for a flow driven by an LLM Prompt node (which has no agent resource).";
 
@@ -46,7 +63,7 @@ export const createAiAgentSchema = z
 
 // Tool 2: update_ai_agent
 export const updateAiAgentSchema = z.object({
-  aiAgentId: idSchema,
+  aiAgentId: agentIdSchema,
   name: z.string().min(1).max(200).optional(),
   description: z.string().optional(),
   instructions: z.string().optional(),
@@ -255,8 +272,8 @@ export const setupLlmSchema = z
 export const talkToAgentSchema = z
   .object({
     endpointUrl: z.string().url().optional(),
-    aiAgentId: idSchema.optional(),
-    agentV2Id: idSchema.optional(),
+    aiAgentId: agentIdSchema.optional(),
+    agentV2Id: agentIdSchema.optional(),
     projectId: idSchema.optional(),
     message: z.string().min(1),
     sessionId: z.string().optional(),
@@ -310,7 +327,7 @@ export const listResourcesSchema = z
       "audit_event",
     ]),
     projectId: idSchema.optional(),
-    aiAgentId: idSchema.optional(),
+    aiAgentId: agentIdSchema.optional(),
     flowId: idSchema.optional(),
     startDate: z.string().optional(),
     endDate: z.string().optional(),
@@ -373,7 +390,7 @@ export const deleteResourceSchema = z
     ]),
     id: idSchema,
     projectId: idSchema.optional(),
-    aiAgentId: idSchema.optional(),
+    aiAgentId: agentIdSchema.optional(),
     flowId: idSchema.optional(),
     cascade: z.boolean().optional(),
   })
@@ -406,7 +423,7 @@ export const manageKnowledgeSchema = z.object({
 // Tool 9: create_tool (includes http tool type, formerly create_custom_http_tool)
 export const createToolSchema = z
   .object({
-    aiAgentId: idSchema.optional(),
+    aiAgentId: agentIdSchema.optional(),
     flowId: idSchema.optional(),
     parentNodeId: idSchema.optional(),
     toolType: z.enum(["tool", "knowledge", "send_email", "mcp", "http"]),
@@ -442,7 +459,7 @@ export const createToolSchema = z
 // Tool 10: update_tool
 export const updateToolSchema = z
   .object({
-    aiAgentId: idSchema.optional(),
+    aiAgentId: agentIdSchema.optional(),
     flowId: idSchema.optional(),
     toolNodeId: idSchema,
     name: z.string().min(1).max(200).optional(),
@@ -916,7 +933,7 @@ export const manageSettingsSchema = z.union([
 // Tool 16: audit_voice_agent
 export const auditVoiceAgentSchema = z
   .object({
-    aiAgentId: idSchema.optional(),
+    aiAgentId: agentIdSchema.optional(),
     flowId: idSchema.optional(),
     endpointId: idSchema.optional(),
     projectId: idSchema.optional(),
