@@ -43,6 +43,8 @@ description: "Use when the user wants to build, create, or set up a new Cognigy 
 
 ## Agents V2 (preview — only in the `feat/agents-v2` dev build)
 
+**Existing agents:** `list_resources { resourceType: 'agent', projectId }` returns both kinds. If the project has Agents V2 agents they are in `items` and are the project's agents; V1 agents are under `legacyAgents` and are only used when the user names one. Pass each item's `use` argument on. A pasted UUID is a `referenceId` — find the matching item in that list and use its `id`.
+
 Use this branch instead of steps 7-11 when the user asks for an **Agents V2** agent, the **new Agents editor**, or `create_agent_v2` by name. Never pick it by default.
 
 1. Steps 1-6 above still apply (project, working LLM with connectionId). Note the LLM's `referenceId`.

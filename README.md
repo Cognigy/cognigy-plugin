@@ -308,6 +308,8 @@ fixed method/url/headers (`POST /v1/tools`), attaches it, and a REST endpoint wi
 `targetType: "agent"`. `talk_to_agent { agentV2Id, projectId, message }` finds or creates that
 endpoint and sends the message in endpoint test mode as usual.
 
+**Finding agents.** `list_resources { resourceType: 'agent', projectId }` lists Agents V2 agents too. When a project has any, they are returned as `items` and V1 AI Agents move to `legacyAgents`; a project with only V1 agents gets the usual list. Each item says its `kind` and which argument to pass on (`use`). `get_resource { resourceType: 'agent', id, projectId }` reads either kind.
+
 ## Tools
 
 | Tool                                     | Type  | Description                                                                                                                                          |
