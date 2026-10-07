@@ -1,6 +1,11 @@
 import { describe, it, expect, jest } from "@jest/globals";
 import * as schemas from "../schemas/tools.js";
 import { ToolHandlers } from "../tools/handlers.js";
+import {
+  annotateAgentKindMismatch,
+  V1_AGENT_NOTE,
+  V2_AGENT_NOTE,
+} from "../tools/agentsV2.js";
 
 const ID = {
   project: "507f1f77bcf86cd799439011",
@@ -327,5 +332,62 @@ describe("get_resource { resourceType: 'agent' }", () => {
       raw: true,
     });
     expect(r.organisationId).toBe("o");
+  });
+});
+
+describe("wrong-kind notes", () => {
+  const err404 = (url: string) =>
+    Object.assign(new Error("Not found"), { status: 404, url });
+
+  it("adds the V2 note to a 404 on a V1 agent record", () => {
+    const e = err404(`/v2.0/aiagents/${ID.agent}`);
+    annotateAgentKindMismatch(e);
+    expect(e.message).toBe(`Not found — ${V2_AGENT_NOTE}`);
+  });
+
+  it("adds the V1 note to a 404 on a V2 agent record (query string ignored)", () => {
+    const e = err404(`${V1}/v1/agents/${ID.agent}?projectId=${ID.project}`);
+    annotateAgentKindMismatch(e);
+    expect(e.message).toBe(`Not found — ${V1_AGENT_NOTE}`);
+  });
+
+  it.each([
+    `/v2.0/endpoints/${ID.agent}`,
+    `/v2.0/aiagents/${ID.agent}/jobs`,
+    `/v2.0/flows/${ID.agent}/chart`,
+  ])("leaves a 404 on %s alone", (url) => {
+    const e = err404(url);
+    annotateAgentKindMismatch(e);
+    expect(e.message).toBe("Not found");
+  });
+
+  it("leaves non-404s alone", () => {
+    const e = Object.assign(new Error("boom"), {
+      status: 500,
+      url: `/v2.0/aiagents/${ID.agent}`,
+    });
+    annotateAgentKindMismatch(e);
+    expect(e.message).toBe("boom");
+  });
+
+  it("reaches the caller of a V1-only tool given a V2 id", async () => {
+    const api: any = {
+      get: jest.fn(async () => {
+        throw err404(`/v2.0/aiagents/${ID.agent}`);
+      }),
+      post: jest.fn(),
+      patch: jest.fn(async () => {
+        throw err404(`/v2.0/aiagents/${ID.agent}`);
+      }),
+      delete: jest.fn(),
+    };
+    const h = new ToolHandlers(api, EP, "", "", V1);
+    await expect(
+      h.handleToolCall("talk_to_agent", {
+        aiAgentId: ID.agent,
+        projectId: ID.project,
+        message: "hi",
+      }),
+    ).rejects.toThrow(V2_AGENT_NOTE);
   });
 });

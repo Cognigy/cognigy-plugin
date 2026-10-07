@@ -44,6 +44,7 @@ import {
 import { z } from "zod";
 import * as schemas from "../schemas/tools.js";
 import {
+  annotateAgentKindMismatch,
   createAgentV2,
   listAgentsV2,
   readAgentV2,
@@ -7895,6 +7896,7 @@ export class ToolHandlers {
       logger.info(`Tool call successful: ${toolName}`);
       return result;
     } catch (error: any) {
+      annotateAgentKindMismatch(error);
       logger.error(`Tool call failed: ${toolName}`, { error: error.message });
       throw error;
     }

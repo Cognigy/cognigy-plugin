@@ -284,3 +284,23 @@ export async function readAgentV2(
     return null;
   }
 }
+
+export const V2_AGENT_NOTE =
+  "If this is an Agents V2 agent (kind: \"v2\" in list_resources { resourceType: 'agent', projectId }), V1 tools cannot edit it — read it with get_resource { resourceType: 'agent', id, projectId }, test it with talk_to_agent { agentV2Id, projectId }, and configure it in the Agents V2 editor.";
+
+export const V1_AGENT_NOTE =
+  "If this is a V1 AI Agent (kind: \"v1\" in list_resources { resourceType: 'agent', projectId }), pass it as aiAgentId instead of agentV2Id.";
+
+/**
+ * Agent ids look the same for both kinds, so a 404 on an agent record often
+ * means "right id, wrong kind". Only the agent record itself qualifies; a 404
+ * on any other resource keeps its message.
+ */
+export function annotateAgentKindMismatch(error: any): void {
+  if (error?.status !== 404 || typeof error?.url !== "string") return;
+  const path = error.url.split("?")[0];
+  if (/\/v2\.0\/aiagents\/[^/]+$/.test(path))
+    error.message = `${error.message} — ${V2_AGENT_NOTE}`;
+  else if (/\/v1\/agents\/[^/]+$/.test(path))
+    error.message = `${error.message} — ${V1_AGENT_NOTE}`;
+}
