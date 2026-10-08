@@ -21,7 +21,7 @@ If it's unclear whether the user means in-project handover or A2A, ask.
 
 ## Read this first
 
-- **`manage_a2a_server` publishes a callable endpoint.** With `authenticationType: "none"` anyone who has the URL can call the agent. Confirm with the user before you create one, and prefer `authenticationType: "apiKey"` unless they want it open.
+- **`manage_a2a_server` publishes a callable endpoint.** With `authenticationType: "none"` anyone who has the URL can call the agent. Confirm with the user before you create one, and tell them that.
 - **Gotcha (Cognigy targets only):** a `manage_a2a_server` endpoint lives at `/a2a/v1/<URLToken>`, not the plain endpoint URL. Always copy `agentBaseUrl` straight from that tool's response — don't build it yourself. External/third-party agents don't have this quirk; just use whatever base URL they publish.
 - **Always check `liveCheck`** on the `manage_a2a_server` response before telling the user the agent is ready — `created: true` alone doesn't mean it's callable yet. For an unauthenticated endpoint, every create/update fetches the Agent Card live and returns `liveCheck.reachable`. For an endpoint that requires authentication there is no fetch: `liveCheck` is `{ skipped: true, reason }` and has no `reachable` field — tell the user reachability was not verified, don't claim it was.
 
