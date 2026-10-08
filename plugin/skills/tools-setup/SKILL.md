@@ -101,7 +101,7 @@ timeout: 30
 
 ### a2a — Delegate to a remote A2A (Agent2Agent) agent (specialized — not for general use)
 
-⚠️ ONLY use this for explicit agent-to-agent delegation (e.g. an orchestrator agent handing off to a specialist agent). The remote agent does NOT have to be a Cognigy agent — it can be any external/third-party A2A-compliant agent; `agentBaseUrl` is then just whatever base URL that agent publishes. See the a2a-setup skill for the full workflow.
+⚠️ ONLY use this when the target agent is outside the project (external or third-party, another project or tenant), or when the user explicitly asks for A2A. Do NOT use it just because a project has two agents that should be connected; agents in the same project use the native Handover to AI Agent tool (added in the Cognigy UI; this plugin can't create it yet). The remote agent does NOT have to be a Cognigy agent — it can be any external/third-party A2A-compliant agent; `agentBaseUrl` is then just whatever base URL that agent publishes. See the a2a-setup skill for the full workflow.
 
 GOTCHA (Cognigy-target only): if the remote agent IS a Cognigy agent deployed behind `manage_a2a_server`, `agentBaseUrl` must be that call's response `agentBaseUrl` field, used verbatim — a2aServer endpoints live under `/a2a/v1/<URLToken>`, not the plain endpoint URL. Using the wrong shape silently 404s. This gotcha does not apply to external agents.
 

@@ -1,12 +1,27 @@
 ---
 name: a2a-setup
-description: "Use when the user wants multi-agent / agent-to-agent communication — an orchestrator agent delegating to specialist agents over the A2A (Agent2Agent) protocol. Covers the manage_a2a_server endpoint and the create_tool { toolType: 'a2a' } tool type."
+description: "Use when the user explicitly asks for A2A (Agent2Agent), wants an agent to call an external / third-party A2A agent or one in another project or tenant, or wants to expose a Cognigy agent to outside A2A callers. Covers the manage_a2a_server endpoint and the create_tool { toolType: 'a2a' } tool type. NOT for connecting agents that live in the same project — those use the native Handover to AI Agent tool."
 ---
 
 # A2A (Agent2Agent) Setup Guide
 
+## When NOT to use A2A
+
+**Several agents in the same project are not a reason to use A2A.** If the user wants agents in one project to work together ("connect these two agents", "let the triage agent hand off to the billing agent"), use Cognigy's native **Handover to AI Agent** tool on the calling AI Agent node. It transfers the conversation to another AI Agent in the same or a different Flow and keeps the conversation context. A2A would instead publish an endpoint, add an Agent Card, auth and network latency, and run the target as a separate conversation.
+
+This plugin cannot create a Handover to AI Agent tool yet. Tell the user to add it in the Cognigy UI (AI Agent node → Tools → Add Tool → Handover to AI Agent). Don't build an A2A setup as a workaround.
+
+Use A2A only when at least one of these holds:
+
+- The target agent is **outside the project**: an external or third-party A2A agent, another team's deployment, another project or tenant.
+- The user wants to **expose a Cognigy agent to outside callers** over A2A.
+- The user **explicitly asks for A2A** by name.
+
+If it's unclear whether the user means in-project handover or A2A, ask.
+
 ## Read this first
 
+- **`manage_a2a_server` publishes a callable endpoint.** With `authenticationType: "none"` anyone who has the URL can call the agent. Confirm with the user before you create one, and prefer `authenticationType: "apiKey"` unless they want it open.
 - **Gotcha (Cognigy targets only):** a `manage_a2a_server` endpoint lives at `/a2a/v1/<URLToken>`, not the plain endpoint URL. Always copy `agentBaseUrl` straight from that tool's response — don't build it yourself. External/third-party agents don't have this quirk; just use whatever base URL they publish.
 - **Always check `liveCheck`** on the `manage_a2a_server` response before telling the user the agent is ready — `created: true` alone doesn't mean it's callable yet. For an unauthenticated endpoint, every create/update fetches the Agent Card live and returns `liveCheck.reachable`. For an endpoint that requires authentication there is no fetch: `liveCheck` is `{ skipped: true, reason }` and has no `reachable` field — tell the user reachability was not verified, don't claim it was.
 
@@ -17,7 +32,7 @@ Two independent pieces — you rarely need both:
 1. **`create_tool { toolType: 'a2a' }`** — adds a tool to ANY agent that calls a remote A2A agent. The remote agent can be **anything that speaks A2A**: a third-party service, another team's deployment, a public demo agent — you just need its base URL (and Agent Card path). This is the piece you almost always want, and it needs nothing Cognigy-specific on the remote side.
 2. **`manage_a2a_server`** — ONLY needed when the agent you want to expose *as an A2A target for others* is itself a Cognigy agent you're building. It deploys a Flow as a remote-callable A2A agent with an Agent Card (name, description, skills).
 
-Put differently: `create_tool { toolType: 'a2a' }` is the generic "call any A2A agent" client. `manage_a2a_server` is specifically "make one of my own Cognigy agents callable that way" — use it only when the remote endpoint doesn't already exist and happens to be another Cognigy agent in the same build.
+Put differently: `create_tool { toolType: 'a2a' }` is the generic "call any A2A agent" client. `manage_a2a_server` is specifically "make one of my own Cognigy agents callable that way" — use it only when a Cognigy agent has to be reachable over A2A from outside its project (an external orchestrator, another project or tenant). Two agents in the same project don't need it (see "When NOT to use A2A").
 
 ## Quick Start — Delegate to an EXTERNAL A2A agent (the common case)
 
@@ -41,7 +56,7 @@ create_tool {
 
 ## Quick Start — Deploy YOUR OWN Cognigy agent as an A2A server
 
-Only do this when the target you want to delegate to is a Cognigy agent you're building (e.g. a specialist in a multi-agent demo), not an already-existing external agent:
+Only do this when a Cognigy agent you're building must be callable over A2A from outside its project, for example by an external orchestrator or an agent in another project or tenant. If the caller is in the same project, use Handover to AI Agent instead:
 
 ```text
 1. create_ai_agent { projectId, name: "Flights Agent", description: "Books and looks up flights" }
@@ -121,6 +136,8 @@ Response fields:
 Node structure created: `aiAgentJobA2AAgent` (the tool node the LLM sees, config above) with a child `aiAgentJobCallA2AAgent` node (fixed config, handles the actual call — no need to touch it directly).
 
 ## Multi-agent orchestrator pattern
+
+This pattern is for when the specialists must be reachable over A2A, for example from outside the project, or because the user asked for A2A. When the orchestrator and specialists all live in one project and nobody outside needs to reach them, use Handover to AI Agent instead (see "When NOT to use A2A").
 
 ```text
 1. Create + configure each specialist agent (create_ai_agent, tools, persona)
