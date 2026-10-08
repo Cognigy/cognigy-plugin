@@ -23,7 +23,7 @@ If it's unclear whether the user means in-project handover or A2A, ask.
 
 - **`manage_a2a_server` publishes a callable endpoint.** With `authenticationType: "none"` anyone who has the URL can call the agent. Confirm with the user before you create one, and tell them that.
 - **Gotcha (Cognigy targets only):** a `manage_a2a_server` endpoint lives at `/a2a/v1/<URLToken>`, not the plain endpoint URL. Always copy `agentBaseUrl` straight from that tool's response — don't build it yourself. External/third-party agents don't have this quirk; just use whatever base URL they publish.
-- **Always check `liveCheck`** on the `manage_a2a_server` response before telling the user the agent is ready — `created: true` alone doesn't mean it's callable yet. For an unauthenticated endpoint, every create/update fetches the Agent Card live and returns `liveCheck.reachable`. For an endpoint that requires authentication there is no fetch: `liveCheck` is `{ skipped: true, reason }` and has no `reachable` field — tell the user reachability was not verified, don't claim it was.
+- **Always check `liveCheck`** on the `manage_a2a_server` response before telling the user the agent is ready — `created: true` alone doesn't mean it's callable yet. Every create/update fetches the Agent Card live and returns `liveCheck.reachable`. This works for API-key endpoints too: the key guards message requests, not the Agent Card.
 
 ## What is A2A here?
 
@@ -73,7 +73,7 @@ Only do this when a Cognigy agent you're building must be callable over A2A from
      ],
      enableStreaming: true
    }
-   → returns agentBaseUrl, agentCardUrl, and liveCheck — CHECK liveCheck.reachable (or liveCheck.skipped for an authenticated endpoint) before telling the user it's ready
+   → returns agentBaseUrl, agentCardUrl, and liveCheck — CHECK liveCheck.reachable before telling the user it's ready
 ```
 
 Then wire the caller to it exactly like the external case above, using the returned `agentBaseUrl` VERBATIM:
@@ -112,7 +112,7 @@ Response fields:
 |-------|-------------|
 | agentBaseUrl | `https://endpoint-<env>.cognigy.ai/a2a/v1/<URLToken>` — use this verbatim as `agentBaseUrl` on the calling side |
 | agentCardUrl | `agentBaseUrl + '/.well-known/agent.json'` — the discovery URL the Agent Card is actually served from |
-| liveCheck | Result of fetching agentCardUrl right now: `{ reachable: true, agentName, skills }`, `{ reachable: false, error }`, or `{ skipped: true, reason }` when the endpoint requires authentication (an unauthenticated probe would misreport a healthy agent as down) |
+| liveCheck | Result of fetching agentCardUrl right now: `{ reachable: true, agentName, skills }` or `{ reachable: false, error }` |
 
 ## A2A Agent tool config (create_tool / update_tool)
 
@@ -123,12 +123,12 @@ Response fields:
 | timeout | number | Discovery (Agent Card fetch) timeout in seconds |
 | executionMode | string | How the delegated task runs. Default: `blocking` (wait for the remote agent's final result) |
 | taskTimeout | number | Max seconds to wait for the remote task to complete |
-| maxAutonomousTurns | number | Max back-and-forth turns the remote agent may take autonomously |
-| toolFilter | "none" \| "whitelist" \| "blacklist" | Restrict which of the remote agent's skills may be invoked |
-| whitelist / blacklist | string[] | Skill names to allow/block, when toolFilter is set |
+| maxAutonomousTurns | number | How many times the AI Agent may call this tool in one turn (1-10). Default: 4 |
+| toolFilter | "none" \| "whitelist" \| "blacklist" | Which of the remote agent's skills are listed in this tool's description. NOT an access control: the node stays one tool and the remote agent still decides which skills it runs |
+| whitelist / blacklist | string[] | Skill ids to list / leave out of the tool description, when toolFilter is set |
 | authType | "none" \| "apiKey" \| "bearer" \| "basic" \| "oAuth2" | Auth method for calling the remote agent |
 | apiKeyConnection / bearerConnection / basicConnection / oAuth2Connection | string | Cognigy Connection ID holding the credential for the matching authType |
-| apiKeyHeader | string | Header name for apiKey auth. Default: `X-API-Key` |
+| apiKeyHeader | string | Header name for apiKey auth. Default: `X-API-Key`. For a Cognigy a2aServer target set `x-a2a-endpoint-key`; its key is generated in the Cognigy UI (endpoint → Authentication → Endpoint API Keys) |
 | authForDiscovery | boolean | Also authenticate when fetching the Agent Card, not just when calling tasks |
 | agentHeaders | string | Extra HTTP headers as a JSON string |
 | cacheCard | boolean | Cache the discovered Agent Card instead of re-fetching every call. Default: true |
@@ -142,8 +142,7 @@ This pattern is for when the specialists must be reachable over A2A, for example
 ```text
 1. Create + configure each specialist agent (create_ai_agent, tools, persona)
 2. Deploy each specialist behind its own manage_a2a_server endpoint —
-   check liveCheck on each before proceeding (reachable: true, or skipped
-   for an authenticated endpoint — then verify it another way)
+   check liveCheck.reachable on each before proceeding
 3. Create the orchestrator agent (create_ai_agent) with a persona describing
    it delegates to registered specialist agents
 4. For each specialist, add one create_tool { toolType: "a2a" } on the

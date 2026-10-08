@@ -84,7 +84,7 @@ describe("manage_a2a_server", () => {
     );
   });
 
-  it("skips the live check when the endpoint requires authentication", async () => {
+  it("still checks the Agent Card when the endpoint requires an API key", async () => {
     const authEndpoint = {
       ...mockEndpoint,
       settings: {
@@ -96,6 +96,7 @@ describe("manage_a2a_server", () => {
       .mockResolvedValueOnce(authEndpoint)
       .mockResolvedValueOnce(authEndpoint);
     api.post.mockResolvedValueOnce({ _id: ID.endpoint });
+    axiosGet.mockResolvedValueOnce({ data: { name: "Flights Agent" } });
 
     const result = await h.handleToolCall("manage_a2a_server", {
       projectId: ID.project,
@@ -104,11 +105,11 @@ describe("manage_a2a_server", () => {
     });
 
     expect(result.created).toBe(true);
-    expect(result.liveCheck).toEqual({
-      skipped: true,
-      reason: expect.stringContaining("authentication"),
-    });
-    expect(axiosGet).not.toHaveBeenCalled();
+    expect(result.settings.authenticationType).toBe("apiKey");
+    expect(result.liveCheck).toEqual(
+      expect.objectContaining({ reachable: true, agentName: "Flights Agent" }),
+    );
+    expect(axiosGet).toHaveBeenCalledTimes(1);
   });
 
   it("reports unreachable when the Agent Card fetch fails", async () => {

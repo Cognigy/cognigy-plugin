@@ -782,25 +782,25 @@ ADDRESSING: Pass aiAgentId for normal agents. Pass flowId only for LLM Prompt fl
             maxAutonomousTurns: {
               type: "number",
               description:
-                "Max back-and-forth turns the remote agent may take autonomously before returning a result (a2a only)",
+                "How many times the AI Agent may call this tool in one turn (1-10). Default: 4 (a2a only)",
             },
             toolFilter: {
               type: "string",
               enum: ["none", "whitelist", "blacklist"],
               description:
-                "Restrict which of the remote agent's skills/tools may be invoked. Default: 'none' (no restriction) (a2a only)",
+                "Which of the remote agent's skills are listed in this tool's description. Default: 'none' (all skills). NOT an access control: the node stays one tool and the remote agent still decides which skills it runs (a2a only)",
             },
             whitelist: {
               type: "array",
               items: { type: "string" },
               description:
-                "Skill/tool names to allow when toolFilter is 'whitelist' (a2a only)",
+                "Skill ids to list in the tool description when toolFilter is 'whitelist' (a2a only)",
             },
             blacklist: {
               type: "array",
               items: { type: "string" },
               description:
-                "Skill/tool names to block when toolFilter is 'blacklist' (a2a only)",
+                "Skill ids to leave out of the tool description when toolFilter is 'blacklist' (a2a only)",
             },
             authType: {
               type: "string",
@@ -816,7 +816,7 @@ ADDRESSING: Pass aiAgentId for normal agents. Pass flowId only for LLM Prompt fl
             apiKeyHeader: {
               type: "string",
               description:
-                "Header name for the API key, when authType is 'apiKey'. Default: 'X-API-Key' (a2a only)",
+                "Header name for the API key, when authType is 'apiKey'. Default: 'X-API-Key'. A Cognigy a2aServer target expects 'x-a2a-endpoint-key' (a2a only)",
             },
             bearerConnection: {
               type: "string",
@@ -1014,23 +1014,25 @@ ADDRESSING: Pass aiAgentId for normal agents. Pass flowId only for LLM Prompt fl
             maxAutonomousTurns: {
               type: "number",
               description:
-                "Max autonomous turns the remote agent may take (a2a only)",
+                "How many times the AI Agent may call this tool in one turn (1-10) (a2a only)",
             },
             toolFilter: {
               type: "string",
               enum: ["none", "whitelist", "blacklist"],
               description:
-                "Restrict which remote skills/tools may be invoked (a2a only)",
+                "Which remote skills are listed in the tool description. Not an access control (a2a only)",
             },
             whitelist: {
               type: "array",
               items: { type: "string" },
-              description: "Skills/tools to allow (a2a only)",
+              description:
+                "Skill ids to list in the tool description (a2a only)",
             },
             blacklist: {
               type: "array",
               items: { type: "string" },
-              description: "Skills/tools to block (a2a only)",
+              description:
+                "Skill ids to leave out of the tool description (a2a only)",
             },
             authType: {
               type: "string",
@@ -1045,7 +1047,8 @@ ADDRESSING: Pass aiAgentId for normal agents. Pass flowId only for LLM Prompt fl
             },
             apiKeyHeader: {
               type: "string",
-              description: "Header name for the API key (a2a only)",
+              description:
+                "Header name for the API key. A Cognigy a2aServer target expects 'x-a2a-endpoint-key' (a2a only)",
             },
             bearerConnection: {
               type: "string",
@@ -2109,7 +2112,7 @@ ADDRESSING: Pass aiAgentId for normal agents. Pass flowId only for LLM Prompt fl
   {
     name: "manage_a2a_server",
     description:
-      "Create or configure an A2A Server Endpoint. This exposes a Flow as an A2A (Agent2Agent protocol) agent that other agents — Cognigy or third-party — can discover and call, via the create_tool { toolType: 'a2a' } tool type on the calling side.\n\nWHEN TO USE: only when the agent must be reachable over A2A from outside its project (an external orchestrator, another project or tenant) or the user explicitly asks for A2A. Do NOT use it to connect two agents in the same project — that is Cognigy's native Handover to AI Agent tool. This creates a publicly callable endpoint: confirm with the user first, and tell them anyone with the URL can call it.\n\nCREATE vs UPDATE:\n- To create: provide projectId + flowId (+ optional name). A new a2aServer endpoint is always created.\n- To update: provide endpointId. Settings are merged with existing configuration.\n- Without endpointId, the tool never modifies existing endpoints — it always creates a new one.\n\nAGENT CARD: agentName, agentDescription, and skills together form the Agent Card that remote callers discover. Each skill needs a unique id, a name, and an optional description of what it does — this is what lets a calling orchestrator's LLM decide when to delegate to this agent.\n\nURL GOTCHA: an a2aServer endpoint is served under a distinct '/a2a/v1/<URLToken>' path — unlike every other channel (rest, webchat3, mcpServer, ...), which live directly at '<URLToken>'. The response's `agentBaseUrl` field already has this correct shape.\n\nRESPONSE HANDLING: The response contains agentBaseUrl, agentCardUrl, and liveCheck (the result of actually fetching the Agent Card right now — { reachable, agentName, skills }, { reachable: false, error }, or { skipped: true, reason } when the endpoint requires authentication). ALWAYS check liveCheck and surface it to the user — reachable: false means the agent isn't callable yet even though the config saved. Use agentBaseUrl VERBATIM (not endpointId's plain URL) when wiring create_tool { toolType: 'a2a' } on a calling agent's flow.",
+      "Create or configure an A2A Server Endpoint. This exposes a Flow as an A2A (Agent2Agent protocol) agent that other agents — Cognigy or third-party — can discover and call, via the create_tool { toolType: 'a2a' } tool type on the calling side.\n\nWHEN TO USE: only when the agent must be reachable over A2A from outside its project (an external orchestrator, another project or tenant) or the user explicitly asks for A2A. Do NOT use it to connect two agents in the same project — that is Cognigy's native Handover to AI Agent tool. This creates a publicly callable endpoint: confirm with the user first, and tell them anyone with the URL can call it.\n\nCREATE vs UPDATE:\n- To create: provide projectId + flowId (+ optional name). A new a2aServer endpoint is always created.\n- To update: provide endpointId. Settings are merged with existing configuration.\n- Without endpointId, the tool never modifies existing endpoints — it always creates a new one.\n\nAGENT CARD: agentName, agentDescription, and skills together form the Agent Card that remote callers discover. Each skill needs a unique id, a name, and an optional description of what it does — this is what lets a calling orchestrator's LLM decide when to delegate to this agent.\n\nURL GOTCHA: an a2aServer endpoint is served under a distinct '/a2a/v1/<URLToken>' path — unlike every other channel (rest, webchat3, mcpServer, ...), which live directly at '<URLToken>'. The response's `agentBaseUrl` field already has this correct shape.\n\nRESPONSE HANDLING: The response contains agentBaseUrl, agentCardUrl, and liveCheck (the result of actually fetching the Agent Card right now — { reachable, agentName, skills } or { reachable: false, error }; the Agent Card is open even when the endpoint requires an API key). ALWAYS check liveCheck and surface it to the user — reachable: false means the agent isn't callable yet even though the config saved. Use agentBaseUrl VERBATIM (not endpointId's plain URL) when wiring create_tool { toolType: 'a2a' } on a calling agent's flow.",
     annotations: {
       title: "Manage A2A Server",
       readOnlyHint: false,

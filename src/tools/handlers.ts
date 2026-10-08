@@ -6220,7 +6220,6 @@ export class ToolHandlers {
     agentName?: string;
     skills?: string[];
     error?: string;
-    skipped?: boolean;
   }> {
     try {
       // Endpoint traffic does not go through CognigyApiClient, so it needs the
@@ -6284,17 +6283,9 @@ export class ToolHandlers {
       authenticationType,
     };
     if (agentCardUrl) {
-      // Only meaningful to check unauthenticated — an endpoint that requires
-      // credentials will 401 here even when correctly configured, which would
-      // misreport a healthy agent as unreachable.
-      result.liveCheck =
-        authenticationType && authenticationType !== "none"
-          ? {
-              skipped: true,
-              reason:
-                "Endpoint requires authentication — reachability not checked (no credentials available for an unauthenticated probe).",
-            }
-          : await this.checkA2AAgentCard(agentCardUrl);
+      // Agent Card discovery is open even when the endpoint requires an API
+      // key (the key guards message requests only), so always probe.
+      result.liveCheck = await this.checkA2AAgentCard(agentCardUrl);
     }
     if (opts.note) result.note = opts.note;
     return result;
