@@ -1,3 +1,9 @@
+## [1.22.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.21.0...v1.22.0) (2026-10-09)
+
+### Features
+
+* **tools:** add A2A agent-to-agent delegation support ([#53](https://github.com/Cognigy/cognigy-plugin/issues/53)) ([16ff421](https://github.com/Cognigy/cognigy-plugin/commit/16ff42186893a2ed1e68df4d27160b23c8ac3522))
+
 ## [1.21.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.20.1...v1.21.0) (2026-10-01)
 
 ### Features
