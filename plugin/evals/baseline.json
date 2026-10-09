@@ -1,0 +1,27 @@
+{
+  "takenAt": "2026-10-09T11:49:07.647Z",
+  "commit": "338efc4",
+  "claudeVersion": "2.1.295",
+  "pluginVersion": "1.22.0",
+  "cases": {
+    "voice-apply-fixes": {
+      "fingerprint": "4100c8568df7",
+      "score": 1,
+      "graders": {
+        "checklist-loaded": "3/3",
+        "declines-backup": "3/3",
+        "dry-run-first": "3/3",
+        "fixes-applied": "3/3",
+        "no-unwanted-snapshot": "3/3"
+      }
+    },
+    "voice-go-live": {
+      "fingerprint": "86f2fcb9ce94",
+      "score": 1,
+      "graders": {
+        "calls-audit_voice_agent": "3/3",
+        "checklist-loaded": "3/3"
+      }
+    }
+  }
+}
