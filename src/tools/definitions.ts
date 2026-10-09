@@ -1138,7 +1138,7 @@ export const tools: ToolDefinition[] = [
         writeHtml: {
           type: "boolean",
           description:
-            "render only: also write a self-contained HTML graph to a tmp file on the user's machine and return htmlUrl / htmlPath. Hand the user the link; do not fetch or regenerate the file. Default: false.",
+            "render only: also write a self-contained HTML graph to a tmp file on the user's machine and return htmlUrl / htmlPath. Default: false.",
         },
         openInBrowser: {
           type: "boolean",
@@ -1794,7 +1794,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "manage_voice_gateway",
     description:
-      "Create or update a Voice Gateway endpoint with a WebRTC client so users can talk to an agent from the browser. Without endpointId a new voiceGateway2 endpoint is created (projectId and flowId required); with endpointId the existing endpoint is updated and settings are merged. webrtcWidgetConfig customizes theme, transcription, avatar and tagline. Always returns webrtcDemoUrl, a live voice page to show the user as a link, plus _integration with the WebSocket URL and embed snippet.",
+      "Create or update a Voice Gateway endpoint with a WebRTC client so users can talk to an agent from the browser. Without endpointId a new voiceGateway2 endpoint is created (projectId and flowId required); with endpointId the existing endpoint is updated and settings are merged. webrtcWidgetConfig customizes theme, transcription, avatar and tagline. Always returns webrtcDemoUrl, a live voice page, plus _integration with the WebSocket URL and embed snippet.",
     annotations: {
       title: "Manage Voice Gateway",
       readOnlyHint: false,

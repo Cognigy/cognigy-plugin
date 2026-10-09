@@ -6996,7 +6996,7 @@ export class ToolHandlers {
         summary: summarize(checks),
         checks: checks.map(formatCheck),
         _note:
-          "Dry-run: no changes made. Re-run with apply: true to apply the auto-fixable fixes (the checks with a proposedFix). Use only: [ids] to apply a subset.",
+          "Dry-run: no changes made. After the user has reviewed the report, re-run with apply: true to apply the auto-fixable fixes (the checks with a proposedFix). Use only: [ids] to apply a subset.",
       };
     }
 
