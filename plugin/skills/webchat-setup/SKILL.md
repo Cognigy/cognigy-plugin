@@ -300,7 +300,7 @@ manage_webchat {
 
 ## Testing
 
-The manage_webchat response includes demoWebchatUrl — a direct browser link to the Cognigy Demo Webchat page where the user can interact with the configured widget immediately. Always present this URL to the user by default.
+The manage_webchat response includes demoWebchatUrl — a direct browser link to the Cognigy Demo Webchat page where the user can interact with the configured widget immediately. Always present this URL to the user as a clickable link after every successful create or update — do not send them to the Cognigy UI to find it.
 
 You can also append query parameters for testing:
 - ?user=testuser — set a specific user ID

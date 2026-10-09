@@ -1,6 +1,6 @@
 {
-  "takenAt": "2026-10-09T13:44:41.231Z",
-  "commit": "d9fcaf6",
+  "takenAt": "2026-10-09T14:20:50.470Z",
+  "commit": "c8fd49e",
   "claudeVersion": "2.1.295",
   "pluginVersion": "1.22.0",
   "cases": {
@@ -36,7 +36,7 @@
       }
     },
     "voice-apply-fixes": {
-      "fingerprint": "4100c8568df7",
+      "fingerprint": "c550a5180543",
       "score": 1,
       "graders": {
         "checklist-loaded": "3/3",

@@ -1,6 +1,6 @@
 ---
 name: flow-nodes
-description: "Use when adding custom logic inside a Cognigy tool branch with manage_flow_nodes, or when rendering/visualizing a flow as a diagram — supported node types, config schemas, placement rules, the tool-first workflow, and the render operation."
+description: "Use when adding, editing or debugging custom logic inside a Cognigy tool branch with manage_flow_nodes (code, HTTP Request, if/else and other nodes), or when rendering/visualizing a flow as a diagram — supported node types, config schemas, placement rules, the tool-first workflow, and the render operation."
 ---
 
 # Flow Node Reference
@@ -20,7 +20,8 @@ Use `manage_flow_nodes` to add logic nodes **inside tool branches only**. Nodes 
 2. Get the flowId — from create_ai_agent response, or list_resources { resourceType: 'flow', projectId }
 3. Add a node inside the tool — manage_flow_nodes { operation: 'create', flowId, parentNodeId: '<toolNodeId>', mode: 'appendChild', nodeType: 'code', label: 'Validate Order', config: { code: '...' } }
 4. Add more nodes — manage_flow_nodes { operation: 'create', flowId, parentNodeId: '<previousNodeId>', mode: 'append', nodeType: 'say', label: 'Confirm', config: { text: 'Order processed!' } }
-5. List all nodes — manage_flow_nodes { operation: 'list', flowId }
+5. List all nodes — manage_flow_nodes { operation: 'list', flowId } (id, type, label, parentId, isDisabled when true — no config)
+   Read one node with its config before editing — manage_flow_nodes { operation: 'get', flowId, nodeId: '<id>' }
 6. Update a node — manage_flow_nodes { operation: 'update', flowId, nodeId: '<id>', config: { text: 'Updated!' } }
 7. Delete a node — manage_flow_nodes { operation: 'delete', flowId, nodeId: '<id>' }
 ```
@@ -226,6 +227,7 @@ Run custom **TypeScript** (a single source string — not multiple files, not HT
 
 **Documented footguns (not flagged — just know them):**
 
+- No top-level `return` — Code nodes are not full functions and the engine rejects it. Mutate `input` (or `context`) directly: `input.foo = bar;` instead of `return { foo: bar };`.
 - `api.deleteContext("a.b")` — only removes **top-level** keys; a dot-path silently does nothing. Use `delete context.a.b;`.
 - More than 100 `api.*` calls per execution — the platform aborts the node ([limits](https://docs.cognigy.com/ai/administer/limitations)).
 
