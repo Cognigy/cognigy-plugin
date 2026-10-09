@@ -63,5 +63,5 @@ npm run evals:compare -- --update      # newest run becomes the baseline
 
 - A drop with 3 runs (3/3 → 2/3) can be one flaky run. Re-run that case with `--runs 5`, and on `main` if still unsure, before calling it a regression.
 - `changed` means the case's files (or shared mocks) differ from the baseline's fingerprint — expected after editing a case; re-baseline.
-- Re-baseline only from a complete, non-partial full run, in the PR that intentionally changes behaviour or a case, so the `baseline.json` diff is reviewed. Commit the code first so the baseline records the commit it ran on. If you change the pinned models in `package.json`, re-baseline too.
+- `ERRORED` means a run ended abnormally (timeout, usage or rate limit); errored runs are still graded, so they are never compared — re-run. `--update` refuses a run that errored or skipped any case, so re-baseline from a clean full run, in the PR that intentionally changes behaviour or a case, so the `baseline.json` diff is reviewed. Commit the code first so the baseline records the commit it ran on. If you change the pinned models in `package.json`, re-baseline too.
 - Never commit `results/`. Runs make paid model calls on your own credential; `--max-cost-usd` caps a run.

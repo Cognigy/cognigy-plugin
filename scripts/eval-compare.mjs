@@ -3,7 +3,9 @@
  *   npm run evals:compare              newest run in plugin/evals/results/
  *   npm run evals:compare -- <file>    a specific aggregate-result.json
  *   npm run evals:compare -- --update  write the run as the new baseline
- * Exits 1 when a case or grader passes less often than in the baseline.
+ * Exits 1 when a case or grader passes less often than in the baseline, or when
+ * a run errored (timeout, usage/rate limit): errored runs are still graded, so
+ * their pass rates are not comparable. --update needs a clean run of every case.
  *
  * Each case carries a fingerprint of its own files (prompt, graders, mocks)
  * plus the suite's shared mocks, so an edited case reads as "changed, re-baseline"
@@ -13,7 +15,7 @@
 import { createHash } from "node:crypto";
 import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { basename, join, relative, sep } from "node:path";
 
 const PLUGIN_DIR = "plugin";
 const EVALS_DIR = join(PLUGIN_DIR, "evals");
@@ -52,9 +54,20 @@ function filesUnder(dir) {
 function fingerprint(caseDir) {
   const hash = createHash("sha256");
   for (const f of [...filesUnder(SHARED_MOCKS_DIR), ...filesUnder(caseDir)]) {
-    hash.update(relative(EVALS_DIR, f)).update("\0").update(readFileSync(f));
+    // "/" on every OS, so a baseline made on macOS still matches on Windows.
+    const path = relative(EVALS_DIR, f).split(sep).join("/");
+    hash.update(path).update("\0").update(readFileSync(f));
   }
   return hash.digest("hex").slice(0, 12);
+}
+
+// Case dirs on disk (a dir holding prompt.md or case.yaml), by name.
+function casesOnDisk() {
+  return readdirSync(EVALS_DIR, { withFileTypes: true, recursive: true })
+    .filter((e) => e.isFile() && ["prompt.md", "case.yaml"].includes(e.name))
+    .map((e) => relative(EVALS_DIR, e.parentPath ?? e.path))
+    .filter((d) => !d.split(sep).some((p) => p === "results" || p === "mocks"))
+    .map((d) => basename(d));
 }
 
 function summarize(result) {
@@ -72,6 +85,7 @@ function summarize(result) {
       fingerprint: fingerprint(join(PLUGIN_DIR, c.dir)),
       score: Math.round(c.aggregates.score * 100) / 100,
       graders,
+      errors: runs.filter((r) => r.error).map((r) => r.error),
     };
   }
   return cases;
@@ -83,8 +97,17 @@ if (result.partial) {
   process.exit(1);
 }
 const current = summarize(result);
+const errored = Object.entries(current).filter(([, c]) => c.errors.length);
 
 if (update) {
+  const missing = [...new Set(casesOnDisk())].filter((n) => !current[n]);
+  if (missing.length || errored.length) {
+    console.error(
+      `Not updating the baseline: it needs a clean run of every case.${missing.length ? `\n  not in this run: ${missing.join(", ")}` : ""}${errored.map(([n, c]) => `\n  errored: ${n} (${c.errors[0]})`).join("")}`,
+    );
+    process.exit(1);
+  }
+  for (const c of Object.values(current)) delete c.errors;
   const commit = execSync("git rev-parse --short HEAD").toString().trim();
   const baseline = {
     takenAt: result.startedAt,
@@ -114,6 +137,12 @@ console.log(
 );
 for (const [name, cur] of Object.entries(current)) {
   const base = baseline.cases[name];
+  if (cur.errors.length) {
+    console.log(
+      `  ERRORED  ${name}  ${cur.errors.length} run(s) ended abnormally (${cur.errors[0]}) — not comparable, re-run`,
+    );
+    continue;
+  }
   if (!base) {
     console.log(`  new      ${name}  score ${cur.score}`);
     continue;
@@ -141,9 +170,15 @@ for (const name of Object.keys(baseline.cases)) {
   if (!current[name]) console.log(`  not run  ${name}`);
 }
 
+if (errored.length) {
+  console.log(
+    `\n${errored.length} case(s) had errored runs. Check for usage or rate limits, then re-run them.`,
+  );
+}
 if (regressions) {
   console.log(
     `\n${regressions} grader(s) dropped. Re-run those cases (--runs 5) before calling it a regression; one flaky run moves 3/3 to 2/3.`,
   );
   process.exit(1);
 }
+if (errored.length) process.exit(1);
