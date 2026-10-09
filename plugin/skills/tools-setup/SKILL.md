@@ -1,6 +1,6 @@
 ---
 name: tools-setup
-description: "Use when creating or configuring Cognigy agent tools — choosing the tool type (tool, http, mcp, knowledge, send_email, a2a) and their configuration schemas."
+description: "Use when creating, updating or configuring Cognigy agent tools (create_tool, update_tool) — choosing the tool type (tool, http, mcp, knowledge, send_email, a2a) and their configuration schemas."
 ---
 
 # Adding Tools to an AI Agent

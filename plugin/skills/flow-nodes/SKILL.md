@@ -1,6 +1,6 @@
 ---
 name: flow-nodes
-description: "Use when adding custom logic inside a Cognigy tool branch with manage_flow_nodes, or when rendering/visualizing a flow as a diagram — supported node types, config schemas, placement rules, the tool-first workflow, and the render operation."
+description: "Use when adding, editing or debugging custom logic inside a Cognigy tool branch with manage_flow_nodes (code, HTTP Request, if/else and other nodes), or when rendering/visualizing a flow as a diagram — supported node types, config schemas, placement rules, the tool-first workflow, and the render operation."
 ---
 
 # Flow Node Reference
@@ -227,6 +227,7 @@ Run custom **TypeScript** (a single source string — not multiple files, not HT
 
 **Documented footguns (not flagged — just know them):**
 
+- No top-level `return` — Code nodes are not full functions and the engine rejects it. Mutate `input` (or `context`) directly: `input.foo = bar;` instead of `return { foo: bar };`.
 - `api.deleteContext("a.b")` — only removes **top-level** keys; a dot-path silently does nothing. Use `delete context.a.b;`.
 - More than 100 `api.*` calls per execution — the platform aborts the node ([limits](https://docs.cognigy.com/ai/administer/limitations)).
 

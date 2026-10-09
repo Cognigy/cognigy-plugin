@@ -426,7 +426,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "get_resource",
     description:
-      "Get one Cognigy resource by id, as a filtered summary by default or the complete API response with raw: true. Supports every list_resources type plus session_state (session context by session id) and user, where id 'me' returns the account the API key belongs to and a 24-char hex id another user. createdBy / lastChangedBy are opaque user ids: compare them with 'me' rather than guessing who they are. Use list_resources first to find ids.",
+      "Get one Cognigy resource by id, as a filtered summary by default or the complete API response with raw: true. Supports every list_resources type plus session_state (session context by session id) and user, where id 'me' returns the account the API key belongs to and a 24-char hex id another user. createdBy / lastChangedBy (returned only with raw: true) are opaque user ids: compare them with 'me' rather than guessing who they are. Use list_resources first to find ids.",
     annotations: {
       title: "Get Resource",
       readOnlyHint: true,
