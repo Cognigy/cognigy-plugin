@@ -32,6 +32,11 @@ function fieldDescriptions(
     fieldDescriptions(value, path ? `${path}.${key}` : key, out);
   }
   if (node.items) fieldDescriptions(node.items, `${path}[]`, out);
+  for (const key of ["oneOf", "anyOf", "allOf"]) {
+    (node[key] ?? []).forEach((branch: unknown, i: number) =>
+      fieldDescriptions(branch, `${path}.${key}[${i}]`, out),
+    );
+  }
 }
 
 describe("tool surface budget", () => {
