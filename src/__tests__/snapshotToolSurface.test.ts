@@ -66,6 +66,7 @@ describe("backup gate classification", () => {
     manage_packages: "import is additive; export only reads",
     manage_webchat: "endpoints are NOT captured in a snapshot",
     manage_voice_gateway: "endpoints are NOT captured in a snapshot",
+    manage_a2a_server: "endpoints are NOT captured in a snapshot",
     manage_snapshots: "the backup tool itself",
     talk_to_agent: "sends a message; changes no configuration",
   };

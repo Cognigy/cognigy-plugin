@@ -23,7 +23,7 @@ The Cognigy API has ~359 endpoints across 50+ categories. Creating one tool per 
 
 **Example**: Rather than separate tools for every CRUD operation on every resource type, `list_resources` and `get_resource` cover all read operations via a `resourceType` parameter, while `delete_resource` handles all deletions.
 
-**Result**: 16 tools covering ~115 API endpoints (97% reduction from 359 endpoints).
+**Result**: 18 tools covering ~115 API endpoints (97% reduction from 359 endpoints).
 
 ### Tool inventory
 
@@ -45,6 +45,8 @@ The Cognigy API has ~359 endpoints across 50+ categories. Creating one tool per 
 | `get_resource`         | Read           |
 | `delete_resource`      | Write          |
 | `audit_voice_agent`    | Write          |
+| `manage_snapshots`     | Write          |
+| `manage_a2a_server`    | Write          |
 
 ## Modern AI Agent-Centric Approach
 
