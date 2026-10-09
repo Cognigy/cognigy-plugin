@@ -32,6 +32,15 @@ Rule of thumb: each tool in an agent flow should have a unique `toolId`. If you 
 
 ## Tool types (create_tool)
 
+Choosing the type:
+
+- `tool` — the default for any business action ("unlock account", "check balance", "validate user"). Custom logic goes inside its branch via manage_flow_nodes.
+- `http` — only when the user names a concrete HTTP/REST endpoint to call.
+- `knowledge` — search a Knowledge Store (the store must exist first).
+- `send_email` — send emails.
+- `mcp` — only when the user explicitly asks to connect an external MCP server and gives its URL. Never a default.
+- `a2a` — only for a remote A2A agent outside the project, or when the user explicitly asks for A2A. Agents in the same project use the native Handover to AI Agent tool instead (see the a2a-setup skill).
+
 ### tool — General-purpose tool with custom logic
 
 ```text
