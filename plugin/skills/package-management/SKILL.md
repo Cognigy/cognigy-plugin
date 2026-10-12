@@ -182,6 +182,7 @@ The response includes the same saved file and directory fields as `export`.
 - `locale` resources are not imported directly; they are handled through `localeMapping`
 - `knowledgeStore` resources default to strategy `replace`
 - other resources default to strategy `re-identify`
+- `re-identify` imports a resource that already exists in the project (matched by `referenceId`) as a NEW copy, not an update; the preview flags these with `conflictWarning`. Pass strategy `replace` to update the existing resource in place
 - retired `largeLanguageModel` resources are disabled by default
 - export includes detected dependencies by default
 - export skips retired `largeLanguageModel` resources and function resources, matching current UI behavior

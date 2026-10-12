@@ -309,6 +309,28 @@ export const NODE_REGISTRY: Record<string, NodeRegistryEntry> = {
     requiredConfigKeys: ["prompt"],
   },
 
+  wait: {
+    type: "wait",
+    extension: "@cognigy/basic-nodes",
+    category: "logic",
+    summary:
+      "Wait for Input — stops the flow until the user (or, in CXone Agent Copilot, the human agent's Adaptive Card submission) responds, with no timeout. The submission is left at input.data (NOT input.result as a question node does). Takes no config.",
+    placement: "flow",
+    configKeys: [],
+    requiredConfigKeys: [],
+  },
+
+  cxOneSendCopilotStatus: {
+    type: "cxOneSendCopilotStatus",
+    extension: "@cognigy/cxone",
+    category: "handover",
+    summary:
+      "Send Status to CXone Copilot — reports workflow Complete/Failed to CXone Agent Copilot (beta; @cognigy/cxone extension, only when the CXone Send Copilot Status feature is enabled for the organisation). data is an optional JSON object.",
+    placement: "flow",
+    configKeys: ["status", "data"],
+    requiredConfigKeys: ["status"],
+  },
+
   setSessionConfig: {
     type: "setSessionConfig",
     extension: "@cognigy/voicegateway2",

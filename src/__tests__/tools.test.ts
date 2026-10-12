@@ -3331,6 +3331,85 @@ describe("ToolHandlers v2", () => {
       );
     });
 
+    it("creates a say node with the adaptiveCard wrapper the Designer needs", async () => {
+      api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
+
+      const card = {
+        type: "AdaptiveCard",
+        version: "1.6",
+        body: [{ type: "TextBlock", text: "Hi" }],
+      };
+      await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "say",
+        label: "Say card",
+        config: { text: "", adaptiveCard: card },
+      });
+
+      const body = api.post.mock.calls[0][1];
+      const wrapped = { type: "adaptiveCard", adaptiveCard: card };
+      expect(body.config.say.type).toBe("adaptiveCard");
+      expect(body.config.say._cognigy._default._adaptiveCard).toEqual(wrapped);
+      expect(body.config.say._data._cognigy._default._adaptiveCard).toEqual(
+        wrapped,
+      );
+    });
+
+    it("creates a wait node (Wait for Input) with no config", async () => {
+      api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "wait",
+        label: "Wait for Input",
+      });
+      expect(result.error).toBeUndefined();
+      expect(api.post).toHaveBeenCalledWith(
+        expect.stringContaining("/chart/nodes"),
+        expect.objectContaining({
+          type: "wait",
+          extension: "@cognigy/basic-nodes",
+        }),
+      );
+    });
+
+    it("creates a cxOneSendCopilotStatus node and requires status", async () => {
+      const missing = await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "cxOneSendCopilotStatus",
+        label: "Send Status",
+        config: {},
+      });
+      expect(missing.error).toMatch(/status/);
+
+      api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
+      await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "cxOneSendCopilotStatus",
+        label: "Send Status",
+        config: { status: "Complete", data: { ticketId: "T-1" } },
+      });
+      expect(api.post).toHaveBeenCalledWith(
+        expect.stringContaining("/chart/nodes"),
+        expect.objectContaining({
+          type: "cxOneSendCopilotStatus",
+          extension: "@cognigy/cxone",
+          config: { status: "Complete", data: { ticketId: "T-1" } },
+        }),
+      );
+    });
+
     it("warns when creating an xApp node with no initAppSession in the flow", async () => {
       api.get.mockResolvedValueOnce({ items: [{ type: "say" }] });
       api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });

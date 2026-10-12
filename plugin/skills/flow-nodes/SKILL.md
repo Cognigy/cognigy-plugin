@@ -53,7 +53,7 @@ Send a text message to the user. Supports rich output types.
 | audio | object | No | Audio output `{ url }` |
 | video | object | No | Video output `{ url }` |
 | image | object | No | Image output `{ url }` |
-| adaptiveCard | object | No | Microsoft Adaptive Card JSON |
+| adaptiveCard | object | No | Microsoft Adaptive Card JSON (the card object itself — the plugin wraps it for the Designer). `text` is still required; pass `""` for a card-only message |
 | data | object | No | Custom data payload attached to the message |
 
 **Example:**
@@ -71,6 +71,49 @@ Send a text message to the user. Supports rich output types.
       { "title": "Talk to human", "payload": "handover" }
     ]
   }
+}
+```
+
+---
+
+### wait — Wait for Input
+
+Category: logic
+
+Stops the flow until the user responds, with no timeout. In CXone Agent Copilot flows, place it directly after a `say` node whose Adaptive Card has `actions`; the agent's card submission is then available at `input.data` (e.g. `input.data.request.value`). Unlike `question`, which stores its answer at `input.result`, this node leaves the submission in `input.data`.
+
+**Config:** none.
+
+```json
+{
+  "operation": "create",
+  "flowId": "<flowId>",
+  "nodeType": "wait",
+  "label": "Wait for Input"
+}
+```
+
+---
+
+### cxOneSendCopilotStatus — Send Status to CXone Copilot
+
+Category: handover (extension `@cognigy/cxone`, beta; only available when the CXone Send Copilot Status feature is enabled for the organisation)
+
+Reports the workflow outcome to CXone Agent Copilot. Without it Copilot never learns that the workflow finished or failed.
+
+**Config:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| status | string | Yes | `Complete` or `Failed` |
+| data | object | No | Optional JSON object sent with the status |
+
+```json
+{
+  "operation": "create",
+  "flowId": "<flowId>",
+  "nodeType": "cxOneSendCopilotStatus",
+  "label": "Send Status - Complete",
+  "config": { "status": "Complete" }
 }
 ```
 

@@ -86,6 +86,9 @@ export interface PackageResourcePreview {
   defaultStrategy: "replace" | "re-identify";
   disabledReason?: "retired_model";
   conflict?: PackageConflictSummary;
+  /** Present when the resource already exists in the project and the default
+   * strategy would create a duplicate rather than update it. */
+  conflictWarning?: string;
 }
 
 export interface PackageLocalePreview {
@@ -321,14 +324,16 @@ export function buildPackageImportPreview(
           ? "retired_model"
           : undefined;
 
+      const defaultStrategy =
+        resource.type === "knowledgeStore" ? "replace" : "re-identify";
+
       return {
         id: resourceId(resource),
         type: resource.type || "unknown",
         name: resourceName(resource),
         ...(resource.referenceId ? { referenceId: resource.referenceId } : {}),
         selectedByDefault: !disabledReason,
-        defaultStrategy:
-          resource.type === "knowledgeStore" ? "replace" : "re-identify",
+        defaultStrategy,
         ...(disabledReason ? { disabledReason } : {}),
         ...(conflictResource
           ? {
@@ -337,6 +342,12 @@ export function buildPackageImportPreview(
                 targetResourceId: resourceId(conflictResource),
                 targetResourceName: resourceName(conflictResource),
               },
+              ...(defaultStrategy === "re-identify"
+                ? {
+                    conflictWarning:
+                      'This resource already exists in the project. The default strategy "re-identify" imports it as a NEW copy alongside the existing one. To update the existing resource in place, import it with strategy "replace".',
+                  }
+                : {}),
             }
           : {}),
       };
@@ -732,6 +743,9 @@ export function buildPackageExportablePreview(
     })
     .map((resource) => {
       const disabledReason = getExportDisabledReason(resource);
+
+      const defaultStrategy =
+        resource.type === "knowledgeStore" ? "replace" : "re-identify";
 
       return {
         id: resourceId(resource),

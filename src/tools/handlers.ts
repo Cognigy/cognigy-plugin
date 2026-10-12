@@ -240,10 +240,20 @@ function buildRichSayObject(
     );
     richPayload = { type: "buttons", text: textStr, buttons: btns };
   } else {
+    // Adaptive Card: the Designer's card editor and the channel renderers read
+    // `_adaptiveCard.adaptiveCard`, not the card object at `_adaptiveCard`
+    // itself. Without the wrapper the Designer opens the card with an empty
+    // body (runtime/REST output still looks right, which hides the problem).
     richPayload =
-      typeof richData === "object"
-        ? { ...richData, text: textStr }
-        : { text: textStr };
+      outputType === "adaptiveCard"
+        ? {
+            type: "adaptiveCard",
+            adaptiveCard:
+              richData && typeof richData === "object" ? richData : {},
+          }
+        : typeof richData === "object"
+          ? { ...richData, text: textStr }
+          : { text: textStr };
   }
 
   const channelData = { [dataKey]: richPayload };
