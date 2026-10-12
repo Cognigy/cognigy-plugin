@@ -744,9 +744,6 @@ export function buildPackageExportablePreview(
     .map((resource) => {
       const disabledReason = getExportDisabledReason(resource);
 
-      const defaultStrategy =
-        resource.type === "knowledgeStore" ? "replace" : "re-identify";
-
       return {
         id: resourceId(resource),
         type: resource.type || "unknown",

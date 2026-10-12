@@ -3358,6 +3358,46 @@ describe("ToolHandlers v2", () => {
       );
     });
 
+    it("updates a legacy unwrapped adaptive card by replacing it with the wrapper", async () => {
+      const legacyCard = {
+        type: "AdaptiveCard",
+        version: "1.6",
+        body: [{ type: "TextBlock", text: "Old" }],
+        actions: [{ type: "Action.Submit", title: "Old" }],
+      };
+      const legacyDefault = { _adaptiveCard: { ...legacyCard, text: "" } };
+      api.get.mockResolvedValueOnce({
+        _id: newNode,
+        type: "say",
+        config: {
+          say: {
+            type: "adaptiveCard",
+            text: [""],
+            _cognigy: { _default: legacyDefault },
+            _data: { _cognigy: { _default: legacyDefault } },
+          },
+        },
+      });
+      api.patch.mockResolvedValueOnce({ _id: newNode });
+
+      const card = {
+        type: "AdaptiveCard",
+        version: "1.6",
+        body: [{ type: "TextBlock", text: "New" }],
+      };
+      await h.handleToolCall("manage_flow_nodes", {
+        operation: "update",
+        flowId: ID.flow,
+        nodeId: newNode,
+        config: { text: "", adaptiveCard: card },
+      });
+
+      const say = api.patch.mock.calls[0][1].config.say;
+      const wrapped = { type: "adaptiveCard", adaptiveCard: card };
+      expect(say._cognigy._default._adaptiveCard).toEqual(wrapped);
+      expect(say._data._cognigy._default._adaptiveCard).toEqual(wrapped);
+    });
+
     it("creates a wait node (Wait for Input) with no config", async () => {
       api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
       const result = await h.handleToolCall("manage_flow_nodes", {

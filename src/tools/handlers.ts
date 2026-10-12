@@ -5669,6 +5669,14 @@ export class ToolHandlers {
           } else {
             const transformed = transformConfigForApi(nodeType, data.config);
             patchPayload.config = deepMerge(existingConfig, transformed);
+            // A card is a whole document: merging would keep keys the new card
+            // dropped (and raw-card keys on legacy unwrapped nodes), so replace it.
+            const card = transformed.say?._cognigy?._default?._adaptiveCard;
+            if (card) {
+              const say = patchPayload.config.say;
+              say._cognigy._default._adaptiveCard = card;
+              say._data._cognigy._default._adaptiveCard = card;
+            }
           }
         }
 

@@ -88,6 +88,8 @@ Stops the flow until the user responds, with no timeout. In CXone Agent Copilot 
 {
   "operation": "create",
   "flowId": "<flowId>",
+  "parentNodeId": "<adaptiveCardSayNodeId>",
+  "mode": "append",
   "nodeType": "wait",
   "label": "Wait for Input"
 }
@@ -111,6 +113,8 @@ Reports the workflow outcome to CXone Agent Copilot. Without it Copilot never le
 {
   "operation": "create",
   "flowId": "<flowId>",
+  "parentNodeId": "<precedingNodeId>",
+  "mode": "append",
   "nodeType": "cxOneSendCopilotStatus",
   "label": "Send Status - Complete",
   "config": { "status": "Complete" }
