@@ -29,7 +29,7 @@ export interface NodeRegistryEntry {
   configKeys: string[];
   /** Keys that are required for the node to function. */
   requiredConfigKeys: string[];
-  /** Exact values accepted for a key (case-sensitive); checked on create. */
+  /** Exact values accepted for a key (case-sensitive); checked on create and update. */
   allowedConfigValues?: Record<string, string[]>;
 }
 
@@ -316,7 +316,7 @@ export const NODE_REGISTRY: Record<string, NodeRegistryEntry> = {
     extension: "@cognigy/basic-nodes",
     category: "logic",
     summary:
-      "Wait for Input — stops the flow until the user (or, in CXone Agent Copilot, the human agent's Adaptive Card submission) responds, with no timeout. The submission is left at input.data (NOT input.result as a question node does). Takes no config.",
+      "Wait for Input — stops the flow; the next input in the same session continues at the following node (no timeout). Stores no answer at input.result like question does: read input.text / input.data (e.g. an Adaptive Card submission) directly. Does NOT resume in Tool Flows (stateless per tool call) or if the flow is reset between turns (then the next input starts at Start). Takes no config.",
     placement: "flow",
     configKeys: [],
     requiredConfigKeys: [],
@@ -378,4 +378,17 @@ export function getNodeEntry(nodeType: string): NodeRegistryEntry | null {
 /** List all supported node type keys. */
 export function supportedNodeTypes(): string[] {
   return Object.keys(NODE_REGISTRY);
+}
+
+/** "key must be one of a, b" for each set key outside `allowedConfigValues`, or undefined. */
+export function invalidConfigValues(
+  entry: NodeRegistryEntry,
+  config: Record<string, any>,
+): string | undefined {
+  const bad = Object.entries(entry.allowedConfigValues ?? {})
+    .filter(
+      ([k, allowed]) => config[k] !== undefined && !allowed.includes(config[k]),
+    )
+    .map(([k, allowed]) => `${k} must be one of ${allowed.join(", ")}`);
+  return bad.length > 0 ? bad.join("; ") : undefined;
 }

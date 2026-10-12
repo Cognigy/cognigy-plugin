@@ -80,7 +80,13 @@ Send a text message to the user. Supports rich output types.
 
 Category: logic
 
-Stops the flow until the user responds, with no timeout. In CXone Agent Copilot flows, place it directly after a `say` node whose Adaptive Card has `actions`; the agent's card submission is then available at `input.data` (e.g. `input.data.request.value`). Unlike `question`, which stores its answer at `input.result`, this node leaves the submission in `input.data`.
+Stops the flow and waits for the next input, with no timeout. On that input the flow continues at the node after `wait`, using the same per-session mechanism as `question`. Unlike `question`, it stores no answer at `input.result`: read the incoming message directly (`input.text`, or `input.data` for a data payload such as a submitted Adaptive Card).
+
+It only resumes if the session's flow state survives until the next input. It does **not** resume, and the next input starts the flow at Start, when:
+- the flow is a Tool Flow, which runs once per tool call and keeps no state between turns. Tool branches under an AI Agent node run in the normal session, so they are expected to resume (not yet verified live)
+- the flow is reset between turns. For example, a REST endpoint resets when the user's last flow, entrypoint or locale differs, and a new `sessionId` also starts fresh
+
+Intended Copilot pattern: `say` (Adaptive Card with `actions`) → `wait` → nodes that read the submission from `input.data`. Resumption has not been verified end-to-end on the Copilot channel, so test the flow there (or in the Interaction Panel) before relying on it.
 
 **Config:** none.
 

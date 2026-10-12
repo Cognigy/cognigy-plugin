@@ -32,7 +32,11 @@ import {
 } from "./filters.js";
 import { buildWebchatSettings, deepMerge } from "./webchatSettings.js";
 import { isPlainObject, normalizeToolParameters } from "./toolParameters.js";
-import { getNodeEntry, supportedNodeTypes } from "./nodeRegistry.js";
+import {
+  getNodeEntry,
+  invalidConfigValues,
+  supportedNodeTypes,
+} from "./nodeRegistry.js";
 import { codeNodeWarnings } from "./codeNodeHints.js";
 import {
   evaluateChecks,
@@ -5431,18 +5435,11 @@ export class ToolHandlers {
           const aliases = aliasMap[k] ?? [k];
           return !aliases.some((a) => cfg[a] !== undefined);
         });
-        const invalidValues = Object.entries(
-          entry.allowedConfigValues ?? {},
-        ).filter(
-          ([k, allowed]) => cfg[k] !== undefined && !allowed.includes(cfg[k]),
-        );
-        if (invalidValues.length > 0) {
-          const expected = invalidValues
-            .map(([k, allowed]) => `${k} must be one of ${allowed.join(", ")}`)
-            .join("; ");
+        const invalidValues = invalidConfigValues(entry, cfg);
+        if (invalidValues) {
           return withHints(
-            { error: `Invalid config for ${data.nodeType}: ${expected}` },
-            { action: `Fix the config values: ${expected}` },
+            { error: `Invalid config for ${data.nodeType}: ${invalidValues}` },
+            { action: `Fix the config values: ${invalidValues}` },
           );
         }
         if (missingKeys.length > 0) {
@@ -5645,6 +5642,16 @@ export class ToolHandlers {
             `/v2.0/flows/${flowId}/chart/nodes/${data.nodeId}`,
           );
           nodeType = existingNode?.type ?? "";
+
+          const existingEntry = getNodeEntry(nodeType);
+          const invalidValues =
+            existingEntry && invalidConfigValues(existingEntry, data.config);
+          if (invalidValues) {
+            return withHints(
+              { error: `Invalid config for ${nodeType}: ${invalidValues}` },
+              { action: `Fix the config values: ${invalidValues}` },
+            );
+          }
 
           // Strip server-computed, read-only fields before merging them back
           // into the PATCH. `transpiled` (a code node's compiled JS) can be

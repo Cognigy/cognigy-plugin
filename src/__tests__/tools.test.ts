@@ -3462,6 +3462,22 @@ describe("ToolHandlers v2", () => {
       expect(result.updated).toBe(true);
     });
 
+    it("rejects an invalid cxOneSendCopilotStatus status on update", async () => {
+      api.get.mockResolvedValueOnce({
+        _id: newNode,
+        type: "cxOneSendCopilotStatus",
+        config: { status: "Complete" },
+      });
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "update",
+        flowId: ID.flow,
+        nodeId: newNode,
+        config: { status: "Bogus" },
+      });
+      expect(result.error).toMatch(/status must be one of Complete, Failed/);
+      expect(api.patch).not.toHaveBeenCalled();
+    });
+
     it("creates a wait node (Wait for Input) with no config", async () => {
       api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
       const result = await h.handleToolCall("manage_flow_nodes", {
