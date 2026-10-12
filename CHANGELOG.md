@@ -1,3 +1,9 @@
+## [1.22.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.0...v1.22.1) (2026-10-12)
+
+### Bug Fixes
+
+* **flow-nodes:** support Copilot wait/status nodes, wrap adaptive cards, flag duplicate imports ([#57](https://github.com/Cognigy/cognigy-plugin/issues/57)) ([bbf474e](https://github.com/Cognigy/cognigy-plugin/commit/bbf474e093d8cc53b12535986ff7ef2229a9bec8))
+
 ## [1.22.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.21.0...v1.22.0) (2026-10-09)
 
 ### Features
