@@ -106,7 +106,7 @@ Reports the workflow outcome to CXone Agent Copilot. Without it Copilot never le
 **Config:**
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| status | string | Yes | `Complete` or `Failed` |
+| status | string | Yes | `Complete` or `Failed` (case-sensitive) |
 | data | object | No | Optional JSON object sent with the status |
 
 ```json

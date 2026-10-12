@@ -29,6 +29,8 @@ export interface NodeRegistryEntry {
   configKeys: string[];
   /** Keys that are required for the node to function. */
   requiredConfigKeys: string[];
+  /** Exact values accepted for a key (case-sensitive); checked on create. */
+  allowedConfigValues?: Record<string, string[]>;
 }
 
 export const NODE_REGISTRY: Record<string, NodeRegistryEntry> = {
@@ -329,6 +331,7 @@ export const NODE_REGISTRY: Record<string, NodeRegistryEntry> = {
     placement: "flow",
     configKeys: ["status", "data"],
     requiredConfigKeys: ["status"],
+    allowedConfigValues: { status: ["Complete", "Failed"] },
   },
 
   setSessionConfig: {

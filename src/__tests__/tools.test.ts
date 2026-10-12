@@ -3398,6 +3398,70 @@ describe("ToolHandlers v2", () => {
       expect(say._data._cognigy._default._adaptiveCard).toEqual(wrapped);
     });
 
+    it("accepts an adaptive card as a JSON string or already wrapped, and adds fallbackText", async () => {
+      const card = { type: "AdaptiveCard", version: "1.6", body: [] };
+      for (const adaptiveCard of [
+        JSON.stringify(card),
+        { type: "adaptiveCard", adaptiveCard: card },
+      ]) {
+        api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
+        await h.handleToolCall("manage_flow_nodes", {
+          operation: "create",
+          flowId: ID.flow,
+          parentNodeId: ID.tool,
+          mode: "append",
+          nodeType: "say",
+          label: "Say card",
+          config: { text: "Approve?", adaptiveCard },
+        });
+        expect(
+          api.post.mock.calls.at(-1)![1].config.say._cognigy._default
+            ._adaptiveCard,
+        ).toEqual({
+          type: "adaptiveCard",
+          adaptiveCard: card,
+          fallbackText: "Approve?",
+        });
+      }
+    });
+
+    it("rejects an adaptive card that is not a JSON object", async () => {
+      await expect(
+        h.handleToolCall("manage_flow_nodes", {
+          operation: "create",
+          flowId: ID.flow,
+          parentNodeId: ID.tool,
+          mode: "append",
+          nodeType: "say",
+          label: "Say card",
+          config: { text: "", adaptiveCard: [] },
+        }),
+      ).rejects.toThrow(/Adaptive Card JSON object/);
+    });
+
+    it("does not crash updating with a passthrough say that has no _data", async () => {
+      api.get.mockResolvedValueOnce({
+        _id: newNode,
+        type: "say",
+        config: { say: { type: "text", text: ["Hi"] } },
+      });
+      api.patch.mockResolvedValueOnce({ _id: newNode });
+      const card = { type: "adaptiveCard", adaptiveCard: { body: [] } };
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "update",
+        flowId: ID.flow,
+        nodeId: newNode,
+        config: {
+          say: {
+            type: "adaptiveCard",
+            text: [""],
+            _cognigy: { _default: { _adaptiveCard: card } },
+          },
+        },
+      });
+      expect(result.updated).toBe(true);
+    });
+
     it("creates a wait node (Wait for Input) with no config", async () => {
       api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
       const result = await h.handleToolCall("manage_flow_nodes", {
@@ -3428,7 +3492,18 @@ describe("ToolHandlers v2", () => {
         label: "Send Status",
         config: {},
       });
-      expect(missing.error).toMatch(/status/);
+      expect(missing.error).toMatch(/Missing required config keys.*status/);
+
+      const wrongCase = await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "cxOneSendCopilotStatus",
+        label: "Send Status",
+        config: { status: "complete" },
+      });
+      expect(wrongCase.error).toMatch(/status must be one of Complete, Failed/);
 
       api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
       await h.handleToolCall("manage_flow_nodes", {
@@ -4144,6 +4219,8 @@ describe("ToolHandlers v2", () => {
       expect(result.operation).toBe("inspect");
       expect(result.summary.hasFlows).toBe(true);
       expect(result.summary.hasDuplicateKnowledgeStore).toBe(true);
+      expect(result.summary.reidentifyConflictCount).toBe(1);
+      expect(result.summary.conflictWarning).toMatch(/NEW copy/);
       expect(
         result.resources.find((resource: any) => resource.type === "flow")
           .conflict.targetResourceName,
@@ -4198,6 +4275,7 @@ describe("ToolHandlers v2", () => {
         },
       );
       expect(result.task.status).toBe("done");
+      expect(result.importedAsNewCopy).toBeUndefined();
     });
 
     it("returns queued task when import does not wait for completion", async () => {
@@ -4213,6 +4291,9 @@ describe("ToolHandlers v2", () => {
 
       expect(result.task.id).toBe(ID.task2);
       expect(result.task.status).toBe("queued");
+      expect(result.importedAsNewCopy).toEqual([
+        expect.objectContaining({ type: "flow" }),
+      ]);
     });
 
     it("exports resources, includes dependencies by default, and saves the package locally", async () => {

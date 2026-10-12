@@ -17,8 +17,9 @@ describe("buildPackageImportPreview conflict warning", () => {
     const r = preview.resources[0];
     expect(r.defaultStrategy).toBe("re-identify");
     expect(r.conflict?.targetResourceId).toBe("existing");
-    expect(r.conflictWarning).toMatch(/NEW copy/);
-    expect(r.conflictWarning).toMatch(/replace/);
+    expect(preview.summary.reidentifyConflictCount).toBe(1);
+    expect(preview.summary.conflictWarning).toMatch(/NEW copy/);
+    expect(preview.summary.conflictWarning).toMatch(/replace/);
   });
 
   it("adds no warning when nothing conflicts", () => {
@@ -26,6 +27,7 @@ describe("buildPackageImportPreview conflict warning", () => {
       proj: { resources: [] } as any,
       pkg: { resources: [flow("incoming", "ref-1")] } as any,
     });
-    expect(preview.resources[0].conflictWarning).toBeUndefined();
+    expect(preview.summary.reidentifyConflictCount).toBe(0);
+    expect(preview.summary.conflictWarning).toBeUndefined();
   });
 });

@@ -86,9 +86,6 @@ export interface PackageResourcePreview {
   defaultStrategy: "replace" | "re-identify";
   disabledReason?: "retired_model";
   conflict?: PackageConflictSummary;
-  /** Present when the resource already exists in the project and the default
-   * strategy would create a duplicate rather than update it. */
-  conflictWarning?: string;
 }
 
 export interface PackageLocalePreview {
@@ -122,6 +119,9 @@ export interface PackageImportPreview {
     disabledResourceCount: number;
     hasFlows: boolean;
     hasDuplicateKnowledgeStore: boolean;
+    /** Selected resources that already exist and would import as new copies. */
+    reidentifyConflictCount: number;
+    conflictWarning?: string;
   };
 }
 
@@ -342,17 +342,18 @@ export function buildPackageImportPreview(
                 targetResourceId: resourceId(conflictResource),
                 targetResourceName: resourceName(conflictResource),
               },
-              ...(defaultStrategy === "re-identify"
-                ? {
-                    conflictWarning:
-                      'This resource already exists in the project. The default strategy "re-identify" imports it as a NEW copy alongside the existing one. To update the existing resource in place, import it with strategy "replace".',
-                  }
-                : {}),
             }
           : {}),
       };
     },
   );
+
+  const reidentifyConflictCount = resources.filter(
+    (resource) =>
+      resource.selectedByDefault &&
+      resource.conflict &&
+      resource.defaultStrategy === "re-identify",
+  ).length;
 
   const defaultLocaleMapping = packageLocales
     .filter((locale) => locale.isPrimary)
@@ -394,6 +395,12 @@ export function buildPackageImportPreview(
       hasDuplicateKnowledgeStore: resources.some(
         (resource) => resource.type === "knowledgeStore" && !!resource.conflict,
       ),
+      reidentifyConflictCount,
+      ...(reidentifyConflictCount > 0
+        ? {
+            conflictWarning: `${reidentifyConflictCount} selected resource(s) with a conflict already exist in the project. The default strategy "re-identify" imports each as a NEW copy alongside the existing one. To update in place, pass strategy "replace" for those resources.`,
+          }
+        : {}),
     },
   };
 }
