@@ -92,6 +92,7 @@ Endpoints under `/v2.0/flows/{flowId}/chart`:
 - Lint: `npm run lint`. Format: `npx prettier --write <file>`.
 - The manifest's engine pin uses an **npm alias** (`cognigy-engine@npm:@cognigy/plugin-engine@<pin>`) on purpose: a plain spec makes `npm exec` treat this repo's own `package.json` (same name + version) as satisfying the pin in sessions rooted here, skip the install, and fail with `cognigy-mcp: command not found` (MCP `-32000`). The alias name never matches, so npm always installs from the registry. Never "simplify" it back — `npm run check:manifest` enforces the alias form.
 - Local plugin testing: `npm run plugin:dev` installs a generated dev marketplace (`.dev-plugin/`, gitignored) serving the working tree — engine runs from `src/` via tsx (no build), skills/agents symlinked; iterate with `/reload-plugins`. `npm run plugin:dev:off` restores the GitHub install. Never edit the tracked `plugin.json` for testing — `npm run check:manifest` guards it in pre-commit and CI.
+- Evals: `npm run evals` runs `claude plugin eval` on `plugin/evals/` (paid, ~$3); `npm run evals:compare` diffs the newest run against the committed `plugin/evals/baseline.json` and exits 1 on a drop. Run both after changing a skill, agent or tool description. Writing cases, mocks, graders and re-baselining: dev skill `.claude/skills/add-eval/SKILL.md`.
 
 ## Conventions
 

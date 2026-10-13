@@ -1,0 +1,82 @@
+{
+  "takenAt": "2026-10-09T13:44:41.231Z",
+  "commit": "d9fcaf6",
+  "claudeVersion": "2.1.295",
+  "pluginVersion": "1.22.0",
+  "cases": {
+    "add-knowledge": {
+      "fingerprint": "861bd8d2c326",
+      "score": 1,
+      "graders": {
+        "calls-manage_knowledge": "3/3",
+        "skill-fired": "3/3"
+      }
+    },
+    "build-agent": {
+      "fingerprint": "31686ef38fdd",
+      "score": 1,
+      "graders": {
+        "calls-create_ai_agent": "3/3",
+        "creation-guide-loaded": "3/3"
+      }
+    },
+    "deploy-webchat": {
+      "fingerprint": "2facbafeb5ff",
+      "score": 1,
+      "graders": {
+        "calls-manage_webchat": "3/3",
+        "skill-fired": "3/3"
+      }
+    },
+    "unrelated-request": {
+      "fingerprint": "4bec5125c35b",
+      "score": 1,
+      "graders": {
+        "no-cognigy-skill": "3/3"
+      }
+    },
+    "voice-apply-fixes": {
+      "fingerprint": "4100c8568df7",
+      "score": 1,
+      "graders": {
+        "checklist-loaded": "3/3",
+        "declines-backup": "3/3",
+        "dry-run-first": "3/3",
+        "fixes-applied": "3/3",
+        "no-unwanted-snapshot": "3/3"
+      }
+    },
+    "voice-go-live": {
+      "fingerprint": "86f2fcb9ce94",
+      "score": 1,
+      "graders": {
+        "calls-audit_voice_agent": "3/3",
+        "checklist-loaded": "3/3"
+      }
+    },
+    "backup-gate": {
+      "fingerprint": "e3b5d379af9a",
+      "score": 1,
+      "graders": {
+        "asks-about-backup": "3/3",
+        "no-unasked-snapshot": "3/3"
+      }
+    },
+    "general-tool-type": {
+      "fingerprint": "017442630cd5",
+      "score": 1,
+      "graders": {
+        "calls-create_tool": "3/3",
+        "not-mcp-or-http": "3/3"
+      }
+    },
+    "list-projects": {
+      "fingerprint": "9d575dc215c0",
+      "score": 1,
+      "graders": {
+        "calls-list_resources": "3/3",
+        "names-project": "3/3"
+      }
+    }
+  }
+}
