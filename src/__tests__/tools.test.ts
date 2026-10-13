@@ -3462,6 +3462,97 @@ describe("ToolHandlers v2", () => {
       expect(result.updated).toBe(true);
     });
 
+    it("keeps intentName on Trigger Intent quick replies (say and question)", async () => {
+      const replies = [
+        { title: "3", contentType: "trigger_intent", intentName: "Cancel" },
+        { title: "Yes", payload: "yes" },
+      ];
+      for (const [nodeType, extra] of [
+        ["say", {}],
+        ["question", { type: "text" }],
+      ] as const) {
+        api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
+        await h.handleToolCall("manage_flow_nodes", {
+          operation: "create",
+          flowId: ID.flow,
+          parentNodeId: ID.tool,
+          mode: "append",
+          nodeType,
+          label: "Pick",
+          config: { text: "Pick one", quickReplies: replies, ...extra },
+        });
+        const say = api.post.mock.calls.at(-1)![1].config.say;
+        const qrs = say._cognigy._default._quickReplies.quickReplies;
+        expect(qrs[0]).toMatchObject({
+          contentType: "trigger_intent",
+          intentName: "Cancel",
+        });
+        expect(qrs[1]).not.toHaveProperty("intentName");
+        expect(say._data._cognigy._default._quickReplies.quickReplies).toEqual(
+          qrs,
+        );
+      }
+    });
+
+    it("passes question result storage keys through unchanged", async () => {
+      api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
+      await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "question",
+        label: "Ask Member ID",
+        config: {
+          text: "What is your member ID?",
+          type: "text",
+          storeResultInContext: true,
+          contextKey: "temp.dataCapture.memberId",
+          storeInContactProfile: true,
+          profileKey: "memberId",
+        },
+      });
+      const config = api.post.mock.calls[0][1].config;
+      expect(config).toMatchObject({
+        type: "text",
+        storeResultInContext: true,
+        contextKey: "temp.dataCapture.memberId",
+        storeInContactProfile: true,
+        profileKey: "memberId",
+      });
+      expect(config).not.toHaveProperty("resultLocation");
+    });
+
+    it("accepts setSessionContext mode simple/array and rejects other values", async () => {
+      api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
+      await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "setSessionContext",
+        label: "Add item",
+        config: { key: "items", value: "item", mode: "array" },
+      });
+      expect(api.post.mock.calls[0][1].config).toEqual({
+        key: "items",
+        value: "item",
+        mode: "array",
+      });
+
+      const bad = await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "setSessionContext",
+        label: "Add item",
+        config: { key: "items", value: "item", mode: "Array" },
+      });
+      expect(bad.error).toMatch(/mode must be one of simple, array/);
+      expect(api.post).toHaveBeenCalledTimes(1);
+    });
+
     it("rejects an invalid cxOneSendCopilotStatus status on update", async () => {
       api.get.mockResolvedValueOnce({
         _id: newNode,
