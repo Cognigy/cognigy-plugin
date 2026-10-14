@@ -70,7 +70,10 @@ export const NODE_REGISTRY: Record<string, NodeRegistryEntry> = {
       "buttons",
       "gallery",
       "list",
-      "validation",
+      "storeResultInContext",
+      "contextKey",
+      "storeInContactProfile",
+      "profileKey",
       "resultLocation",
       "data",
     ],
@@ -104,8 +107,9 @@ export const NODE_REGISTRY: Record<string, NodeRegistryEntry> = {
     category: "data",
     summary: "Store a key-value pair in the session context object",
     placement: "flow",
-    configKeys: ["key", "value", "contextEntries"],
+    configKeys: ["key", "value", "mode", "contextEntries"],
     requiredConfigKeys: ["key", "value"],
+    allowedConfigValues: { mode: ["simple", "array"] },
   },
 
   code: {

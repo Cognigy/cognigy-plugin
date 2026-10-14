@@ -252,6 +252,9 @@ function buildRichSayObject(
         imageUrl: qr.imageUrl ?? "",
         imageAltText: qr.imageAltText ?? "",
         condition: qr.condition ?? "",
+        // Trigger Intent replies (contentType "trigger_intent") carry the
+        // intent in intentName, not payload — dropping it makes the reply inert.
+        ...(qr.intentName !== undefined ? { intentName: qr.intentName } : {}),
       }),
     );
     richPayload = { type: "quick_replies", text: textStr, quickReplies: qrs };
