@@ -28,15 +28,20 @@ What it does (see `scripts/dev-plugin.mjs`):
   `plugin/.claude-plugin/plugin.json` with one change: the `platform` server runs `src/index.ts`
   directly via **tsx** (no `npm run build` needed). Skills and agents are **symlinked** to the
   working tree, so edits are live. Remote servers (e.g. the bundled `docs` server) are unchanged.
-- Uninstalls the prod plugin (avoids duplicate tool names) and installs `cognigy@cognigy-dev`.
+- **Disables** the prod plugin (avoids duplicate tool names) and installs/enables
+  `cognigy@cognigy-dev`. It never uninstalls: uninstalling (or `marketplace remove`) deletes a
+  plugin's saved userConfig, and the CLI can't read the API key back to restore it. Each install
+  keeps its own config, so switching dev ↔ off never asks for credentials again.
 
 Then, in Claude Code:
 
-1. `/plugin configure cognigy@cognigy-dev` — enter your API base URL + key (once).
+1. Only if the script prints a `⚠ … not fully configured` line: `/plugin configure cognigy@cognigy-dev`
+   — enter your API base URL + key. Needed once per install, not per switch.
 2. `/reload-plugins` (or restart the session).
 3. Iterate: edit `src/**` or `plugin/**`, then `/reload-plugins`. That's the whole loop.
 
-Done testing? Restore the published plugin:
+Done testing? Switch back to the published plugin (disables the dev install, keeping its config for
+next time; prints the same configure hint if the prod install has no credentials yet):
 
 ```bash
 npm run plugin:dev:off
@@ -97,7 +102,8 @@ Then:
 /plugin install cognigy@cognigy-plugin
 ```
 
-(`npm run plugin:dev:off` runs exactly this restore for you.)
+(This deletes the plugin's saved credentials — you re-enter them after the reinstall.
+`npm run plugin:dev:off` does NOT do this; it only re-enables the existing install.)
 
 There is no `init --client` installer, `.mcpb` bundle, or standalone-client config — the paths above
 are the only test paths.

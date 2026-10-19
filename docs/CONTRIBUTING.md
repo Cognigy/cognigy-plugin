@@ -105,7 +105,7 @@ so a separate global install is not required.
 | `npm run prettier:check -- <files...>` | Check formatting with Prettier for specific files                                                                  |
 | `npm run prettier:write -- <files...>` | Format specific files with Prettier                                                                                |
 | `npm run plugin:dev`                   | Install local dev plugin serving the working tree ([TESTING.md](./TESTING.md#1-local-dev-loop-dev--the-fast-path)) |
-| `npm run plugin:dev:off`               | Remove the dev plugin, restore the published one                                                                   |
+| `npm run plugin:dev:off`               | Disable the dev plugin, re-enable the published one (both keep their saved credentials)                            |
 | `npm run check:manifest`               | Validate the tracked plugin manifest (pre-commit/CI guard)                                                         |
 
 ## Submitting Changes
