@@ -31,7 +31,10 @@
           },
           "agentNodeType": {
             "type": "string",
-            "enum": ["aiAgent", "llmPrompt"],
+            "enum": [
+              "aiAgent",
+              "llmPrompt"
+            ],
             "description": "Which node drives the agent. Omit for the AI Agent default. Pass 'llmPrompt' only when the user asked for an LLM Prompt node by name."
           },
           "systemPrompt": {
@@ -39,7 +42,9 @@
             "description": "llmPrompt mode only: freeform system prompt (config.prompt). It is the full persona, behavior, and guardrail definition. Falls back to description when omitted."
           }
         },
-        "required": ["name"]
+        "required": [
+          "name"
+        ]
       }
     },
     {
@@ -102,7 +107,9 @@
             }
           }
         },
-        "required": ["aiAgentId"]
+        "required": [
+          "aiAgentId"
+        ]
       }
     },
     {
@@ -169,7 +176,10 @@
           },
           "apiType": {
             "type": "string",
-            "enum": ["chatCompletion", "responses"],
+            "enum": [
+              "chatCompletion",
+              "responses"
+            ],
             "description": "API flavor for chat models (openAI, azureOpenAI, openAICompatible only). Default: 'chatCompletion'. Use 'responses' only if the provider supports OpenAI's Responses API."
           },
           "region": {
@@ -178,7 +188,11 @@
           },
           "location": {
             "type": "string",
-            "enum": ["region", "geo", "global"],
+            "enum": [
+              "region",
+              "geo",
+              "global"
+            ],
             "description": "awsBedrock only: inference-call routing. 'region' (default) keeps requests in the given region; 'geo' routes within a geographic boundary (requires geo); 'global' routes worldwide for the highest throughput."
           },
           "geo": {
@@ -202,7 +216,11 @@
             "description": "LAST RESORT ONLY — Skip the automatic connection validation after creating the model. This creates an LLM that may be completely non-functional. Do NOT use this to work around a failed connection test — a failed test means the credentials are wrong or the connection doesn't exist. Skipping the test does NOT fix the underlying problem, it just hides it. Only use when the test endpoint is known to be unavailable (e.g., air-gapped environments, unsupported custom model providers) AND the user has explicitly confirmed. Default: false."
           }
         },
-        "required": ["projectId", "provider", "modelType"]
+        "required": [
+          "projectId",
+          "provider",
+          "modelType"
+        ]
       }
     },
     {
@@ -255,7 +273,9 @@
             "description": "Send via Cognigy Endpoint Test Mode (default: true) so the message is not counted as billable. Set false only when the user explicitly wants a real, billable production message, or when a test-mode failure has been traced to a platform without test mode (older than Cognigy 4.27), the original message is confirmed unprocessed, and the user accepts the billing."
           }
         },
-        "required": ["message"]
+        "required": [
+          "message"
+        ]
       }
     },
     {
@@ -325,7 +345,12 @@
             "minItems": 1,
             "items": {
               "type": "string",
-              "enum": ["human", "ask-ai", "mcp-plugin", "system"]
+              "enum": [
+                "human",
+                "ask-ai",
+                "mcp-plugin",
+                "system"
+              ]
             },
             "description": "audit_event only — filter by who performed the action. 'mcp-plugin' is this plugin, 'ask-ai' the Cognigy Ask AI agent, 'human' a person working in the UI or calling the API directly. Filtered by the platform on Cognigy 2026.17.0+; on older versions the plugin applies it to the fetched page itself and says so."
           },
@@ -359,7 +384,9 @@
             "description": "Number of results to skip (default 0)"
           }
         },
-        "required": ["resourceType"]
+        "required": [
+          "resourceType"
+        ]
       }
     },
     {
@@ -406,7 +433,10 @@
             "description": "If true, return unfiltered API response (default: false)"
           }
         },
-        "required": ["resourceType", "id"]
+        "required": [
+          "resourceType",
+          "id"
+        ]
       }
     },
     {
@@ -457,7 +487,10 @@
             "description": "Agent deletion only. If true (default), deactivates the agent's endpoints and renames its flow and the agent with the DELETE_ prefix. If false, renames only the agent."
           }
         },
-        "required": ["resourceType", "id"]
+        "required": [
+          "resourceType",
+          "id"
+        ]
       }
     },
     {
@@ -505,7 +538,11 @@
           },
           "type": {
             "type": "string",
-            "enum": ["url", "manual", "file"],
+            "enum": [
+              "url",
+              "manual",
+              "file"
+            ],
             "description": "Source type (create_source). 'url' scrapes a web page. 'manual' stores text directly. 'file' uploads a local document. Auto-detected from provided fields if omitted."
           },
           "url": {
@@ -529,7 +566,9 @@
             "description": "Max results (1-50)"
           }
         },
-        "required": ["operation"]
+        "required": [
+          "operation"
+        ]
       }
     },
     {
@@ -559,7 +598,14 @@
           },
           "toolType": {
             "type": "string",
-            "enum": ["tool", "knowledge", "send_email", "mcp", "http", "a2a"],
+            "enum": [
+              "tool",
+              "knowledge",
+              "send_email",
+              "mcp",
+              "http",
+              "a2a"
+            ],
             "description": "tool: general-purpose default. knowledge: search a Knowledge Store. send_email: send emails. mcp: external MCP server requested by the user. http: concrete HTTP API endpoint. a2a: delegate to a remote A2A (Agent2Agent) agent outside the project, or when the user explicitly asks for A2A — never just to connect agents in the same project. LLM Prompt nodes support only tool/mcp/http."
           },
           "name": {
@@ -612,7 +658,13 @@
               },
               "method": {
                 "type": "string",
-                "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"],
+                "enum": [
+                  "GET",
+                  "POST",
+                  "PUT",
+                  "PATCH",
+                  "DELETE"
+                ],
                 "description": "HTTP method, default: GET (http only)"
               },
               "headers": {
@@ -657,7 +709,11 @@
               },
               "toolFilter": {
                 "type": "string",
-                "enum": ["none", "whitelist", "blacklist"],
+                "enum": [
+                  "none",
+                  "whitelist",
+                  "blacklist"
+                ],
                 "description": "Which of the remote agent's skills are listed in this tool's description. Default: 'none' (all skills). NOT an access control: the node stays one tool and the remote agent still decides which skills it runs (a2a only)"
               },
               "whitelist": {
@@ -676,7 +732,13 @@
               },
               "authType": {
                 "type": "string",
-                "enum": ["none", "apiKey", "bearer", "basic", "oAuth2"],
+                "enum": [
+                  "none",
+                  "apiKey",
+                  "bearer",
+                  "basic",
+                  "oAuth2"
+                ],
                 "description": "Authentication method for calling the remote agent. Default: 'none' (a2a only)"
               },
               "apiKeyConnection": {
@@ -714,7 +776,11 @@
             }
           }
         },
-        "required": ["toolType", "name", "config"]
+        "required": [
+          "toolType",
+          "name",
+          "config"
+        ]
       }
     },
     {
@@ -748,7 +814,14 @@
           },
           "toolType": {
             "type": "string",
-            "enum": ["tool", "knowledge", "send_email", "mcp", "http", "a2a"],
+            "enum": [
+              "tool",
+              "knowledge",
+              "send_email",
+              "mcp",
+              "http",
+              "a2a"
+            ],
             "description": "Tool type hint — helps the handler know which config fields to map. Optional if only updating name."
           },
           "config": {
@@ -797,7 +870,13 @@
               },
               "method": {
                 "type": "string",
-                "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"],
+                "enum": [
+                  "GET",
+                  "POST",
+                  "PUT",
+                  "PATCH",
+                  "DELETE"
+                ],
                 "description": "HTTP method (http only)"
               },
               "headers": {
@@ -858,7 +937,11 @@
               },
               "toolFilter": {
                 "type": "string",
-                "enum": ["none", "whitelist", "blacklist"],
+                "enum": [
+                  "none",
+                  "whitelist",
+                  "blacklist"
+                ],
                 "description": "Which remote skills are listed in the tool description. Not an access control (a2a only)"
               },
               "whitelist": {
@@ -877,7 +960,13 @@
               },
               "authType": {
                 "type": "string",
-                "enum": ["none", "apiKey", "bearer", "basic", "oAuth2"],
+                "enum": [
+                  "none",
+                  "apiKey",
+                  "bearer",
+                  "basic",
+                  "oAuth2"
+                ],
                 "description": "Authentication method for calling the remote agent (a2a only)"
               },
               "apiKeyConnection": {
@@ -915,7 +1004,9 @@
             }
           }
         },
-        "required": ["toolNodeId"]
+        "required": [
+          "toolNodeId"
+        ]
       }
     },
     {
@@ -933,7 +1024,14 @@
         "properties": {
           "operation": {
             "type": "string",
-            "enum": ["list", "get", "create", "update", "delete", "render"],
+            "enum": [
+              "list",
+              "get",
+              "create",
+              "update",
+              "delete",
+              "render"
+            ],
             "description": "Operation to perform"
           },
           "flowId": {
@@ -958,7 +1056,10 @@
           },
           "mode": {
             "type": "string",
-            "enum": ["append", "appendChild"],
+            "enum": [
+              "append",
+              "appendChild"
+            ],
             "description": "Placement mode: appendChild (inside target — use this to add nodes under a tool) or append (after target as a sibling). Default: append."
           },
           "config": {
@@ -981,7 +1082,11 @@
           },
           "format": {
             "type": "string",
-            "enum": ["ascii", "mermaid", "both"],
+            "enum": [
+              "ascii",
+              "mermaid",
+              "both"
+            ],
             "description": "render only: which representation(s) to return. Default: both."
           },
           "legend": {
@@ -997,7 +1102,10 @@
             "description": "render only (requires writeHtml): open the generated HTML in the user's default browser automatically. Default: true — set false to only get htmlUrl/htmlPath back without opening."
           }
         },
-        "required": ["operation", "flowId"]
+        "required": [
+          "operation",
+          "flowId"
+        ]
       }
     },
     {
@@ -1088,11 +1196,16 @@
                 },
                 "strategy": {
                   "type": "string",
-                  "enum": ["replace", "re-identify"],
+                  "enum": [
+                    "replace",
+                    "re-identify"
+                  ],
                   "description": "Conflict strategy. UI-parity only: \"replace\" or \"re-identify\"."
                 }
               },
-              "required": ["id"]
+              "required": [
+                "id"
+              ]
             }
           },
           "localeMapping": {
@@ -1108,7 +1221,10 @@
                   "type": "string"
                 }
               },
-              "required": ["packageLocaleId", "agentLocaleId"]
+              "required": [
+                "packageLocaleId",
+                "agentLocaleId"
+              ]
             }
           },
           "waitForCompletion": {
@@ -1120,7 +1236,10 @@
             "description": "Polling/upload timeout in milliseconds. Default: 600000."
           }
         },
-        "required": ["operation", "projectId"]
+        "required": [
+          "operation",
+          "projectId"
+        ]
       }
     },
     {
@@ -1154,7 +1273,11 @@
           },
           "stylePreset": {
             "type": "string",
-            "enum": ["classic", "modern", "slick"],
+            "enum": [
+              "classic",
+              "modern",
+              "slick"
+            ],
             "description": "Apply a predefined style. classic: compact 460px. modern: wide 900px with streaming. slick: medium 600px with grey bubbles."
           },
           "layout": {
@@ -1271,7 +1394,10 @@
             "properties": {
               "scrollingBehavior": {
                 "type": "string",
-                "enum": ["alwaysScroll", "scrollToLastInput"],
+                "enum": [
+                  "alwaysScroll",
+                  "scrollToLastInput"
+                ],
                 "description": "Scroll behavior on new messages"
               },
               "collateStreamedOutputs": {
@@ -1338,7 +1464,11 @@
             "properties": {
               "mode": {
                 "type": "string",
-                "enum": ["textField", "button", "autoSend"],
+                "enum": [
+                  "textField",
+                  "button",
+                  "autoSend"
+                ],
                 "description": "Start mode"
               },
               "textPayload": {
@@ -1394,13 +1524,20 @@
                     },
                     "type": {
                       "type": "string",
-                      "enum": ["postback", "url"]
+                      "enum": [
+                        "postback",
+                        "url"
+                      ]
                     },
                     "value": {
                       "type": "string"
                     }
                   },
-                  "required": ["title", "type", "value"]
+                  "required": [
+                    "title",
+                    "type",
+                    "value"
+                  ]
                 }
               },
               "previousConversations": {
@@ -1448,13 +1585,20 @@
                     },
                     "type": {
                       "type": "string",
-                      "enum": ["postback", "url"]
+                      "enum": [
+                        "postback",
+                        "url"
+                      ]
                     },
                     "value": {
                       "type": "string"
                     }
                   },
-                  "required": ["title", "type", "value"]
+                  "required": [
+                    "title",
+                    "type",
+                    "value"
+                  ]
                 }
               }
             }
@@ -1494,13 +1638,20 @@
                         },
                         "type": {
                           "type": "string",
-                          "enum": ["postback", "url"]
+                          "enum": [
+                            "postback",
+                            "url"
+                          ]
                         },
                         "value": {
                           "type": "string"
                         }
                       },
-                      "required": ["title", "type", "value"]
+                      "required": [
+                        "title",
+                        "type",
+                        "value"
+                      ]
                     }
                   }
                 }
@@ -1557,7 +1708,10 @@
                           "type": "string"
                         }
                       },
-                      "required": ["title", "url"]
+                      "required": [
+                        "title",
+                        "url"
+                      ]
                     }
                   }
                 }
@@ -1598,7 +1752,11 @@
               },
               "mode": {
                 "type": "string",
-                "enum": ["inform", "disable", "hide"]
+                "enum": [
+                  "inform",
+                  "disable",
+                  "hide"
+                ]
               },
               "informationText": {
                 "type": "string"
@@ -1625,7 +1783,11 @@
                       "type": "string"
                     }
                   },
-                  "required": ["dayOfWeek", "startTime", "endTime"]
+                  "required": [
+                    "dayOfWeek",
+                    "startTime",
+                    "endTime"
+                  ]
                 }
               }
             }
@@ -1657,7 +1819,11 @@
               },
               "mode": {
                 "type": "string",
-                "enum": ["inform", "disable", "hide"]
+                "enum": [
+                  "inform",
+                  "disable",
+                  "hide"
+                ]
               },
               "informationText": {
                 "type": "string"
@@ -1673,7 +1839,11 @@
             "properties": {
               "type": {
                 "type": "string",
-                "enum": ["default", "custom", "none"]
+                "enum": [
+                  "default",
+                  "custom",
+                  "none"
+                ]
               },
               "text": {
                 "type": "string"
@@ -1705,7 +1875,10 @@
                       "type": "string"
                     }
                   },
-                  "required": ["title", "payload"]
+                  "required": [
+                    "title",
+                    "payload"
+                  ]
                 }
               }
             }
@@ -1728,7 +1901,12 @@
             "properties": {
               "animation": {
                 "type": "string",
-                "enum": ["none", "bounce", "swing", "pulse"]
+                "enum": [
+                  "none",
+                  "bounce",
+                  "swing",
+                  "pulse"
+                ]
               },
               "animationInterval": {
                 "type": "number",
@@ -1736,7 +1914,12 @@
               },
               "animationSpeed": {
                 "type": "string",
-                "enum": ["slow", "normal", "fast", "superfast"]
+                "enum": [
+                  "slow",
+                  "normal",
+                  "fast",
+                  "superfast"
+                ]
               }
             }
           },
@@ -1786,7 +1969,11 @@
               },
               "theme": {
                 "type": "string",
-                "enum": ["CLEAN_WHITE", "DARK_MODE", "AI_PURPLE"],
+                "enum": [
+                  "CLEAN_WHITE",
+                  "DARK_MODE",
+                  "AI_PURPLE"
+                ],
                 "description": "Widget color theme (default: DARK_MODE)"
               },
               "transcription": {
@@ -1799,7 +1986,10 @@
                   },
                   "backgroundMode": {
                     "type": "string",
-                    "enum": ["transparent", "custom"],
+                    "enum": [
+                      "transparent",
+                      "custom"
+                    ],
                     "description": "Transcription background style (default: transparent)"
                   }
                 }
@@ -1813,7 +2003,10 @@
                     "properties": {
                       "mode": {
                         "type": "string",
-                        "enum": ["color", "image"]
+                        "enum": [
+                          "color",
+                          "image"
+                        ]
                       },
                       "color": {
                         "type": "string",
@@ -1823,7 +2016,10 @@
                   },
                   "position": {
                     "type": "string",
-                    "enum": ["centered", "bottom-right"],
+                    "enum": [
+                      "centered",
+                      "bottom-right"
+                    ],
                     "description": "Widget position on demo page (default: centered)"
                   }
                 }
@@ -1856,7 +2052,10 @@
         "properties": {
           "operation": {
             "type": "string",
-            "enum": ["set_voice_preview", "set_knowledge_ai"],
+            "enum": [
+              "set_voice_preview",
+              "set_knowledge_ai"
+            ],
             "description": "Which operation to perform"
           },
           "projectId": {
@@ -1865,7 +2064,13 @@
           },
           "provider": {
             "type": "string",
-            "enum": ["microsoft", "google", "aws", "deepgram", "elevenlabs"],
+            "enum": [
+              "microsoft",
+              "google",
+              "aws",
+              "deepgram",
+              "elevenlabs"
+            ],
             "description": "Speech provider to configure for voice preview"
           },
           "connectionId": {
@@ -1882,7 +2087,11 @@
           },
           "contentParser": {
             "type": "string",
-            "enum": ["default", "legacy", "azure"],
+            "enum": [
+              "default",
+              "legacy",
+              "azure"
+            ],
             "description": "Content Parser to use for Knowledge AI document processing."
           },
           "azureDIConnectionId": {
@@ -1890,7 +2099,10 @@
             "description": "Azure AI Document Intelligence connection referenceId. Required when contentParser is azure."
           }
         },
-        "required": ["operation", "projectId"]
+        "required": [
+          "operation",
+          "projectId"
+        ]
       }
     },
     {
@@ -2009,7 +2221,10 @@
             "description": "Task polling timeout in milliseconds (1000-3600000). Default: 600000. For create it is the budget for the WHOLE call, including any deletion needed to free a slot."
           }
         },
-        "required": ["operation", "projectId"]
+        "required": [
+          "operation",
+          "projectId"
+        ]
       }
     },
     {
@@ -2068,7 +2283,10 @@
                   "description": "What this skill does"
                 }
               },
-              "required": ["id", "name"]
+              "required": [
+                "id",
+                "name"
+              ]
             }
           },
           "enableStreaming": {
@@ -2077,7 +2295,10 @@
           },
           "authenticationType": {
             "type": "string",
-            "enum": ["none", "apiKey"],
+            "enum": [
+              "none",
+              "apiKey"
+            ],
             "description": "How callers must authenticate to this A2A server endpoint. Default: none"
           }
         }
