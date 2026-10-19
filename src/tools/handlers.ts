@@ -3556,19 +3556,25 @@ export class ToolHandlers {
         );
         // The index's `config` holds the node type's DEFAULTS (every tool reads
         // "This tool unlocks a locked user account."), not the stored values —
-        // only the per-node read has the tool's real config.
-        const configs = await Promise.all(
-          toolNodes.map(async (n: any) => {
-            try {
-              const full: any = await this.apiClient.get(
-                `/v2.0/flows/${agentFlowId}/chart/nodes/${n._id || n.id}`,
-              );
-              return full?.config ?? {};
-            } catch {
-              return {};
-            }
-          }),
-        );
+        // only the per-node read has the tool's real config. Batches of 5 so a
+        // tool-heavy flow doesn't burst up to 100 requests into a 429.
+        const configs: any[] = [];
+        for (let i = 0; i < toolNodes.length; i += 5) {
+          configs.push(
+            ...(await Promise.all(
+              toolNodes.slice(i, i + 5).map(async (n: any) => {
+                try {
+                  const full: any = await this.apiClient.get(
+                    `/v2.0/flows/${agentFlowId}/chart/nodes/${n._id || n.id}`,
+                  );
+                  return full?.config ?? {};
+                } catch {
+                  return {};
+                }
+              }),
+            )),
+          );
+        }
         items = toolNodes.map((n: any, i: number) => ({
           toolId: n._id || n.id,
           name: n.label || n.name,

@@ -1379,6 +1379,32 @@ describe("ToolHandlers v2", () => {
       );
     });
 
+    it("bounds concurrent per-node tool reads and keeps their order", async () => {
+      const ids = Array.from({ length: 7 }, (_, i) => `tool${i}`);
+      let inFlight = 0;
+      let maxInFlight = 0;
+      api.get.mockImplementation(async (url: string): Promise<any> => {
+        if (url === `/v2.0/flows/${ID.flow}/chart/nodes`)
+          return { items: ids.map((_id) => ({ _id, type: "aiAgentJobTool" })) };
+        const id = ids.find((x) => url.endsWith(`/chart/nodes/${x}`));
+        if (!id) return { flowId: ID.flow };
+        maxInFlight = Math.max(maxInFlight, ++inFlight);
+        await new Promise((r) => setTimeout(r, 1));
+        inFlight--;
+        return { config: { description: `desc ${id}` } };
+      });
+
+      const result = await h.handleToolCall("list_resources", {
+        resourceType: "tool",
+        aiAgentId: ID.agent,
+      });
+
+      expect(maxInFlight).toBeLessThanOrEqual(5);
+      expect(result.items.map((t: any) => t.description)).toEqual(
+        ids.map((id) => `desc ${id}`),
+      );
+    });
+
     it("lists conversations with date filters", async () => {
       api.get.mockResolvedValue({
         items: [{ sessionId: "s1", channel: "rest" }],
