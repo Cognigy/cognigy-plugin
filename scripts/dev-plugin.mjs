@@ -139,13 +139,18 @@ function generateDevPlugin() {
  * Make `plugin` the active install and disable `other`, keeping both installs'
  * saved userConfig. Every step is idempotent: `marketplace add` repoints an
  * existing marketplace in place (e.g. .dev-plugin/ of another worktree) and
- * `install` is a no-op when already installed. Returns the userConfig keys
- * still unset on `plugin` (null if the CLI couldn't tell).
+ * `install` is a no-op when already installed. The dev plugin is read in place
+ * from its marketplace folder, so a repoint or regenerated manifest takes
+ * effect on /reload-plugins. The prod plugin is a cached copy: `update`
+ * re-fetches it after a repoint, and is a no-op for folder-read plugins (both
+ * keep userConfig). Returns the userConfig keys still unset on `plugin` (null
+ * if the CLI couldn't tell).
  */
 export function activate({ plugin, marketplaceSource, other }, run = claude) {
   run(["plugin", "disable", other], { allowFailure: true });
   run(["plugin", "marketplace", "add", marketplaceSource]);
   run(["plugin", "install", plugin]);
+  run(["plugin", "update", plugin], { allowFailure: true });
   run(["plugin", "enable", plugin], { allowFailure: true }); // fails if already enabled
   const out = run(["plugin", "configure", plugin, "--json"], {
     allowFailure: true,

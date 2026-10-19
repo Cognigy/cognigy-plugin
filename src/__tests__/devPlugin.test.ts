@@ -23,6 +23,7 @@ describe("dev-plugin activate", () => {
       ["plugin", "disable", "cognigy@cognigy-plugin"],
       ["plugin", "marketplace", "add", "/repo/.dev-plugin"],
       ["plugin", "install", "cognigy@cognigy-dev"],
+      ["plugin", "update", "cognigy@cognigy-dev"],
       ["plugin", "enable", "cognigy@cognigy-dev"],
       ["plugin", "configure", "cognigy@cognigy-dev", "--json"],
     ]);
@@ -31,6 +32,22 @@ describe("dev-plugin activate", () => {
       expect(args).not.toContain("uninstall");
       expect(args).not.toContain("remove");
     }
+  });
+
+  it("repoints the marketplace on every run, e.g. from another worktree", () => {
+    const { calls, run } = fakeClaude('{"unconfigured":[]}');
+    activate(target, run);
+    activate(
+      { ...target, marketplaceSource: "/other-worktree/.dev-plugin" },
+      run,
+    );
+    expect(calls).toContainEqual([
+      "plugin",
+      "marketplace",
+      "add",
+      "/other-worktree/.dev-plugin",
+    ]);
+    expect(calls.filter((a) => a[1] === "update")).toHaveLength(2);
   });
 
   it("reports unset userConfig keys, or null when the CLI can't tell", () => {
