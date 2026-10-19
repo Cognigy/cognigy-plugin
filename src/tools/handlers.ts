@@ -31,8 +31,12 @@ import {
   type ResponseHints,
 } from "./filters.js";
 import { buildWebchatSettings, deepMerge } from "./webchatSettings.js";
-import { normalizeToolParameters } from "./toolParameters.js";
-import { getNodeEntry, supportedNodeTypes } from "./nodeRegistry.js";
+import { isPlainObject, normalizeToolParameters } from "./toolParameters.js";
+import {
+  getNodeEntry,
+  invalidConfigValues,
+  supportedNodeTypes,
+} from "./nodeRegistry.js";
 import { codeNodeWarnings } from "./codeNodeHints.js";
 import {
   evaluateChecks,
@@ -188,6 +192,30 @@ function buildSayObject(text: any): Record<string, any> {
   return { ...SAY_DEFAULTS, text: textArr };
 }
 
+/** `{ type: "adaptiveCard", adaptiveCard: <card> }` — the shape the Designer reads. */
+function wrapAdaptiveCard(input: any, fallbackText: string) {
+  let card = input;
+  if (typeof card === "string") {
+    try {
+      card = JSON.parse(card);
+    } catch {
+      throw new Error("adaptiveCard must be an Adaptive Card JSON object");
+    }
+  }
+  // Already wrapped (e.g. copied back from a `get` result) — don't wrap twice.
+  if (isPlainObject(card) && card.type === "adaptiveCard") {
+    card = card.adaptiveCard;
+  }
+  if (!isPlainObject(card)) {
+    throw new Error("adaptiveCard must be an Adaptive Card JSON object");
+  }
+  return {
+    type: "adaptiveCard",
+    adaptiveCard: card,
+    ...(fallbackText ? { fallbackText } : {}),
+  };
+}
+
 function buildRichSayObject(
   text: any,
   outputType: string,
@@ -240,10 +268,16 @@ function buildRichSayObject(
     );
     richPayload = { type: "buttons", text: textStr, buttons: btns };
   } else {
+    // Adaptive Card: the Designer's card editor and the channel renderers read
+    // `_adaptiveCard.adaptiveCard`, not the card object at `_adaptiveCard`
+    // itself. Without the wrapper the Designer opens the card with an empty
+    // body (runtime/REST output still looks right, which hides the problem).
     richPayload =
-      typeof richData === "object"
-        ? { ...richData, text: textStr }
-        : { text: textStr };
+      outputType === "adaptiveCard"
+        ? wrapAdaptiveCard(richData, textStr)
+        : typeof richData === "object"
+          ? { ...richData, text: textStr }
+          : { text: textStr };
   }
 
   const channelData = { [dataKey]: richPayload };
@@ -1734,6 +1768,16 @@ export class ToolHandlers {
           data.packageId,
         );
         const payload = this.buildImportPayload(preview, data);
+        const copied = new Set(
+          payload.strategies
+            .filter((s) => s.identityConflictStrategy === "re-identify")
+            .map((s) => s._id),
+        );
+        const importedAsNewCopy = preview.resources
+          .filter((r: any) => r.conflict && copied.has(r.id))
+          .map((r: any) => ({ id: r.id, type: r.type, name: r.name }));
+        const copyInfo =
+          importedAsNewCopy.length > 0 ? { importedAsNewCopy } : {};
         const response: any = await this.apiClient.post(
           `/new/v2.0/packages/${data.packageId}/merge`,
           payload,
@@ -1761,6 +1805,7 @@ export class ToolHandlers {
             },
             selectedResourceCount: payload.resourceIds.length,
             localeMappingCount: payload.localeMapping.length,
+            ...copyInfo,
           };
         }
 
@@ -1777,6 +1822,7 @@ export class ToolHandlers {
           task: normalizedTask,
           selectedResourceCount: payload.resourceIds.length,
           localeMappingCount: payload.localeMapping.length,
+          ...copyInfo,
           ...(timedOut ? { timedOutWaiting: true } : {}),
         };
 
@@ -5389,6 +5435,13 @@ export class ToolHandlers {
           const aliases = aliasMap[k] ?? [k];
           return !aliases.some((a) => cfg[a] !== undefined);
         });
+        const invalidValues = invalidConfigValues(entry, cfg);
+        if (invalidValues) {
+          return withHints(
+            { error: `Invalid config for ${data.nodeType}: ${invalidValues}` },
+            { action: `Fix the config values: ${invalidValues}` },
+          );
+        }
         if (missingKeys.length > 0) {
           const missingKeyLabels = missingKeys.map((k) => {
             const aliases = aliasMap[k] ?? [k];
@@ -5590,6 +5643,16 @@ export class ToolHandlers {
           );
           nodeType = existingNode?.type ?? "";
 
+          const existingEntry = getNodeEntry(nodeType);
+          const invalidValues =
+            existingEntry && invalidConfigValues(existingEntry, data.config);
+          if (invalidValues) {
+            return withHints(
+              { error: `Invalid config for ${nodeType}: ${invalidValues}` },
+              { action: `Fix the config values: ${invalidValues}` },
+            );
+          }
+
           // Strip server-computed, read-only fields before merging them back
           // into the PATCH. `transpiled` (a code node's compiled JS) can be
           // ~200k chars, and echoing `hasError` back is meaningless.
@@ -5659,6 +5722,15 @@ export class ToolHandlers {
           } else {
             const transformed = transformConfigForApi(nodeType, data.config);
             patchPayload.config = deepMerge(existingConfig, transformed);
+            // A card is a whole document: merging would keep keys the new card
+            // dropped (and raw-card keys on legacy unwrapped nodes), so replace it.
+            const card = transformed.say?._cognigy?._default?._adaptiveCard;
+            if (card) {
+              const say = patchPayload.config.say;
+              for (const channel of [say._cognigy, say._data?._cognigy]) {
+                if (channel?._default) channel._default._adaptiveCard = card;
+              }
+            }
           }
         }
 

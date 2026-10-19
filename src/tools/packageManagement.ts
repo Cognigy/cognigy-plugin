@@ -119,6 +119,9 @@ export interface PackageImportPreview {
     disabledResourceCount: number;
     hasFlows: boolean;
     hasDuplicateKnowledgeStore: boolean;
+    /** Selected resources that already exist and would import as new copies. */
+    reidentifyConflictCount: number;
+    conflictWarning?: string;
   };
 }
 
@@ -321,14 +324,16 @@ export function buildPackageImportPreview(
           ? "retired_model"
           : undefined;
 
+      const defaultStrategy =
+        resource.type === "knowledgeStore" ? "replace" : "re-identify";
+
       return {
         id: resourceId(resource),
         type: resource.type || "unknown",
         name: resourceName(resource),
         ...(resource.referenceId ? { referenceId: resource.referenceId } : {}),
         selectedByDefault: !disabledReason,
-        defaultStrategy:
-          resource.type === "knowledgeStore" ? "replace" : "re-identify",
+        defaultStrategy,
         ...(disabledReason ? { disabledReason } : {}),
         ...(conflictResource
           ? {
@@ -342,6 +347,13 @@ export function buildPackageImportPreview(
       };
     },
   );
+
+  const reidentifyConflictCount = resources.filter(
+    (resource) =>
+      resource.selectedByDefault &&
+      resource.conflict &&
+      resource.defaultStrategy === "re-identify",
+  ).length;
 
   const defaultLocaleMapping = packageLocales
     .filter((locale) => locale.isPrimary)
@@ -383,6 +395,12 @@ export function buildPackageImportPreview(
       hasDuplicateKnowledgeStore: resources.some(
         (resource) => resource.type === "knowledgeStore" && !!resource.conflict,
       ),
+      reidentifyConflictCount,
+      ...(reidentifyConflictCount > 0
+        ? {
+            conflictWarning: `${reidentifyConflictCount} selected resource(s) with a conflict already exist in the project. The default strategy "re-identify" imports each as a NEW copy alongside the existing one. To update in place, pass strategy "replace" for those resources.`,
+          }
+        : {}),
     },
   };
 }

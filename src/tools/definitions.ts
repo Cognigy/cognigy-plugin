@@ -1094,7 +1094,7 @@ export const tools: ToolDefinition[] = [
         nodeType: {
           type: "string",
           description:
-            "Node type key (required for create). The authoritative set comes from the server node registry; an unsupported value returns an error listing the current types. Common types: say, question, ifThenElse, lookup, setSessionContext, code, goTo, sleep, httpRequest. xApp nodes: initAppSession, showXAppAdaptiveCard, showXAppHtml, setXAppState, getXAppSessionPin.",
+            "Node type key (required for create). The authoritative set comes from the server node registry; an unsupported value returns an error listing the current types. Common types: say, question, ifThenElse, lookup, setSessionContext, code, goTo, sleep, wait (Wait for Input), httpRequest. CXone Agent Copilot: cxOneSendCopilotStatus. xApp nodes: initAppSession, showXAppAdaptiveCard, showXAppHtml, setXAppState, getXAppSessionPin.",
         },
         label: {
           type: "string",
