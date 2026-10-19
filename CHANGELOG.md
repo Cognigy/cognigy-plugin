@@ -1,3 +1,9 @@
+## [1.22.2](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.1...v1.22.2) (2026-10-19)
+
+### Bug Fixes
+
+* **agents:** preload subagent skills and add plugin eval suite ([#56](https://github.com/Cognigy/cognigy-plugin/issues/56)) ([81109b6](https://github.com/Cognigy/cognigy-plugin/commit/81109b6ecdfd8451e7579275615c308caa6e9817))
+
 ## [1.22.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.0...v1.22.1) (2026-10-12)
 
 ### Bug Fixes
