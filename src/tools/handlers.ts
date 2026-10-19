@@ -3551,21 +3551,37 @@ export class ToolHandlers {
           },
         );
         const allNodes = nodes.items ?? nodes;
-        items = (Array.isArray(allNodes) ? allNodes : [])
-          .filter((n: any) => AI_AGENT_TOOL_TYPES.has(n.type))
-          .map((n: any) => ({
-            toolId: n._id || n.id,
-            name: n.label || n.name,
-            toolType: n.type,
-            // Which aiAgentJob / llmPromptV2 node the tool hangs off — a flow
-            // can have more than one. Always a string id, whichever shape
-            // the API returned the parent in.
-            parentNodeId: nodeParentId(n),
-            description: n.config?.description,
-            ...(n.config?.knowledgeStoreId
-              ? { knowledgeStoreId: n.config.knowledgeStoreId }
-              : {}),
-          }));
+        const toolNodes = (Array.isArray(allNodes) ? allNodes : []).filter(
+          (n: any) => AI_AGENT_TOOL_TYPES.has(n.type),
+        );
+        // The index's `config` holds the node type's DEFAULTS (every tool reads
+        // "This tool unlocks a locked user account."), not the stored values —
+        // only the per-node read has the tool's real config.
+        const configs = await Promise.all(
+          toolNodes.map(async (n: any) => {
+            try {
+              const full: any = await this.apiClient.get(
+                `/v2.0/flows/${agentFlowId}/chart/nodes/${n._id || n.id}`,
+              );
+              return full?.config ?? {};
+            } catch {
+              return {};
+            }
+          }),
+        );
+        items = toolNodes.map((n: any, i: number) => ({
+          toolId: n._id || n.id,
+          name: n.label || n.name,
+          toolType: n.type,
+          // Which aiAgentJob / llmPromptV2 node the tool hangs off — a flow
+          // can have more than one. Always a string id, whichever shape
+          // the API returned the parent in.
+          parentNodeId: nodeParentId(n),
+          description: configs[i].description,
+          ...(configs[i].knowledgeStoreId
+            ? { knowledgeStoreId: configs[i].knowledgeStoreId }
+            : {}),
+        }));
         total = items.length;
         break;
       }

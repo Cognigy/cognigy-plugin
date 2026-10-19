@@ -1338,6 +1338,47 @@ describe("ToolHandlers v2", () => {
       expect(result.items[0].toolType).toBe("aiAgentJobTool");
     });
 
+    it("reads tool description from the per-node config, not the index defaults", async () => {
+      // Real shape: the /chart/nodes index carries the node type's DEFAULT
+      // config; only GET /chart/nodes/{id} returns the stored values.
+      api.get.mockImplementation(async (url: string): Promise<any> => {
+        if (url === `/v2.0/flows/${ID.flow}/chart/nodes`)
+          return {
+            items: [
+              {
+                _id: ID.tool,
+                type: "aiAgentJobTool",
+                label: "Tool",
+                preview: "get_weather",
+                config: {
+                  toolId: "unlock_account",
+                  description: "This tool unlocks a locked user account.",
+                },
+              },
+            ],
+          };
+        if (url === `/v2.0/flows/${ID.flow}/chart/nodes/${ID.tool}`)
+          return {
+            _id: ID.tool,
+            type: "aiAgentJobTool",
+            config: {
+              toolId: "get_weather",
+              description: "Returns the current weather for a given city.",
+            },
+          };
+        return { flowId: ID.flow };
+      });
+
+      const result = await h.handleToolCall("list_resources", {
+        resourceType: "tool",
+        aiAgentId: ID.agent,
+      });
+
+      expect(result.items[0].description).toBe(
+        "Returns the current weather for a given city.",
+      );
+    });
+
     it("lists conversations with date filters", async () => {
       api.get.mockResolvedValue({
         items: [{ sessionId: "s1", channel: "rest" }],
