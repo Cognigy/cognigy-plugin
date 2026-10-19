@@ -29,6 +29,8 @@ export interface NodeRegistryEntry {
   configKeys: string[];
   /** Keys that are required for the node to function. */
   requiredConfigKeys: string[];
+  /** Exact values accepted for a key (case-sensitive); checked on create and update. */
+  allowedConfigValues?: Record<string, string[]>;
 }
 
 export const NODE_REGISTRY: Record<string, NodeRegistryEntry> = {
@@ -309,6 +311,29 @@ export const NODE_REGISTRY: Record<string, NodeRegistryEntry> = {
     requiredConfigKeys: ["prompt"],
   },
 
+  wait: {
+    type: "wait",
+    extension: "@cognigy/basic-nodes",
+    category: "logic",
+    summary:
+      "Wait for Input — stops the flow; the next input in the same session continues at the following node (no timeout). Stores no answer at input.result like question does: read input.text / input.data (e.g. an Adaptive Card submission) directly. Does NOT resume in Tool Flows (stateless per tool call) or if the flow is reset between turns (then the next input starts at Start). Takes no config.",
+    placement: "flow",
+    configKeys: [],
+    requiredConfigKeys: [],
+  },
+
+  cxOneSendCopilotStatus: {
+    type: "cxOneSendCopilotStatus",
+    extension: "@cognigy/cxone",
+    category: "handover",
+    summary:
+      "Send Status to CXone Copilot — reports workflow Complete/Failed to CXone Agent Copilot (beta; @cognigy/cxone extension, only when the CXone Send Copilot Status feature is enabled for the organisation). data is an optional JSON object.",
+    placement: "flow",
+    configKeys: ["status", "data"],
+    requiredConfigKeys: ["status"],
+    allowedConfigValues: { status: ["Complete", "Failed"] },
+  },
+
   setSessionConfig: {
     type: "setSessionConfig",
     extension: "@cognigy/voicegateway2",
@@ -353,4 +378,17 @@ export function getNodeEntry(nodeType: string): NodeRegistryEntry | null {
 /** List all supported node type keys. */
 export function supportedNodeTypes(): string[] {
   return Object.keys(NODE_REGISTRY);
+}
+
+/** "key must be one of a, b" for each set key outside `allowedConfigValues`, or undefined. */
+export function invalidConfigValues(
+  entry: NodeRegistryEntry,
+  config: Record<string, any>,
+): string | undefined {
+  const bad = Object.entries(entry.allowedConfigValues ?? {})
+    .filter(
+      ([k, allowed]) => config[k] !== undefined && !allowed.includes(config[k]),
+    )
+    .map(([k, allowed]) => `${k} must be one of ${allowed.join(", ")}`);
+  return bad.length > 0 ? bad.join("; ") : undefined;
 }
