@@ -55,7 +55,7 @@ MCP tools are named `mcp__plugin_cognigy_platform__<tool>`; plugin skills are in
 ## Run and compare
 
 ```bash
-npm run evals                          # full suite, pinned Sonnet agent + Haiku judge, ~$3 / 3 min
+npm run evals                          # full suite, pinned Sonnet agent + Haiku judge
 npm run evals -- --case 'voice-*'      # subset (globs on case name), --tag works too
 npm run evals:compare                  # newest run vs plugin/evals/baseline.json; exit 1 on a drop
 npm run evals:compare -- --update      # newest run becomes the baseline
