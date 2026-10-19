@@ -15,5 +15,7 @@ export default {
     ],
   },
   testMatch: ["**/__tests__/**/*.test.ts"],
+  // Agent worktrees under .claude/ hold full repo copies; skip their tests.
+  testPathIgnorePatterns: ["/node_modules/", "/.claude/worktrees/"],
   collectCoverageFrom: ["src/**/*.ts", "!src/**/*.d.ts", "!src/**/*.test.ts"],
 };
