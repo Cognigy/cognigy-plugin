@@ -4,15 +4,18 @@
  * working tree without ever editing the tracked plugin manifest.
  *
  *   npm run plugin:dev       — generate .dev-plugin/ (gitignored) and install it
- *   npm run plugin:dev:off   — remove the dev install and restore the GitHub plugin
+ *   npm run plugin:dev:off   — disable the dev install and re-enable the GitHub plugin
  *
  * How it works:
  *  - Generates a dev marketplace under .dev-plugin/ whose plugin manifest is a
  *    copy of plugin/.claude-plugin/plugin.json with ONE change: the `platform`
  *    server runs the local TypeScript source directly via tsx (no build step).
  *    Skills and agents are symlinked to the working tree, so edits are live.
- *  - Installs it as cognigy@cognigy-dev and uninstalls the prod plugin to avoid
- *    duplicate tool names.
+ *  - Installs it as cognigy@cognigy-dev and DISABLES the prod plugin to avoid
+ *    duplicate tool names. Switching is disable/enable only — never uninstall
+ *    or `marketplace remove`: both delete the plugin's saved userConfig (the
+ *    API key lives in the keychain) and the CLI can't read a sensitive value
+ *    back to restore it. Each install keeps its own config across switches.
  *  - After source/skill edits: run /reload-plugins in Claude Code. That's it.
  *
  * The tracked plugin.json is never touched; scripts/check-plugin-manifest.mjs
@@ -29,13 +32,15 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const devRoot = join(repoRoot, ".dev-plugin");
 const DEV_MARKETPLACE = "cognigy-dev";
 const PROD_MARKETPLACE = "cognigy-plugin";
 const PROD_MARKETPLACE_SOURCE = "Cognigy/cognigy-plugin";
+const DEV_PLUGIN = `cognigy@${DEV_MARKETPLACE}`;
+const PROD_PLUGIN = `cognigy@${PROD_MARKETPLACE}`;
 
 function claude(args, { allowFailure = false } = {}) {
   try {
@@ -130,6 +135,33 @@ function generateDevPlugin() {
   return { copied };
 }
 
+/**
+ * Make `plugin` the active install and disable `other`, keeping both installs'
+ * saved userConfig. Every step is idempotent: `marketplace add` repoints an
+ * existing marketplace in place (e.g. .dev-plugin/ of another worktree) and
+ * `install` is a no-op when already installed. Returns the userConfig keys
+ * still unset on `plugin` (null if the CLI couldn't tell).
+ */
+export function activate({ plugin, marketplaceSource, other }, run = claude) {
+  run(["plugin", "disable", other], { allowFailure: true });
+  run(["plugin", "marketplace", "add", marketplaceSource]);
+  run(["plugin", "install", plugin]);
+  run(["plugin", "enable", plugin], { allowFailure: true }); // fails if already enabled
+  const out = run(["plugin", "configure", plugin, "--json"], {
+    allowFailure: true,
+  });
+  return out ? JSON.parse(out).unconfigured : null;
+}
+
+function configureHint(plugin, unconfigured) {
+  if (unconfigured && unconfigured.length === 0) return "";
+  const keys = unconfigured ? ` (unset: ${unconfigured.join(", ")})` : "";
+  return `  ⚠ ${plugin} is not fully configured${keys} — its platform MCP server won't start.
+    In Claude Code run: /plugin configure ${plugin}
+    (once per install — later dev/off switches keep it)
+`;
+}
+
 function on() {
   console.log("Enabling local dev plugin…");
   const { copied } = generateDevPlugin();
@@ -140,50 +172,40 @@ function on() {
         `re-run "npm run plugin:dev" after changing them.`,
     );
   }
-  claude(["plugin", "uninstall", `cognigy@${PROD_MARKETPLACE}`], {
-    allowFailure: true,
+  const unconfigured = activate({
+    plugin: DEV_PLUGIN,
+    marketplaceSource: devRoot,
+    other: PROD_PLUGIN,
   });
-  claude(["plugin", "marketplace", "remove", DEV_MARKETPLACE], {
-    allowFailure: true,
-  });
-  claude(["plugin", "marketplace", "add", devRoot]);
-  claude(["plugin", "install", `cognigy@${DEV_MARKETPLACE}`]);
   console.log(`
-Dev plugin installed (cognigy@${DEV_MARKETPLACE}).
-Next steps in Claude Code:
-  1. /plugin configure cognigy@${DEV_MARKETPLACE}   (enter API base URL + key, once)
-  2. /reload-plugins                                (or restart the session)
+Dev plugin active (${DEV_PLUGIN}); ${PROD_PLUGIN} disabled, its config kept.
+${configureHint(DEV_PLUGIN, unconfigured)}Next: /reload-plugins in Claude Code (or restart the session).
 Iterate: edit src/** or plugin/skills/** — then /reload-plugins. No build needed.
 Done testing: npm run plugin:dev:off`);
 }
 
 function off() {
-  console.log("Removing local dev plugin and restoring the GitHub install…");
-  claude(["plugin", "uninstall", `cognigy@${DEV_MARKETPLACE}`], {
-    allowFailure: true,
+  console.log("Disabling local dev plugin and re-enabling the GitHub install…");
+  // `marketplace add` also repoints a cognigy-plugin marketplace that was
+  // aimed at a local path during earlier testing back to GitHub.
+  const unconfigured = activate({
+    plugin: PROD_PLUGIN,
+    marketplaceSource: PROD_MARKETPLACE_SOURCE,
+    other: DEV_PLUGIN,
   });
-  claude(["plugin", "marketplace", "remove", DEV_MARKETPLACE], {
-    allowFailure: true,
-  });
-  rmSync(devRoot, { recursive: true, force: true });
-  // Re-add the prod marketplace from GitHub even if a marketplace of the same
-  // name exists (it may point at a local path from earlier testing).
-  claude(["plugin", "marketplace", "remove", PROD_MARKETPLACE], {
-    allowFailure: true,
-  });
-  claude(["plugin", "marketplace", "add", PROD_MARKETPLACE_SOURCE]);
-  claude(["plugin", "install", `cognigy@${PROD_MARKETPLACE}`]);
   console.log(`
-Prod plugin restored (cognigy@${PROD_MARKETPLACE}).
-Next steps in Claude Code:
-  1. /plugin configure cognigy@${PROD_MARKETPLACE}   (re-enter credentials if prompted)
-  2. /reload-plugins                                 (or restart the session)`);
+Prod plugin active (${PROD_PLUGIN}); ${DEV_PLUGIN} disabled, its config kept.
+${configureHint(PROD_PLUGIN, unconfigured)}Next: /reload-plugins in Claude Code (or restart the session).
+Full dev teardown (also deletes the dev install's saved config):
+  claude plugin marketplace remove ${DEV_MARKETPLACE}`);
 }
 
-const mode = process.argv[2];
-if (mode === "on") on();
-else if (mode === "off") off();
-else {
-  console.error("Usage: node scripts/dev-plugin.mjs <on|off>");
-  process.exit(1);
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const mode = process.argv[2];
+  if (mode === "on") on();
+  else if (mode === "off") off();
+  else {
+    console.error("Usage: node scripts/dev-plugin.mjs <on|off>");
+    process.exit(1);
+  }
 }
