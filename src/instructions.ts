@@ -1,14 +1,12 @@
 // Always-on baseline injected into every session (MCP `instructions`).
 // The plugin expects its skills to be loaded, so this holds only what the
-// plugin is, the skill list with a warning for when skills are missing, and the
-// few hard rules where a miss is irreversible or misleads the user. Everything
-// else lives in the tool descriptions (src/tools/definitions.ts), in
-// plugin/skills/*/SKILL.md, or in tool-result _hints.
-// src/__tests__/toolSurfaceBudget.test.ts caps the size and checks the skill
-// list against plugin/skills.
+// plugin is and the few hard rules where a miss is irreversible or misleads the
+// user. Everything else lives in the tool descriptions
+// (src/tools/definitions.ts), in plugin/skills/*/SKILL.md, or in tool-result
+// _hints. src/__tests__/toolSurfaceBudget.test.ts caps the size.
 export const SERVER_INSTRUCTIONS = `NiCE Cognigy Plugin — builds and iteratively improves LLM-powered AI Agents on the NiCE Cognigy platform.
 
-The tools are designed to be used together with the plugin's skills, which load step-by-step workflow guidance when your intent matches. Plugin skills: agent-creation, tools-setup, a2a-setup, flow-nodes, knowledge-setup, llm-providers, package-management, settings, snapshot-backups, webchat-setup, voice-gateway-setup, voice-go-live-checklist, xapps, agent-red-team, docs-lookup, troubleshooting. If none of them are available to you, tell the user once, before making any change, that the Cognigy plugin is not fully installed because the skills are missing, so results may be incomplete or wrong, and suggest reinstalling the plugin.
+The tools are designed to be used together with the plugin's skills, which load step-by-step workflow guidance when your intent matches.
 
 Tool results carry _hints with warnings and the next step; follow them.
 

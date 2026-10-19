@@ -4,7 +4,7 @@
 // plugin/skills (loaded on intent) and in tool-result _hints (delivered when
 // relevant), not here. If a change trips one of these limits, move the prose
 // rather than raising the cap.
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { tools } from "../tools/definitions.js";
 import { SERVER_INSTRUCTIONS } from "../instructions.js";
@@ -98,15 +98,5 @@ describe("tool surface budget", () => {
         !existsSync(join(SKILLS_DIR, name, "SKILL.md")),
     );
     expect(missing).toEqual([]);
-  });
-
-  it("lists exactly the plugin's skills in the instructions", () => {
-    // The list is how a model notices that skills are missing in its client.
-    const listed = SERVER_INSTRUCTIONS.match(
-      /Plugin skills: ([a-z0-9, -]+)\./,
-    )?.[1]
-      .split(", ")
-      .sort();
-    expect(listed).toEqual(readdirSync(SKILLS_DIR).sort());
   });
 });
