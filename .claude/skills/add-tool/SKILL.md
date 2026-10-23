@@ -69,7 +69,9 @@ Read `${CLAUDE_SKILL_DIR}/templates/definition.ts` for the template.
 
 Add an entry to the `tools` array. Conventions:
 - Use 24-char hex IDs for all Cognigy resource IDs
-- Keep descriptions actionable — tell the AI what the tool does and when to use it
+- The description is a **contract, not a workflow**: 3-6 sentences, at most 1000 chars — what the tool does, what it does not do (and which sibling tool does), one clause per operation, what it returns, any irreversibility. No numbered procedures, precondition checklists, "after this call X" or response-presentation rules: those go into the skill (step 5) or into a `withHints` `action` on the result, which fires exactly when it is relevant and works in every client.
+- Field descriptions: meaning, range, default, example — at most 450 chars. Put enum *meaning* in the description; the allowed values are already in `enum`. Runtime gotchas that only matter when filling one field (e.g. the Code-node `input.httprequest` shape) belong on that field.
+- `src/__tests__/toolSurfaceBudget.test.ts` enforces these caps plus a total definitions budget and a cap on `src/instructions.ts`. If it fails, move prose out rather than raising the cap.
 
 ### 3. Add Zod schema (`src/schemas/tools.ts`)
 

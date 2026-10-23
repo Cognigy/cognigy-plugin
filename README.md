@@ -309,7 +309,7 @@ IDs before falling back to `setup_llm`.
 | `audit_voice_agent`    | Write | Audit a voice agent against the Go-Live Checklist; reports by default, applies safe fixes on demand            |
 | `manage_snapshots`     | Write | Create and restore project Snapshots so agent changes can be rolled back                                       |
 
-Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, A2A, flow nodes, packages, settings, LLM providers, tools, troubleshooting) ships as **skills** that load automatically when your request matches, in clients that support them (e.g. Claude Code) — see the **Skills** column in the client table under [Installation](#installation).
+Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, A2A, flow nodes, packages, settings, LLM providers, tools, troubleshooting) ships as **skills** that load automatically when your request matches, in clients that support them (e.g. Claude Code) — see the **Skills** column in the client table under [Installation](#installation). The tools are built to be used with these skills: if the assistant skips steps or gets a Cognigy workflow wrong, check that the skills are loaded (in Claude Code, `/skills` lists them) and reinstall the plugin if they are missing.
 
 ## Security
 

@@ -1,6 +1,6 @@
 ---
 name: tools-setup
-description: "Use when creating or configuring Cognigy agent tools — choosing the tool type (tool, http, mcp, knowledge, send_email, a2a) and their configuration schemas."
+description: "Use when creating, updating or configuring Cognigy agent tools (create_tool, update_tool) — choosing the tool type (tool, http, mcp, knowledge, send_email, a2a) and their configuration schemas."
 ---
 
 # Adding Tools to an AI Agent
@@ -31,6 +31,15 @@ Rule of thumb: each tool in an agent flow should have a unique `toolId`. If you 
 - Nested object properties and `integer` are valid at runtime but not renderable by the Cognigy UI's graphical parameter builder — the node's Parameters section then shows the raw JSON editor. That is cosmetic; prefer flat schemas when you don't need nesting.
 
 ## Tool types (create_tool)
+
+Choosing the type:
+
+- `tool` — the default for any business action ("unlock account", "check balance", "validate user"). Custom logic goes inside its branch via manage_flow_nodes.
+- `http` — only when the user names a concrete HTTP/REST endpoint to call.
+- `knowledge` — search a Knowledge Store (the store must exist first).
+- `send_email` — send emails.
+- `mcp` — only when the user explicitly asks to connect an external MCP server and gives its URL. Never a default.
+- `a2a` — only for a remote A2A agent outside the project, or when the user explicitly asks for A2A. Agents in the same project use the native Handover to AI Agent tool instead (see the a2a-setup skill).
 
 ### tool — General-purpose tool with custom logic
 

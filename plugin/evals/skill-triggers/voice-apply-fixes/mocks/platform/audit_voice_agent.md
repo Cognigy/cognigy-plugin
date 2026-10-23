@@ -11,6 +11,7 @@ flowId "flow-phone", projectId "proj-demo"). Reply with compact JSON only.
   autoFixable): "vg.session-config-first" fail autoFixable, "vg.barge-in-off" na,
   "agent.stream-output" fail autoFixable, "agent.error-message" fail autoFixable,
   "vg.stt-hints" warn not autoFixable; everything else pass. Include a summary count.
+  Include this exact field: "_note": "Dry-run: no changes made. After the user has reviewed the report, re-run with apply: true to apply the auto-fixable fixes (the checks with a proposedFix). Use only: [ids] to apply a subset."
 - apply true, and no manage_snapshots call with operation "create" or "decline" earlier
   in this run: return exactly
   {"error":"backup_not_offered","tool":"audit_voice_agent","changed":false,"projectId":"proj-demo","_hints":{"warning":"NOTHING WAS CHANGED. This is the first change to an existing agent in this session, and no backup exists yet.","action":"Ask the user whether they want a restorable backup first. If yes: manage_snapshots { operation: \"create\", projectId, label }. If no: manage_snapshots { operation: \"decline\", projectId }. Then retry this exact call."}}
