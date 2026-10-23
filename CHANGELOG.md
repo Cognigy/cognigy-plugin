@@ -1,3 +1,9 @@
+## [1.22.3](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.2...v1.22.3) (2026-10-23)
+
+### Bug Fixes
+
+* **tools:** slim tool descriptions and server instructions to contracts ([#55](https://github.com/Cognigy/cognigy-plugin/issues/55)) ([f1a82da](https://github.com/Cognigy/cognigy-plugin/commit/f1a82dadf210aa3a0ed3b8b6f438b7451ef337ac)), closes [#43](https://github.com/Cognigy/cognigy-plugin/issues/43)
+
 ## [1.22.2](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.1...v1.22.2) (2026-10-19)
 
 ### Bug Fixes
