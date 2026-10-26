@@ -5243,7 +5243,7 @@ describe("audit_voice_agent", () => {
   /**
    * Wire api.get to the REAL chart projections so the handler must do the right
    * reads:
-   *   - GET /chart/nodes (index): id/type/isEntryPoint only — NO config, NO order
+   *   - GET /chart/nodes (index): config is the type DEFAULTS only, NO order
    *   - GET /chart/nodes/{id}:    full node incl. config (the only config source)
    *   - GET /new/.../chart:       { nodes:[start,…], relations:[{node,next}] }
    * `state` is mutable so the apply path can flip it to the post-fix flow before
@@ -5510,6 +5510,38 @@ describe("audit_voice_agent", () => {
     expect(patchCall![1].config.storeLocation).toBe("stream");
     // The stored value from the re-fetch, not the index default (0).
     expect(patchCall![1].config.temperature).toBe(0.7);
+  });
+
+  it("skips a fix when neither enrichment nor the re-fetch can read the node", async () => {
+    const indexUrl = `/v2.0/flows/${ID.flow}/chart/nodes`;
+    api.get.mockImplementation(async (url: string): Promise<any> => {
+      if (url === `/new/v2.0/flows/${ID.flow}/chart`) {
+        return {
+          nodes: [
+            { _id: START_ID, type: "start" },
+            { _id: ID.entry, type: "aiAgentJob" },
+          ],
+          relations: [{ node: START_ID, next: [ID.entry] }],
+        };
+      }
+      if (url === `${indexUrl}/${ID.entry}`) throw new Error("read failed");
+      if (url === indexUrl) {
+        return { items: [{ _id: ID.entry, type: "aiAgentJob" }] };
+      }
+      return {};
+    });
+    api.patch.mockResolvedValue({});
+
+    const result = await h.handleToolCall("audit_voice_agent", {
+      flowId: ID.flow,
+      apply: true,
+      only: ["agent.stream-output"],
+    });
+
+    expect(api.patch).not.toHaveBeenCalled();
+    expect(result.appliedFixes).toEqual([
+      expect.objectContaining({ id: "agent.stream-output", applied: false }),
+    ]);
   });
 
   it("only: limits applied fixes to the listed check ids", async () => {

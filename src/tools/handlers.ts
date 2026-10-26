@@ -2573,7 +2573,8 @@ export class ToolHandlers {
    * under a new tool parent (aiAgentJob / llmPromptV2) — UI preview cruft the
    * LLM would otherwise see as a real tool. Scoped to direct children of
    * `parentNodeId`; matched either by the placeholder's own markers
-   * (preview/label/toolId "unlock_account") or, because the llmPromptV2
+   * (preview/label "unlock_account" — not the index's `config.toolId`, which
+   * is that default on every tool) or, because the llmPromptV2
    * placeholder carries none of those, by a bare `childType` match.
    *
    * The bare type match is only sound while the parent has no real tools yet,
@@ -4572,8 +4573,8 @@ export class ToolHandlers {
         resolved.agent?.referenceId
       ) {
         // Several AI Agent Job nodes (e.g. a handover pattern) — pick the one
-        // bound to the addressed agent. The node list carries no config, so
-        // read each candidate.
+        // bound to the addressed agent. The node list's config is only the
+        // type defaults, so read each candidate.
         for (const candidate of sameType) {
           let full: any = null;
           try {
@@ -7155,7 +7156,9 @@ export class ToolHandlers {
       try {
         if (fix.kind === "patchNode") {
           // Resolve the current config. If it was never captured, re-fetch the
-          // full node so the merge below preserves existing fields.
+          // full node so the merge below preserves existing fields. If that
+          // read fails too, skip the fix (outer catch → applied: false) rather
+          // than PATCH a config we can't see.
           let existing = nodeConfigById.get(fix.nodeId);
           if (existing === undefined) {
             try {
@@ -7163,8 +7166,10 @@ export class ToolHandlers {
                 `/v2.0/flows/${flowId}/chart/nodes/${fix.nodeId}`,
               );
               existing = full?.config ?? {};
-            } catch {
-              existing = {};
+            } catch (err: any) {
+              throw new Error(
+                `Could not read the node's current config, so the fix was not applied: ${err.message}`,
+              );
             }
           }
           const merged = { ...existing, ...fix.config };
