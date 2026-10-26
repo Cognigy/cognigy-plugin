@@ -963,7 +963,9 @@ async function resolveFlowForAgent(
         );
         if (match) return { flowId: match._id || match.id, agent };
 
-        // Last resort: scan all flows for an aiAgentJob node referencing this agent
+        // Last resort: scan all flows for an aiAgentJob node referencing this
+        // agent — pointless (every read wasted) without a reference to match.
+        if (!agent.referenceId) return null;
         for (const f of flowItems) {
           const fid = f._id || f.id;
           try {
@@ -978,10 +980,7 @@ async function resolveFlowForAgent(
               (n: any) => n.type === "aiAgentJob",
             );
             const configs = await readNodeConfigs(apiClient, fid, jobNodes);
-            if (
-              agent.referenceId &&
-              configs.some((c) => c.aiAgent === agent.referenceId)
-            )
+            if (configs.some((c) => c.aiAgent === agent.referenceId))
               return { flowId: fid, agent };
           } catch {
             // skip flows we can't read
@@ -2761,15 +2760,14 @@ export class ToolHandlers {
             // omitting it wipes the avatar. The `/chart/nodes` index's `config`
             // holds descriptor defaults, so prefer the agent record's reference
             // and fall back to the node's stored config from the per-node read.
-            const nodeConfigPatch: Record<string, any> = {
-              aiAgent:
-                resolved.agent?.referenceId ??
-                (
-                  await readNodeConfigs(this.apiClient, resolved.flowId, [
-                    jobNode,
-                  ])
-                )[0].aiAgent,
-            };
+            const aiAgent =
+              resolved.agent?.referenceId ??
+              (
+                await readNodeConfigs(this.apiClient, resolved.flowId, [
+                  jobNode,
+                ])
+              )[0].aiAgent;
+            const nodeConfigPatch: Record<string, any> = { aiAgent };
             if (needsJobPatch) {
               if (jobConfig!.llmProviderReferenceId !== undefined)
                 nodeConfigPatch.llmProviderReferenceId =
@@ -2785,14 +2783,19 @@ export class ToolHandlers {
               if (jobConfig!.maxTokens !== undefined)
                 nodeConfigPatch.maxTokens = jobConfig!.maxTokens;
             }
-            nodePatch.config = nodeConfigPatch;
+            // Without aiAgent, a preview-only PATCH would wipe the avatar it
+            // exists to refresh — skip it rather than send one.
+            if (needsJobPatch || aiAgent !== undefined)
+              nodePatch.config = nodeConfigPatch;
           }
 
-          jobNodeResult = await this.apiClient.patch(
-            `/v2.0/flows/${resolved.flowId}/chart/nodes/${jobNodeId}`,
-            nodePatch,
-          );
-          updatedParts.push("jobNode");
+          if (nodePatch.config) {
+            jobNodeResult = await this.apiClient.patch(
+              `/v2.0/flows/${resolved.flowId}/chart/nodes/${jobNodeId}`,
+              nodePatch,
+            );
+            updatedParts.push("jobNode");
+          }
         }
       }
     }

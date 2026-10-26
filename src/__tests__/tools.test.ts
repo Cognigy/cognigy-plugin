@@ -537,6 +537,45 @@ describe("ToolHandlers v2", () => {
       );
     });
 
+    it("skips the preview-only PATCH when aiAgent cannot be resolved, rather than wiping the avatar", async () => {
+      const agent = { _id: ID.agent, name: "Renamed", flowId: ID.flow };
+      routeJobFlow(agent, {
+        [`/v2.0/flows/${ID.flow}/chart/nodes/${JOB_ID}`]: new Error("timeout"),
+      });
+      api.patch.mockResolvedValue(agent);
+
+      const result = await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        name: "Renamed",
+      });
+
+      expect(result.updated).toEqual(["agent"]);
+      expect(api.patch).not.toHaveBeenCalledWith(
+        expect.stringContaining("/chart/nodes/"),
+        expect.anything(),
+      );
+    });
+
+    it("skips the last-resort flow scan when the agent has no referenceId", async () => {
+      routeJobFlow(
+        { _id: ID.agent, name: "Agent", projectId: ID.project },
+        {
+          [`/v2.0/aiagents/${ID.agent}/jobs`]: new Error("Not found"),
+          "/v2.0/flows": { items: [{ _id: ID.flow, name: "Renamed Flow" }] },
+        },
+      );
+
+      await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        jobConfig: { temperature: 0.5 },
+      });
+
+      expect(api.get).not.toHaveBeenCalledWith(
+        expect.stringContaining("/chart/nodes"),
+        expect.anything(),
+      );
+    });
+
     it("returns error when nothing to update", async () => {
       const result = await h.handleToolCall("update_ai_agent", {
         aiAgentId: ID.agent,
