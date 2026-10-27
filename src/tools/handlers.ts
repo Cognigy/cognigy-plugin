@@ -762,6 +762,37 @@ function nodeParentId(node: any): string | undefined {
 }
 
 /**
+ * The stored `config` of each node, in order. The `/chart/nodes` index's
+ * `config` holds the node type's DEFAULTS (every aiAgentJobTool reads toolId
+ * "unlock_account"), so only the per-node read is real; a failed read yields
+ * {} rather than a default. Batches of 5 keep a node-heavy flow clear of 429s.
+ */
+async function readNodeConfigs(
+  apiClient: CognigyApiClient,
+  flowId: string,
+  nodes: any[],
+): Promise<Record<string, any>[]> {
+  const configs: Record<string, any>[] = [];
+  for (let i = 0; i < nodes.length; i += 5) {
+    configs.push(
+      ...(await Promise.all(
+        nodes.slice(i, i + 5).map(async (n: any) => {
+          try {
+            const full: any = await apiClient.get(
+              `/v2.0/flows/${flowId}/chart/nodes/${n._id || n.id}`,
+            );
+            return full?.config ?? {};
+          } catch {
+            return {};
+          }
+        }),
+      )),
+    );
+  }
+  return configs;
+}
+
+/**
  * Matches the model strings of embedding models. Embedding models cannot
  * generate text, so wiring one into an agent node yields silent empty
  * replies. The platform's own `useCase` filter is the primary defence (see
@@ -932,7 +963,9 @@ async function resolveFlowForAgent(
         );
         if (match) return { flowId: match._id || match.id, agent };
 
-        // Last resort: scan all flows for an aiAgentJob node referencing this agent
+        // Last resort: scan all flows for an aiAgentJob node referencing this
+        // agent — pointless (every read wasted) without a reference to match.
+        if (!agent.referenceId) return null;
         for (const f of flowItems) {
           const fid = f._id || f.id;
           try {
@@ -943,12 +976,12 @@ async function resolveFlowForAgent(
               },
             );
             const nodeItems = nodes.items ?? nodes;
-            const jobNode = (Array.isArray(nodeItems) ? nodeItems : []).find(
-              (n: any) =>
-                n.type === "aiAgentJob" &&
-                n.config?.aiAgent === agent.referenceId,
+            const jobNodes = (Array.isArray(nodeItems) ? nodeItems : []).filter(
+              (n: any) => n.type === "aiAgentJob",
             );
-            if (jobNode) return { flowId: fid, agent };
+            const configs = await readNodeConfigs(apiClient, fid, jobNodes);
+            if (configs.some((c) => c.aiAgent === agent.referenceId))
+              return { flowId: fid, agent };
           } catch {
             // skip flows we can't read
           }
@@ -2540,7 +2573,8 @@ export class ToolHandlers {
    * under a new tool parent (aiAgentJob / llmPromptV2) — UI preview cruft the
    * LLM would otherwise see as a real tool. Scoped to direct children of
    * `parentNodeId`; matched either by the placeholder's own markers
-   * (preview/label/toolId "unlock_account") or, because the llmPromptV2
+   * (preview/label "unlock_account" — not the index's `config.toolId`, which
+   * is that default on every tool) or, because the llmPromptV2
    * placeholder carries none of those, by a bare `childType` match.
    *
    * The bare type match is only sound while the parent has no real tools yet,
@@ -2565,10 +2599,10 @@ export class ToolHandlers {
     // nodes (e.g. every node lacking parentId) — better to leave the
     // placeholder in place than to delete real tools.
     if (!parentNodeId) return [];
+    // Not `config.toolId`: in the node index that is the descriptor default
+    // ("unlock_account") on EVERY tool, so real tools would look like placeholders.
     const isMarkedPlaceholder = (n: any) =>
-      n.preview === "unlock_account" ||
-      n.label === "unlock_account" ||
-      n.config?.toolId === "unlock_account";
+      n.preview === "unlock_account" || n.label === "unlock_account";
     const isCandidate = (n: any) =>
       isMarkedPlaceholder(n) || n.type === childType;
 
@@ -2724,12 +2758,17 @@ export class ToolHandlers {
           // to force the backend to regenerate the proper avatar preview.
           if (needsJobPatch || needsPreviewPatch) {
             // The avatar preview is recomputed server-side from `config.aiAgent`;
-            // omitting it wipes the avatar. The `/chart/nodes` index may not
-            // carry `config`, so prefer the authoritative agent reference from
-            // the resolved agent record, falling back to the node's config.
-            const nodeConfigPatch: Record<string, any> = {
-              aiAgent: resolved.agent?.referenceId ?? jobNode.config?.aiAgent,
-            };
+            // omitting it wipes the avatar. The `/chart/nodes` index's `config`
+            // holds descriptor defaults, so prefer the agent record's reference
+            // and fall back to the node's stored config from the per-node read.
+            const aiAgent =
+              resolved.agent?.referenceId ??
+              (
+                await readNodeConfigs(this.apiClient, resolved.flowId, [
+                  jobNode,
+                ])
+              )[0].aiAgent;
+            const nodeConfigPatch: Record<string, any> = { aiAgent };
             if (needsJobPatch) {
               if (jobConfig!.llmProviderReferenceId !== undefined)
                 nodeConfigPatch.llmProviderReferenceId =
@@ -2745,14 +2784,19 @@ export class ToolHandlers {
               if (jobConfig!.maxTokens !== undefined)
                 nodeConfigPatch.maxTokens = jobConfig!.maxTokens;
             }
-            nodePatch.config = nodeConfigPatch;
+            // Without aiAgent, a preview-only PATCH would wipe the avatar it
+            // exists to refresh — skip it rather than send one.
+            if (needsJobPatch || aiAgent !== undefined)
+              nodePatch.config = nodeConfigPatch;
           }
 
-          jobNodeResult = await this.apiClient.patch(
-            `/v2.0/flows/${resolved.flowId}/chart/nodes/${jobNodeId}`,
-            nodePatch,
-          );
-          updatedParts.push("jobNode");
+          if (nodePatch.config) {
+            jobNodeResult = await this.apiClient.patch(
+              `/v2.0/flows/${resolved.flowId}/chart/nodes/${jobNodeId}`,
+              nodePatch,
+            );
+            updatedParts.push("jobNode");
+          }
         }
       }
     }
@@ -3551,21 +3595,28 @@ export class ToolHandlers {
           },
         );
         const allNodes = nodes.items ?? nodes;
-        items = (Array.isArray(allNodes) ? allNodes : [])
-          .filter((n: any) => AI_AGENT_TOOL_TYPES.has(n.type))
-          .map((n: any) => ({
-            toolId: n._id || n.id,
-            name: n.label || n.name,
-            toolType: n.type,
-            // Which aiAgentJob / llmPromptV2 node the tool hangs off — a flow
-            // can have more than one. Always a string id, whichever shape
-            // the API returned the parent in.
-            parentNodeId: nodeParentId(n),
-            description: n.config?.description,
-            ...(n.config?.knowledgeStoreId
-              ? { knowledgeStoreId: n.config.knowledgeStoreId }
-              : {}),
-          }));
+        const toolNodes = (Array.isArray(allNodes) ? allNodes : []).filter(
+          (n: any) => AI_AGENT_TOOL_TYPES.has(n.type),
+        );
+        // Index `config` is the type's defaults — read each tool's stored one.
+        const configs = await readNodeConfigs(
+          this.apiClient,
+          agentFlowId,
+          toolNodes,
+        );
+        items = toolNodes.map((n: any, i: number) => ({
+          toolId: n._id || n.id,
+          name: n.label || n.name,
+          toolType: n.type,
+          // Which aiAgentJob / llmPromptV2 node the tool hangs off — a flow
+          // can have more than one. Always a string id, whichever shape
+          // the API returned the parent in.
+          parentNodeId: nodeParentId(n),
+          description: configs[i].description,
+          ...(configs[i].knowledgeStoreId
+            ? { knowledgeStoreId: configs[i].knowledgeStoreId }
+            : {}),
+        }));
         total = items.length;
         break;
       }
@@ -4522,8 +4573,8 @@ export class ToolHandlers {
         resolved.agent?.referenceId
       ) {
         // Several AI Agent Job nodes (e.g. a handover pattern) — pick the one
-        // bound to the addressed agent. The node list carries no config, so
-        // read each candidate.
+        // bound to the addressed agent. The node list's config is only the
+        // type defaults, so read each candidate.
         for (const candidate of sameType) {
           let full: any = null;
           try {
@@ -4605,14 +4656,26 @@ export class ToolHandlers {
       const listHasParentRefs = allNodes.some(
         (node: any) => nodeParentId(node) !== undefined,
       );
-      const duplicateTool = allNodes.find(
+      const siblingTools = allNodes.filter(
         (node: any) =>
           MCP_MANAGED_TOOL_TYPES.has(node.type) &&
-          (!listHasParentRefs || nodeParentId(node) === jobNodeId) &&
-          (node.config?.toolId === requestedToolId ||
-            node.label === requestedToolId ||
-            node.name === requestedToolId),
+          (!listHasParentRefs || nodeParentId(node) === jobNodeId),
       );
+      // The index's `config.toolId` is the descriptor default, so a stored
+      // toolId match needs the per-node read — only when label/name miss.
+      let duplicateTool = siblingTools.find(
+        (node: any) =>
+          node.label === requestedToolId || node.name === requestedToolId,
+      );
+      if (!duplicateTool && siblingTools.length > 0) {
+        const configs = await readNodeConfigs(
+          this.apiClient,
+          flowId,
+          siblingTools,
+        );
+        duplicateTool =
+          siblingTools[configs.findIndex((c) => c.toolId === requestedToolId)];
+      }
 
       // Reusing is only right when the existing node is the same kind of
       // tool. An A2A request that hit a plain/MCP/knowledge node (or the
@@ -6927,8 +6990,8 @@ export class ToolHandlers {
       flowId = resolved.flowId;
     }
 
-    // The `/chart/nodes` index returns NO `config` and NO ordering — only
-    // id/type/label/preview/isEntryPoint/parentId. The checklist reads
+    // The `/chart/nodes` index returns NO ordering, and its `config` is the
+    // node type's DEFAULTS, not the stored values. The checklist reads
     // `node.config.*` and the auto-fix PATCH merges against existing config, so
     // we must (a) enrich the inspected nodes with their per-node `config` and
     // (b) derive the true first node from the chart `next` chain. Using the bare
@@ -6954,9 +7017,11 @@ export class ToolHandlers {
             const full: any = await this.apiClient.get(
               `/v2.0/flows/${flowId}/chart/nodes/${voiceNodeId(n)}`,
             );
-            return { ...n, config: full?.config ?? n.config ?? {} };
+            return { ...n, config: full?.config ?? {} };
           } catch {
-            return n;
+            // Never keep the index's default config: `undefined` makes the
+            // apply path re-fetch before merging instead of PATCHing defaults.
+            return { ...n, config: undefined };
           }
         }),
       );
@@ -7091,7 +7156,9 @@ export class ToolHandlers {
       try {
         if (fix.kind === "patchNode") {
           // Resolve the current config. If it was never captured, re-fetch the
-          // full node so the merge below preserves existing fields.
+          // full node so the merge below preserves existing fields. If that
+          // read fails too, skip the fix (outer catch → applied: false) rather
+          // than PATCH a config we can't see.
           let existing = nodeConfigById.get(fix.nodeId);
           if (existing === undefined) {
             try {
@@ -7099,8 +7166,10 @@ export class ToolHandlers {
                 `/v2.0/flows/${flowId}/chart/nodes/${fix.nodeId}`,
               );
               existing = full?.config ?? {};
-            } catch {
-              existing = {};
+            } catch (err: any) {
+              throw new Error(
+                `Could not read the node's current config, so the fix was not applied: ${err.message}`,
+              );
             }
           }
           const merged = { ...existing, ...fix.config };

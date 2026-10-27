@@ -466,6 +466,116 @@ describe("ToolHandlers v2", () => {
       );
     });
 
+    // The `/chart/nodes` index carries the descriptor's DEFAULT config, never
+    // the stored one; only GET /chart/nodes/{id} has the real aiAgent.
+    const JOB_ID = "job-node-id-000000000001";
+    const routeJobFlow = (
+      agent: Record<string, any>,
+      extra: Record<string, any> = {},
+    ) =>
+      api.get.mockImplementation(async (url: string) => {
+        if (url in extra) {
+          if (extra[url] instanceof Error) throw extra[url];
+          return extra[url];
+        }
+        if (url === `/v2.0/aiagents/${ID.agent}`) return agent;
+        if (url === `/v2.0/flows/${ID.flow}/chart/nodes`)
+          return {
+            items: [
+              { _id: JOB_ID, type: "aiAgentJob", config: { aiAgent: "" } },
+            ],
+          };
+        if (url === `/v2.0/flows/${ID.flow}/chart/nodes/${JOB_ID}`)
+          return {
+            _id: JOB_ID,
+            type: "aiAgentJob",
+            config: { aiAgent: "ref-uuid" },
+          };
+        return {};
+      });
+
+    it("re-sends the stored aiAgent, not the index default, when the agent record lacks referenceId", async () => {
+      routeJobFlow({ _id: ID.agent, name: "Agent", flowId: ID.flow });
+      api.patch.mockResolvedValue({ _id: JOB_ID });
+
+      await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        jobConfig: { temperature: 0.5 },
+      });
+
+      expect(api.patch).toHaveBeenCalledWith(
+        `/v2.0/flows/${ID.flow}/chart/nodes/${JOB_ID}`,
+        { config: { aiAgent: "ref-uuid", temperature: 0.5 } },
+      );
+    });
+
+    it("finds the agent's flow by the job node's stored aiAgent in the last-resort scan", async () => {
+      routeJobFlow(
+        {
+          _id: ID.agent,
+          referenceId: "ref-uuid",
+          name: "Agent",
+          projectId: ID.project,
+        },
+        {
+          [`/v2.0/aiagents/${ID.agent}/jobs`]: new Error("Not found"),
+          // No "{name} Flow" match, so only the node scan can find it.
+          "/v2.0/flows": { items: [{ _id: ID.flow, name: "Renamed Flow" }] },
+        },
+      );
+      api.patch.mockResolvedValue({ _id: JOB_ID });
+
+      const result = await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        jobConfig: { temperature: 0.5 },
+      });
+
+      expect(result.updated).toContain("jobNode");
+      expect(api.patch).toHaveBeenCalledWith(
+        `/v2.0/flows/${ID.flow}/chart/nodes/${JOB_ID}`,
+        { config: { aiAgent: "ref-uuid", temperature: 0.5 } },
+      );
+    });
+
+    it("skips the preview-only PATCH when aiAgent cannot be resolved, rather than wiping the avatar", async () => {
+      const agent = { _id: ID.agent, name: "Renamed", flowId: ID.flow };
+      routeJobFlow(agent, {
+        [`/v2.0/flows/${ID.flow}/chart/nodes/${JOB_ID}`]: new Error("timeout"),
+      });
+      api.patch.mockResolvedValue(agent);
+
+      const result = await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        name: "Renamed",
+      });
+
+      expect(result.updated).toEqual(["agent"]);
+      expect(api.patch).not.toHaveBeenCalledWith(
+        expect.stringContaining("/chart/nodes/"),
+        expect.anything(),
+      );
+    });
+
+    it("skips the last-resort flow scan when the agent has no referenceId", async () => {
+      routeJobFlow(
+        { _id: ID.agent, name: "Agent", projectId: ID.project },
+        {
+          [`/v2.0/aiagents/${ID.agent}/jobs`]: new Error("Not found"),
+          "/v2.0/flows": { items: [{ _id: ID.flow, name: "Renamed Flow" }] },
+        },
+      );
+
+      await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        jobConfig: { temperature: 0.5 },
+      });
+
+      expect(api.get).not.toHaveBeenCalledWith(
+        expect.stringContaining("/chart/nodes"),
+        expect.anything(),
+      );
+    });
+
     it("returns error when nothing to update", async () => {
       const result = await h.handleToolCall("update_ai_agent", {
         aiAgentId: ID.agent,
@@ -1336,6 +1446,73 @@ describe("ToolHandlers v2", () => {
       expect(result.items).toHaveLength(1);
       expect(result.items[0].name).toBe("Weather API");
       expect(result.items[0].toolType).toBe("aiAgentJobTool");
+    });
+
+    it("reads tool description from the per-node config, not the index defaults", async () => {
+      // Real shape: the /chart/nodes index carries the node type's DEFAULT
+      // config; only GET /chart/nodes/{id} returns the stored values.
+      api.get.mockImplementation(async (url: string): Promise<any> => {
+        if (url === `/v2.0/flows/${ID.flow}/chart/nodes`)
+          return {
+            items: [
+              {
+                _id: ID.tool,
+                type: "aiAgentJobTool",
+                label: "Tool",
+                preview: "get_weather",
+                config: {
+                  toolId: "unlock_account",
+                  description: "This tool unlocks a locked user account.",
+                },
+              },
+            ],
+          };
+        if (url === `/v2.0/flows/${ID.flow}/chart/nodes/${ID.tool}`)
+          return {
+            _id: ID.tool,
+            type: "aiAgentJobTool",
+            config: {
+              toolId: "get_weather",
+              description: "Returns the current weather for a given city.",
+            },
+          };
+        return { flowId: ID.flow };
+      });
+
+      const result = await h.handleToolCall("list_resources", {
+        resourceType: "tool",
+        aiAgentId: ID.agent,
+      });
+
+      expect(result.items[0].description).toBe(
+        "Returns the current weather for a given city.",
+      );
+    });
+
+    it("bounds concurrent per-node tool reads and keeps their order", async () => {
+      const ids = Array.from({ length: 7 }, (_, i) => `tool${i}`);
+      let inFlight = 0;
+      let maxInFlight = 0;
+      api.get.mockImplementation(async (url: string): Promise<any> => {
+        if (url === `/v2.0/flows/${ID.flow}/chart/nodes`)
+          return { items: ids.map((_id) => ({ _id, type: "aiAgentJobTool" })) };
+        const id = ids.find((x) => url.endsWith(`/chart/nodes/${x}`));
+        if (!id) return { flowId: ID.flow };
+        maxInFlight = Math.max(maxInFlight, ++inFlight);
+        await new Promise((r) => setTimeout(r, 1));
+        inFlight--;
+        return { config: { description: `desc ${id}` } };
+      });
+
+      const result = await h.handleToolCall("list_resources", {
+        resourceType: "tool",
+        aiAgentId: ID.agent,
+      });
+
+      expect(maxInFlight).toBeLessThanOrEqual(5);
+      expect(result.items.map((t: any) => t.description)).toEqual(
+        ids.map((id) => `desc ${id}`),
+      );
     });
 
     it("lists conversations with date filters", async () => {
@@ -2233,18 +2410,25 @@ describe("ToolHandlers v2", () => {
     });
 
     it("reuses a duplicate a2a tool by toolId instead of creating another", async () => {
-      api.get.mockResolvedValueOnce({ flowId: ID.flow }).mockResolvedValueOnce({
-        items: [
-          { _id: ID.entry, isEntryPoint: true },
-          { _id: ID.node, type: "aiAgentJob" },
-          {
-            _id: ID.tool,
-            type: "aiAgentJobA2AAgent",
-            label: "Flights Agent",
-            config: { toolId: "flights_agent" },
-          },
-        ],
-      });
+      api.get
+        .mockResolvedValueOnce({ flowId: ID.flow })
+        .mockResolvedValueOnce({
+          items: [
+            { _id: ID.entry, isEntryPoint: true },
+            { _id: ID.node, type: "aiAgentJob" },
+            {
+              _id: ID.tool,
+              type: "aiAgentJobA2AAgent",
+              label: "Flights Agent",
+            },
+          ],
+        })
+        // The stored toolId only comes from the per-node read.
+        .mockResolvedValueOnce({
+          _id: ID.tool,
+          type: "aiAgentJobA2AAgent",
+          config: { toolId: "flights_agent" },
+        });
 
       const result = await h.handleToolCall("create_tool", {
         aiAgentId: ID.agent,
@@ -2259,6 +2443,70 @@ describe("ToolHandlers v2", () => {
       expect(result.reusedExisting).toBe(true);
       expect(result.toolId).toBe(ID.tool);
       expect(api.post).not.toHaveBeenCalled();
+    });
+
+    // The real projections: the `/chart/nodes` index carries the descriptor's
+    // DEFAULT config on every tool node; only GET /chart/nodes/{id} has the
+    // stored values. UI-created tools are often labelled just "Tool".
+    const DEFAULT_TOOL_CONFIG = {
+      toolId: "unlock_account",
+      description: "This tool unlocks a locked user account.",
+    };
+    const mockFlowWithStoredTool = (storedToolId: string) => {
+      api.get.mockImplementation(async (url: string) => {
+        if (url === `/v2.0/aiagents/${ID.agent}`) return { flowId: ID.flow };
+        if (url === `/v2.0/flows/${ID.flow}/chart/nodes`)
+          return {
+            items: [
+              { _id: ID.node, type: "aiAgentJob" },
+              {
+                _id: ID.tool,
+                type: "aiAgentJobTool",
+                parentId: ID.node,
+                label: "Tool",
+                preview: storedToolId,
+                config: DEFAULT_TOOL_CONFIG,
+              },
+            ],
+          };
+        if (url === `/v2.0/flows/${ID.flow}/chart/nodes/${ID.tool}`)
+          return {
+            _id: ID.tool,
+            type: "aiAgentJobTool",
+            config: { toolId: storedToolId, description: "Checks a balance" },
+          };
+        return {};
+      });
+    };
+
+    it("reuses a duplicate whose stored toolId only the per-node read shows", async () => {
+      mockFlowWithStoredTool("check_balance");
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "tool",
+        name: "Check Balance",
+        config: { toolId: "check_balance", description: "d" },
+      });
+
+      expect(result.reusedExisting).toBe(true);
+      expect(result.toolId).toBe(ID.tool);
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it("does not treat the index's default toolId as a duplicate", async () => {
+      mockFlowWithStoredTool("check_balance");
+      api.post.mockResolvedValue({ _id: ID.node2 });
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "tool",
+        name: "Unlock Account",
+        config: { toolId: "unlock_account", description: "d" },
+      });
+
+      expect(result.reusedExisting).toBeUndefined();
+      expect(api.post).toHaveBeenCalled();
     });
 
     it("refuses to reuse a non-A2A tool that holds the requested toolId", async () => {
@@ -4995,7 +5243,7 @@ describe("audit_voice_agent", () => {
   /**
    * Wire api.get to the REAL chart projections so the handler must do the right
    * reads:
-   *   - GET /chart/nodes (index): id/type/isEntryPoint only — NO config, NO order
+   *   - GET /chart/nodes (index): config is the type DEFAULTS only, NO order
    *   - GET /chart/nodes/{id}:    full node incl. config (the only config source)
    *   - GET /new/.../chart:       { nodes:[start,…], relations:[{node,next}] }
    * `state` is mutable so the apply path can flip it to the post-fix flow before
@@ -5207,6 +5455,93 @@ describe("audit_voice_agent", () => {
     expect(patchCall![1].config.storeLocation).toBe("stream");
     // The unrelated field from the re-fetched config is preserved.
     expect(patchCall![1].config.temperature).toBe(0.7);
+  });
+
+  it("never merges a fix into the index's default config when enrichment fails", async () => {
+    // Real index shape: `config` is present but holds the descriptor DEFAULTS.
+    // A failed per-node read must not leave those in place as the snapshot the
+    // apply path merges into — that would PATCH defaults over stored values.
+    const indexUrl = `/v2.0/flows/${ID.flow}/chart/nodes`;
+    const perNodeUrl = `${indexUrl}/${ID.entry}`;
+    let perNodeCalls = 0;
+    api.get.mockImplementation(async (url: string) => {
+      if (url === `/new/v2.0/flows/${ID.flow}/chart`) {
+        return {
+          nodes: [
+            { _id: START_ID, type: "start" },
+            { _id: ID.entry, type: "aiAgentJob" },
+          ],
+          relations: [{ node: START_ID, next: [ID.entry] }],
+        };
+      }
+      if (url === perNodeUrl) {
+        perNodeCalls += 1;
+        if (perNodeCalls === 1) throw new Error("transient enrichment failure");
+        return {
+          _id: ID.entry,
+          type: "aiAgentJob",
+          config: { temperature: 0.7, storeLocation: "input" },
+        };
+      }
+      if (url === indexUrl) {
+        return {
+          items: [
+            {
+              _id: ID.entry,
+              type: "aiAgentJob",
+              config: { temperature: 0, storeLocation: "input" },
+            },
+          ],
+        };
+      }
+      return {};
+    });
+    api.patch.mockResolvedValue({});
+
+    await h.handleToolCall("audit_voice_agent", {
+      flowId: ID.flow,
+      apply: true,
+      only: ["agent.stream-output"],
+    });
+
+    const patchCall = api.patch.mock.calls.find((c: any[]) =>
+      c[0].endsWith(`/chart/nodes/${ID.entry}`),
+    );
+    expect(patchCall![1].config.storeLocation).toBe("stream");
+    // The stored value from the re-fetch, not the index default (0).
+    expect(patchCall![1].config.temperature).toBe(0.7);
+  });
+
+  it("skips a fix when neither enrichment nor the re-fetch can read the node", async () => {
+    const indexUrl = `/v2.0/flows/${ID.flow}/chart/nodes`;
+    api.get.mockImplementation(async (url: string): Promise<any> => {
+      if (url === `/new/v2.0/flows/${ID.flow}/chart`) {
+        return {
+          nodes: [
+            { _id: START_ID, type: "start" },
+            { _id: ID.entry, type: "aiAgentJob" },
+          ],
+          relations: [{ node: START_ID, next: [ID.entry] }],
+        };
+      }
+      if (url === `${indexUrl}/${ID.entry}`) throw new Error("read failed");
+      if (url === indexUrl) {
+        return { items: [{ _id: ID.entry, type: "aiAgentJob" }] };
+      }
+      return {};
+    });
+    api.patch.mockResolvedValue({});
+
+    const result = await h.handleToolCall("audit_voice_agent", {
+      flowId: ID.flow,
+      apply: true,
+      only: ["agent.stream-output"],
+    });
+
+    expect(api.patch).not.toHaveBeenCalled();
+    expect(result.appliedFixes).toEqual([
+      expect.objectContaining({ id: "agent.stream-output", applied: false }),
+    ]);
   });
 
   it("only: limits applied fixes to the listed check ids", async () => {
