@@ -1,3 +1,9 @@
+## [1.22.4](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.3...v1.22.4) (2026-10-27)
+
+### Bug Fixes
+
+* **tools:** read stored node config, not the chart index defaults ([#60](https://github.com/Cognigy/cognigy-plugin/issues/60)) ([3cec0db](https://github.com/Cognigy/cognigy-plugin/commit/3cec0dbca5871234dfa8aef8ae9002bf79926e9c))
+
 ## [1.22.3](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.2...v1.22.3) (2026-10-23)
 
 ### Bug Fixes
