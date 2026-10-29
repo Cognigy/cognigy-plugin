@@ -33,6 +33,16 @@ Nodes MUST be placed inside tool branches using `parentNodeId` and `mode`.
 - **Inside a tool (primary use case)**: Set `parentNodeId` to the tool node ID (from `create_tool`) and `mode` to `appendChild`. The handler automatically places the node in the correct execution chain (before the Resolve Tool Action node). Both `appendChild` and `append` work correctly when targeting a tool node.
 - **After a sibling**: Set `parentNodeId` to an existing node within the branch and `mode` to `append` to place after it.
 
+## Readability
+
+People review, debug and maintain what you generate in the Flow Editor, so write for them, not just for the runtime:
+
+- **Labels name the step**: verb + object, e.g. `Validate Order ID`, `Fetch Customer Record`, `Store Delivery Date`. Never `Code`, `Code 1`, `Logic`, `Step 2`.
+- **Keys and variables say what they hold**: `context.deliveryDate`, `input.orderSummary`, `const openTickets`. Not `context.data`, `input.res`, `tmp`, `x`.
+- **Code reads like a source file**: 2-space indentation, one statement per line, blank lines between steps, a comment only where the intent is not obvious from the names. Never chain statements with `;` on one line.
+- **Keep a Code node under ~60 lines**: one responsibility per node. Larger logic becomes a chain of smaller, separately labelled nodes (`Parse Response` → `Filter Open Tickets` → `Build Summary`), or an `ifThenElse` / `lookup` instead of nested conditionals in code. The write goes through regardless; oversized or crammed code is flagged in `_hints.warning` — reformat or split, then update.
+- **Pass the code string with real newlines** (`\n` in JSON) — it is stored and displayed exactly as sent.
+
 ## Supported Node Types
 
 > **xApp nodes** (`initAppSession`, `showXAppAdaptiveCard`, `showXAppHtml`, `setXAppState`, `getXAppSessionPin`) are also available via `manage_flow_nodes`. They build interactive HTML / Adaptive Card mini-apps. `initAppSession` must precede any other xApp node. See the `xapps` guide for details.
@@ -308,11 +318,21 @@ Then send the full new `code` string on `update` (config is merged; `code` is re
   "operation": "create",
   "flowId": "<flowId>",
   "nodeType": "code",
-  "label": "Format Response",
+  "label": "Build Cart Summary",
   "config": {
-    "code": "const items = context.cartItems || [];\ninput.cartSummary = items.map((i: { name: string; price: number }) => `${i.name}: $${i.price}`).join('\\n');"
+    "code": "const cartItems = context.cartItems || [];\n\ninput.cartSummary = cartItems\n  .map((item: { name: string; price: number }) => `${item.name}: $${item.price}`)\n  .join('\\n');"
   }
 }
+```
+
+Stored in the node as:
+
+```ts
+const cartItems = context.cartItems || [];
+
+input.cartSummary = cartItems
+  .map((item: { name: string; price: number }) => `${item.name}: $${item.price}`)
+  .join('\n');
 ```
 
 ---

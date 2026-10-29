@@ -62,9 +62,43 @@ describe("codeNodeWarnings", () => {
 
   it("collects independent hints together, caveat last", () => {
     const hints = codeNodeWarnings(
-      "const a = require('axios'); await fetch('x'); api.resetState();",
+      "const a = require('axios');\nawait fetch('x');\napi.resetState();",
     );
     expect(hints).toHaveLength(4);
     expect(hints[3]).toContain("local helper");
+  });
+
+  describe("readability", () => {
+    it("flags a node over 60 lines", () => {
+      const code = Array.from(
+        { length: 61 },
+        (_, i) => `input.k${i} = ${i};`,
+      ).join("\n");
+      const hints = codeNodeWarnings(code);
+      expect(hints).toHaveLength(1);
+      expect(hints[0]).toContain("61 lines");
+    });
+
+    it("flags several statements crammed on one line, ignoring string contents", () => {
+      expect(
+        codeNodeWarnings("input.a = 1; input.b = 2; input.c = 3;"),
+      ).toHaveLength(1);
+      expect(codeNodeWarnings("input.a = 'x; y; z;';")).toHaveLength(0);
+    });
+
+    it("flags a line past 160 characters", () => {
+      expect(codeNodeWarnings(`input.a = ${"x".repeat(170)};`)).toHaveLength(1);
+    });
+
+    it("stays quiet on short, formatted code and appends after runtime hints", () => {
+      expect(
+        codeNodeWarnings("input.a = 1;\ninput.b = 2;\ninput.c = 3;"),
+      ).toHaveLength(0);
+      const hints = codeNodeWarnings(
+        "await fetch('x'); input.a = 1; input.b = 2;",
+      );
+      expect(hints).toHaveLength(3);
+      expect(hints[2]).toContain("one statement per line");
+    });
   });
 });
