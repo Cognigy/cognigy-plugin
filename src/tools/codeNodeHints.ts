@@ -41,10 +41,14 @@ const RULES: { pattern: RegExp; hint: string }[] = [
 const CAVEAT =
   "If the flagged name is a local helper rather than the runtime API, ignore this.";
 
-/** Blanks comments and string/template literal contents so text is not read as code. */
+/**
+ * Blanks comments, string/template literal contents and regex literals so text
+ * is not read as code. A regex literal is a `/…/` that follows an operator or
+ * opening bracket (so `a / b / c` stays division).
+ */
 const executableOnly = (code: string): string =>
   code.replace(
-    /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`/g,
+    /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`|(?<=[=(,:[!&|?{};]\s*)\/(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n[])+\/[a-z]*/g,
     " ",
   );
 
@@ -63,12 +67,24 @@ function readabilityWarnings(code: string): string[] {
       `This Code node is ${nonBlank} lines — split it into smaller, separately labelled nodes (aim for under ${MAX_LINES}) so reviewers can follow it.`,
     );
   }
-  // Semicolons are counted on the executable text so string contents don't
-  // count; a line with three or more chains several statements.
+  // Semicolons are counted on the executable text with single-line brace
+  // groups removed, so string and regex contents and type-member separators
+  // (`{ name: string; price: number }`) don't count; a line with three or
+  // more then chains several statements.
+  const withoutInlineBraces = (line: string): string => {
+    let out = line;
+    for (let prev = ""; prev !== out; ) {
+      prev = out;
+      out = out.replace(/\{[^{}]*\}/g, " ");
+    }
+    return out;
+  };
   const crammed = executableOnly(code)
     .split("\n")
     .some(
-      (l) => l.length > MAX_LINE_CHARS || (l.match(/;/g) ?? []).length >= 3,
+      (l) =>
+        l.length > MAX_LINE_CHARS ||
+        (withoutInlineBraces(l).match(/;/g) ?? []).length >= 3,
     );
   if (crammed) {
     hints.push(

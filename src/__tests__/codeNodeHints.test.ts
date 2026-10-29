@@ -86,6 +86,22 @@ describe("codeNodeWarnings", () => {
       expect(codeNodeWarnings("input.a = 'x; y; z;';")).toHaveLength(0);
     });
 
+    it("does not count semicolons inside regex literals or type members", () => {
+      expect(
+        codeNodeWarnings('input.cleaned = input.text.replace(/;;;+/g, ";");'),
+      ).toHaveLength(0);
+      expect(
+        codeNodeWarnings(
+          "type CartItem = { name: string; price: number; quantity: number };",
+        ),
+      ).toHaveLength(0);
+      expect(
+        codeNodeWarnings(
+          "const n = total / count / 2; input.a = 1; input.b = 2;",
+        ),
+      ).toHaveLength(1);
+    });
+
     it("flags a line past 160 characters", () => {
       expect(codeNodeWarnings(`input.a = ${"x".repeat(170)};`)).toHaveLength(1);
     });
