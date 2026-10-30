@@ -9,7 +9,8 @@ You will need:
 
 - A Cognigy API base URL
 - A Cognigy API key
-- Node.js 20+
+- Node.js 20+ to run the plugin; Node.js 22.12+ to develop on this repo (the commitlint hook and
+  ESLint 10 require it)
 - A supported client — Claude Code, Claude Desktop, ChatGPT + Codex, or Antigravity. The steps below use Claude Code.
 
 ## 1. Local Dev Loop (dev — the fast path)

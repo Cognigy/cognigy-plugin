@@ -86,11 +86,7 @@ const BACKSPACE = 8;
 const DELETE = 127;
 
 type Client =
-  | "claude-code"
-  | "claude-desktop"
-  | "codex"
-  | "antigravity"
-  | "other-hosts";
+  "claude-code" | "claude-desktop" | "codex" | "antigravity" | "other-hosts";
 // "other-hosts" is last on purpose: it is the catch-all for clients we do not
 // wire, so it reads as the fallback at the bottom of the menu.
 const ALL_CLIENTS: Client[] = [
