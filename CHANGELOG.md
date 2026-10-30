@@ -1,3 +1,9 @@
+## [1.22.5](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.4...v1.22.5) (2026-10-30)
+
+### Bug Fixes
+
+* **deps:** update vulnerable dependencies ([#64](https://github.com/Cognigy/cognigy-plugin/issues/64)) ([9353ef8](https://github.com/Cognigy/cognigy-plugin/commit/9353ef8fb6e8d0a8b2694134f1164fd87f47459c))
+
 ## [1.22.4](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.3...v1.22.4) (2026-10-27)
 
 ### Bug Fixes
