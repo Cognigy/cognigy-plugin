@@ -306,7 +306,7 @@ function describeUnsupportedProxy(proxyUrl: string): string | undefined {
  * with a puzzling connection failure.
  */
 export function getProxyAxiosOptions(targetUrl: string): ProxyAxiosOptions {
-  let proxyUrl = "";
+  let proxyUrl: string;
   try {
     proxyUrl = resolveProxyForUrl(targetUrl);
   } catch {
@@ -416,7 +416,7 @@ export function clearProxyAgentCache(): void {
  * answers that from the client's own MCP log without asking for a repro.
  */
 export function logProxyConfiguration(apiBaseUrl: string): void {
-  let proxyUrl = "";
+  let proxyUrl: string;
   try {
     proxyUrl = resolveProxyForUrl(apiBaseUrl);
   } catch {

@@ -284,13 +284,7 @@ function mmShape(type: string | undefined, id: string, label: string): string {
 // drives the drawn SVG in the HTML legend; `shape`/`meaning` are the text form
 // used in the returned `legend` rows and for terminal/inline display.
 export type LegendKind =
-  | "start"
-  | "agent"
-  | "branch"
-  | "step"
-  | "end"
-  | "seq"
-  | "contains";
+  "start" | "agent" | "branch" | "step" | "end" | "seq" | "contains";
 export interface LegendRow {
   kind: LegendKind;
   shape: string;
@@ -526,7 +520,7 @@ export function chartToHtml(
 </script>`
     : `<script type="module">
   try {
-    const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
+    const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@12/dist/mermaid.esm.min.mjs");
     // Import is async and may resolve after load, so drive rendering
     // explicitly instead of relying on startOnLoad.
     mermaid.initialize({ startOnLoad: false, theme: "neutral" });

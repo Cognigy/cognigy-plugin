@@ -7169,6 +7169,7 @@ export class ToolHandlers {
             } catch (err: any) {
               throw new Error(
                 `Could not read the node's current config, so the fix was not applied: ${err.message}`,
+                { cause: err },
               );
             }
           }
