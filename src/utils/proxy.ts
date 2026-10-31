@@ -87,14 +87,27 @@ export function resolveProxyForUrl(targetUrl: string): string {
   const keys = Object.keys(overlay);
   if (keys.length === 0) return getProxyForUrl(targetUrl);
 
-  // `getProxyForUrl` only reads `process.env`. The overlay holds keys that are
-  // unset in both spellings, is applied and removed synchronously, and so is
-  // never observable outside this call.
-  for (const key of keys) process.env[key] = overlay[key];
+  // `getProxyForUrl` only reads `process.env`. The overlay is applied and
+  // undone synchronously, so it is never observable outside this call. A key
+  // may already exist as an empty string (which counts as unset), so restore
+  // each original value rather than deleting it.
+  const original = new Map<string, string | undefined>();
+  for (const key of keys) {
+    original.set(
+      key,
+      Object.prototype.hasOwnProperty.call(process.env, key)
+        ? process.env[key]
+        : undefined,
+    );
+    process.env[key] = overlay[key];
+  }
   try {
     return getProxyForUrl(targetUrl);
   } finally {
-    for (const key of keys) delete process.env[key];
+    for (const [key, value] of original) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 }
 

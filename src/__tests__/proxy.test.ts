@@ -220,6 +220,18 @@ describe("proxy support", () => {
       expect(process.env.NO_PROXY).toBeUndefined();
     });
 
+    it("restores variables that were set to an empty string", () => {
+      process.env.https_proxy = "";
+      process.env.no_proxy = "";
+      process.env.npm_config_https_proxy = "http://npm-proxy.corp.example:3128";
+      process.env.npm_config_noproxy = "internal.example";
+      expect(resolveProxyForUrl(API_URL)).toBe(
+        "http://npm-proxy.corp.example:3128",
+      );
+      expect(process.env.https_proxy).toBe("");
+      expect(process.env.no_proxy).toBe("");
+    });
+
     it("routes requests through an npm-configured proxy", () => {
       process.env.npm_config_https_proxy = "http://npm-proxy.corp.example:3128";
       expect(getProxyAxiosOptions(API_URL).httpsAgent).toBeInstanceOf(
