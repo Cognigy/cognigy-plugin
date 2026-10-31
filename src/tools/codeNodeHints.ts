@@ -41,21 +41,71 @@ const RULES: { pattern: RegExp; hint: string }[] = [
 const CAVEAT =
   "If the flagged name is a local helper rather than the runtime API, ignore this.";
 
-/** Blanks comments and string/template literal contents so text is not read as code. */
+/**
+ * Blanks comments, string/template literal contents and regex literals so text
+ * is not read as code. A regex literal is a `/…/` that follows an operator or
+ * opening bracket (so `a / b / c` stays division).
+ */
 const executableOnly = (code: string): string =>
   code.replace(
-    /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`/g,
+    /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`|(?<=[=(,:[!&|?{};]\s*)\/(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n[])+\/[a-z]*/g,
     " ",
   );
 
+// Readability ceilings (github issue #62). Humans review and maintain the
+// generated flow; a Code node past these is hard to read in the Designer.
+const MAX_LINES = 60;
+const MAX_LINE_CHARS = 160;
+
+/** Sentences about code that is too long or crammed onto too few lines. */
+function readabilityWarnings(code: string): string[] {
+  const hints: string[] = [];
+  const lines = code.split("\n");
+  const nonBlank = lines.filter((l) => l.trim().length > 0).length;
+  if (nonBlank > MAX_LINES) {
+    hints.push(
+      `This Code node is ${nonBlank} lines — split it into smaller, separately labelled nodes (aim for under ${MAX_LINES}) so reviewers can follow it.`,
+    );
+  }
+  // Semicolons are counted on the executable text with single-line brace
+  // groups removed, so string and regex contents and type-member separators
+  // (`{ name: string; price: number }`) don't count; a line with three or
+  // more then chains several statements.
+  const withoutInlineBraces = (line: string): string => {
+    let out = line;
+    for (let prev = ""; prev !== out; ) {
+      prev = out;
+      out = out.replace(/\{[^{}]*\}/g, " ");
+    }
+    return out;
+  };
+  const crammed = executableOnly(code)
+    .split("\n")
+    .some(
+      (l) =>
+        l.length > MAX_LINE_CHARS ||
+        (withoutInlineBraces(l).match(/;/g) ?? []).length >= 3,
+    );
+  if (crammed) {
+    hints.push(
+      "The code has lines that chain several statements or run past 160 characters — format it like a source file: one statement per line, 2-space indentation, blank lines between steps.",
+    );
+  }
+  return hints;
+}
+
 /**
  * Sentences for `_hints.warning` about runtime APIs the code uses but the
- * Code Node runtime does not have; empty when nothing was found.
+ * Code Node runtime does not have, plus readability ceilings it exceeds;
+ * empty when nothing was found.
  */
 export function codeNodeWarnings(code: string): string[] {
   const executable = executableOnly(code);
   const hints = RULES.filter((r) => r.pattern.test(executable)).map(
     (r) => r.hint,
   );
-  return hints.length > 0 ? [...hints, CAVEAT] : [];
+  return [
+    ...(hints.length > 0 ? [...hints, CAVEAT] : []),
+    ...readabilityWarnings(code),
+  ];
 }
