@@ -117,7 +117,7 @@ export const setupLlmSchema = z
       (data.apiKey || data.accessKeyId || data.secretAccessKey || data.roleArn)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["connectionId"],
         message:
           "Provide either inline credentials (apiKey / accessKeyId + secretAccessKey / roleArn) OR connectionId, not both — inline credentials would be ignored.",
@@ -132,7 +132,7 @@ export const setupLlmSchema = z
         !(providers as readonly string[]).includes(data.provider)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: [field],
           message: `${field} is only supported for provider(s) ${providers
             .map((p) => `'${p}'`)
@@ -144,7 +144,7 @@ export const setupLlmSchema = z
     if (data.provider === "openAICompatible") {
       if (!data.baseCustomUrl) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["baseCustomUrl"],
           message:
             "Provider 'openAICompatible' requires baseCustomUrl — the provider's OpenAI-compatible API base URL (e.g. https://my-llm-host.example.com/v1).",
@@ -152,7 +152,7 @@ export const setupLlmSchema = z
       }
       if (!data.customModel) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["customModel"],
           message:
             "Provider 'openAICompatible' requires customModel — the model name as known by the provider (e.g. 'llama-3.3-70b-instruct').",
@@ -163,7 +163,7 @@ export const setupLlmSchema = z
         data.modelType !== "custom-embedding-model"
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["modelType"],
           message:
             "Provider 'openAICompatible' requires modelType 'custom-model' (chat) or 'custom-embedding-model' (embedding). Put the provider's model name in customModel instead.",
@@ -174,7 +174,7 @@ export const setupLlmSchema = z
         data.apiType !== undefined
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["apiType"],
           message:
             "apiType is only supported for chat models; omit it when modelType is 'custom-embedding-model'.",
@@ -185,7 +185,7 @@ export const setupLlmSchema = z
     if (data.provider === "awsBedrock") {
       if (!data.region) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["region"],
           message:
             "Provider 'awsBedrock' requires region — the AWS region of the Bedrock deployment (e.g. 'us-east-1').",
@@ -193,7 +193,7 @@ export const setupLlmSchema = z
       }
       if (data.apiKey) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["apiKey"],
           message:
             "Provider 'awsBedrock' does not use apiKey. Provide accessKeyId + secretAccessKey (access-key auth) or roleArn (IAM-role auth) instead.",
@@ -201,7 +201,7 @@ export const setupLlmSchema = z
       }
       if (data.roleArn && (data.accessKeyId || data.secretAccessKey)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["roleArn"],
           message:
             "Provide either accessKeyId + secretAccessKey OR roleArn, not both.",
@@ -212,14 +212,14 @@ export const setupLlmSchema = z
         (!data.accessKeyId && data.secretAccessKey)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: [data.accessKeyId ? "secretAccessKey" : "accessKeyId"],
           message: "accessKeyId and secretAccessKey must be provided together.",
         });
       }
       if (data.customModel && data.modelType !== "custom-model") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["modelType"],
           message:
             "customModel requires modelType 'custom-model' for provider 'awsBedrock'. Use a named modelType (e.g. 'amazon.nova-pro-v1:0') without customModel, or modelType 'custom-model' with the Bedrock model id in customModel.",
@@ -227,7 +227,7 @@ export const setupLlmSchema = z
       }
       if (data.modelType === "custom-model" && !data.customModel) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["customModel"],
           message:
             "modelType 'custom-model' requires customModel — the Bedrock model id or inference profile id (e.g. 'eu.anthropic.claude-sonnet-4-6').",
@@ -235,7 +235,7 @@ export const setupLlmSchema = z
       }
       if (data.location === "geo" && !data.geo) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["geo"],
           message:
             "location 'geo' requires geo — the geographic boundary requests may be routed within (e.g. 'us', 'eu', 'apac').",
@@ -243,7 +243,7 @@ export const setupLlmSchema = z
       }
       if (data.geo && data.location !== "geo") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["geo"],
           message: "geo is only supported when location is 'geo'.",
         });
@@ -260,7 +260,7 @@ export const talkToAgentSchema = z
     message: z.string().min(1),
     sessionId: z.string().optional(),
     userId: z.string().optional(),
-    data: z.record(z.any()).optional(),
+    data: z.record(z.string(), z.any()).optional(),
     verbose: z.boolean().optional(),
     testMode: z.boolean().optional(),
   })
@@ -438,7 +438,7 @@ export const createToolSchema = z
       timeout: z.number().optional(),
       url: z.string().optional(),
       method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
-      headers: z.record(z.string()).optional(),
+      headers: z.record(z.string(), z.string()).optional(),
       body: z.string().optional(),
       preProcessCode: z.string().optional(),
       postProcessCode: z.string().optional(),
@@ -478,7 +478,7 @@ export const updateToolSchema = z
         timeout: z.number().optional(),
         url: z.string().optional(),
         method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
-        headers: z.record(z.string()).optional(),
+        headers: z.record(z.string(), z.string()).optional(),
         body: z.string().optional(),
         preProcessCode: z.string().optional(),
         postProcessCode: z.string().optional(),
@@ -509,7 +509,7 @@ export const manageFlowNodesSchema = z.object({
   label: z.string().min(1).max(200).optional(),
   parentNodeId: idSchema.optional(),
   mode: z.enum(["append", "appendChild"]).optional(),
-  config: z.record(z.any()).optional(),
+  config: z.record(z.string(), z.any()).optional(),
   // render operation
   focus: z.union([idSchema, z.array(idSchema)]).optional(),
   format: z.enum(["ascii", "mermaid", "both"]).optional(),
