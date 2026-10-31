@@ -13,8 +13,9 @@
  *
  * `getProxyForUrl` (axios' own transitive dependency) resolves the proxy for a
  * given target: it honours upper- and lower-case `HTTP_PROXY`/`HTTPS_PROXY`,
- * `NO_PROXY` exclusions, `ALL_PROXY`, and `NPM_CONFIG_*` variants, so the
- * variables users already set for npm and every other CLI keep working.
+ * `NO_PROXY` exclusions and `ALL_PROXY`. `resolveProxyForUrl` below adds npm's
+ * own proxy settings on top, so the variables users already set for npm and
+ * every other CLI keep working.
  *
  * TLS-inspecting proxies need one more thing that no library can do for us:
  * the corporate root CA. Node only reads it from `NODE_EXTRA_CA_CERTS` at
@@ -39,6 +40,61 @@ export class ProxyConfigurationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ProxyConfigurationError";
+  }
+}
+
+/**
+ * npm exports the proxy settings from `.npmrc` to every process it starts as
+ * `npm_config_https_proxy` / `npm_config_proxy` / `npm_config_noproxy` — and
+ * the plugin engine is started by `npx`. A user whose only proxy configuration
+ * is npm's (often the one setting that let `npx` fetch the engine at all) gets
+ * it here and nowhere else. proxy-from-env 1.x read these variables itself;
+ * 2.x dropped them, so we fill in the standard variable from npm's value when
+ * the standard one is unset and let `getProxyForUrl` do the matching.
+ *
+ * Precedence: `<proto>_PROXY` > `npm_config_<proto>_proxy` >
+ * `npm_config_proxy` > `ALL_PROXY`, and `NO_PROXY` > `npm_config_no_proxy` >
+ * `npm_config_noproxy` (the spelling npm actually exports).
+ */
+function npmConfigProxyOverlay(targetUrl: string): Record<string, string> {
+  let protocol: string;
+  try {
+    protocol = new URL(targetUrl).protocol.replace(/:$/, "");
+  } catch {
+    return {};
+  }
+  const env = (name: string): string =>
+    process.env[name.toLowerCase()] || process.env[name.toUpperCase()] || "";
+
+  const overlay: Record<string, string> = {};
+  const proxyVar = `${protocol}_proxy`;
+  const npmProxy =
+    env(`npm_config_${protocol}_proxy`) || env("npm_config_proxy");
+  if (npmProxy && !env(proxyVar)) overlay[proxyVar] = npmProxy;
+
+  const npmNoProxy = env("npm_config_no_proxy") || env("npm_config_noproxy");
+  if (npmNoProxy && !env("no_proxy")) overlay.no_proxy = npmNoProxy;
+  return overlay;
+}
+
+/**
+ * The proxy URL configured for `targetUrl`, or `""` when none applies
+ * (including when `NO_PROXY` excludes the target). Throws on a malformed
+ * target, like `getProxyForUrl`.
+ */
+export function resolveProxyForUrl(targetUrl: string): string {
+  const overlay = npmConfigProxyOverlay(targetUrl);
+  const keys = Object.keys(overlay);
+  if (keys.length === 0) return getProxyForUrl(targetUrl);
+
+  // `getProxyForUrl` only reads `process.env`. The overlay holds keys that are
+  // unset in both spellings, is applied and removed synchronously, and so is
+  // never observable outside this call.
+  for (const key of keys) process.env[key] = overlay[key];
+  try {
+    return getProxyForUrl(targetUrl);
+  } finally {
+    for (const key of keys) delete process.env[key];
   }
 }
 
@@ -252,7 +308,7 @@ function describeUnsupportedProxy(proxyUrl: string): string | undefined {
 export function getProxyAxiosOptions(targetUrl: string): ProxyAxiosOptions {
   let proxyUrl = "";
   try {
-    proxyUrl = getProxyForUrl(targetUrl);
+    proxyUrl = resolveProxyForUrl(targetUrl);
   } catch {
     // A malformed target URL is the caller's problem, not ours; let the
     // request itself fail with a useful message instead of throwing here.
@@ -362,7 +418,7 @@ export function clearProxyAgentCache(): void {
 export function logProxyConfiguration(apiBaseUrl: string): void {
   let proxyUrl = "";
   try {
-    proxyUrl = getProxyForUrl(apiBaseUrl);
+    proxyUrl = resolveProxyForUrl(apiBaseUrl);
   } catch {
     proxyUrl = "";
   }
