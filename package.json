@@ -75,7 +75,7 @@
     "globals": "17.14.0",
     "husky": "^9.1.7",
     "jest": "30.5.2",
-    "mermaid": "^11.16.0",
+    "mermaid": "^12.2.0",
     "prettier": "3.9.10",
     "semantic-release": "^25.0.9",
     "ts-jest": "29.4.15",

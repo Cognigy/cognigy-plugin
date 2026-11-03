@@ -504,6 +504,11 @@ export function chartToHtml(
     )
     .join("");
 
+  // Mermaid 12 switched the defaults to the ELK layout and the "neo" look,
+  // which re-lays out and recolours every diagram; pin the dagre/classic
+  // rendering the branch ordering above was tuned for.
+  const init = `{ startOnLoad: false, theme: "neutral", layout: "dagre", look: "classic" }`;
+
   // When the mermaid UMD source is supplied, inline it so the page renders
   // fully offline (no CDN). Otherwise fall back to a CDN import. The
   // `</script` guard prevents the inlined source from closing the tag early.
@@ -511,7 +516,7 @@ export function chartToHtml(
     ? `<script>${opts.mermaidJs.replace(/<\/script/gi, "<\\/script")}</script>
 <script>
   try {
-    mermaid.initialize({ startOnLoad: false, theme: "neutral" });
+    mermaid.initialize(${init});
     mermaid.run();
   } catch (e) {
     document.querySelector(".diagram").innerHTML =
@@ -520,10 +525,10 @@ export function chartToHtml(
 </script>`
     : `<script type="module">
   try {
-    const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
+    const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@12/dist/mermaid.esm.min.mjs");
     // Import is async and may resolve after load, so drive rendering
     // explicitly instead of relying on startOnLoad.
-    mermaid.initialize({ startOnLoad: false, theme: "neutral" });
+    mermaid.initialize(${init});
     await mermaid.run();
   } catch (e) {
     document.querySelector(".diagram").innerHTML =
