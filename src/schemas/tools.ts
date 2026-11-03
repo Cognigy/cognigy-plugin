@@ -23,7 +23,7 @@ export const createAiAgentSchema = z
   .refine(
     (d) => !(d.agentNodeType === "llmPrompt" && d.knowledgeStoreReferenceId),
     {
-      message:
+      error:
         "knowledgeStoreReferenceId is not supported with agentNodeType 'llmPrompt' — LLM Prompt nodes only support 'tool', 'mcp', and 'http' tools.",
       path: ["knowledgeStoreReferenceId"],
     },
@@ -33,13 +33,13 @@ export const createAiAgentSchema = z
       d.agentNodeType !== "llmPrompt" ||
       Boolean(d.systemPrompt?.trim() || d.description?.trim()),
     {
-      message:
+      error:
         "agentNodeType 'llmPrompt' requires a systemPrompt (or description) — the prompt is the LLM Prompt node's entire persona and guardrails.",
       path: ["systemPrompt"],
     },
   )
   .refine((d) => !d.systemPrompt || d.agentNodeType === "llmPrompt", {
-    message:
+    error:
       "systemPrompt is only used with agentNodeType 'llmPrompt'. For a normal AI Agent, put the persona in description and refine it with update_ai_agent.",
     path: ["systemPrompt"],
   });
@@ -99,7 +99,7 @@ export const setupLlmSchema = z
     apiKey: z.string().optional(),
     connectionId: z.string().optional(),
     isDefault: z.boolean().optional(),
-    baseCustomUrl: z.string().url().optional(),
+    baseCustomUrl: z.url().optional(),
     customModel: z.string().min(1).optional(),
     customAuthHeader: z.string().min(1).optional(),
     apiType: z.enum(["chatCompletion", "responses"]).optional(),
@@ -117,7 +117,7 @@ export const setupLlmSchema = z
       (data.apiKey || data.accessKeyId || data.secretAccessKey || data.roleArn)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["connectionId"],
         message:
           "Provide either inline credentials (apiKey / accessKeyId + secretAccessKey / roleArn) OR connectionId, not both — inline credentials would be ignored.",
@@ -132,7 +132,7 @@ export const setupLlmSchema = z
         !(providers as readonly string[]).includes(data.provider)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: [field],
           message: `${field} is only supported for provider(s) ${providers
             .map((p) => `'${p}'`)
@@ -144,7 +144,7 @@ export const setupLlmSchema = z
     if (data.provider === "openAICompatible") {
       if (!data.baseCustomUrl) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["baseCustomUrl"],
           message:
             "Provider 'openAICompatible' requires baseCustomUrl — the provider's OpenAI-compatible API base URL (e.g. https://my-llm-host.example.com/v1).",
@@ -152,7 +152,7 @@ export const setupLlmSchema = z
       }
       if (!data.customModel) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["customModel"],
           message:
             "Provider 'openAICompatible' requires customModel — the model name as known by the provider (e.g. 'llama-3.3-70b-instruct').",
@@ -163,7 +163,7 @@ export const setupLlmSchema = z
         data.modelType !== "custom-embedding-model"
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["modelType"],
           message:
             "Provider 'openAICompatible' requires modelType 'custom-model' (chat) or 'custom-embedding-model' (embedding). Put the provider's model name in customModel instead.",
@@ -174,7 +174,7 @@ export const setupLlmSchema = z
         data.apiType !== undefined
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["apiType"],
           message:
             "apiType is only supported for chat models; omit it when modelType is 'custom-embedding-model'.",
@@ -185,7 +185,7 @@ export const setupLlmSchema = z
     if (data.provider === "awsBedrock") {
       if (!data.region) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["region"],
           message:
             "Provider 'awsBedrock' requires region — the AWS region of the Bedrock deployment (e.g. 'us-east-1').",
@@ -193,7 +193,7 @@ export const setupLlmSchema = z
       }
       if (data.apiKey) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["apiKey"],
           message:
             "Provider 'awsBedrock' does not use apiKey. Provide accessKeyId + secretAccessKey (access-key auth) or roleArn (IAM-role auth) instead.",
@@ -201,7 +201,7 @@ export const setupLlmSchema = z
       }
       if (data.roleArn && (data.accessKeyId || data.secretAccessKey)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["roleArn"],
           message:
             "Provide either accessKeyId + secretAccessKey OR roleArn, not both.",
@@ -212,14 +212,14 @@ export const setupLlmSchema = z
         (!data.accessKeyId && data.secretAccessKey)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: [data.accessKeyId ? "secretAccessKey" : "accessKeyId"],
           message: "accessKeyId and secretAccessKey must be provided together.",
         });
       }
       if (data.customModel && data.modelType !== "custom-model") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["modelType"],
           message:
             "customModel requires modelType 'custom-model' for provider 'awsBedrock'. Use a named modelType (e.g. 'amazon.nova-pro-v1:0') without customModel, or modelType 'custom-model' with the Bedrock model id in customModel.",
@@ -227,7 +227,7 @@ export const setupLlmSchema = z
       }
       if (data.modelType === "custom-model" && !data.customModel) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["customModel"],
           message:
             "modelType 'custom-model' requires customModel — the Bedrock model id or inference profile id (e.g. 'eu.anthropic.claude-sonnet-4-6').",
@@ -235,7 +235,7 @@ export const setupLlmSchema = z
       }
       if (data.location === "geo" && !data.geo) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["geo"],
           message:
             "location 'geo' requires geo — the geographic boundary requests may be routed within (e.g. 'us', 'eu', 'apac').",
@@ -243,7 +243,7 @@ export const setupLlmSchema = z
       }
       if (data.geo && data.location !== "geo") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["geo"],
           message: "geo is only supported when location is 'geo'.",
         });
@@ -254,18 +254,18 @@ export const setupLlmSchema = z
 // Tool 4: talk_to_agent
 export const talkToAgentSchema = z
   .object({
-    endpointUrl: z.string().url().optional(),
+    endpointUrl: z.url().optional(),
     aiAgentId: idSchema.optional(),
     projectId: idSchema.optional(),
     message: z.string().min(1),
     sessionId: z.string().optional(),
     userId: z.string().optional(),
-    data: z.record(z.any()).optional(),
+    data: z.record(z.string(), z.any()).optional(),
     verbose: z.boolean().optional(),
     testMode: z.boolean().optional(),
   })
   .refine((d) => d.endpointUrl || d.aiAgentId, {
-    message: "Either endpointUrl or aiAgentId must be provided",
+    error: "Either endpointUrl or aiAgentId must be provided",
     path: ["endpointUrl"],
   });
 
@@ -328,7 +328,7 @@ export const listResourcesSchema = z
     ...paginationSchema,
   })
   .refine((d) => !(d.aiAgentId && d.flowId), {
-    message: NOT_BOTH_IDS_MESSAGE,
+    error: NOT_BOTH_IDS_MESSAGE,
     path: ["flowId"],
   });
 
@@ -373,7 +373,7 @@ export const deleteResourceSchema = z
     cascade: z.boolean().optional(),
   })
   .refine((d) => !(d.aiAgentId && d.flowId), {
-    message: NOT_BOTH_IDS_MESSAGE,
+    error: NOT_BOTH_IDS_MESSAGE,
     path: ["flowId"],
   });
 
@@ -391,7 +391,7 @@ export const manageKnowledgeSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   description: z.string().optional(),
   type: z.enum(["url", "manual", "file"]).optional(),
-  url: z.string().url().optional(),
+  url: z.url().optional(),
   text: z.string().optional(),
   filePath: z.string().optional(),
   filter: z.string().optional(),
@@ -438,7 +438,7 @@ export const createToolSchema = z
       timeout: z.number().optional(),
       url: z.string().optional(),
       method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
-      headers: z.record(z.string()).optional(),
+      headers: z.record(z.string(), z.string()).optional(),
       body: z.string().optional(),
       preProcessCode: z.string().optional(),
       postProcessCode: z.string().optional(),
@@ -447,11 +447,11 @@ export const createToolSchema = z
     }),
   })
   .refine((d) => d.aiAgentId || d.flowId, {
-    message: "Either aiAgentId or flowId must be provided",
+    error: "Either aiAgentId or flowId must be provided",
     path: ["aiAgentId"],
   })
   .refine((d) => !(d.aiAgentId && d.flowId), {
-    message: NOT_BOTH_IDS_MESSAGE,
+    error: NOT_BOTH_IDS_MESSAGE,
     path: ["flowId"],
   });
 
@@ -478,7 +478,7 @@ export const updateToolSchema = z
         timeout: z.number().optional(),
         url: z.string().optional(),
         method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
-        headers: z.record(z.string()).optional(),
+        headers: z.record(z.string(), z.string()).optional(),
         body: z.string().optional(),
         preProcessCode: z.string().optional(),
         postProcessCode: z.string().optional(),
@@ -492,11 +492,11 @@ export const updateToolSchema = z
       .optional(),
   })
   .refine((d) => d.aiAgentId || d.flowId, {
-    message: "Either aiAgentId or flowId must be provided",
+    error: "Either aiAgentId or flowId must be provided",
     path: ["aiAgentId"],
   })
   .refine((d) => !(d.aiAgentId && d.flowId), {
-    message: NOT_BOTH_IDS_MESSAGE,
+    error: NOT_BOTH_IDS_MESSAGE,
     path: ["flowId"],
   });
 
@@ -509,7 +509,7 @@ export const manageFlowNodesSchema = z.object({
   label: z.string().min(1).max(200).optional(),
   parentNodeId: idSchema.optional(),
   mode: z.enum(["append", "appendChild"]).optional(),
-  config: z.record(z.any()).optional(),
+  config: z.record(z.string(), z.any()).optional(),
   // render operation
   focus: z.union([idSchema, z.array(idSchema)]).optional(),
   format: z.enum(["ascii", "mermaid", "both"]).optional(),
@@ -901,14 +901,14 @@ const manageKnowledgeAiSettingsSchema = z
       data.contentParser !== undefined ||
       data.azureDIConnectionId !== undefined,
     {
-      message: "Provide at least one Knowledge AI setting to update.",
+      error: "Provide at least one Knowledge AI setting to update.",
       path: ["operation"],
     },
   )
   .refine(
     (data) => data.contentParser !== "azure" || !!data.azureDIConnectionId,
     {
-      message:
+      error:
         "azureDIConnectionId is required when contentParser is set to azure.",
       path: ["azureDIConnectionId"],
     },
@@ -919,7 +919,7 @@ const manageKnowledgeAiSettingsSchema = z
       data.contentParser === "azure" ||
       data.azureDIConnectionId === undefined,
     {
-      message:
+      error:
         "azureDIConnectionId can only be provided when contentParser is azure or omitted.",
       path: ["azureDIConnectionId"],
     },
@@ -941,7 +941,7 @@ export const auditVoiceAgentSchema = z
     only: z.array(z.string()).optional(),
   })
   .refine((d) => d.aiAgentId || d.flowId, {
-    message: "Either aiAgentId or flowId must be provided",
+    error: "Either aiAgentId or flowId must be provided",
     path: ["aiAgentId"],
   });
 
@@ -1011,7 +1011,7 @@ export const manageA2AServerSchema = z.object({
     .refine(
       (skills) => new Set(skills.map((s) => s.id)).size === skills.length,
       {
-        message: "Each skill id must be unique within the Agent Card",
+        error: "Each skill id must be unique within the Agent Card",
       },
     )
     .optional(),
