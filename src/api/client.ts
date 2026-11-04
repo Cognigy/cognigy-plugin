@@ -11,8 +11,8 @@ import {
   applyProxyToRedirect,
   getProxyAxiosOptions,
   redactProxyUrl,
+  resolveProxyForUrl,
 } from "../utils/proxy.js";
-import { getProxyForUrl } from "proxy-from-env";
 import {
   ACTOR_CONTEXT_HEADER,
   getActorContextHeader,
@@ -118,7 +118,7 @@ export function describeUnexpectedBody(
 
 /**
  * Best-effort absolute URL for a request. Request paths are usually relative to
- * the client's `baseURL`, and `getProxyForUrl` needs an absolute URL to apply
+ * the client's `baseURL`, and `resolveProxyForUrl` needs an absolute URL to apply
  * `NO_PROXY` — but neither field is guaranteed to be present or valid, and
  * neither proxy selection nor the error path may throw an error of its own.
  */
@@ -137,7 +137,7 @@ function resolveRequestUrl(
 function safeGetProxyForUrl(targetUrl: string): string {
   if (!targetUrl) return "";
   try {
-    return getProxyForUrl(targetUrl);
+    return resolveProxyForUrl(targetUrl);
   } catch {
     return "";
   }

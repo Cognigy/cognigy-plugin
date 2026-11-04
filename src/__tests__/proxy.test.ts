@@ -14,6 +14,7 @@ import {
   getProxyAxiosOptions,
   ProxyConfigurationError,
   redactProxyUrl,
+  resolveProxyForUrl,
 } from "../utils/proxy.js";
 
 const PROXY_ENV_VARS = [
@@ -28,6 +29,7 @@ const PROXY_ENV_VARS = [
   "no_proxy",
   "npm_config_proxy",
   "npm_config_https_proxy",
+  "npm_config_no_proxy",
 ];
 
 const API_URL = "https://api-trial.cognigy.ai";
@@ -153,6 +155,47 @@ describe("proxy support", () => {
       expect(getProxyAxiosOptions(API_URL).httpsAgent).toBeInstanceOf(
         HttpsProxyAgent,
       );
+    });
+  });
+
+  describe("resolveProxyForUrl", () => {
+    const NPM_PROXY = "http://npm-proxy.corp.example:3128";
+    const ENV_PROXY = "http://proxy.corp.example:8080";
+
+    it("honours npm_config_https_proxy (set by npx from .npmrc)", () => {
+      process.env.npm_config_https_proxy = NPM_PROXY;
+      expect(resolveProxyForUrl(API_URL)).toBe(NPM_PROXY);
+    });
+
+    it("prefers npm_config_https_proxy over HTTPS_PROXY, as v1 did", () => {
+      process.env.npm_config_https_proxy = NPM_PROXY;
+      process.env.HTTPS_PROXY = ENV_PROXY;
+      expect(resolveProxyForUrl(API_URL)).toBe(NPM_PROXY);
+    });
+
+    it("prefers HTTPS_PROXY over npm_config_proxy", () => {
+      process.env.npm_config_proxy = NPM_PROXY;
+      process.env.HTTPS_PROXY = ENV_PROXY;
+      expect(resolveProxyForUrl(API_URL)).toBe(ENV_PROXY);
+    });
+
+    it("falls back to npm_config_proxy before ALL_PROXY", () => {
+      process.env.npm_config_proxy = NPM_PROXY;
+      process.env.ALL_PROXY = ENV_PROXY;
+      expect(resolveProxyForUrl(API_URL)).toBe(NPM_PROXY);
+    });
+
+    it("applies npm_config_no_proxy exclusions", () => {
+      process.env.HTTPS_PROXY = ENV_PROXY;
+      process.env.npm_config_no_proxy = ".cognigy.ai";
+      expect(resolveProxyForUrl(API_URL)).toBe("");
+    });
+
+    it("leaves process.env as it found it", () => {
+      process.env.npm_config_https_proxy = NPM_PROXY;
+      resolveProxyForUrl(API_URL);
+      expect(process.env.https_proxy).toBeUndefined();
+      expect(process.env.no_proxy).toBeUndefined();
     });
   });
 
