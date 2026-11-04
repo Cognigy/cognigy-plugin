@@ -26,7 +26,7 @@
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "prettier:check": "prettier --check",
     "prettier:write": "prettier --write",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src",
     "prepublishOnly": "npm run build",
     "prepare": "husky",
     "evals": "claude plugin eval plugin --ablation none --model claude-sonnet-5-5 --judge-model claude-haiku-5-5 --no-publish",
@@ -51,12 +51,15 @@
     "access": "public"
   },
   "dependencies": {
+    "@eslint/js": "10.0.1",
     "@modelcontextprotocol/sdk": "1.32.2",
     "axios": "1.21.0",
     "form-data": "4.0.6",
+    "globals": "17.14.0",
     "http-proxy-agent": "9.1.0",
     "https-proxy-agent": "9.1.0",
     "proxy-from-env": "2.1.0",
+    "typescript-eslint": "8.72.1",
     "zod": "4.6.7"
   },
   "devDependencies": {
@@ -70,9 +73,7 @@
     "@semantic-release/release-notes-generator": "^14.1.1",
     "@types/jest": "30.0.0",
     "@types/node": "20.19.43",
-    "@typescript-eslint/eslint-plugin": "6.21.0",
-    "@typescript-eslint/parser": "6.21.0",
-    "eslint": "8.57.1",
+    "eslint": "10.14.0",
     "husky": "^9.1.7",
     "jest": "30.5.2",
     "mermaid": "^11.16.0",
