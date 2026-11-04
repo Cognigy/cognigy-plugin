@@ -8,7 +8,7 @@ A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy
 
 ## Features
 
-- **18 workflow tools** for agent creation, deployment, packaging, backup, voice setup, and agent-to-agent (A2A) delegation
+- **19 workflow tools** for agent creation, deployment, packaging, backup, voice setup, agent-to-agent (A2A) delegation, and switching between Cognigy environments
 - **One-call agent setup**: creates Agent + Flow + AI Agent Job Node + REST Endpoint automatically
 - **Self-improvement loop**: talk to your agent, evaluate responses, update the job description, repeat
 - **Knowledge store support**: attach RAG knowledge stores to agents as tools
@@ -99,7 +99,7 @@ npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall   # remove from 
 
 Beyond the MCP tools, the plugin ships **skills** and **agents** that surface the workflows automatically:
 
-- **Skills** (`/skills`) — one per workflow (agent creation, knowledge/RAG, voice gateway, voice go-live checklist, webchat, flow nodes, packages, settings, LLM providers, tools, red-teaming, troubleshooting). Claude loads the matching skill automatically when your request fits. Red-teaming runs in your main session — not as a subagent — so it can agree the scope contract, get approval before applying fixes, and open the finished report for you.
+- **Skills** (`/skills`) — one per workflow (agent creation, knowledge/RAG, voice gateway, voice go-live checklist, webchat, flow nodes, packages, settings, LLM providers, tools, environment switching, red-teaming, troubleshooting). Claude loads the matching skill automatically when your request fits. Red-teaming runs in your main session — not as a subagent — so it can agree the scope contract, get approval before applying fixes, and open the finished report for you.
 - **Agents** (`/agents`) — `cognigy-agent-builder` runs the full build-and-test loop for a new agent, and `cognigy-voice-go-live` audits a voice agent against the Go-Live Checklist and applies the safe fixes. Each runs in its own context and reports back a summary.
 
 ## Configuration
@@ -123,6 +123,35 @@ A value that arrives as an unexpanded `${...}` placeholder counts as missing. Ho
 | `COGNIGY_ENDPOINT_BASE_URL`         | No       | derived | Endpoint host, when it cannot be derived from the API host     |
 | `COGNIGY_WEBCHAT_BASE_URL`          | No       | derived | Webchat host, when it cannot be derived from the API host      |
 | `COGNIGY_STATIC_FILES_BASE_URL`     | No       | derived | Static-files host, when it cannot be derived from the API host |
+
+### Multiple environments
+
+If you work with several Cognigy environments (a trial, `app`, one tenant per customer), keep them in `~/.cognigy-plugin/environments.json`: a name for each, with its API base URL and key.
+
+```json
+{
+  "trial": { "apiBaseUrl": "https://api-trial.cognigy.ai", "apiKey": "<key>" },
+  "customer-a": { "apiBaseUrl": "https://api-eu.cognigy.ai", "apiKey": "<key>" }
+}
+```
+
+Manage the file with `cognigy-env`. It creates the file owner-only, asks for each key without showing it, and never prints a full key:
+
+```
+npx -y -p @cognigy/plugin-engine cognigy-env add trial https://api-trial.cognigy.ai
+npx -y -p @cognigy/plugin-engine cognigy-env list
+npx -y -p @cognigy/plugin-engine cognigy-env use trial
+npx -y -p @cognigy/plugin-engine cognigy-env            # interactive menu
+```
+
+For a short command, `npm i -g @cognigy/plugin-engine` gives you a plain `cognigy-env`. Other commands: `save-current <name>` (store what `config.json` holds now), `current`, `remove <name>`, `help`.
+
+There are two ways to switch, and they do different things:
+
+- **Ask Claude** ("switch to trial", "which environment am I on?"). The `manage_environments` tool switches **this session only**, live: the next tool call uses the new environment, with no restart, and your other sessions are unaffected. In Claude Code every session has its own engine, so this holds exactly. In Claude Desktop, Codex and Antigravity several chats can share one engine, so a switch there moves all of them: ask Claude which environment is current before anything destructive. Claude only ever sees names and base URLs, never keys. Resource IDs differ between environments, so Claude lists projects again after a switch.
+- **`cognigy-env use <name>`** copies the environment into `config.json`, which is the starting environment of sessions that start afterwards. It never moves a running session. It also sets, or clears, the three optional host-override keys (`COGNIGY_ENDPOINT_BASE_URL`, `COGNIGY_WEBCHAT_BASE_URL`, `COGNIGY_STATIC_FILES_BASE_URL`) so they match the chosen environment, and it refuses to touch a `config.json` that is not valid JSON. It only applies where the plugin reads `config.json`: when the client supplies `COGNIGY_API_BASE_URL` and `COGNIGY_API_KEY` itself (the Claude Code keychain does), those win, and Claude's switch is the way to change environment.
+
+A session starts on the credentials described above and never reads `environments.json` at startup, so a missing or broken file cannot stop the plugin from starting. While a session is switched onto an environment from the file, the `COGNIGY_API_*` and `COGNIGY_*_BASE_URL` variables are ignored for that session; proxy, log and rate-limit settings still apply. If the environment a session is using is removed from the file, or the file is broken, tool calls fail with a clear message rather than falling back to other credentials.
 
 ### Audit attribution
 
@@ -308,6 +337,7 @@ IDs before falling back to `setup_llm`.
 | `manage_settings`      | Write | Manage project-level settings including voice preview and Knowledge AI configuration                           |
 | `audit_voice_agent`    | Write | Audit a voice agent against the Go-Live Checklist; reports by default, applies safe fixes on demand            |
 | `manage_snapshots`     | Write | Create and restore project Snapshots so agent changes can be rolled back                                       |
+| `manage_environments`  | Write | Show or switch the Cognigy environment this session uses (names and base URLs only, never keys)                |
 
 Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, A2A, flow nodes, packages, settings, LLM providers, tools, troubleshooting) ships as **skills** that load automatically when your request matches, in clients that support them (e.g. Claude Code) — see the **Skills** column in the client table under [Installation](#installation). The tools are built to be used with these skills: if the assistant skips steps or gets a Cognigy workflow wrong, check that the skills are loaded (in Claude Code, `/skills` lists them) and reinstall the plugin if they are missing.
 

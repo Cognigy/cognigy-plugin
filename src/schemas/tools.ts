@@ -1018,3 +1018,13 @@ export const manageA2AServerSchema = z.object({
   enableStreaming: z.boolean().optional(),
   authenticationType: z.enum(["none", "apiKey"]).optional(),
 });
+
+// Tool 19: manage_environments
+export const manageEnvironmentsSchema = z.discriminatedUnion("operation", [
+  z.object({ operation: z.literal("list") }),
+  z.object({ operation: z.literal("current") }),
+  z.object({
+    operation: z.literal("use"),
+    name: z.string().min(1).max(100),
+  }),
+]);

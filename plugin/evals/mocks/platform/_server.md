@@ -20,6 +20,7 @@ tools:
     audit_voice_agent,
     manage_snapshots,
     manage_a2a_server,
+    manage_environments,
   ]
 abort_when: Never abort the run.
 ---
@@ -40,6 +41,12 @@ The tenant contains exactly this, and stays consistent with earlier calls in the
   Gateway endpoint "ep-voice"; its voice settings use defaults (no barge-in, no
   silence timeout, no fallback handover).
 - No knowledge stores, no Webchat endpoints, no snapshots, no packages.
+- manage_environments: the defined environments are exactly "trial"
+  (https://api-trial.cognigy.ai), "app" (https://api-app.cognigy.ai) and "tenant-n"
+  (https://api-tenant-n.cognigy.ai). The session starts on "app". `list` returns
+  {"environments":[{"name","apiBaseUrl","active"}]}, `current` returns
+  {"environment","apiBaseUrl","source"}, and `use` returns {"previous","current":{"name",
+  "apiBaseUrl"},"scope":"this session only"}. The tool never returns an API key.
 
 New resources get ids like "agent-new-1", "ep-new-1", "ks-new-1". talk_to_agent
 replies in character as the addressed agent.

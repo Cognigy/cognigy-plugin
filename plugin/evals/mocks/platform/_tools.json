@@ -2303,6 +2303,38 @@
           }
         }
       }
+    },
+    {
+      "name": "manage_environments",
+      "description": "Show or switch the Cognigy environment this session uses. Never handles API keys.",
+      "annotations": {
+        "title": "Manage Environments",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": [
+              "list",
+              "current",
+              "use"
+            ],
+            "description": "list: the defined environments (the user adds them in a terminal with 'cognigy-env add'). current: the one in use. use: switch THIS session only, from the next call; other sessions are unaffected. Returns names and base URLs, never keys."
+          },
+          "name": {
+            "type": "string",
+            "description": "Environment name for 'use': exact, any letter case. Call list first if unsure."
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      }
     }
   ]
 }

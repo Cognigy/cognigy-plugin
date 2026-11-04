@@ -7,9 +7,11 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-import { loadConfig } from "./config.js";
+import { loadConfig, loadConfigForEnvironment } from "./config.js";
 import { CognigyApiClient } from "./api/client.js";
+import { EnvironmentRuntime } from "./environmentRuntime.js";
 import { ToolHandlers } from "./tools/handlers.js";
+import { handleManageEnvironments } from "./tools/environments.js";
 import { tools } from "./tools/definitions.js";
 import { SERVER_INSTRUCTIONS } from "./instructions.js";
 import { logger } from "./utils/logger.js";
@@ -19,25 +21,48 @@ import { logProxyConfiguration } from "./utils/proxy.js";
 
 async function main() {
   try {
-    const config = loadConfig();
+    // Which environment this process talks to, and the client + handlers built
+    // for it. It is pinned when the process starts (see environmentRuntime.ts);
+    // the tool handlers are replaced, never reused, when the environment changes.
+    let bootLogged = false;
+    const runtime = new EnvironmentRuntime<{ toolHandlers: ToolHandlers }>({
+      loadLegacyConfig: loadConfig,
+      configForEnvironment: loadConfigForEnvironment,
+      buildParts: (environmentConfig) => {
+        // At boot this is logged below, once the log level is known.
+        if (bootLogged) logProxyConfiguration(environmentConfig.apiBaseUrl);
+        const apiClient = new CognigyApiClient({
+          baseUrl: environmentConfig.apiBaseUrl,
+          apiKey: environmentConfig.apiKey,
+          auditAttribution: environmentConfig.auditAttribution,
+        });
+        return {
+          toolHandlers: new ToolHandlers(
+            apiClient,
+            environmentConfig.endpointBaseUrl,
+            environmentConfig.webchatBaseUrl,
+            environmentConfig.staticFilesBaseUrl,
+          ),
+        };
+      },
+    });
+
+    const config = runtime.current().config;
     logger.setLevel(config.logLevel);
     logger.info("Starting NiCE Cognigy Plugin", {
       name: config.serverName,
       version: config.serverVersion,
     });
-    logProxyConfiguration(config.apiBaseUrl);
-
-    const apiClient = new CognigyApiClient({
-      baseUrl: config.apiBaseUrl,
-      apiKey: config.apiKey,
-      auditAttribution: config.auditAttribution,
+    const boot = runtime.describe();
+    // Names and URLs only: never the key.
+    logger.info("Cognigy environment", {
+      environment: boot.name ?? "plugin credentials",
+      apiBaseUrl: boot.apiBaseUrl,
+      source: boot.source,
     });
-    const toolHandlers = new ToolHandlers(
-      apiClient,
-      config.endpointBaseUrl,
-      config.webchatBaseUrl,
-      config.staticFilesBaseUrl,
-    );
+    logProxyConfiguration(config.apiBaseUrl);
+    bootLogged = true;
+
     const rateLimiter = new RateLimiter(config.rateLimit);
 
     const server = new Server(
@@ -53,20 +78,54 @@ async function main() {
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
 
-      const rateLimitKey = config.apiKey.substring(0, 10);
-      if (!rateLimiter.check(rateLimitKey)) {
-        // Logged with the tool name: a rejected call never reaches the
-        // `Tool call received` line below, so without this a throttling
-        // incident would leave no trace of which tool was being hammered.
-        logger.warn(`Tool call rate limited: ${name}`);
+      const toolError = (error: any) => {
+        logger.error("Tool execution error", {
+          tool: name,
+          error: error.message,
+        });
         return {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify({ error: "Rate limit exceeded" }),
+              text: JSON.stringify({
+                error: error.message,
+                status: error.status,
+                code: error.code,
+                traceId: error.traceId,
+              }),
             },
           ],
+          isError: true,
         };
+      };
+
+      // manage_environments only reads or changes which environment this
+      // process uses and makes no Cognigy request, so it needs neither the rate
+      // limiter nor the current environment's handlers. Every other call is
+      // resolved against the environment in effect NOW, so a call that started
+      // before a switch finishes on the environment it started with.
+      let call: ReturnType<typeof runtime.current> | undefined;
+      if (name !== "manage_environments") {
+        try {
+          call = runtime.current();
+        } catch (error: any) {
+          return toolError(error);
+        }
+        const rateLimitKey = call.config.apiKey.substring(0, 10);
+        if (!rateLimiter.check(rateLimitKey)) {
+          // Logged with the tool name: a rejected call never reaches the
+          // `Tool call received` line below, so without this a throttling
+          // incident would leave no trace of which tool was being hammered.
+          logger.warn(`Tool call rate limited: ${name}`);
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ error: "Rate limit exceeded" }),
+              },
+            ],
+          };
+        }
       }
 
       // One task id per tool call, shared by every Cognigy API request the
@@ -78,29 +137,14 @@ async function main() {
           sessionId: getSessionId(),
         });
         try {
-          const result = await toolHandlers.handleToolCall(name, args || {});
+          const result = call
+            ? await call.parts.toolHandlers.handleToolCall(name, args || {})
+            : handleManageEnvironments(args || {}, runtime);
           return {
             content: [{ type: "text" as const, text: JSON.stringify(result) }],
           };
         } catch (error: any) {
-          logger.error("Tool execution error", {
-            tool: name,
-            error: error.message,
-          });
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
-                  error: error.message,
-                  status: error.status,
-                  code: error.code,
-                  traceId: error.traceId,
-                }),
-              },
-            ],
-            isError: true,
-          };
+          return toolError(error);
         }
       });
     });
