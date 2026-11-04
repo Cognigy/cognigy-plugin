@@ -1236,7 +1236,7 @@ export class ToolHandlers {
    * caller sees backup_not_offered instead of its validation error, fixes the
    * args, retries — and proceeds unprotected, because the hold is spent.
    */
-  private static readonly GATED_TOOL_SCHEMAS: Record<string, z.ZodTypeAny> = {
+  private static readonly GATED_TOOL_SCHEMAS: Record<string, z.ZodType> = {
     update_ai_agent: schemas.updateAiAgentSchema,
     create_tool: schemas.createToolSchema,
     update_tool: schemas.updateToolSchema,
