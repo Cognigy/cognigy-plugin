@@ -167,14 +167,20 @@ export class EnvironmentRuntime<T> {
     };
   }
 
+  /**
+   * What the next call would target. For a pinned session this refreshes and
+   * validates first (like current()), so it never reports a URL the next call
+   * would not use, and throws when the pinned entry or the file is unusable.
+   */
   describe(): {
     name: string | null;
     apiBaseUrl: string;
     source: EnvironmentSource;
   } {
+    const { config } = this.current();
     return {
       name: this.pinned ?? this.matchStartName(),
-      apiBaseUrl: this.runtime.config.apiBaseUrl,
+      apiBaseUrl: config.apiBaseUrl,
       source: this.source,
     };
   }
@@ -222,13 +228,15 @@ export class EnvironmentRuntime<T> {
           `Restore the file, or restart the session.`,
       );
     }
-    const stored = findEnvironmentName(file, name);
-    if (stored === undefined) {
+    // Exact name only. The case-insensitive match is for an explicit switch; a
+    // pinned session whose entry was deleted must fail, not land on another
+    // entry that differs only in letter case (it could be another tenant).
+    if (!Object.prototype.hasOwnProperty.call(file, name)) {
       throw new EnvironmentError(
         `The environment "${name}" this session is using is no longer defined in ${ENVIRONMENTS_FILE}. ` +
           `Defined: ${quotedNames(file)}. Switch to one of them.`,
       );
     }
-    return file[stored];
+    return file[name];
   }
 }

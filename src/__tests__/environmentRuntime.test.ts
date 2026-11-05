@@ -283,6 +283,50 @@ describe("EnvironmentRuntime", () => {
       expect(message).not.toContain("FAKE-KEY");
     });
 
+    it("never falls back to a differently cased entry when the pinned one is removed", () => {
+      const dev: EnvironmentEntry = {
+        apiBaseUrl: "https://api-dev-lower.cognigy.ai",
+        apiKey: "FAKE-KEY-LOWER",
+      };
+      const Dev: EnvironmentEntry = {
+        apiBaseUrl: "https://api-dev-upper.cognigy.ai",
+        apiKey: "FAKE-KEY-UPPER",
+      };
+      fileState = ok(files({ dev, Dev }));
+      const r = runtime();
+      r.switchTo("Dev");
+      expect(r.current().config.apiKey).toBe(Dev.apiKey);
+
+      fileState = ok(files({ dev }));
+      expect(() => r.current()).toThrow(EnvironmentError);
+      expect(() => r.current()).toThrow(/no longer defined/);
+      expect(() => r.describe()).toThrow(EnvironmentError);
+    });
+
+    it("describe reports the refreshed URL after the pinned entry changes", () => {
+      const r = runtime();
+      r.switchTo("app");
+      fileState = ok(
+        files({ app: { ...app, apiBaseUrl: "https://api-moved.cognigy.ai" } }),
+      );
+      expect(r.describe()).toEqual({
+        name: "app",
+        apiBaseUrl: "https://api-moved.cognigy.ai",
+        source: "session",
+      });
+    });
+
+    it("describe throws instead of reporting a stale URL when the pinned entry is gone or the file is broken", () => {
+      const r = runtime();
+      r.switchTo("app");
+      fileState = ok({ trial });
+      expect(() => r.describe()).toThrow(/no longer defined/);
+      fileState = { state: "invalid", reason: "/x/environments.json is bad." };
+      expect(() => r.describe()).toThrow(/is bad/);
+      fileState = { state: "absent" };
+      expect(() => r.describe()).toThrow(/no longer exists/);
+    });
+
     it("throws when the file disappears", () => {
       const r = runtime();
       r.switchTo("app");

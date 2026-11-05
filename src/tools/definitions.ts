@@ -2177,7 +2177,7 @@ export const tools: ToolDefinition[] = [
           type: "string",
           enum: ["list", "current", "use"],
           description:
-            "list: the defined environments (the user adds them in a terminal with 'cognigy-env add'). current: the one in use. use: switch THIS session only, from the next call; other sessions are unaffected. Returns names and base URLs, never keys.",
+            "list: the defined environments (the user adds them in a terminal with 'cognigy-env add'). current: the one in use. use: switch this engine process from the next call. Claude Code sessions each have their own engine; in Claude Desktop, Codex and Antigravity chats sharing one engine all move together. Returns names and base URLs, never keys.",
         },
         name: {
           type: "string",

@@ -14,10 +14,13 @@
  */
 import {
   chmodSync,
+  closeSync,
   mkdirSync,
+  openSync,
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "fs";
 import { dirname, join } from "path";
@@ -53,6 +56,11 @@ export function validateEnvironmentName(name: string): string | undefined {
   if (name.trim().length === 0) return "An environment name cannot be empty.";
   if (name !== name.trim()) {
     return "An environment name cannot start or end with spaces.";
+  }
+  // Names become property keys on a plain object; assigning "__proto__" would
+  // change the object's prototype instead of adding an entry.
+  if (name === "__proto__") {
+    return 'An environment name cannot be "__proto__" (reserved).';
   }
   if (name.length > MAX_NAME_LENGTH) {
     return `An environment name can be at most ${MAX_NAME_LENGTH} characters.`;
@@ -176,4 +184,70 @@ export function writeEnvironmentsFile(
     rmSync(temp, { force: true });
     throw error;
   }
+}
+
+const LOCK_NAME = ".environments.lock";
+const LOCK_TIMEOUT_MS = 5000;
+/** A lock this old was left by a process that died while holding it. */
+const STALE_LOCK_MS = 30_000;
+
+function sleep(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function withLock<T>(path: string, timeoutMs: number, fn: () => T): T {
+  const dir = dirname(path);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const lock = join(dir, LOCK_NAME);
+  const deadline = Date.now() + timeoutMs;
+
+  for (;;) {
+    try {
+      closeSync(openSync(lock, "wx", 0o600));
+      break;
+    } catch (error: any) {
+      if (error?.code !== "EEXIST") throw error;
+    }
+    try {
+      if (Date.now() - statSync(lock).mtimeMs > STALE_LOCK_MS) {
+        rmSync(lock, { force: true });
+        continue;
+      }
+    } catch {
+      continue; // the holder released it between our two calls; try again
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Another cognigy-env is updating ${path}. Try again in a moment.`,
+      );
+    }
+    sleep(25);
+  }
+
+  try {
+    return fn();
+  } finally {
+    rmSync(lock, { force: true });
+  }
+}
+
+/**
+ * Change the environments file without losing anyone else's edit: take a short
+ * lock, read the file as it is NOW, let `mutate` change that, and write it back
+ * atomically. A prompt (typing a key) must happen before this call, never
+ * inside it, so the lock is held for milliseconds. `mutate` may throw to abort;
+ * nothing is written then. An unreadable file is never overwritten.
+ */
+export function updateEnvironmentsFile(
+  mutate: (file: EnvironmentsFile) => void,
+  path: string = ENVIRONMENTS_FILE,
+  options: { timeoutMs?: number } = {},
+): void {
+  withLock(path, options.timeoutMs ?? LOCK_TIMEOUT_MS, () => {
+    const state = readEnvironmentsFile(path);
+    if (state.state === "invalid") throw new Error(state.reason);
+    const file: EnvironmentsFile = state.state === "ok" ? state.file : {};
+    mutate(file);
+    writeEnvironmentsFile(file, path);
+  });
 }

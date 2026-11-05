@@ -182,7 +182,7 @@ describe("server with credentials from the environment and a flat environments.j
       });
       expect(switched.previous).toBe("trial");
       expect(switched.current.name).toBe("app");
-      expect(switched.scope).toBe("this session only");
+      expect(switched.scope).toMatch(/engine process.*shared by every chat/i);
 
       expect(
         await server.call("manage_environments", { operation: "current" }),

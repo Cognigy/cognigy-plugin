@@ -105,7 +105,9 @@ describe("handleManageEnvironments", () => {
       name: "app",
       apiBaseUrl: "https://api-app.cognigy.ai",
     });
-    expect(result.scope).toBe("this session only");
+    expect(result.scope).toMatch(/engine process/i);
+    expect(result.scope).toMatch(/shared by every chat/i);
+    expect(result.scope).toMatch(/Claude Code.*this session only/i);
     expect(result._hints.action).toMatch(/IDs/);
     expect(runtime.describe()).toMatchObject({
       name: "app",
@@ -177,7 +179,12 @@ describe("manage_environments definition", () => {
     ).operation.description as string;
     expect(operation).toMatch(/list:/);
     expect(operation).toMatch(/current:/);
-    expect(operation).toMatch(/use:.*THIS session only/);
+    expect(operation).toMatch(/use:.*engine process/i);
+    expect(operation).toMatch(/Claude Desktop, Codex and Antigravity/);
+    expect(operation).toMatch(
+      /Claude Code sessions each have their own engine/,
+    );
+    expect(operation).not.toMatch(/other sessions are unaffected/i);
     expect(operation).toMatch(/cognigy-env add/);
   });
 

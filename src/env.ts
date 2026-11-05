@@ -23,7 +23,7 @@ import {
   findEnvironmentName,
   readEnvironmentsFile,
   validateEnvironmentName,
-  writeEnvironmentsFile,
+  updateEnvironmentsFile,
   type EnvironmentsFile,
 } from "./environmentsFile.js";
 import {
@@ -87,8 +87,47 @@ function loadEnvironments(io: EnvCliIo): EnvironmentsFile | null {
   return state.state === "ok" ? state.file : {};
 }
 
-function saveEnvironments(io: EnvCliIo, file: EnvironmentsFile): void {
-  writeEnvironmentsFile(file, join(io.dir, "environments.json"));
+/** What `stored` looked like when we read it, to notice a change by someone else. */
+function snapshotOf(file: EnvironmentsFile, stored: string): string {
+  return JSON.stringify(
+    Object.prototype.hasOwnProperty.call(file, stored) ? file[stored] : null,
+  );
+}
+
+class ChangedWhileWaiting extends Error {}
+
+/**
+ * Apply `change` to the file as it is on disk now (not to the copy read before
+ * a prompt), under a short lock, so a second terminal's edits survive. When
+ * `expected` is given, the entry `name` must still look the way it did when the
+ * caller decided to change it, else nothing is written. Returns false after
+ * saying why; never writes in that case.
+ */
+function saveChange(
+  io: EnvCliIo,
+  name: string,
+  expected: string | undefined,
+  change: (file: EnvironmentsFile) => void,
+): boolean {
+  try {
+    updateEnvironmentsFile(
+      (fresh) => {
+        if (expected !== undefined && snapshotOf(fresh, name) !== expected) {
+          throw new ChangedWhileWaiting();
+        }
+        change(fresh);
+      },
+      join(io.dir, "environments.json"),
+    );
+    return true;
+  } catch (error: any) {
+    io.err(
+      error instanceof ChangedWhileWaiting
+        ? `"${name}" changed while you were entering the key (another terminal edited it). Nothing was saved; run the command again.`
+        : String(error?.message ?? error),
+    );
+    return false;
+  }
 }
 
 function readConfig(io: EnvCliIo): UserConfigFile {
@@ -214,6 +253,8 @@ async function cmdAdd(io: EnvCliIo, name?: string, url?: string) {
 
   // Adds or updates; an existing entry keeps any optional host overrides.
   const stored = findEnvironmentName(file, name) ?? name;
+  // How this entry looks now; checked again when saving, after the prompts.
+  const expected = snapshotOf(file, stored);
 
   // Replacing a stored environment needs a deliberate yes, so a mistyped name
   // or a stray Enter can never swap out a working key.
@@ -235,8 +276,14 @@ async function cmdAdd(io: EnvCliIo, name?: string, url?: string) {
     return 1;
   }
 
-  file[stored] = { ...file[stored], apiBaseUrl: baseUrl, apiKey };
-  saveEnvironments(io, file);
+  const entry = { ...file[stored], apiBaseUrl: baseUrl, apiKey };
+  if (
+    !saveChange(io, stored, expected, (fresh) => {
+      fresh[stored] = entry;
+    })
+  ) {
+    return 1;
+  }
   io.out(`✔ saved ${stored}  →  ${baseUrl}   key ${mask(apiKey)}`);
   return 0;
 }
@@ -291,10 +338,15 @@ function cmdSaveCurrent(io: EnvCliIo, name?: string) {
     if (typeof value === "string" && value.trim()) entry[field] = value.trim();
     else delete entry[field];
   }
-  file[stored] = entry;
-  saveEnvironments(io, file);
+  if (
+    !saveChange(io, stored, snapshotOf(file, stored), (fresh) => {
+      fresh[stored] = entry;
+    })
+  ) {
+    return 1;
+  }
   io.out(
-    `✔ saved ${stored}  →  ${file[stored].apiBaseUrl}   key ${mask(file[stored].apiKey)}`,
+    `✔ saved ${stored}  →  ${entry.apiBaseUrl}   key ${mask(entry.apiKey)}`,
   );
   return 0;
 }
@@ -340,8 +392,13 @@ function cmdRemove(io: EnvCliIo, name?: string) {
   if (!file) return 1;
   const stored = resolveName(io, file, name);
   if (!stored) return 1;
-  delete file[stored];
-  saveEnvironments(io, file);
+  if (
+    !saveChange(io, stored, snapshotOf(file, stored), (fresh) => {
+      delete fresh[stored];
+    })
+  ) {
+    return 1;
+  }
   io.out(`✔ removed ${stored} (config.json untouched)`);
   return 0;
 }

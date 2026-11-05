@@ -147,6 +147,67 @@ describe("cognigy-env add", () => {
     });
   });
 
+  describe("changes made by another process while the key is being typed", () => {
+    /** The key prompt is where another terminal can change the file. */
+    const hiddenThen = (
+      h: Harness,
+      during: () => void,
+      key = "FAKE-KEY-NEW-999999999",
+    ) => {
+      h.io.askHidden = async () => {
+        during();
+        return key;
+      };
+    };
+    const disk = (h: Harness, content: unknown) =>
+      writeFileSync(join(h.dir, "environments.json"), JSON.stringify(content));
+
+    it("keeps an environment another terminal added meanwhile", async () => {
+      const h = harness({ environments: { trial } });
+      hiddenThen(h, () => disk(h, { trial, dev: three.dev }));
+      expect(
+        await runEnvCli(["add", "fresh", "https://api-fresh.cognigy.ai"], h.io),
+      ).toBe(0);
+      expect(Object.keys(h.env()).sort()).toEqual(["dev", "fresh", "trial"]);
+      expect(h.env().dev).toEqual(three.dev);
+    });
+
+    it("does not bring back an entry another terminal removed meanwhile", async () => {
+      const h = harness({
+        environments: { trial, dev: three.dev },
+        answers: ["y"],
+      });
+      hiddenThen(h, () => disk(h, { dev: three.dev }));
+      expect(
+        await runEnvCli(["add", "trial", "https://api-trial.cognigy.ai"], h.io),
+      ).toBe(1);
+      expect(h.lines()).toMatch(/changed while/i);
+      expect(h.env()).toEqual({ dev: three.dev });
+    });
+
+    it("refuses to overwrite an entry another terminal changed meanwhile", async () => {
+      const h = harness({ environments: { trial }, answers: ["y"] });
+      const theirs = { ...trial, apiKey: "FAKE-KEY-FROM-OTHER-TERMINAL" };
+      hiddenThen(h, () => disk(h, { trial: theirs }));
+      expect(
+        await runEnvCli(["add", "trial", "https://api-trial.cognigy.ai"], h.io),
+      ).toBe(1);
+      expect(h.lines()).toMatch(/changed while/i);
+      expect(h.lines()).not.toContain("FAKE-KEY-FROM-OTHER-TERMINAL");
+      expect(h.env()).toEqual({ trial: theirs });
+    });
+
+    it("refuses when the same new name was added meanwhile", async () => {
+      const h = harness({ environments: { trial } });
+      const theirs = { ...three.dev, apiKey: "FAKE-KEY-THEIRS" };
+      hiddenThen(h, () => disk(h, { trial, fresh: theirs }));
+      expect(
+        await runEnvCli(["add", "fresh", "https://api-fresh.cognigy.ai"], h.io),
+      ).toBe(1);
+      expect(h.env().fresh).toEqual(theirs);
+    });
+  });
+
   describe("replacing an existing environment asks first", () => {
     const withSpy = (answers: string[]) => {
       const h = harness({

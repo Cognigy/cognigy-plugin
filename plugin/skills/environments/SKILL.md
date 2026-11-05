@@ -5,8 +5,8 @@ description: "Use when the user wants to switch Cognigy environment, tenant, tri
 
 # Switching Cognigy environments
 
-Use `manage_environments` to see or change which Cognigy environment (tenant) **this session**
-talks to. The user keeps their named environments in `~/.cognigy-plugin/environments.json`;
+Use `manage_environments` to see or change which Cognigy environment (tenant) **this engine**
+talks to. In Claude Code the engine belongs to this session alone; see the shared-engine rule below. The user keeps their named environments in `~/.cognigy-plugin/environments.json`;
 you only ever see names and base URLs.
 
 ## Switching

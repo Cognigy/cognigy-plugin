@@ -4,7 +4,10 @@ import {
   mkdtempSync,
   readdirSync,
   rmSync,
+  existsSync,
+  readFileSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from "fs";
 import { tmpdir } from "os";
@@ -12,6 +15,7 @@ import { join } from "path";
 import {
   findEnvironmentName,
   readEnvironmentsFile,
+  updateEnvironmentsFile,
   validateEnvironmentName,
   writeEnvironmentsFile,
   type EnvironmentsFile,
@@ -213,6 +217,30 @@ describe("findEnvironmentName", () => {
   });
 });
 
+describe("reserved names", () => {
+  it("rejects __proto__ as a name", () => {
+    expect(validateEnvironmentName("__proto__")).toMatch(/reserved/i);
+  });
+
+  it("treats a file holding a __proto__ entry as invalid instead of silently dropping it", () => {
+    const path = rawFile(
+      `{"__proto__": {"apiBaseUrl": "https://api-x.cognigy.ai", "apiKey": "${FAKE_KEY}"}, "dev": {"apiBaseUrl": "https://api-dev.cognigy.ai", "apiKey": "${FAKE_KEY}"}}`,
+    );
+    const state = readEnvironmentsFile(path);
+    expect(state.state).toBe("invalid");
+    if (state.state === "invalid") {
+      expect(state.reason).toMatch(/__proto__/);
+      expect(state.reason).not.toContain(FAKE_KEY);
+    }
+  });
+
+  it("still accepts names that only look similar", () => {
+    for (const ok of ["proto", "__proto", "constructor", "toString"]) {
+      expect(validateEnvironmentName(ok)).toBeUndefined();
+    }
+  });
+});
+
 describe("validateEnvironmentName", () => {
   it("rejects empty, whitespace-only, padded, over-long and control-character names", () => {
     for (const bad of ["", "   ", " x", "x ", "x".repeat(101), "bad\nname"]) {
@@ -229,5 +257,94 @@ describe("validateEnvironmentName", () => {
     ]) {
       expect(validateEnvironmentName(good)).toBeUndefined();
     }
+  });
+});
+
+describe("updateEnvironmentsFile", () => {
+  const lockOf = (path: string) => join(path, "..", ".environments.lock");
+
+  it("applies the change to what is on disk now and keeps other entries", () => {
+    const path = rawFile(flat);
+    updateEnvironmentsFile((file) => {
+      // Someone else changes the file between our read and our write: this
+      // callback runs on a fresh read, so their entry must survive.
+      file.added = trial;
+    }, path);
+    const state = readEnvironmentsFile(path);
+    expect(state.state).toBe("ok");
+    if (state.state === "ok") {
+      expect(Object.keys(state.file).sort()).toEqual(
+        [...Object.keys(flat), "added"].sort(),
+      );
+    }
+  });
+
+  it("creates the file when it does not exist", () => {
+    const path = join(freshDir(), "environments.json");
+    updateEnvironmentsFile((file) => {
+      file.first = trial;
+    }, path);
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ first: trial });
+  });
+
+  it("refuses an invalid file without writing and without quoting its content", () => {
+    const path = rawFile(`{"dev": {"apiBaseUrl": "x", "apiKey": "${FAKE_KEY}"`);
+    const before = readFileSync(path, "utf8");
+    let message = "";
+    try {
+      updateEnvironmentsFile(() => undefined, path);
+    } catch (error: any) {
+      message = String(error.message);
+    }
+    expect(message).toMatch(/not valid JSON/);
+    expect(message).not.toContain(FAKE_KEY);
+    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(existsSync(lockOf(path))).toBe(false);
+  });
+
+  it("leaves the file untouched and releases the lock when the callback throws", () => {
+    const path = rawFile(flat);
+    const before = readFileSync(path, "utf8");
+    expect(() =>
+      updateEnvironmentsFile(() => {
+        throw new Error("conflict");
+      }, path),
+    ).toThrow("conflict");
+    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(existsSync(lockOf(path))).toBe(false);
+  });
+
+  it("removes its lock after a successful update", () => {
+    const path = rawFile(flat);
+    updateEnvironmentsFile(() => undefined, path);
+    expect(existsSync(lockOf(path))).toBe(false);
+  });
+
+  it("gives up with a clear message while another process holds the lock", () => {
+    const path = rawFile(flat);
+    writeFileSync(lockOf(path), "");
+    const before = readFileSync(path, "utf8");
+    expect(() =>
+      updateEnvironmentsFile(() => undefined, path, { timeoutMs: 100 }),
+    ).toThrow(/another .*updating/i);
+    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(existsSync(lockOf(path))).toBe(true);
+  });
+
+  it("clears a stale lock left by a crashed process", () => {
+    const path = rawFile(flat);
+    const lock = lockOf(path);
+    writeFileSync(lock, "");
+    const old = new Date(Date.now() - 5 * 60 * 1000);
+    utimesSync(lock, old, old);
+    updateEnvironmentsFile(
+      (file) => {
+        file.after = trial;
+      },
+      path,
+      { timeoutMs: 100 },
+    );
+    expect(JSON.parse(readFileSync(path, "utf8")).after).toEqual(trial);
+    expect(existsSync(lock)).toBe(false);
   });
 });

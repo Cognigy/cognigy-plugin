@@ -46,7 +46,7 @@ The tenant contains exactly this, and stays consistent with earlier calls in the
   (https://api-tenant-n.cognigy.ai). The session starts on "app". `list` returns
   {"environments":[{"name","apiBaseUrl","active"}]}, `current` returns
   {"environment","apiBaseUrl","source"}, and `use` returns {"previous","current":{"name",
-  "apiBaseUrl"},"scope":"this session only"}. The tool never returns an API key.
+  "apiBaseUrl"},"scope":"this engine process (shared by every chat using it; in Claude Code that is this session only)"}. The tool never returns an API key.
 
 New resources get ids like "agent-new-1", "ep-new-1", "ks-new-1". talk_to_agent
 replies in character as the addressed agent.

@@ -3,6 +3,14 @@ import { manageEnvironmentsSchema } from "../schemas/tools.js";
 import { withHints } from "./filters.js";
 
 /**
+ * Said in every successful switch, so a client without the skill still learns
+ * it: the switch belongs to the engine process. Claude Code starts one engine
+ * per session; Claude Desktop, Codex and Antigravity can share one across chats.
+ */
+const SWITCH_SCOPE =
+  "this engine process (shared by every chat using it; in Claude Code that is this session only)";
+
+/**
  * manage_environments: show or switch which Cognigy environment this session
  * talks to. It is handled here, not by `ToolHandlers`: a switch replaces the
  * handlers, so they cannot be the thing that performs it.
@@ -39,7 +47,7 @@ export function handleManageEnvironments(
         {
           previous,
           current: { name: current.name, apiBaseUrl: current.apiBaseUrl },
-          scope: "this session only",
+          scope: SWITCH_SCOPE,
         },
         {
           action:
