@@ -252,18 +252,14 @@ export function loadConfig(): Config {
  * Load configuration for one environment from the environments file.
  *
  * Unlike `loadConfig`, nothing about the connection comes from the process
- * environment: the credentials, and any self-hosted host overrides, are the
- * entry's own. The `COGNIGY_*_BASE_URL` variables describe whichever
- * environment the keychain was set up for, so letting them leak in would point
- * `talk_to_agent` at the wrong tenant's endpoint host. Proxy, log level and
- * rate-limit settings are not per-environment and still apply.
+ * environment: the credentials are the entry's own and the sibling hosts are
+ * derived from its API URL. The `COGNIGY_*_BASE_URL` variables describe
+ * whichever environment the keychain was set up for, so letting them leak in
+ * would point `talk_to_agent` at the wrong tenant's endpoint host. Proxy, log
+ * level and rate-limit settings are not per-environment and still apply.
  */
 export function loadConfigForEnvironment(entry: EnvironmentEntry): Config {
-  return buildConfig(entry.apiBaseUrl, entry.apiKey, {
-    endpointBaseUrl: entry.endpointBaseUrl,
-    webchatBaseUrl: entry.webchatBaseUrl,
-    staticFilesBaseUrl: entry.staticFilesBaseUrl,
-  });
+  return buildConfig(entry.apiBaseUrl, entry.apiKey, {});
 }
 
 interface HostOverrides {

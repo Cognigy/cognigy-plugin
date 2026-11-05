@@ -1,5 +1,5 @@
 import { describe, it, expect } from "@jest/globals";
-import type { Config } from "../config.js";
+import { loadConfigForEnvironment } from "../config.js";
 import type {
   EnvironmentEntry,
   EnvironmentsFileState,
@@ -20,26 +20,12 @@ const stranger: EnvironmentEntry = {
   apiKey: "FAKE-KEY-STRANGER",
 };
 
-const asConfig = (e: EnvironmentEntry) =>
-  ({
-    apiBaseUrl: e.apiBaseUrl,
-    apiKey: e.apiKey,
-    endpointBaseUrl: "",
-    webchatBaseUrl: "",
-    staticFilesBaseUrl: "",
-  }) as Config;
-
 /** A runtime that starts on `start` and reads `state` as the environments file. */
 function runtimeFor(
   state: EnvironmentsFileState,
   start: EnvironmentEntry = entries.trial,
 ) {
-  return new EnvironmentRuntime<object>({
-    loadLegacyConfig: () => asConfig(start),
-    configForEnvironment: asConfig,
-    buildParts: () => ({}),
-    readFile: () => state,
-  });
+  return new EnvironmentRuntime(loadConfigForEnvironment(start), () => state);
 }
 
 const withFile: EnvironmentsFileState = { state: "ok", file: entries };

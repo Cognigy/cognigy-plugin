@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, jest } from "@jest/globals";
-import type { Config } from "../config.js";
+import { describe, it, expect, beforeEach } from "@jest/globals";
+import { loadConfigForEnvironment } from "../config.js";
 import type {
   EnvironmentEntry,
   EnvironmentsFile,
@@ -31,8 +31,6 @@ const stranger: EnvironmentEntry = {
   apiKey: "FAKE-KEY-STRANGER",
 };
 
-type Parts = { id: number };
-
 const files = (extra: EnvironmentsFile = {}): EnvironmentsFile => ({
   trial,
   app,
@@ -45,60 +43,28 @@ const ok = (file: EnvironmentsFile = files()): EnvironmentsFileState => ({
   file,
 });
 
-function fakeConfig(entry: EnvironmentEntry): Config {
-  return {
-    apiBaseUrl: entry.apiBaseUrl,
-    apiKey: entry.apiKey,
-    endpointBaseUrl: entry.endpointBaseUrl ?? "derived-endpoint",
-    webchatBaseUrl: entry.webchatBaseUrl ?? "derived-webchat",
-    staticFilesBaseUrl: entry.staticFilesBaseUrl ?? "derived-static",
-  } as unknown as Config;
-}
-
 describe("EnvironmentRuntime", () => {
-  // The credentials the process "starts with" (env vars / config.json).
+  // What the process "starts with" (env vars / config.json), and the file.
   let start: EnvironmentEntry;
   let fileState: EnvironmentsFileState;
-  let readFile: () => EnvironmentsFileState;
-  let nextId: number;
-  const loadLegacyConfig = jest.fn<() => Config>();
-  const configForEnvironment = jest.fn<(e: EnvironmentEntry) => Config>();
-  const buildParts = jest.fn<(c: Config) => Parts>();
 
   const runtime = () =>
-    new EnvironmentRuntime<Parts>({
-      loadLegacyConfig,
-      configForEnvironment,
-      buildParts,
-      readFile: () => readFile(),
-    });
+    new EnvironmentRuntime(loadConfigForEnvironment(start), () => fileState);
 
   beforeEach(() => {
     start = trial;
     fileState = ok();
-    readFile = () => fileState;
-    nextId = 0;
-    loadLegacyConfig.mockReset();
-    loadLegacyConfig.mockImplementation(() => fakeConfig(start));
-    configForEnvironment.mockReset();
-    configForEnvironment.mockImplementation(fakeConfig);
-    buildParts.mockReset();
-    buildParts.mockImplementation(() => ({ id: ++nextId }));
   });
 
   describe("starting state", () => {
-    it("starts on the plugin's own credentials and builds parts once, never reading the file", () => {
-      readFile = () => {
+    it("starts on the given credentials and never reads the file to do so", () => {
+      const r = new EnvironmentRuntime(loadConfigForEnvironment(trial), () => {
         throw new Error("the file must not be read");
-      };
-      const r = runtime();
+      });
       const first = r.current();
-      r.current();
       expect(first.environment).toBeNull();
       expect(first.config.apiKey).toBe(trial.apiKey);
-      expect(r.current().parts).toBe(first.parts);
-      expect(buildParts).toHaveBeenCalledTimes(1);
-      expect(configForEnvironment).not.toHaveBeenCalled();
+      expect(r.current().toolHandlers).toBe(first.toolHandlers);
     });
 
     it("is unaffected by a corrupt or absent file", () => {
@@ -106,13 +72,6 @@ describe("EnvironmentRuntime", () => {
       expect(runtime().current().environment).toBeNull();
       fileState = { state: "absent" };
       expect(runtime().current().environment).toBeNull();
-    });
-
-    it("propagates the credentials error when nothing provides credentials", () => {
-      loadLegacyConfig.mockImplementation(() => {
-        throw new Error("COGNIGY_API_KEY is not set.");
-      });
-      expect(() => runtime()).toThrow(/COGNIGY_API_KEY is not set/);
     });
 
     it("names the entry matching the starting credentials", () => {
@@ -140,14 +99,14 @@ describe("EnvironmentRuntime", () => {
   });
 
   describe("switchTo", () => {
-    it("is case-insensitive, returns previous and current, and builds fresh parts", () => {
+    it("is case-insensitive, returns previous and current, and builds fresh handlers", () => {
       const r = runtime();
-      const before = r.current().parts;
+      const before = r.current().toolHandlers;
       expect(r.switchTo("APP")).toEqual({
         previous: "trial",
         current: { name: "app", apiBaseUrl: app.apiBaseUrl, active: true },
       });
-      expect(r.current().parts).not.toBe(before);
+      expect(r.current().toolHandlers).not.toBe(before);
       expect(r.current().config.apiKey).toBe(app.apiKey);
       expect(r.current().environment).toBe("app");
       expect(r.describe()).toEqual({
@@ -162,21 +121,10 @@ describe("EnvironmentRuntime", () => {
       expect(runtime().switchTo("app").previous).toBeNull();
     });
 
-    it("keeps the same parts when switching to the entry matching the starting credentials", () => {
-      const r = runtime();
-      const before = r.current().parts;
-      expect(r.switchTo("trial").previous).toBe("trial");
-      expect(r.current().parts).toBe(before);
-      expect(buildParts).toHaveBeenCalledTimes(1);
-      expect(r.describe().source).toBe("session");
-    });
-
-    it("keeps the same parts when switching to the environment already pinned", () => {
+    it("reports the environment already pinned as previous", () => {
       const r = runtime();
       r.switchTo("app");
-      const pinned = r.current().parts;
-      expect(r.switchTo("app").previous).toBe("app");
-      expect(r.current().parts).toBe(pinned);
+      expect(r.switchTo("trial").previous).toBe("app");
     });
 
     it("rejects an unknown name, listing the defined names, and changes nothing", () => {
@@ -230,108 +178,57 @@ describe("EnvironmentRuntime", () => {
     });
   });
 
-  describe("after a switch", () => {
-    it("an unchanged file keeps the same parts across calls", () => {
-      const r = runtime();
-      r.switchTo("app");
-      const first = r.current().parts;
-      r.current();
-      expect(r.current().parts).toBe(first);
-    });
-
-    it("a rotated key rebuilds parts; an edit to another entry does not", () => {
+  describe("after a switch the session is pinned to what it switched to", () => {
+    it("keeps the same handlers across calls", () => {
       const r = runtime();
       r.switchTo("app");
       const first = r.current();
+      expect(r.current().toolHandlers).toBe(first.toolHandlers);
+    });
+
+    it("does not read the file again on a call", () => {
+      let reads = 0;
+      const r = new EnvironmentRuntime(loadConfigForEnvironment(trial), () => {
+        reads += 1;
+        return ok();
+      });
+      r.switchTo("app");
+      const afterSwitch = reads;
+      r.current();
+      r.current();
+      expect(reads).toBe(afterSwitch);
+    });
+
+    it("keeps using the key it switched with after the file rotates it, until switched again", () => {
+      const r = runtime();
+      r.switchTo("app");
+      const before = r.current();
 
       fileState = ok(files({ app: { ...app, apiKey: "FAKE-ROTATED" } }));
-      const rotated = r.current();
-      expect(rotated.parts).not.toBe(first.parts);
-      expect(rotated.config.apiKey).toBe("FAKE-ROTATED");
+      expect(r.current().config.apiKey).toBe(app.apiKey);
+      expect(r.current().toolHandlers).toBe(before.toolHandlers);
 
-      fileState = ok(
-        files({
-          app: { ...app, apiKey: "FAKE-ROTATED" },
-          trial: { ...trial, apiKey: "FAKE-OTHER-EDIT" },
-        }),
-      );
-      expect(r.current().parts).toBe(rotated.parts);
+      r.switchTo("app");
+      expect(r.current().config.apiKey).toBe("FAKE-ROTATED");
     });
 
-    it("throws, and never falls back to the starting credentials, when the pinned entry is removed", () => {
+    it("keeps working when its entry is removed or the file breaks or vanishes", () => {
       const r = runtime();
       r.switchTo("app");
+      const before = r.current();
+
       const { app: _removed, ...rest } = files();
       fileState = ok(rest);
-      expect(() => r.current()).toThrow(EnvironmentError);
-      expect(() => r.current()).toThrow(/app/);
-      expect(loadLegacyConfig).toHaveBeenCalledTimes(1);
-    });
-
-    it("throws without any key in the message when the file becomes malformed", () => {
-      const r = runtime();
-      r.switchTo("app");
+      expect(r.current()).toBe(before);
       fileState = { state: "invalid", reason: "/x/environments.json is bad." };
-      let message = "";
-      try {
-        r.current();
-      } catch (error: any) {
-        expect(error).toBeInstanceOf(EnvironmentError);
-        message = error.message;
-      }
-      expect(message).toContain("is bad");
-      expect(message).not.toContain("FAKE-KEY");
-    });
-
-    it("never falls back to a differently cased entry when the pinned one is removed", () => {
-      const dev: EnvironmentEntry = {
-        apiBaseUrl: "https://api-dev-lower.cognigy.ai",
-        apiKey: "FAKE-KEY-LOWER",
-      };
-      const Dev: EnvironmentEntry = {
-        apiBaseUrl: "https://api-dev-upper.cognigy.ai",
-        apiKey: "FAKE-KEY-UPPER",
-      };
-      fileState = ok(files({ dev, Dev }));
-      const r = runtime();
-      r.switchTo("Dev");
-      expect(r.current().config.apiKey).toBe(Dev.apiKey);
-
-      fileState = ok(files({ dev }));
-      expect(() => r.current()).toThrow(EnvironmentError);
-      expect(() => r.current()).toThrow(/no longer defined/);
-      expect(() => r.describe()).toThrow(EnvironmentError);
-    });
-
-    it("describe reports the refreshed URL after the pinned entry changes", () => {
-      const r = runtime();
-      r.switchTo("app");
-      fileState = ok(
-        files({ app: { ...app, apiBaseUrl: "https://api-moved.cognigy.ai" } }),
-      );
+      expect(r.current()).toBe(before);
+      fileState = { state: "absent" };
+      expect(r.current()).toBe(before);
       expect(r.describe()).toEqual({
         name: "app",
-        apiBaseUrl: "https://api-moved.cognigy.ai",
+        apiBaseUrl: app.apiBaseUrl,
         source: "session",
       });
-    });
-
-    it("describe throws instead of reporting a stale URL when the pinned entry is gone or the file is broken", () => {
-      const r = runtime();
-      r.switchTo("app");
-      fileState = ok({ trial });
-      expect(() => r.describe()).toThrow(/no longer defined/);
-      fileState = { state: "invalid", reason: "/x/environments.json is bad." };
-      expect(() => r.describe()).toThrow(/is bad/);
-      fileState = { state: "absent" };
-      expect(() => r.describe()).toThrow(/no longer exists/);
-    });
-
-    it("throws when the file disappears", () => {
-      const r = runtime();
-      r.switchTo("app");
-      fileState = { state: "absent" };
-      expect(() => r.current()).toThrow(EnvironmentError);
     });
   });
 

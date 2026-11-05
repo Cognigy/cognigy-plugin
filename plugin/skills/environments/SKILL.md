@@ -38,6 +38,6 @@ you only ever see names and base URLs.
 - You cannot add, edit or remove environments. If the user wants a new one, tell them to run, in
   a terminal: `npx -y -p @cognigy/plugin-engine cognigy-env add <name> <base-url>` (it asks for
   the key without showing it). `cognigy-env use <name>` in a terminal sets the default for
-  **new** sessions only; it never changes a session that is already running.
+  **new** sessions only; it never changes a session that is already running. A session keeps the key it switched with: after the user rotates that environment's key in the terminal, switch to it again to use the new key.
 - If `list` or `use` reports a problem with the environments file, relay the message as is. Do not
   retry with other names to work around it.

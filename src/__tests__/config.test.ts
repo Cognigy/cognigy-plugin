@@ -409,19 +409,6 @@ describe("loadConfigForEnvironment", () => {
     expect(config.staticFilesBaseUrl).toBe("https://static-trial.cognigy.ai");
   });
 
-  it("uses the entry's host overrides when present", () => {
-    const config = loadConfigForEnvironment({
-      apiBaseUrl: "https://gateway.example",
-      apiKey: "FAKE-KEY-123",
-      endpointBaseUrl: "https://ep.example",
-      webchatBaseUrl: "https://wc.example",
-      staticFilesBaseUrl: "https://st.example",
-    });
-    expect(config.endpointBaseUrl).toBe("https://ep.example");
-    expect(config.webchatBaseUrl).toBe("https://wc.example");
-    expect(config.staticFilesBaseUrl).toBe("https://st.example");
-  });
-
   it("ignores the credential and host override process variables", () => {
     process.env.COGNIGY_API_BASE_URL = "https://api-stale.cognigy.ai";
     process.env.COGNIGY_API_KEY = "STALE-KEY";

@@ -14,13 +14,10 @@
  */
 import {
   chmodSync,
-  closeSync,
   mkdirSync,
-  openSync,
   readFileSync,
   renameSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "fs";
 import { dirname, join } from "path";
@@ -31,10 +28,6 @@ export const ENVIRONMENTS_FILE = join(USER_CONFIG_DIR, "environments.json");
 export interface EnvironmentEntry {
   apiBaseUrl: string;
   apiKey: string;
-  /** Only for self-hosted layouts whose hosts cannot be derived from apiBaseUrl. */
-  endpointBaseUrl?: string;
-  webchatBaseUrl?: string;
-  staticFilesBaseUrl?: string;
 }
 
 export type EnvironmentsFile = Record<string, EnvironmentEntry>;
@@ -44,29 +37,13 @@ export type EnvironmentsFileState =
   | { state: "ok"; file: EnvironmentsFile }
   | { state: "invalid"; reason: string };
 
-const MAX_NAME_LENGTH = 100;
-const HOST_OVERRIDE_FIELDS = [
-  "endpointBaseUrl",
-  "webchatBaseUrl",
-  "staticFilesBaseUrl",
-] as const;
-
 /** An error message when `name` cannot be an environment name, else undefined. */
 export function validateEnvironmentName(name: string): string | undefined {
   if (name.trim().length === 0) return "An environment name cannot be empty.";
-  if (name !== name.trim()) {
-    return "An environment name cannot start or end with spaces.";
-  }
   // Names become property keys on a plain object; assigning "__proto__" would
   // change the object's prototype instead of adding an entry.
   if (name === "__proto__") {
     return 'An environment name cannot be "__proto__" (reserved).';
-  }
-  if (name.length > MAX_NAME_LENGTH) {
-    return `An environment name can be at most ${MAX_NAME_LENGTH} characters.`;
-  }
-  if ([...name].some((ch) => ch.charCodeAt(0) < 32 || ch === "\x7f")) {
-    return "An environment name cannot contain control characters.";
   }
   return undefined;
 }
@@ -107,12 +84,6 @@ function parseEntry(
       return `${where} needs a non-empty "${field}".`;
     }
     entry[field] = value.trim();
-  }
-  for (const field of HOST_OVERRIDE_FIELDS) {
-    const value = raw[field];
-    if (value === undefined) continue;
-    if (typeof value !== "string") return `${where}: "${field}" must be text.`;
-    if (value.trim().length > 0) entry[field] = value.trim();
   }
   return entry;
 }
@@ -186,68 +157,18 @@ export function writeEnvironmentsFile(
   }
 }
 
-const LOCK_NAME = ".environments.lock";
-const LOCK_TIMEOUT_MS = 5000;
-/** A lock this old was left by a process that died while holding it. */
-const STALE_LOCK_MS = 30_000;
-
-function sleep(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-function withLock<T>(path: string, timeoutMs: number, fn: () => T): T {
-  const dir = dirname(path);
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const lock = join(dir, LOCK_NAME);
-  const deadline = Date.now() + timeoutMs;
-
-  for (;;) {
-    try {
-      closeSync(openSync(lock, "wx", 0o600));
-      break;
-    } catch (error: any) {
-      if (error?.code !== "EEXIST") throw error;
-    }
-    try {
-      if (Date.now() - statSync(lock).mtimeMs > STALE_LOCK_MS) {
-        rmSync(lock, { force: true });
-        continue;
-      }
-    } catch {
-      continue; // the holder released it between our two calls; try again
-    }
-    if (Date.now() >= deadline) {
-      throw new Error(
-        `Another cognigy-env is updating ${path}. Try again in a moment.`,
-      );
-    }
-    sleep(25);
-  }
-
-  try {
-    return fn();
-  } finally {
-    rmSync(lock, { force: true });
-  }
-}
-
 /**
- * Change the environments file without losing anyone else's edit: take a short
- * lock, read the file as it is NOW, let `mutate` change that, and write it back
- * atomically. A prompt (typing a key) must happen before this call, never
- * inside it, so the lock is held for milliseconds. `mutate` may throw to abort;
- * nothing is written then. An unreadable file is never overwritten.
+ * Change the environments file: read it as it is now, let `mutate` change that,
+ * and write it back atomically. `mutate` may throw to abort; nothing is written
+ * then. An unreadable file is never overwritten.
  */
 export function updateEnvironmentsFile(
   mutate: (file: EnvironmentsFile) => void,
   path: string = ENVIRONMENTS_FILE,
-  options: { timeoutMs?: number } = {},
 ): void {
-  withLock(path, options.timeoutMs ?? LOCK_TIMEOUT_MS, () => {
-    const state = readEnvironmentsFile(path);
-    if (state.state === "invalid") throw new Error(state.reason);
-    const file: EnvironmentsFile = state.state === "ok" ? state.file : {};
-    mutate(file);
-    writeEnvironmentsFile(file, path);
-  });
+  const state = readEnvironmentsFile(path);
+  if (state.state === "invalid") throw new Error(state.reason);
+  const file: EnvironmentsFile = state.state === "ok" ? state.file : {};
+  mutate(file);
+  writeEnvironmentsFile(file, path);
 }

@@ -60,9 +60,6 @@ import { dirname, join } from "path";
 import { runNpm } from "./install/npmRunner.js";
 import { ask, askHidden, isMainModule } from "./utils/cli.js";
 
-// Re-exported so existing importers (and tests) keep working after the move.
-export { isMainModule };
-
 const PKG = "@cognigy/plugin-engine";
 
 const DEFAULT_BASE_URL = "https://api-trial.cognigy.ai";

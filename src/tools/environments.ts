@@ -20,7 +20,7 @@ const SWITCH_SCOPE =
  */
 export function handleManageEnvironments(
   args: unknown,
-  runtime: Pick<EnvironmentRuntime<unknown>, "list" | "describe" | "switchTo">,
+  runtime: EnvironmentRuntime,
 ): Record<string, unknown> {
   const data = manageEnvironmentsSchema.parse(args);
 

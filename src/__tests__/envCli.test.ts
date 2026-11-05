@@ -147,65 +147,20 @@ describe("cognigy-env add", () => {
     });
   });
 
-  describe("changes made by another process while the key is being typed", () => {
-    /** The key prompt is where another terminal can change the file. */
-    const hiddenThen = (
-      h: Harness,
-      during: () => void,
-      key = "FAKE-KEY-NEW-999999999",
-    ) => {
-      h.io.askHidden = async () => {
-        during();
-        return key;
-      };
+  it("saves into the file as it is when the key is entered, keeping an environment another terminal added meanwhile", async () => {
+    const h = harness({ environments: { trial } });
+    h.io.askHidden = async () => {
+      writeFileSync(
+        join(h.dir, "environments.json"),
+        JSON.stringify({ trial, dev: three.dev }),
+      );
+      return "FAKE-KEY-NEW-999999999";
     };
-    const disk = (h: Harness, content: unknown) =>
-      writeFileSync(join(h.dir, "environments.json"), JSON.stringify(content));
-
-    it("keeps an environment another terminal added meanwhile", async () => {
-      const h = harness({ environments: { trial } });
-      hiddenThen(h, () => disk(h, { trial, dev: three.dev }));
-      expect(
-        await runEnvCli(["add", "fresh", "https://api-fresh.cognigy.ai"], h.io),
-      ).toBe(0);
-      expect(Object.keys(h.env()).sort()).toEqual(["dev", "fresh", "trial"]);
-      expect(h.env().dev).toEqual(three.dev);
-    });
-
-    it("does not bring back an entry another terminal removed meanwhile", async () => {
-      const h = harness({
-        environments: { trial, dev: three.dev },
-        answers: ["y"],
-      });
-      hiddenThen(h, () => disk(h, { dev: three.dev }));
-      expect(
-        await runEnvCli(["add", "trial", "https://api-trial.cognigy.ai"], h.io),
-      ).toBe(1);
-      expect(h.lines()).toMatch(/changed while/i);
-      expect(h.env()).toEqual({ dev: three.dev });
-    });
-
-    it("refuses to overwrite an entry another terminal changed meanwhile", async () => {
-      const h = harness({ environments: { trial }, answers: ["y"] });
-      const theirs = { ...trial, apiKey: "FAKE-KEY-FROM-OTHER-TERMINAL" };
-      hiddenThen(h, () => disk(h, { trial: theirs }));
-      expect(
-        await runEnvCli(["add", "trial", "https://api-trial.cognigy.ai"], h.io),
-      ).toBe(1);
-      expect(h.lines()).toMatch(/changed while/i);
-      expect(h.lines()).not.toContain("FAKE-KEY-FROM-OTHER-TERMINAL");
-      expect(h.env()).toEqual({ trial: theirs });
-    });
-
-    it("refuses when the same new name was added meanwhile", async () => {
-      const h = harness({ environments: { trial } });
-      const theirs = { ...three.dev, apiKey: "FAKE-KEY-THEIRS" };
-      hiddenThen(h, () => disk(h, { trial, fresh: theirs }));
-      expect(
-        await runEnvCli(["add", "fresh", "https://api-fresh.cognigy.ai"], h.io),
-      ).toBe(1);
-      expect(h.env().fresh).toEqual(theirs);
-    });
+    expect(
+      await runEnvCli(["add", "fresh", "https://api-fresh.cognigy.ai"], h.io),
+    ).toBe(0);
+    expect(Object.keys(h.env()).sort()).toEqual(["dev", "fresh", "trial"]);
+    expect(h.env().dev).toEqual(three.dev);
   });
 
   describe("replacing an existing environment asks first", () => {
@@ -294,7 +249,7 @@ describe("cognigy-env add", () => {
     const badName = harness({ secret: FAKE_KEY });
     expect(
       await runEnvCli(
-        ["add", "bad\nname", "https://api.cognigy.ai"],
+        ["add", "__proto__", "https://api.cognigy.ai"],
         badName.io,
       ),
     ).toBe(1);
@@ -346,31 +301,6 @@ describe("cognigy-env use", () => {
     });
   });
 
-  it("writes an entry's host overrides, and removes stale ones for an entry without", async () => {
-    const h = harness({
-      environments: {
-        onprem: {
-          ...trial,
-          endpointBaseUrl: "https://ep.test",
-          webchatBaseUrl: "https://wc.test",
-          staticFilesBaseUrl: "https://st.test",
-        },
-        plain: app,
-      },
-    });
-    await runEnvCli(["use", "onprem"], h.io);
-    expect(h.config()).toMatchObject({
-      COGNIGY_ENDPOINT_BASE_URL: "https://ep.test",
-      COGNIGY_WEBCHAT_BASE_URL: "https://wc.test",
-      COGNIGY_STATIC_FILES_BASE_URL: "https://st.test",
-    });
-    await runEnvCli(["use", "plain"], h.io);
-    expect(Object.keys(h.config()).sort()).toEqual([
-      "COGNIGY_API_BASE_URL",
-      "COGNIGY_API_KEY",
-    ]);
-  });
-
   it("an unknown name exits 1, lists the names and changes nothing", async () => {
     const h = harness({ environments: three, config: { OTHER: "keep" } });
     expect(await runEnvCli(["use", "nope"], h.io)).toBe(1);
@@ -382,87 +312,6 @@ describe("cognigy-env use", () => {
     const h = harness({ environments: three });
     expect(await runEnvCli(["use", "CXONE-SB41 (AS KEY)"], h.io)).toBe(0);
     expect(h.config()?.COGNIGY_API_KEY).toBe(app.apiKey);
-  });
-});
-
-describe("cognigy-env: host overrides and config.json safety (review fixes)", () => {
-  const overrides = {
-    COGNIGY_ENDPOINT_BASE_URL: "https://ep.test",
-    COGNIGY_WEBCHAT_BASE_URL: "https://wc.test",
-    COGNIGY_STATIC_FILES_BASE_URL: "https://st.test",
-  };
-
-  it("save-current keeps host overrides, so a later use restores them", async () => {
-    const h = harness({
-      config: {
-        COGNIGY_API_BASE_URL: trial.apiBaseUrl,
-        COGNIGY_API_KEY: trial.apiKey,
-        ...overrides,
-      },
-    });
-    expect(await runEnvCli(["save-current", "onprem"], h.io)).toBe(0);
-    expect(h.env().onprem).toEqual({
-      ...trial,
-      endpointBaseUrl: "https://ep.test",
-      webchatBaseUrl: "https://wc.test",
-      staticFilesBaseUrl: "https://st.test",
-    });
-
-    // Switch away to an entry without overrides, then back.
-    writeFileSync(
-      join(h.dir, "environments.json"),
-      JSON.stringify({ ...h.env(), plain: app }),
-    );
-    await runEnvCli(["use", "plain"], h.io);
-    expect(h.config()).not.toHaveProperty("COGNIGY_ENDPOINT_BASE_URL");
-    await runEnvCli(["use", "onprem"], h.io);
-    expect(h.config()).toMatchObject(overrides);
-  });
-
-  it("save-current clears an existing entry's overrides when config.json has none", async () => {
-    const h = harness({
-      environments: {
-        onprem: { ...trial, endpointBaseUrl: "https://ep.test" },
-      },
-      config: {
-        COGNIGY_API_BASE_URL: trial.apiBaseUrl,
-        COGNIGY_API_KEY: trial.apiKey,
-      },
-    });
-    await runEnvCli(["save-current", "onprem"], h.io);
-    expect(h.env().onprem).toEqual(trial);
-  });
-
-  it("use refuses a malformed config.json and leaves it untouched", async () => {
-    const h = harness({ environments: three });
-    writeFileSync(join(h.dir, "config.json"), '{ "OTHER": "keep", ');
-    expect(await runEnvCli(["use", "dev"], h.io)).toBe(1);
-    expect(h.lines()).toMatch(/config\.json is not valid JSON/);
-    expect(readFileSync(join(h.dir, "config.json"), "utf8")).toBe(
-      '{ "OTHER": "keep", ',
-    );
-  });
-
-  it("use keeps non-string values already in config.json", async () => {
-    const h = harness({
-      environments: three,
-      config: { NUM: 5, NESTED: { a: [1, 2] }, OTHER: "keep" },
-    });
-    expect(await runEnvCli(["use", "dev"], h.io)).toBe(0);
-    expect(h.config()).toMatchObject({
-      NUM: 5,
-      NESTED: { a: [1, 2] },
-      OTHER: "keep",
-      COGNIGY_API_KEY: "FAKE-KEY-DEV-1122334455",
-    });
-  });
-
-  it("save-current refuses a malformed config.json and writes nothing", async () => {
-    const h = harness();
-    writeFileSync(join(h.dir, "config.json"), "{ nope");
-    expect(await runEnvCli(["save-current", "mine"], h.io)).toBe(1);
-    expect(h.lines()).toMatch(/config\.json is not valid JSON/);
-    expect(h.env()).toBeUndefined();
   });
 });
 
@@ -608,17 +457,11 @@ describe("cognigy-env menu (no arguments)", () => {
     expect(h.config()).toBeUndefined();
   });
 
-  it("off a terminal: a numbered prompt selects by number; blank cancels; junk exits 1", async () => {
-    const pick = harness({ environments: three, answers: ["2"] });
-    expect(await runEnvCli([], pick.io)).toBe(0);
-    expect(pick.config()?.COGNIGY_API_KEY).toBe(app.apiKey);
-
-    const blank = harness({ environments: three, answers: [""] });
-    expect(await runEnvCli([], blank.io)).toBe(0);
-    expect(blank.config()).toBeUndefined();
-
-    const junk = harness({ environments: three, answers: ["9"] });
-    expect(await runEnvCli([], junk.io)).toBe(1);
+  it("off a terminal it prints the usage and exits 1, writing nothing", async () => {
+    const h = harness({ environments: three, answers: ["2"] });
+    expect(await runEnvCli([], h.io)).toBe(1);
+    expect(h.lines()).toMatch(/cognigy-env add <name> <base-url>/);
+    expect(h.config()).toBeUndefined();
   });
 
   it("with no environments it says how to add one", async () => {

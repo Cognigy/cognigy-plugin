@@ -16,7 +16,6 @@
  * commands, same two files. Both files hold API keys, so both are written
  * owner-only, and no command ever prints a full key.
  */
-import { readFileSync } from "fs";
 import { join } from "path";
 import { normalizeApiBaseUrl } from "./config.js";
 import {
@@ -36,12 +35,6 @@ import { ask, askHidden, isMainModule, readKey } from "./utils/cli.js";
 
 const URL_KEY = "COGNIGY_API_BASE_URL";
 const API_KEY = "COGNIGY_API_KEY";
-/** Optional per-environment host overrides and the config.json keys they map to. */
-const HOST_KEYS = [
-  ["endpointBaseUrl", "COGNIGY_ENDPOINT_BASE_URL"],
-  ["webchatBaseUrl", "COGNIGY_WEBCHAT_BASE_URL"],
-  ["staticFilesBaseUrl", "COGNIGY_STATIC_FILES_BASE_URL"],
-] as const;
 
 const USAGE = [
   "cognigy-env — switch the Cognigy plugin between environments",
@@ -87,79 +80,19 @@ function loadEnvironments(io: EnvCliIo): EnvironmentsFile | null {
   return state.state === "ok" ? state.file : {};
 }
 
-/** What `stored` looked like when we read it, to notice a change by someone else. */
-function snapshotOf(file: EnvironmentsFile, stored: string): string {
-  return JSON.stringify(
-    Object.prototype.hasOwnProperty.call(file, stored) ? file[stored] : null,
-  );
-}
-
-class ChangedWhileWaiting extends Error {}
-
-/**
- * Apply `change` to the file as it is on disk now (not to the copy read before
- * a prompt), under a short lock, so a second terminal's edits survive. When
- * `expected` is given, the entry `name` must still look the way it did when the
- * caller decided to change it, else nothing is written. Returns false after
- * saying why; never writes in that case.
- */
-function saveChange(
-  io: EnvCliIo,
-  name: string,
-  expected: string | undefined,
-  change: (file: EnvironmentsFile) => void,
-): boolean {
+/** Change environments.json; on failure say why and return false. */
+function save(io: EnvCliIo, change: (file: EnvironmentsFile) => void): boolean {
   try {
-    updateEnvironmentsFile(
-      (fresh) => {
-        if (expected !== undefined && snapshotOf(fresh, name) !== expected) {
-          throw new ChangedWhileWaiting();
-        }
-        change(fresh);
-      },
-      join(io.dir, "environments.json"),
-    );
+    updateEnvironmentsFile(change, join(io.dir, "environments.json"));
     return true;
   } catch (error: any) {
-    io.err(
-      error instanceof ChangedWhileWaiting
-        ? `"${name}" changed while you were entering the key (another terminal edited it). Nothing was saved; run the command again.`
-        : String(error?.message ?? error),
-    );
+    io.err(String(error?.message ?? error));
     return false;
   }
 }
 
 function readConfig(io: EnvCliIo): UserConfigFile {
   return readUserConfigFile(join(io.dir, "config.json"));
-}
-
-/**
- * config.json for a read-modify-write. A malformed file is an error, never
- * silently replaced, and values of any type survive the round trip. A missing
- * file is `{}`. Returns null (after saying why) when the file is unusable. The
- * lenient `readConfig` above is for display only.
- */
-function readConfigStrict(io: EnvCliIo): Record<string, unknown> | null {
-  const path = join(io.dir, "config.json");
-  let text: string;
-  try {
-    text = readFileSync(path, "utf-8");
-  } catch (error: any) {
-    if (error?.code === "ENOENT") return {};
-    io.err(`${path} cannot be read (${error?.code ?? "unknown error"}).`);
-    return null;
-  }
-  try {
-    const parsed: unknown = JSON.parse(text);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    // Fall through. Never quote the parser's message: it can echo file contents.
-  }
-  io.err(`${path} is not valid JSON; fix or delete it first.`);
-  return null;
 }
 
 /** The environment equal to what config.json holds (URL normalised, key exact). */
@@ -204,16 +137,10 @@ const NONE_YET =
 
 function activate(io: EnvCliIo, file: EnvironmentsFile, name: string): number {
   const entry = file[name];
-  const cfg = readConfigStrict(io); // keeps every other key, of any type
-  if (!cfg) return 1;
+  const cfg = readConfig(io); // keeps every other key
   cfg[URL_KEY] = entry.apiBaseUrl;
   cfg[API_KEY] = entry.apiKey;
-  for (const [field, key] of HOST_KEYS) {
-    const value = entry[field];
-    if (value) cfg[key] = value;
-    else delete cfg[key]; // never leave the previous environment's host behind
-  }
-  writeUserConfigFile(cfg as UserConfigFile, io.dir);
+  writeUserConfigFile(cfg, io.dir);
   io.out(
     `✔ active: ${name}  →  ${entry.apiBaseUrl}   key ${mask(entry.apiKey)}`,
   );
@@ -251,10 +178,7 @@ async function cmdAdd(io: EnvCliIo, name?: string, url?: string) {
   const file = loadEnvironments(io);
   if (!file) return 1;
 
-  // Adds or updates; an existing entry keeps any optional host overrides.
   const stored = findEnvironmentName(file, name) ?? name;
-  // How this entry looks now; checked again when saving, after the prompts.
-  const expected = snapshotOf(file, stored);
 
   // Replacing a stored environment needs a deliberate yes, so a mistyped name
   // or a stray Enter can never swap out a working key.
@@ -276,10 +200,9 @@ async function cmdAdd(io: EnvCliIo, name?: string, url?: string) {
     return 1;
   }
 
-  const entry = { ...file[stored], apiBaseUrl: baseUrl, apiKey };
   if (
-    !saveChange(io, stored, expected, (fresh) => {
-      fresh[stored] = entry;
+    !save(io, (fresh) => {
+      fresh[stored] = { apiBaseUrl: baseUrl, apiKey };
     })
   ) {
     return 1;
@@ -310,36 +233,19 @@ function cmdSaveCurrent(io: EnvCliIo, name?: string) {
     io.err(nameError);
     return 1;
   }
-  const cfg = readConfigStrict(io);
-  if (!cfg) return 1;
-  const url = cfg[URL_KEY];
-  const key = cfg[API_KEY];
-  if (
-    typeof url !== "string" ||
-    !url.trim() ||
-    typeof key !== "string" ||
-    !key.trim()
-  ) {
+  const cfg = readConfig(io);
+  const url = cfg[URL_KEY]?.trim();
+  const key = cfg[API_KEY]?.trim();
+  if (!url || !key) {
     io.err("config.json holds no Cognigy credentials to save.");
     return 1;
   }
   const file = loadEnvironments(io);
   if (!file) return 1;
   const stored = findEnvironmentName(file, name) ?? name;
-  const entry = {
-    ...file[stored],
-    apiBaseUrl: stripSlashes(url),
-    apiKey: key.trim(),
-  };
-  // Save the host overrides too (self-hosted layouts), or `use` would later
-  // delete them from config.json; and drop stale ones: this is a snapshot.
-  for (const [field, configKey] of HOST_KEYS) {
-    const value = cfg[configKey];
-    if (typeof value === "string" && value.trim()) entry[field] = value.trim();
-    else delete entry[field];
-  }
+  const entry = { apiBaseUrl: stripSlashes(url), apiKey: key };
   if (
-    !saveChange(io, stored, snapshotOf(file, stored), (fresh) => {
+    !save(io, (fresh) => {
       fresh[stored] = entry;
     })
   ) {
@@ -393,7 +299,7 @@ function cmdRemove(io: EnvCliIo, name?: string) {
   const stored = resolveName(io, file, name);
   if (!stored) return 1;
   if (
-    !saveChange(io, stored, snapshotOf(file, stored), (fresh) => {
+    !save(io, (fresh) => {
       delete fresh[stored];
     })
   ) {
@@ -404,6 +310,10 @@ function cmdRemove(io: EnvCliIo, name?: string) {
 }
 
 async function cmdMenu(io: EnvCliIo) {
+  if (!io.isTTY) {
+    USAGE.forEach((l) => io.err(l));
+    return 1;
+  }
   const file = loadEnvironments(io);
   if (!file) return 1;
   const names = Object.keys(file);
@@ -415,18 +325,6 @@ async function cmdMenu(io: EnvCliIo) {
   const width = Math.max(...names.map((n) => n.length));
   const line = (name: string, i: number, cursor: number) =>
     `${i === cursor ? ">" : " "} ${name === active ? "*" : " "} ${name.padEnd(width)}  ${file[name].apiBaseUrl}`;
-
-  if (!io.isTTY) {
-    names.forEach((name, i) => io.out(`${i + 1}) ${line(name, i, -1).trim()}`));
-    const answer = (await io.ask("Number (blank to cancel): ")).trim();
-    if (answer === "") return 0;
-    const picked = names[Number(answer) - 1];
-    if (!/^\d+$/.test(answer) || picked === undefined) {
-      io.err(`"${answer}" is not one of the numbers above.`);
-      return 1;
-    }
-    return activate(io, file, picked);
-  }
 
   let cursor = Math.max(0, active ? names.indexOf(active) : 0);
   let drawn = 0;

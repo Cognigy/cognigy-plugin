@@ -35,11 +35,11 @@ import {
 } from "../install/desktopLauncher.js";
 import {
   detectClients,
-  isMainModule,
   parseClientSelection,
   parseFlags,
   parseSubcommand,
 } from "../setup.js";
+import { isMainModule } from "../utils/cli.js";
 
 const tmpDirs: string[] = [];
 function freshDir(): string {

@@ -7,10 +7,8 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-import { loadConfig, loadConfigForEnvironment } from "./config.js";
-import { CognigyApiClient } from "./api/client.js";
+import { loadConfig } from "./config.js";
 import { EnvironmentRuntime } from "./environmentRuntime.js";
-import { ToolHandlers } from "./tools/handlers.js";
 import { handleManageEnvironments } from "./tools/environments.js";
 import { tools } from "./tools/definitions.js";
 import { SERVER_INSTRUCTIONS } from "./instructions.js";
@@ -21,38 +19,17 @@ import { logProxyConfiguration } from "./utils/proxy.js";
 
 async function main() {
   try {
-    // Which environment this process talks to, and the client + handlers built
-    // for it. It is pinned when the process starts (see environmentRuntime.ts);
-    // the tool handlers are replaced, never reused, when the environment changes.
-    let bootLogged = false;
-    const runtime = new EnvironmentRuntime<{ toolHandlers: ToolHandlers }>({
-      loadLegacyConfig: loadConfig,
-      configForEnvironment: loadConfigForEnvironment,
-      buildParts: (environmentConfig) => {
-        // At boot this is logged below, once the log level is known.
-        if (bootLogged) logProxyConfiguration(environmentConfig.apiBaseUrl);
-        const apiClient = new CognigyApiClient({
-          baseUrl: environmentConfig.apiBaseUrl,
-          apiKey: environmentConfig.apiKey,
-          auditAttribution: environmentConfig.auditAttribution,
-        });
-        return {
-          toolHandlers: new ToolHandlers(
-            apiClient,
-            environmentConfig.endpointBaseUrl,
-            environmentConfig.webchatBaseUrl,
-            environmentConfig.staticFilesBaseUrl,
-          ),
-        };
-      },
-    });
-
-    const config = runtime.current().config;
+    const config = loadConfig();
     logger.setLevel(config.logLevel);
     logger.info("Starting NiCE Cognigy Plugin", {
       name: config.serverName,
       version: config.serverVersion,
     });
+
+    // Which environment this process talks to, and the client + handlers built
+    // for it (see environmentRuntime.ts); the handlers are replaced, never
+    // reused, when the environment changes.
+    const runtime = new EnvironmentRuntime(config);
     const boot = runtime.describe();
     // Names and URLs only: never the key.
     logger.info("Cognigy environment", {
@@ -60,8 +37,6 @@ async function main() {
       apiBaseUrl: boot.apiBaseUrl,
       source: boot.source,
     });
-    logProxyConfiguration(config.apiBaseUrl);
-    bootLogged = true;
 
     const rateLimiter = new RateLimiter(config.rateLimit);
 
@@ -106,11 +81,7 @@ async function main() {
       // before a switch finishes on the environment it started with.
       let call: ReturnType<typeof runtime.current> | undefined;
       if (name !== "manage_environments") {
-        try {
-          call = runtime.current();
-        } catch (error: any) {
-          return toolError(error);
-        }
+        call = runtime.current();
         const rateLimitKey = call.config.apiKey.substring(0, 10);
         if (!rateLimiter.check(rateLimitKey)) {
           // Logged with the tool name: a rejected call never reaches the
@@ -138,7 +109,7 @@ async function main() {
         });
         try {
           const result = call
-            ? await call.parts.toolHandlers.handleToolCall(name, args || {})
+            ? await call.toolHandlers.handleToolCall(name, args || {})
             : handleManageEnvironments(args || {}, runtime);
           return {
             content: [{ type: "text" as const, text: JSON.stringify(result) }],
