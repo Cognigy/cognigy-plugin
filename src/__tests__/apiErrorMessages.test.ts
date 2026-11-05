@@ -17,6 +17,13 @@ const PROXY_ENV_VARS = [
   "all_proxy",
   "NO_PROXY",
   "no_proxy",
+  // `npm test` itself exports an `.npmrc` proxy as `npm_config_*`, which the
+  // engine honours too.
+  "npm_config_proxy",
+  "npm_config_http_proxy",
+  "npm_config_https_proxy",
+  "npm_config_no_proxy",
+  "npm_config_noproxy",
 ];
 
 function errorWith(status: number, url = "/v2.0/projects"): AxiosError {

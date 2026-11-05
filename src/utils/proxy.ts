@@ -46,7 +46,8 @@ function readEnv(key: string): string {
  * the user's `.npmrc` proxy settings as `npm_config_*`, so a proxy configured
  * only for npm must keep reaching the engine. Precedence is v1's:
  * `npm_config_<proto>_proxy` > `<proto>_proxy` > `npm_config_proxy` >
- * `all_proxy`, and `npm_config_no_proxy` before `no_proxy`.
+ * `all_proxy`, and `npm_config_no_proxy` before `no_proxy`. npm itself exports
+ * the `.npmrc` key as `npm_config_noproxy`, so that spelling is read too.
  *
  * When any of those are set, the effective values are overlaid onto the
  * lower-case variables (which proxy-from-env reads first) for the duration of
@@ -56,7 +57,8 @@ export function resolveProxyForUrl(targetUrl: string): string {
   const proto = new URL(targetUrl).protocol.slice(0, -1).toLowerCase();
   const npmProxy = readEnv(`npm_config_${proto}_proxy`);
   const npmFallback = readEnv("npm_config_proxy");
-  const npmNoProxy = readEnv("npm_config_no_proxy");
+  const npmNoProxy =
+    readEnv("npm_config_no_proxy") || readEnv("npm_config_noproxy");
   if (!npmProxy && !npmFallback && !npmNoProxy) {
     return getProxyForUrl(targetUrl);
   }

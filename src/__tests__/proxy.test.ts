@@ -28,8 +28,15 @@ const PROXY_ENV_VARS = [
   "NO_PROXY",
   "no_proxy",
   "npm_config_proxy",
+  "npm_config_http_proxy",
   "npm_config_https_proxy",
   "npm_config_no_proxy",
+  "npm_config_noproxy",
+  "NPM_CONFIG_PROXY",
+  "NPM_CONFIG_HTTP_PROXY",
+  "NPM_CONFIG_HTTPS_PROXY",
+  "NPM_CONFIG_NO_PROXY",
+  "NPM_CONFIG_NOPROXY",
 ];
 
 const API_URL = "https://api-trial.cognigy.ai";
@@ -191,11 +198,36 @@ describe("proxy support", () => {
       expect(resolveProxyForUrl(API_URL)).toBe("");
     });
 
+    it("applies npm_config_noproxy exclusions (the spelling npm exports)", () => {
+      process.env.npm_config_https_proxy = NPM_PROXY;
+      process.env.npm_config_noproxy = ".cognigy.ai";
+      expect(resolveProxyForUrl(API_URL)).toBe("");
+    });
+
     it("leaves process.env as it found it", () => {
       process.env.npm_config_https_proxy = NPM_PROXY;
+      process.env.npm_config_noproxy = "internal.example";
       resolveProxyForUrl(API_URL);
       expect(process.env.https_proxy).toBeUndefined();
+      expect(process.env.HTTPS_PROXY).toBeUndefined();
       expect(process.env.no_proxy).toBeUndefined();
+      expect(process.env.NO_PROXY).toBeUndefined();
+    });
+
+    it("restores variables that were set to an empty string", () => {
+      process.env.https_proxy = "";
+      process.env.no_proxy = "";
+      process.env.npm_config_https_proxy = NPM_PROXY;
+      expect(resolveProxyForUrl(API_URL)).toBe(NPM_PROXY);
+      expect(process.env.https_proxy).toBe("");
+      expect(process.env.no_proxy).toBe("");
+    });
+
+    it("routes requests through an npm-configured proxy", () => {
+      process.env.npm_config_https_proxy = NPM_PROXY;
+      expect(getProxyAxiosOptions(API_URL).httpsAgent).toBeInstanceOf(
+        HttpsProxyAgent,
+      );
     });
   });
 
