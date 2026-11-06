@@ -1,3 +1,10 @@
+## [1.22.6](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.5...v1.22.6) (2026-11-06)
+
+### Bug Fixes
+
+* **deps:** upgrade zod to v4 (GHSA-mrhx-c7xc-m3w5) and refresh outdated dependencies ([#67](https://github.com/Cognigy/cognigy-plugin/issues/67)) ([47cb678](https://github.com/Cognigy/cognigy-plugin/commit/47cb67849dccb28fc40e868efadf88239167f2cf))
+* **flow-nodes:** store question answers and keep trigger intent quick replies ([#58](https://github.com/Cognigy/cognigy-plugin/issues/58)) [skip ci] ([c2e43c6](https://github.com/Cognigy/cognigy-plugin/commit/c2e43c61e65d667fc0bc63370209c879251ed152))
+
 ## [1.22.5](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.4...v1.22.5) (2026-10-30)
 
 ### Bug Fixes
