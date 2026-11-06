@@ -5,6 +5,8 @@ description: "Use when adding, editing or debugging custom logic inside a Cognig
 
 # Flow Node Reference
 
+> Flow nodes belong to legacy AI Agents and other flows. AI Agents built with `manage_agent` have no flow to edit; their custom logic goes into tools and skills (`manage_agent_components`).
+
 Use `manage_flow_nodes` to add logic nodes **inside tool branches only**. Nodes are helpers for tools — they must ALWAYS be created under a tool, never as standalone pre-agent nodes.
 
 **CRITICAL: NEVER add nodes before the AI Agent Job node.** Pre-agent nodes cause conversation loops and break the agent's ability to orchestrate. ALL logic — including authentication, data collection, greetings, and conditional behavior — must be implemented as agent tools.

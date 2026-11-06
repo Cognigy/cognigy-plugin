@@ -31,12 +31,12 @@ export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
     projectId: r.projectReference ?? r.projectId,
     createdAt: r.createdAt,
   }),
-  // Agents V2 (service-agents) list item. The full config is in get_resource.
+  // AI Agent (service-agents) list item. The full config is in get_resource.
   agent_v2: (r) => ({
     id: rid(r),
     referenceId: r.referenceId,
     name: r.name,
-    job: r.job,
+    role: r.role,
     description: r.description,
     agentType: r.agentType,
     projectId: r.projectId,

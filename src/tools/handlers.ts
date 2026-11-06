@@ -49,10 +49,15 @@ import { z } from "zod";
 import * as schemas from "../schemas/tools.js";
 import {
   annotateAgentKindMismatch,
-  createAgentV2,
+  ATTACH_FIELDS,
+  builtinToolParameters,
+  type Capabilities,
+  COMPONENT_PATHS,
+  findOrCreateAgentEndpoint,
   listAgentsV2,
+  probeCapabilities,
   readAgentV2,
-  resolveAgentV2Endpoint,
+  resolveLocaleReferenceId,
 } from "./agentsV2.js";
 import {
   chartToAscii,
@@ -1134,6 +1139,10 @@ export const BACKUP_WORTHY_TOOLS = new Set([
   "audit_voice_agent",
   // Project settings (voice preview, Knowledge AI models) ARE snapshot-covered.
   "manage_settings",
+  // AI Agents and their skills, tools, MCP servers and personas are in
+  // snapshots too. Creating one is not a change to an existing agent.
+  "manage_agent",
+  "manage_agent_components",
 ]);
 
 export class TaskFailedError extends Error {
@@ -1251,6 +1260,8 @@ export class ToolHandlers {
     delete_resource: schemas.deleteResourceSchema,
     audit_voice_agent: schemas.auditVoiceAgentSchema,
     manage_settings: schemas.manageSettingsSchema,
+    manage_agent: schemas.manageAgentSchema,
+    manage_agent_components: schemas.manageAgentComponentsSchema,
   };
 
   /** Operations on multi-operation tools above that only READ. */
@@ -1258,6 +1269,10 @@ export class ToolHandlers {
     "get",
     "list",
     "render",
+    "catalog",
+    "discover_tools",
+    "get_system_prompt",
+    "preview_system_prompt",
   ]);
 
   /**
@@ -1285,6 +1300,15 @@ export class ToolHandlers {
     }
 
     const operation = args?.operation;
+    // A new AI Agent, or a skill/tool not yet attached to one, changes no
+    // existing agent.
+    if (
+      (toolName === "manage_agent" || toolName === "manage_agent_components") &&
+      operation === "create" &&
+      !args?.agentId
+    ) {
+      return false;
+    }
     return (
       typeof operation !== "string" ||
       !ToolHandlers.READ_ONLY_OPERATIONS.has(operation)
@@ -1294,9 +1318,21 @@ export class ToolHandlers {
   /** Whether the call targets something this session created. */
   private targetsNewResource(args: any): boolean {
     if (!this.resourcesCreatedThisSession.size) return false;
+    // An AI Agent call changes exactly that agent, whatever else it names:
+    // attaching a skill created this session to an older agent still changes
+    // the older agent.
+    if (typeof args?.agentId === "string") {
+      return this.resourcesCreatedThisSession.has(args.agentId);
+    }
     // projectId is matched only against ids actually recorded, so passing an
     // EXISTING project to a later call cannot false-match its way past the gate.
-    for (const key of ["aiAgentId", "flowId", "id", "projectId"]) {
+    for (const key of [
+      "aiAgentId",
+      "flowId",
+      "id",
+      "componentId",
+      "projectId",
+    ]) {
       const value = args?.[key];
       if (
         typeof value === "string" &&
@@ -1359,7 +1395,7 @@ export class ToolHandlers {
     private endpointBaseUrl: string,
     private webchatBaseUrl: string = "",
     private staticFilesBaseUrl: string = "",
-    /** Agents V2 preview: `https://api-<host>` (service-agents root). */
+    /** AI Agents: `https://api-<host>` (service-agents root). */
     private agentsV2BaseUrl: string = "",
   ) {}
 
@@ -1995,6 +2031,11 @@ export class ToolHandlers {
     // of an AI Agent resource + Job node. Never chosen by default.
     if (data.agentNodeType === "llmPrompt") {
       return this.createLlmPromptAgent(data);
+    }
+
+    if (!data.legacy) {
+      const held = await this.legacyCreateGuard(data.projectId);
+      if (held) return held;
     }
 
     let projectId = data.projectId ?? null;
@@ -3138,19 +3179,374 @@ export class ToolHandlers {
   }
 
   // =========================================================================
-  // Tool 4: talk_to_agent
+  // AI Agents (service-agents): check_capabilities, manage_agent,
+  // manage_agent_components. Users only hear "AI Agents"; the flow-based kind
+  // is "legacy" when the two must be told apart (see agentsV2.ts).
   // =========================================================================
-  /** Agents V2 preview (branch only). */
-  async handleCreateAgentV2(args: any): Promise<any> {
-    const data = schemas.createAgentV2Schema.parse(args);
-    return createAgentV2(
+  private capabilitiesPromise: Promise<Capabilities> | null = null;
+
+  /** Probed once per session (one server process per MCP session). */
+  private async getCapabilities(): Promise<Capabilities> {
+    this.capabilitiesPromise ??= probeCapabilities(
       this.apiClient,
       this.agentsV2BaseUrl,
-      this.endpointBaseUrl,
-      data,
+    );
+    const caps = await this.capabilitiesPromise;
+    // An inconclusive probe is retried on the next call instead of cached.
+    if (caps.aiAgents === "unknown") this.capabilitiesPromise = null;
+    return caps;
+  }
+
+  async handleCheckCapabilities(): Promise<any> {
+    const caps = await this.getCapabilities();
+    const actions: Record<string, string> = {
+      available:
+        "Build AI Agents with manage_agent. Use create_ai_agent only when the user asks for a legacy AI Agent or the project has only legacy agents.",
+      unavailable:
+        "Build agents with create_ai_agent / update_ai_agent on this environment. Do not mention agent kinds or versions to the user.",
+      unknown:
+        "Could not tell. Try manage_agent; if it fails with 403 or 404, use create_ai_agent instead.",
+    };
+    return withHints(
+      {
+        aiAgents: caps.aiAgents,
+        customSystemPrompt: caps.customSystemPrompt,
+        ...(caps.detail.length ? { detail: caps.detail } : {}),
+      },
+      { action: actions[caps.aiAgents] },
     );
   }
 
+  /**
+   * create_ai_agent builds a legacy AI Agent. Where AI Agents are available
+   * that is only right when the user asked for one or the project has only
+   * legacy agents, so anything else is held with a pointer to manage_agent.
+   */
+  private async legacyCreateGuard(projectId?: string): Promise<any | null> {
+    const caps = await this.getCapabilities();
+    if (caps.aiAgents !== "available") return null;
+    if (projectId) {
+      const [legacy, current] = await Promise.all([
+        this.apiClient
+          .get("/v2.0/aiagents", { params: { projectId, limit: 1 } })
+          .catch(() => null),
+        listAgentsV2(this.apiClient, this.agentsV2BaseUrl, projectId, {
+          limit: 1,
+          skip: 0,
+        }),
+      ]);
+      const legacyItems = (legacy as any)?.items ?? legacy;
+      const legacyTotal =
+        (legacy as any)?.total ??
+        (Array.isArray(legacyItems) ? legacyItems.length : 0);
+      const currentTotal = current.available ? current.total : 0;
+      if (legacyTotal > 0 && currentTotal === 0) return null;
+    }
+    return withHints(
+      { error: "use_manage_agent", changed: false },
+      {
+        action:
+          "Nothing was created. Build the agent with manage_agent { operation: 'create' }. create_ai_agent builds a legacy AI Agent: retry it with legacy: true only if the user explicitly asked for a legacy agent.",
+      },
+    );
+  }
+
+  async handleManageAgent(args: any): Promise<any> {
+    const data = schemas.manageAgentSchema.parse(args);
+    if (data.operation === "create") return this.createAgent(data);
+
+    const agentUrl = `${this.agentsV2BaseUrl}/v1/agents/${data.agentId}`;
+    const params = { projectId: data.projectId };
+
+    if (data.operation === "update") {
+      const { operation: _op, agentId, projectId, ...patch } = data;
+      if (Object.keys(patch).length === 0) {
+        return withHints(
+          { error: "Nothing to update." },
+          { action: "Pass at least one setting to change." },
+        );
+      }
+      const updated: any = await this.apiClient.patch(agentUrl, patch, {
+        params,
+      });
+      return {
+        updated: true,
+        agent: RESOURCE_FILTERS_GET.agent_v2(
+          updated?.id ? updated : { id: agentId, projectId },
+        ),
+      };
+    }
+
+    // The system prompt routes answer 404 like a missing path while the
+    // feature is off, which would read as "agent not found".
+    const caps = await this.getCapabilities();
+    if (caps.customSystemPrompt === "unavailable") {
+      return withHints(
+        { error: "custom_system_prompt_unavailable", changed: false },
+        {
+          action:
+            "This environment does not offer a custom system prompt. Shape the agent through role, description and instructions with manage_agent { operation: 'update' } instead.",
+        },
+      );
+    }
+    const promptUrl = `${agentUrl}/system-prompt`;
+    switch (data.operation) {
+      case "get_system_prompt":
+        return this.apiClient.get(promptUrl, { params });
+      case "save_system_prompt": {
+        const { operation: _op, agentId: _id, ...body } = data;
+        return this.apiClient.put(promptUrl, body, { params });
+      }
+      case "reset_system_prompt":
+        await this.apiClient.delete(promptUrl, { params });
+        return { reset: true, agentId: data.agentId };
+      case "preview_system_prompt": {
+        const { operation: _op, agentId: _id, ...body } = data;
+        return this.apiClient.post(`${promptUrl}/preview`, body, { params });
+      }
+    }
+  }
+
+  private async createAgent(
+    data: Extract<
+      z.infer<typeof schemas.manageAgentSchema>,
+      { operation: "create" }
+    >,
+  ): Promise<any> {
+    const caps = await this.getCapabilities();
+    if (caps.aiAgents === "unavailable") {
+      return withHints(
+        { error: "ai_agents_unavailable", changed: false, detail: caps.detail },
+        {
+          action:
+            "Build the agent with create_ai_agent instead. Do not mention agent kinds or versions to the user.",
+        },
+      );
+    }
+    const {
+      operation: _op,
+      createEndpoint,
+      projectId: given,
+      ...fields
+    } = data;
+    let projectId = given;
+    if (!projectId) {
+      projectId = await this.createProjectFor(data.name);
+      this.resourcesCreatedThisSession.add(projectId);
+    }
+    const localeReferenceId = await resolveLocaleReferenceId(
+      this.apiClient,
+      projectId,
+    );
+    const agent: any = await this.apiClient.post(
+      `${this.agentsV2BaseUrl}/v1/agents`,
+      { projectId, localeReferenceId, ...fields },
+    );
+    for (const key of [agent?.id, agent?.referenceId]) {
+      if (key) this.resourcesCreatedThisSession.add(String(key));
+    }
+    this.rememberProjectOf(agent, projectId);
+
+    let endpointUrl: string | null = null;
+    let endpointError: string | undefined;
+    if (createEndpoint !== false) {
+      try {
+        const { endpoint } = await findOrCreateAgentEndpoint(
+          this.apiClient,
+          projectId,
+          agent,
+        );
+        if (endpoint?.URLToken)
+          endpointUrl = `${this.endpointBaseUrl}/${endpoint.URLToken}`;
+      } catch (e: any) {
+        endpointError = e?.message ?? String(e);
+      }
+    }
+
+    const hints: ResponseHints = {
+      action: `Test it with talk_to_agent { agentId: "${agent.id}", projectId: "${projectId}", message }.${fields.largeLanguageModelReferenceId ? "" : " It answers with the project's default LLM; if replies are empty, bind a working one with largeLanguageModelReferenceId."}`,
+    };
+    if (endpointError)
+      hints.warning = `The agent was created, but its REST endpoint was not (${endpointError}); talk_to_agent creates one on first use.`;
+    return withHints(
+      {
+        projectId,
+        ...(given ? {} : { createdProject: true }),
+        agent: RESOURCE_FILTERS_GET.agent_v2(agent),
+        endpointUrl,
+        use: { agentId: agent.id },
+      },
+      hints,
+    );
+  }
+
+  async handleManageAgentComponents(args: any): Promise<any> {
+    const data = schemas.manageAgentComponentsSchema.parse(args);
+    const v1 = `${this.agentsV2BaseUrl}/v1`;
+    const base = `${v1}/${COMPONENT_PATHS[data.component]}`;
+    const params = { projectId: data.projectId };
+
+    switch (data.operation) {
+      case "catalog": {
+        const res: any = await this.apiClient.get(
+          `${v1}/builtin-${data.component}s`,
+          { params },
+        );
+        const items: any[] = res?.items ?? res ?? [];
+        return {
+          items: items.map((i) => summarizeCatalogItem(data.component, i)),
+          total: items.length,
+        };
+      }
+      case "list": {
+        const res: any = await this.apiClient.get(base, {
+          params: { ...params, limit: data.limit ?? 50, skip: data.skip ?? 0 },
+        });
+        const items: any[] = res?.items ?? res ?? [];
+        return {
+          items: items.map((i) => summarizeComponent(data.component, i)),
+          total: res?.total ?? items.length,
+        };
+      }
+      case "get":
+        return this.apiClient.get(`${base}/${data.componentId}`, { params });
+      case "create": {
+        let body: any = { ...data.config, projectId: data.projectId };
+        if (data.component === "tool" && body.builtinSlug) {
+          const descriptor: any = await this.apiClient.get(
+            `${v1}/builtin-tools/${body.builtinSlug}`,
+            { params },
+          );
+          body = {
+            source: "builtin",
+            type: body.builtinSlug,
+            ...body,
+            parameters: Array.isArray(body.parameters)
+              ? body.parameters
+              : builtinToolParameters(descriptor, body.parameters),
+          };
+        }
+        if (data.component === "skill" && body.builtinSlug && !body.source)
+          body.source = "builtin";
+        const created: any = await this.apiClient.post(base, body);
+        for (const key of [created?.id, created?.referenceId]) {
+          if (key) this.resourcesCreatedThisSession.add(String(key));
+        }
+        const summary = summarizeComponent(data.component, created ?? {});
+        if (!data.agentId) return summary;
+        const attached = await this.attachComponent(
+          data,
+          data.agentId,
+          created.referenceId,
+          true,
+        );
+        return { ...summary, attached };
+      }
+      case "update": {
+        const body: any = { ...data.config };
+        // A builtin tool's parameters may be given as a key→value map; lay it
+        // over the instance's current parameters.
+        if (
+          data.component === "tool" &&
+          body.parameters &&
+          !Array.isArray(body.parameters)
+        ) {
+          const current: any = await this.apiClient.get(
+            `${base}/${data.componentId}`,
+            { params },
+          );
+          body.parameters = builtinToolParameters(current, body.parameters);
+        }
+        const updated: any = await this.apiClient.patch(
+          `${base}/${data.componentId}`,
+          body,
+          { params },
+        );
+        return {
+          updated: true,
+          ...summarizeComponent(data.component, updated ?? {}),
+        };
+      }
+      case "delete":
+        await this.apiClient.delete(`${base}/${data.componentId}`, { params });
+        return {
+          deleted: true,
+          component: data.component,
+          componentId: data.componentId,
+        };
+      case "attach":
+      case "detach": {
+        let referenceId = data.componentId;
+        // Agents reference components by referenceId; accept the id as well.
+        if (/^[a-f0-9]{24}$/.test(referenceId)) {
+          const c: any = await this.apiClient.get(`${base}/${referenceId}`, {
+            params,
+          });
+          referenceId = c?.referenceId ?? referenceId;
+        }
+        return this.attachComponent(
+          data,
+          data.agentId,
+          referenceId,
+          data.operation === "attach",
+        );
+      }
+      case "discover_tools":
+        return this.apiClient.get(`${base}/${data.componentId}/tools`, {
+          params,
+        });
+      case "sync_tools": {
+        // reviewedToolNames is the catalogue the user was shown; here that is
+        // everything discovery reports.
+        const discovered: any = await this.apiClient.get(
+          `${base}/${data.componentId}/tools`,
+          { params },
+        );
+        const remote: any[] = discovered?.items ?? discovered?.tools ?? [];
+        return this.apiClient.post(
+          `${base}/${data.componentId}/tools/sync`,
+          {
+            projectId: data.projectId,
+            import: data.import ?? [],
+            remove: data.remove ?? [],
+            reviewedToolNames: remote.map((t) => t.name).filter(Boolean),
+          },
+          { params },
+        );
+      }
+    }
+  }
+
+  /** Add or remove a skill/tool referenceId on an AI Agent. */
+  private async attachComponent(
+    data: { component: string; projectId: string },
+    agentId: string,
+    referenceId: string,
+    attach: boolean,
+  ): Promise<any> {
+    const field = ATTACH_FIELDS[data.component];
+    const agentUrl = `${this.agentsV2BaseUrl}/v1/agents/${agentId}`;
+    const params = { projectId: data.projectId };
+    const agent: any = await this.apiClient.get(agentUrl, { params });
+    const current: string[] = Array.isArray(agent?.[field]) ? agent[field] : [];
+    const next = attach
+      ? current.includes(referenceId)
+        ? current
+        : [...current, referenceId]
+      : current.filter((r) => r !== referenceId);
+    if (next.length !== current.length) {
+      await this.apiClient.patch(agentUrl, { [field]: next }, { params });
+    }
+    return {
+      agentId,
+      [field]: next,
+      changed: next.length !== current.length,
+    };
+  }
+
+  // =========================================================================
+  // Tool 4: talk_to_agent
+  // =========================================================================
   async handleTalkToAgent(args: any): Promise<any> {
     const data = schemas.talkToAgentSchema.parse(args);
 
@@ -3168,13 +3564,16 @@ export class ToolHandlers {
       endpointId?: string;
     } = {};
 
-    if (!endpointUrl && data.agentV2Id) {
-      // Agents V2 preview: the endpoint targets the agent, no flow involved.
-      const { endpoint, autoCreated } = await resolveAgentV2Endpoint(
+    if (!endpointUrl && data.agentId) {
+      // An AI Agent: the endpoint targets the agent, no flow involved.
+      const agent: any = await this.apiClient.get(
+        `${this.agentsV2BaseUrl}/v1/agents/${data.agentId}`,
+        { params: { projectId: data.projectId } },
+      );
+      const { endpoint, autoCreated } = await findOrCreateAgentEndpoint(
         this.apiClient,
-        this.agentsV2BaseUrl,
-        data.agentV2Id,
         data.projectId!,
+        agent,
       );
       resolvedToken = endpoint.URLToken || undefined;
       endpointUrl = resolvedToken
@@ -3448,7 +3847,7 @@ export class ToolHandlers {
         result.rawResponse = response.data;
       }
 
-      // An Agents V2 endpoint answers 200 with an `error` object when the turn
+      // An AI Agent endpoint answers 200 with an `error` object when the turn
       // failed (e.g. the agent's LLM connection is not set up). Surface it
       // instead of the generic empty-response guess.
       const rawTurnError = response.data.error;
@@ -3461,7 +3860,7 @@ export class ToolHandlers {
         return withHints(result, {
           likely_cause: `The platform reported: ${turnError.message}`,
           action:
-            "Fix the reported problem (for an Agents V2 agent: bind a working LLM via largeLanguageModelReferenceId or the project default), then send the message again with the same sessionId.",
+            "Fix the reported problem (for an AI Agent: bind a working LLM with manage_agent { operation: 'update', largeLanguageModelReferenceId } or set a project default), then send the message again with the same sessionId.",
         });
       }
       if (!agentResponse) {
@@ -3768,10 +4167,11 @@ export class ToolHandlers {
   }
 
   /**
-   * Agents of both kinds. When the project has Agents V2 agents those are the
-   * project's agents (`items`) and V1 agents are demoted to `legacyAgents`;
-   * a V1-only project keeps the old shape. Decided by V2 `total`, not by the
-   * page, so paging past the V2 agents does not flip the mode.
+   * Agents of both kinds. When the project has AI Agents (service-agents)
+   * those are the project's agents (`items`) and legacy agents move to
+   * `legacyAgents`; a legacy-only project keeps the old shape. Decided by the
+   * service-agents `total`, not the page, so paging past them does not flip
+   * the mode.
    */
   private async listAgents(
     projectId: string,
@@ -3794,9 +4194,14 @@ export class ToolHandlers {
     ]);
 
     const v1Raw = (v1Res as any)?.items ?? v1Res;
+    // "legacy" only means something where the other kind exists.
     const v1Items = (Array.isArray(v1Raw) ? v1Raw : []).map((r: any) => {
       const f = filterResponse("agent", r);
-      return { kind: "v1", ...f, use: { aiAgentId: f.id } };
+      return {
+        ...f,
+        ...(v2.available ? { legacy: true } : {}),
+        use: { aiAgentId: f.id },
+      };
     });
     const v1Total = (v1Res as any)?.total ?? v1Items.length;
 
@@ -3809,17 +4214,17 @@ export class ToolHandlers {
       result = {
         items: v2.items.map((r: any) => {
           const f = filterResponse("agent_v2", r);
-          return { kind: "v2", ...f, use: { agentV2Id: f.id } };
+          return { ...f, use: { agentId: f.id } };
         }),
         total: v2.total,
         legacyAgents: v1Items,
         legacyTotal: v1Total,
       };
       hints.hint =
-        "This project uses Agents V2. The v2 agents in items are the project's agents; v1 entries under legacyAgents are legacy and are only used when the user names one. Pass an item's `use` argument (plus projectId) to talk_to_agent; read an agent with get_resource { resourceType: 'agent', id, projectId }.";
+        "The AI Agents in items are the project's agents; legacyAgents are legacy AI Agents, used only when the user names one. Pass an item's `use` (plus projectId) to talk_to_agent, and change these agents with manage_agent / manage_agent_components.";
       if (paging.sort)
         warnings.push(
-          "Agents V2 agents are ordered by creation order only; just the direction of sort was applied to them.",
+          "The agents in items are ordered by creation only; just the direction of sort was applied to them.",
         );
     } else {
       result = { items: v1Items, total: v1Total };
@@ -3854,7 +4259,7 @@ export class ToolHandlers {
     const data = schemas.getResourceSchema.parse(args);
     const { resourceType, id, raw, projectId } = data;
 
-    // Agents V2 reads are project-scoped, so only try them with a projectId.
+    // AI Agent reads are project-scoped, so only try them with a projectId.
     if (resourceType === "agent" && projectId) {
       const v2 = await readAgentV2(
         this.apiClient,
@@ -3865,7 +4270,7 @@ export class ToolHandlers {
       if (v2) {
         if (raw) return v2;
         const f = RESOURCE_FILTERS_GET.agent_v2(v2);
-        return { kind: "v2", ...f, use: { agentV2Id: f.id } };
+        return { ...f, use: { agentId: f.id } };
       }
     }
 
@@ -3907,7 +4312,11 @@ export class ToolHandlers {
     if (resourceType === "endpoint" && (result as any).URLToken) {
       filtered.endpointUrl = `${this.endpointBaseUrl}/${(result as any).URLToken}`;
     }
-    if (resourceType === "agent") filtered.kind = "v1";
+    if (resourceType === "agent") {
+      if ((await this.getCapabilities()).aiAgents === "available")
+        filtered.legacy = true;
+      filtered.use = { aiAgentId: filtered.id ?? id };
+    }
 
     return filtered;
   }
@@ -3968,6 +4377,15 @@ export class ToolHandlers {
 
     // Agents, flows and projects are never hard-deleted — they are renamed
     // with the DELETE_ prefix to mark them for manual deletion.
+    if (resourceType === "agent" && data.projectId) {
+      const agent = await readAgentV2(
+        this.apiClient,
+        this.agentsV2BaseUrl,
+        id,
+        data.projectId,
+      );
+      if (agent) return this.softDeleteNewAgent(agent, data.projectId, cascade);
+    }
     if (resourceType === "agent") {
       if (cascade === false) {
         const agent: any = await this.apiClient.get(`/v2.0/aiagents/${id}`);
@@ -4053,12 +4471,26 @@ export class ToolHandlers {
     failed: { resource: string; error: string }[];
     checked: boolean;
   }> {
+    if (!flowReferenceId) {
+      return { deactivated: [], failed: [], checked: false };
+    }
+    return this.deactivateEndpoints(
+      projectId,
+      (ep) => ep.flowId === flowReferenceId || ep.flowId === flowId,
+    );
+  }
+
+  /** Deactivate (active: false) every endpoint of the project that matches. */
+  private async deactivateEndpoints(
+    projectId: string,
+    matches: (ep: any) => boolean,
+  ): Promise<{
+    deactivated: string[];
+    failed: { resource: string; error: string }[];
+    checked: boolean;
+  }> {
     const deactivated: string[] = [];
     const failed: { resource: string; error: string }[] = [];
-
-    if (!flowReferenceId) {
-      return { deactivated, failed, checked: false };
-    }
 
     try {
       const limit = 100;
@@ -4075,7 +4507,7 @@ export class ToolHandlers {
         }
 
         for (const ep of epItems) {
-          if (ep.flowId === flowReferenceId || ep.flowId === flowId) {
+          if (matches(ep)) {
             const epId = ep._id || ep.id;
             try {
               await this.apiClient.patch(`/v2.0/endpoints/${epId}`, {
@@ -4207,6 +4639,67 @@ export class ToolHandlers {
    * 3. Rename the flow to DELETE_<name>
    * 4. Rename the agent to DELETE_<name>
    */
+  /**
+   * An AI Agent is renamed DELETE_<name> like a legacy one, and the endpoints
+   * that target it are taken offline unless cascade is false.
+   */
+  /** Target fields for a new endpoint: an AI Agent when agentId is given, else the flow. */
+  private async newEndpointTarget(
+    projectId: string,
+    flowId?: string,
+    agentId?: string,
+  ): Promise<{ flowId: string; targetType: string; agentId: string }> {
+    if (!agentId)
+      return { flowId: flowId ?? "", targetType: "flow", agentId: "" };
+    const agent: any = await this.apiClient.get(
+      `${this.agentsV2BaseUrl}/v1/agents/${agentId}`,
+      { params: { projectId } },
+    );
+    return { flowId: "", targetType: "agent", agentId: agent.referenceId };
+  }
+
+  private async softDeleteNewAgent(
+    agent: any,
+    projectId: string,
+    cascade: boolean | undefined,
+  ): Promise<any> {
+    const id = agent.id ?? agent._id;
+    const rename = await this.renameForDeletion(
+      `${this.agentsV2BaseUrl}/v1/agents/${id}?projectId=${projectId}`,
+      agent.name,
+      `agent ${id}`,
+    );
+    const eps =
+      cascade === false
+        ? null
+        : await this.deactivateEndpoints(
+            projectId,
+            (ep) => ep.agentId === agent.referenceId,
+          );
+    const offline =
+      eps && eps.failed.length === 0
+        ? eps.deactivated.length
+          ? "Its endpoints were deactivated."
+          : "No endpoint targeted it."
+        : eps
+          ? "Some of its endpoints could NOT be deactivated (see endpoints.failed); it may still serve traffic."
+          : "Its endpoints were left untouched (cascade: false).";
+    return withHints(
+      {
+        markedForDeletion: true,
+        alreadyMarked: rename.alreadyMarked || undefined,
+        resourceType: "agent",
+        id,
+        name: rename.name,
+        ...(eps ? { endpoints: eps } : {}),
+      },
+      {
+        warning: `Agents cannot be deleted via this plugin. The agent was renamed to mark it for manual deletion. ${offline}`,
+        action: "Delete the agent manually in the Cognigy UI.",
+      },
+    );
+  }
+
   private async softDeleteAgent(agentId: string): Promise<any> {
     const deactivated: string[] = [];
     const renamed: string[] = [];
@@ -6149,15 +6642,15 @@ export class ToolHandlers {
           },
         );
       }
-      if (!data.flowId) {
+      if (!data.flowId && !data.agentId) {
         return withHints(
           {
             error:
-              "flowId is required to create a webchat endpoint. To update an existing one, provide endpointId instead.",
+              "flowId or agentId is required to create a webchat endpoint. To update an existing one, provide endpointId instead.",
           },
           {
             action:
-              "Provide flowId. Use list_resources { resourceType: 'flow', projectId } to find one, or create an agent first with create_ai_agent.",
+              "Pass agentId for an AI Agent (list_resources { resourceType: 'agent', projectId }), or flowId for a legacy agent's or any other flow.",
           },
         );
       }
@@ -6172,10 +6665,12 @@ export class ToolHandlers {
         projectId: data.projectId,
         entrypoint: data.projectId,
         channel: "webchat3",
-        flowId: data.flowId,
         name: data.name || "Webchat",
-        targetType: "flow",
-        agentId: "",
+        ...(await this.newEndpointTarget(
+          data.projectId,
+          data.flowId,
+          data.agentId,
+        )),
       };
       if (localeId) createPayload.localeId = localeId;
 
@@ -6234,7 +6729,7 @@ export class ToolHandlers {
     }
 
     // UPDATE: patch existing endpoint
-    if (!data.name && !data.flowId && !hasSettings) {
+    if (!data.name && !data.flowId && !data.agentId && !hasSettings) {
       const ep = await this.safeGetEndpoint(endpointId);
       if (ep) {
         return this.buildWebchatResponse({
@@ -6270,6 +6765,15 @@ export class ToolHandlers {
       const patchPayload: any = { settings: mergedSettings };
       if (data.name) patchPayload.name = data.name;
       if (data.flowId) patchPayload.flowId = data.flowId;
+      if (data.agentId)
+        Object.assign(
+          patchPayload,
+          await this.newEndpointTarget(
+            data.projectId ?? endpointProjectId(fullEndpoint),
+            undefined,
+            data.agentId,
+          ),
+        );
 
       await this.apiClient.patch(`/v2.0/endpoints/${endpointId}`, patchPayload);
       const endpoint: any = await this.apiClient.get(
@@ -6653,15 +7157,15 @@ export class ToolHandlers {
           },
         );
       }
-      if (!data.flowId) {
+      if (!data.flowId && !data.agentId) {
         return withHints(
           {
             error:
-              "flowId is required to create a voice gateway endpoint. To update an existing one, provide endpointId instead.",
+              "flowId or agentId is required to create a voice gateway endpoint. To update an existing one, provide endpointId instead.",
           },
           {
             action:
-              "Provide flowId. Use list_resources { resourceType: 'flow', projectId } to find one, or create an agent first with create_ai_agent.",
+              "Pass agentId for an AI Agent (list_resources { resourceType: 'agent', projectId }), or flowId for a legacy agent's or any other flow.",
           },
         );
       }
@@ -6678,10 +7182,12 @@ export class ToolHandlers {
         projectId: data.projectId,
         entrypoint: data.projectId,
         channel: "voiceGateway2",
-        flowId: data.flowId,
         name: data.name || "Voice Gateway",
-        targetType: "flow",
-        agentId: "",
+        ...(await this.newEndpointTarget(
+          data.projectId,
+          data.flowId,
+          data.agentId,
+        )),
       };
       if (localeId) createPayload.localeId = localeId;
 
@@ -6777,6 +7283,15 @@ export class ToolHandlers {
       const patchPayload: any = {};
       if (data.name) patchPayload.name = data.name;
       if (data.flowId) patchPayload.flowId = data.flowId;
+      if (data.agentId)
+        Object.assign(
+          patchPayload,
+          await this.newEndpointTarget(
+            data.projectId ?? endpointProjectId(endpoint),
+            undefined,
+            data.agentId,
+          ),
+        );
 
       if (data.webrtcWidgetConfig) {
         const existing = endpoint.webrtcWidgetConfig ?? {};
@@ -7404,7 +7919,7 @@ export class ToolHandlers {
    */
   private learnProjectIds(result: any): void {
     if (!result || typeof result !== "object") return;
-    // legacyAgents: V1 agents demoted by an Agents V2 project's listing.
+    // legacyAgents: legacy agents moved aside in a listing of a project with AI Agents.
     for (const key of ["items", "legacyAgents"]) {
       const items = (result as any)[key];
       if (Array.isArray(items)) {
@@ -8395,8 +8910,14 @@ export class ToolHandlers {
         case "talk_to_agent":
           result = await this.handleTalkToAgent(args);
           break;
-        case "create_agent_v2":
-          result = await this.handleCreateAgentV2(args);
+        case "check_capabilities":
+          result = await this.handleCheckCapabilities();
+          break;
+        case "manage_agent":
+          result = await this.handleManageAgent(args);
+          break;
+        case "manage_agent_components":
+          result = await this.handleManageAgentComponents(args);
           break;
         case "list_resources":
           result = await this.handleListResources(args);
@@ -8459,17 +8980,69 @@ export class ToolHandlers {
 }
 
 // Per-type detail-view filters for get_resource (falls back to RESOURCE_FILTERS).
+/** The project an endpoint record belongs to (field name varies by API version). */
+function endpointProjectId(ep: any): string {
+  return String(ep?.projectId ?? ep?.projectReference ?? ep?.project ?? "");
+}
+
+/** One manage_agent_components list item, without bodies like skill resources. */
+function summarizeComponent(component: string, r: any): any {
+  const out: any = {
+    id: r.id ?? r._id,
+    referenceId: r.referenceId,
+    name: r.name,
+    description: r.description,
+  };
+  if (component === "tool") {
+    out.source = r.source;
+    out.type = r.type;
+    if (r.builtinSlug) out.builtinSlug = r.builtinSlug;
+    if (r.extension) out.extension = r.extension;
+  } else if (component === "skill") {
+    out.source = r.source;
+    if (r.builtinSlug) out.builtinSlug = r.builtinSlug;
+  } else if (component === "mcp_server") {
+    out.url = r.url;
+    out.authType = r.authType;
+  }
+  return out;
+}
+
+/** A builtin catalog entry: what it is and which parameters it takes. */
+function summarizeCatalogItem(component: string, r: any): any {
+  const out: any = {
+    slug: r.slug,
+    name: r.name,
+    description: r.description,
+    available: r.available,
+  };
+  if (component === "skill") out.bundledToolSlugs = r.bundledToolSlugs;
+  else
+    out.parameters = (r.parameters ?? r.defaultParameters ?? []).map(
+      (p: any) => ({
+        key: p.key,
+        type: p.type,
+        mode: p.mode,
+        ...(p.modeLocked ? { modeLocked: true } : {}),
+        description: p.description,
+      }),
+    );
+  return out;
+}
+
 const RESOURCE_FILTERS_GET: Record<string, (raw: any) => any> = {
   agent_v2: (r) => ({
     id: r.id ?? r._id,
     referenceId: r.referenceId,
     name: r.name,
-    job: r.job,
+    role: r.role,
     description: r.description,
     instructions: r.instructions,
     agentType: r.agentType,
     projectId: r.projectId,
     largeLanguageModelReferenceId: r.largeLanguageModelReferenceId,
+    llmConfig: r.llmConfig,
+    hooks: r.hooks,
     toolReferenceIds: r.toolReferenceIds,
     disabledToolReferenceIds: r.disabledToolReferenceIds,
     skillReferenceIds: r.skillReferenceIds,

@@ -10,7 +10,7 @@ The tools are designed to be used together with the plugin's skills, which load 
 
 Tool results carry _hints with warnings and the next step; follow them.
 
-Agents V2 preview (this build only): list_resources 'agent' lists V2 agents first (V1 as legacyAgents), talk_to_agent takes { agentV2Id, projectId }. Create one with create_agent_v2 only when the user asks for Agents V2 / the new Agents editor; when a project already has V2 agents, those are its agents for listing, reading and talking.
+AGENTS: call check_capabilities once before creating or changing agents. Where aiAgents is available, build AI Agents with manage_agent; use create_ai_agent (legacy: true) only when the user asks for a legacy AI Agent or the project has only legacy agents. Call every agent an "AI Agent" and say "legacy" only to tell the two apart; never say V1, V2 or "Agents V2" to the user.
 
 HARD RULES:
 - NEVER guess or invent API keys, URLs or credentials. Ask the user (apiKey for most providers; accessKeyId + secretAccessKey or roleArn for awsBedrock).

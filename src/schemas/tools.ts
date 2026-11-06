@@ -36,6 +36,7 @@ export const createAiAgentSchema = z
     knowledgeStoreReferenceId: z.string().optional(),
     agentNodeType: z.enum(["aiAgent", "llmPrompt"]).optional(),
     systemPrompt: z.string().optional(),
+    legacy: z.boolean().optional(),
   })
   .refine(
     (d) => !(d.agentNodeType === "llmPrompt" && d.knowledgeStoreReferenceId),
@@ -273,7 +274,7 @@ export const talkToAgentSchema = z
   .object({
     endpointUrl: z.string().url().optional(),
     aiAgentId: agentIdSchema.optional(),
-    agentV2Id: agentIdSchema.optional(),
+    agentId: agentIdSchema.optional(),
     projectId: idSchema.optional(),
     message: z.string().min(1),
     sessionId: z.string().optional(),
@@ -282,12 +283,12 @@ export const talkToAgentSchema = z
     verbose: z.boolean().optional(),
     testMode: z.boolean().optional(),
   })
-  .refine((d) => d.endpointUrl || d.aiAgentId || d.agentV2Id, {
-    message: "Either endpointUrl, aiAgentId or agentV2Id must be provided",
+  .refine((d) => d.endpointUrl || d.aiAgentId || d.agentId, {
+    message: "Either endpointUrl, agentId or aiAgentId must be provided",
     path: ["endpointUrl"],
   })
-  .refine((d) => !d.agentV2Id || d.projectId, {
-    message: "agentV2Id requires projectId",
+  .refine((d) => !d.agentId || d.projectId, {
+    message: "agentId requires projectId",
     path: ["projectId"],
   });
 
@@ -830,6 +831,7 @@ export const manageWebchatSchema = z.object({
   endpointId: idSchema.optional(),
   projectId: idSchema.optional(),
   flowId: z.string().optional(),
+  agentId: agentIdSchema.optional(),
   name: z.string().min(1).max(200).optional(),
   stylePreset: z.enum(["classic", "modern", "slick"]).optional(),
   layout: webchatLayoutSchema,
@@ -885,6 +887,7 @@ export const manageVoiceGatewaySchema = z.object({
   endpointId: idSchema.optional(),
   projectId: idSchema.optional(),
   flowId: z.string().optional(),
+  agentId: agentIdSchema.optional(),
   name: z.string().min(1).max(200).optional(),
   webrtcWidgetConfig: webrtcWidgetConfigSchema,
 });
@@ -1041,25 +1044,170 @@ export const manageA2AServerSchema = z.object({
   authenticationType: z.enum(["none", "apiKey"]).optional(),
 });
 
-// Agents V2 preview (branch only, see README "Agents V2 preview").
-export const createAgentV2Schema = z.object({
-  projectId: idSchema,
-  name: z.string().min(1).max(200),
+// AI Agents (service-agents). The plugin calls the flow-based kind "legacy".
+const referenceIdsSchema = z.array(z.string().min(1));
+
+const agentSettingsSchema = {
+  role: z.string().max(100).optional(),
   description: z.string().optional(),
   instructions: z.string().optional(),
-  httpTool: z
+  image: z.string().optional(),
+  agentType: z.enum(["text", "voice"]).optional(),
+  largeLanguageModelReferenceId: z.string().uuid().optional(),
+  llmConfig: z
     .object({
-      name: z.string().min(1).max(200),
-      description: z.string().min(1),
-      url: z.string().url(),
-      method: z
-        .string()
-        .transform((m) => m.toUpperCase())
-        .pipe(z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]))
+      temperature: z.number().min(0).max(2).optional(),
+      maxOutputTokens: z.number().int().positive().optional(),
+      reasoningEffort: z
+        .enum(["none", "minimal", "low", "medium", "high", "xhigh"])
         .optional(),
-      headers: z.record(z.string()).optional(),
     })
     .optional(),
-  createEndpoint: z.boolean().optional(),
-  largeLanguageModelReferenceId: z.string().uuid().optional(),
-});
+  knowledge: z.record(z.any()).optional(),
+  guardrails: z
+    .object({
+      safetySettings: z
+        .object({
+          avoidHarmfulContent: z.boolean(),
+          avoidUngroundedContent: z.boolean(),
+          avoidCopyrightInfringements: z.boolean(),
+          preventJailbreakAndManipulation: z.boolean(),
+        })
+        .partial()
+        .optional(),
+      dataPrivacy: z
+        .object({
+          contactProfilesOption: z.enum([
+            "none",
+            "completeProfile",
+            "profileMemoriesOnly",
+            "selectedProfileFields",
+          ]),
+          selectedProfileFields: z.array(z.string()).optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+  hooks: z
+    .object({ preTurn: z.array(z.record(z.any())) })
+    .nullable()
+    .optional(),
+  personaReferenceId: z.string().uuid().optional(),
+};
+
+const agentTargetSchema = { agentId: agentIdSchema, projectId: idSchema };
+
+export const manageAgentSchema = z.discriminatedUnion("operation", [
+  z.object({
+    operation: z.literal("create"),
+    projectId: idSchema.optional(),
+    name: z.string().min(1).max(200),
+    ...agentSettingsSchema,
+    skillReferenceIds: referenceIdsSchema.optional(),
+    toolReferenceIds: referenceIdsSchema.optional(),
+    createEndpoint: z.boolean().optional(),
+  }),
+  z.object({
+    operation: z.literal("update"),
+    ...agentTargetSchema,
+    name: z.string().min(1).max(200).optional(),
+    ...agentSettingsSchema,
+    disabledToolReferenceIds: referenceIdsSchema.optional(),
+  }),
+  z.object({ operation: z.literal("get_system_prompt"), ...agentTargetSchema }),
+  z.object({
+    operation: z.literal("save_system_prompt"),
+    ...agentTargetSchema,
+    template: z.string().min(1),
+    onBuildFailure: z.enum(["defaultPrompt", "noAnswer"]).optional(),
+    acknowledgeRisk: z.boolean().optional(),
+  }),
+  z.object({
+    operation: z.literal("reset_system_prompt"),
+    ...agentTargetSchema,
+  }),
+  z.object({
+    operation: z.literal("preview_system_prompt"),
+    ...agentTargetSchema,
+    template: z.string().min(1),
+    scriptPlaceholders: z.boolean().optional(),
+  }),
+]);
+
+export const AGENT_COMPONENTS = [
+  "skill",
+  "tool",
+  "mcp_server",
+  "persona",
+] as const;
+const componentSchema = z.enum(AGENT_COMPONENTS);
+const componentIdSchema = z.string().min(1);
+const componentConfigSchema = z.record(z.any());
+
+export const manageAgentComponentsSchema = z.discriminatedUnion("operation", [
+  z.object({
+    operation: z.literal("catalog"),
+    component: z.enum(["skill", "tool"]),
+    projectId: idSchema,
+  }),
+  z.object({
+    operation: z.literal("list"),
+    component: componentSchema,
+    projectId: idSchema,
+    ...paginationSchema,
+  }),
+  z.object({
+    operation: z.literal("get"),
+    component: componentSchema,
+    projectId: idSchema,
+    componentId: componentIdSchema,
+  }),
+  z.object({
+    operation: z.literal("create"),
+    component: componentSchema,
+    projectId: idSchema,
+    config: componentConfigSchema,
+    agentId: agentIdSchema.optional(),
+  }),
+  z.object({
+    operation: z.literal("update"),
+    component: componentSchema,
+    projectId: idSchema,
+    componentId: componentIdSchema,
+    config: componentConfigSchema,
+  }),
+  z.object({
+    operation: z.literal("delete"),
+    component: componentSchema,
+    projectId: idSchema,
+    componentId: componentIdSchema,
+  }),
+  z.object({
+    operation: z.literal("attach"),
+    component: z.enum(["skill", "tool"]),
+    projectId: idSchema,
+    componentId: componentIdSchema,
+    agentId: agentIdSchema,
+  }),
+  z.object({
+    operation: z.literal("detach"),
+    component: z.enum(["skill", "tool"]),
+    projectId: idSchema,
+    componentId: componentIdSchema,
+    agentId: agentIdSchema,
+  }),
+  z.object({
+    operation: z.literal("discover_tools"),
+    component: z.literal("mcp_server"),
+    projectId: idSchema,
+    componentId: componentIdSchema,
+  }),
+  z.object({
+    operation: z.literal("sync_tools"),
+    component: z.literal("mcp_server"),
+    projectId: idSchema,
+    componentId: componentIdSchema,
+    import: z.array(z.string().min(1)).optional(),
+    remove: z.array(z.string().min(1)).optional(),
+  }),
+]);

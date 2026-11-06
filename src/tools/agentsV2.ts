@@ -1,6 +1,7 @@
 /**
- * Agents V2 (service-agents) preview. Lives on this branch only; see the
- * "Agents V2 preview" section of the README for how to run it.
+ * AI Agents served by service-agents (internally "Agents V2"). Users only ever
+ * hear "AI Agents"; the flow-based kind behind /v2.0/aiagents is called
+ * "legacy" when the two must be told apart. Never say V1/V2 in LLM-facing text.
  *
  * service-agents is reached on the API host root (`https://api-<host>/v1/...`),
  * not under `/new` like service-api. Traefik's auth-gateway forward-auth turns
@@ -9,29 +10,93 @@
  */
 import { CognigyApiClient } from "../api/client.js";
 
-export const HTTP_REQUEST_SLUG = "http-request";
-
 export function agentsV2BaseUrl(apiBaseUrl: string): string {
   return new URL(apiBaseUrl).origin;
+}
+
+export type Availability = "available" | "unavailable" | "unknown";
+
+export interface Capabilities {
+  /** AI Agents (service-agents) for this environment, org and API key. */
+  aiAgents: Availability;
+  /** The custom system prompt editor (FEATURE_ENABLE_AGENTS_V2_CUSTOM_SYSTEM_PROMPT). */
+  customSystemPrompt: Availability;
+  detail: string[];
+}
+
+const ABSENT_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
+
+/** Errors that mean "this cluster or key has no AI Agents", not "it broke". */
+export function isAgentsV2Absent(error: any): boolean {
+  if (typeof error?.status === "number")
+    return [401, 403, 404].includes(error.status);
+  return ABSENT_CODES.has(error?.code);
+}
+
+/**
+ * What this environment supports, from two cheap reads. service-agents answers
+ * a non-whitelisted org with a bare 403 `{"detail":"forbidden"}` before any
+ * permission check (other 403s carry "access denied: …"), a cluster without
+ * the service answers 404 or does not connect, and a feature-gated route
+ * answers 404 "like an unregistered path" while its flag is off. With the flag
+ * on, a malformed agent id reaches the ownership lookup and gets a 400.
+ */
+export async function probeCapabilities(
+  api: CognigyApiClient,
+  v1: string,
+): Promise<Capabilities> {
+  const caps: Capabilities = {
+    aiAgents: "unknown",
+    customSystemPrompt: "unknown",
+    detail: [],
+  };
+  if (!v1) {
+    caps.aiAgents = "unavailable";
+    caps.customSystemPrompt = "unavailable";
+    caps.detail.push("No API base URL configured.");
+    return caps;
+  }
+  try {
+    await api.get(`${v1}/v1/agents`, { params: { limit: 1 } });
+    caps.aiAgents = "available";
+  } catch (error: any) {
+    if (error?.status === 403 && error?.message === "forbidden") {
+      caps.aiAgents = "unavailable";
+      caps.detail.push("AI Agents are not enabled for this organisation.");
+    } else if (error?.status === 404 || ABSENT_CODES.has(error?.code)) {
+      caps.aiAgents = "unavailable";
+      caps.detail.push("This environment does not run AI Agents.");
+    } else {
+      caps.detail.push(
+        `AI Agents could not be checked (${error?.status ?? error?.code ?? error?.message}).`,
+      );
+    }
+  }
+  if (caps.aiAgents !== "available") {
+    caps.customSystemPrompt = caps.aiAgents;
+    return caps;
+  }
+  try {
+    await api.get(`${v1}/v1/agents/capability-probe/system-prompt`);
+    caps.customSystemPrompt = "available";
+  } catch (error: any) {
+    if (error?.status === 400) caps.customSystemPrompt = "available";
+    else if (error?.status === 404) caps.customSystemPrompt = "unavailable";
+    else
+      caps.detail.push(
+        `The custom system prompt could not be checked (${error?.status ?? error?.message}).`,
+      );
+  }
+  return caps;
 }
 
 export type AgentsV2ListResult =
   | { available: true; items: any[]; total: number }
   | { available: false; warning?: string };
 
-const ABSENT_STATUSES = new Set([401, 403, 404]);
-const ABSENT_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
-
-/** Errors that mean "this cluster or key has no Agents V2", not "it broke". */
-export function isAgentsV2Absent(error: any): boolean {
-  if (typeof error?.status === "number")
-    return ABSENT_STATUSES.has(error.status);
-  return ABSENT_CODES.has(error?.code);
-}
-
 /**
- * The project's Agents V2 agents. Never throws: Agents V2 is absent on most
- * clusters, and list_resources must still return the V1 agents.
+ * The project's AI Agents. Never throws: they are absent on many clusters,
+ * and list_resources must still return the legacy agents.
  */
 export async function listAgentsV2(
   api: CognigyApiClient,
@@ -51,31 +116,12 @@ export async function listAgentsV2(
     if (isAgentsV2Absent(error)) return { available: false };
     return {
       available: false,
-      warning: `Agents V2 agents could not be checked (${error?.status ?? error?.code ?? error?.message}); the list may be incomplete.`,
+      warning: `AI Agents could not be listed (${error?.status ?? error?.code ?? error?.message}); the list may be incomplete.`,
     };
   }
 }
 
-export interface HttpToolSpec {
-  name: string;
-  description: string;
-  url: string;
-  method?: string;
-  headers?: Record<string, string>;
-}
-
-export interface CreateAgentV2Input {
-  projectId: string;
-  name: string;
-  description?: string;
-  instructions?: string;
-  httpTool?: HttpToolSpec;
-  createEndpoint?: boolean;
-  /** LLM to bind; omitted = the project's default LLM. */
-  largeLanguageModelReferenceId?: string;
-}
-
-async function resolveLocaleReferenceId(
+export async function resolveLocaleReferenceId(
   api: CognigyApiClient,
   projectId: string,
 ): Promise<string> {
@@ -93,58 +139,52 @@ async function resolveLocaleReferenceId(
 }
 
 /**
- * Create a builtin `http-request` tool. The parameter list is taken from the
- * live descriptor and only method/url/headers are overridden, because
- * service-agents validates every instance against the descriptor.
+ * A builtin tool instance's parameters: the live descriptor's list with the
+ * caller's values laid over it. service-agents validates every instance
+ * against the descriptor, so keys, names and types always come from it. An
+ * override is a plain value (sets `value`) or `{ mode, value }`.
  */
-export async function createHttpTool(
-  api: CognigyApiClient,
-  v1: string,
-  projectId: string,
-  spec: HttpToolSpec,
-): Promise<any> {
-  const descriptor: any = await api.get(
-    `${v1}/v1/builtin-tools/${HTTP_REQUEST_SLUG}`,
-  );
+export function builtinToolParameters(
+  descriptor: any,
+  overrides: Record<string, any> = {},
+): any[] {
   const base: any[] = descriptor?.parameters ?? descriptor?.defaultParameters;
   if (!Array.isArray(base) || base.length === 0) {
     throw new Error(
-      `Builtin tool "${HTTP_REQUEST_SLUG}" not available on this cluster`,
+      `Builtin tool "${descriptor?.slug ?? "?"}" has no parameter descriptor on this cluster`,
     );
   }
-  const method = (spec.method ?? "GET").toUpperCase();
-  const overrides: Record<string, { mode?: string; value?: unknown }> = {
-    method: { mode: "dynamic", value: method },
-    url: { mode: "dynamic", value: spec.url },
-    headers: { mode: "dynamic", value: spec.headers ?? {} },
-    payload: ["POST", "PUT", "PATCH"].includes(method)
-      ? { mode: "aiFilled" }
-      : {},
-  };
-  const parameters = base.map((p) => {
-    const o = overrides[p.key] ?? {};
+  const unknown = Object.keys(overrides).filter(
+    (k) => !base.some((p) => p.key === k),
+  );
+  if (unknown.length) {
+    throw new Error(
+      `Unknown parameter(s) ${unknown.join(", ")}; this builtin tool takes ${base.map((p) => p.key).join(", ")}.`,
+    );
+  }
+  return base.map((p) => {
+    const raw = overrides[p.key];
+    const o =
+      raw && typeof raw === "object" && !Array.isArray(raw) && "mode" in raw
+        ? raw
+        : raw === undefined
+          ? {}
+          : { value: raw };
+    const mode = o.mode ?? p.mode;
     return {
       key: p.key,
       name: p.name,
       description: p.description ?? "",
-      mode: o.mode ?? p.mode,
+      mode,
       type: p.type,
-      value: o.value ?? p.value ?? null,
+      // An aiFilled parameter takes no design-time value.
+      value: /ai_?filled/i.test(mode) ? null : (o.value ?? p.value ?? null),
       ...(p.connectionTypes ? { connectionTypes: p.connectionTypes } : {}),
     };
   });
-  return api.post(`${v1}/v1/tools`, {
-    projectId,
-    source: "builtin",
-    builtinSlug: HTTP_REQUEST_SLUG,
-    type: HTTP_REQUEST_SLUG,
-    name: spec.name,
-    description: spec.description,
-    parameters,
-  });
 }
 
-/** Find the REST endpoint that targets this V2 agent, or create one. */
+/** Find the REST endpoint that targets this AI Agent, or create one. */
 export async function findOrCreateAgentEndpoint(
   api: CognigyApiClient,
   projectId: string,
@@ -173,103 +213,9 @@ export async function findOrCreateAgentEndpoint(
   return { endpoint, autoCreated: true };
 }
 
-export async function createAgentV2(
-  api: CognigyApiClient,
-  v1: string,
-  endpointBaseUrl: string,
-  data: CreateAgentV2Input,
-): Promise<any> {
-  const localeReferenceId = await resolveLocaleReferenceId(api, data.projectId);
-  // Compensating deletes, newest first, so a failure half-way does not leave
-  // an orphaned tool or agent behind (a retry would otherwise create duplicates).
-  const undo: { kind: string; url: string }[] = [];
-  const rollback = async (cause: Error): Promise<never> => {
-    const outcome: string[] = [];
-    for (const u of undo.reverse()) {
-      try {
-        await api.delete(u.url);
-        outcome.push(`${u.kind} deleted`);
-      } catch (e: any) {
-        outcome.push(`${u.kind} NOT deleted (${e.message})`);
-      }
-    }
-    throw new Error(
-      `create_agent_v2 failed: ${cause.message}` +
-        (outcome.length ? ` — rolled back: ${outcome.join(", ")}` : ""),
-    );
-  };
-  let tool: any = null;
-  let agent: any;
-  let endpoint: any = null;
-  try {
-    if (data.httpTool) {
-      tool = await createHttpTool(api, v1, data.projectId, data.httpTool);
-      undo.push({
-        kind: "tool",
-        url: `${v1}/v1/tools/${tool.id}?projectId=${data.projectId}`,
-      });
-    }
-    agent = await api.post(`${v1}/v1/agents`, {
-      projectId: data.projectId,
-      localeReferenceId,
-      name: data.name,
-      description: data.description ?? "",
-      instructions: data.instructions ?? data.description ?? "",
-      agentType: "text",
-      toolReferenceIds: tool ? [tool.referenceId] : [],
-      ...(data.largeLanguageModelReferenceId
-        ? { largeLanguageModelReferenceId: data.largeLanguageModelReferenceId }
-        : {}),
-    });
-    undo.push({
-      kind: "agent",
-      url: `${v1}/v1/agents/${agent.id}?projectId=${data.projectId}`,
-    });
-    if (data.createEndpoint !== false) {
-      endpoint = (await findOrCreateAgentEndpoint(api, data.projectId, agent))
-        .endpoint;
-    }
-  } catch (e: any) {
-    await rollback(e);
-  }
-  return {
-    projectId: data.projectId,
-    agent: {
-      id: agent.id,
-      referenceId: agent.referenceId,
-      name: agent.name ?? data.name,
-    },
-    tool: tool
-      ? { id: tool.id, referenceId: tool.referenceId, name: tool.name }
-      : null,
-    endpoint: endpoint
-      ? { id: endpoint._id ?? endpoint.id, URLToken: endpoint.URLToken }
-      : null,
-    endpointUrl: endpoint?.URLToken
-      ? `${endpointBaseUrl}/${endpoint.URLToken}`
-      : null,
-    next: endpoint
-      ? `talk_to_agent { agentV2Id: "${agent.id}", projectId: "${data.projectId}", message }`
-      : "Set createEndpoint: true (or create a REST endpoint targeting this agent) before talk_to_agent.",
-  };
-}
-
-/** talk_to_agent { agentV2Id } — the endpoint for a V2 agent. */
-export async function resolveAgentV2Endpoint(
-  api: CognigyApiClient,
-  v1: string,
-  agentV2Id: string,
-  projectId: string,
-): Promise<{ endpoint: any; autoCreated: boolean }> {
-  const agent: any = await api.get(`${v1}/v1/agents/${agentV2Id}`, {
-    params: { projectId },
-  });
-  return findOrCreateAgentEndpoint(api, projectId, agent);
-}
-
 /**
- * One Agents V2 agent, or null when it cannot be read for any reason (absent
- * service, wrong kind, other project). Callers fall back to V1.
+ * One AI Agent, or null when it cannot be read for any reason (absent service,
+ * legacy agent id, other project). Callers fall back to the legacy kind.
  */
 export async function readAgentV2(
   api: CognigyApiClient,
@@ -285,11 +231,25 @@ export async function readAgentV2(
   }
 }
 
-export const V2_AGENT_NOTE =
-  "If this is an Agents V2 agent (kind: \"v2\" in list_resources { resourceType: 'agent', projectId }), V1 tools cannot edit it — read it with get_resource { resourceType: 'agent', id, projectId }, test it with talk_to_agent { agentV2Id, projectId }, and configure it in the Agents V2 editor.";
+/** service-agents paths per component kind (manage_agent_components). */
+export const COMPONENT_PATHS: Record<string, string> = {
+  skill: "skills",
+  tool: "tools",
+  mcp_server: "mcp-servers",
+  persona: "agentpersonas",
+};
 
-export const V1_AGENT_NOTE =
-  "If this is a V1 AI Agent (kind: \"v1\" in list_resources { resourceType: 'agent', projectId }), pass it as aiAgentId instead of agentV2Id.";
+/** The agent array a component is attached through. */
+export const ATTACH_FIELDS: Record<string, string> = {
+  skill: "skillReferenceIds",
+  tool: "toolReferenceIds",
+};
+
+export const LEGACY_AGENT_NOTE =
+  "If this is a legacy AI Agent (legacy: true in list_resources { resourceType: 'agent', projectId }), pass it as aiAgentId instead of agentId.";
+
+export const NEW_AGENT_NOTE =
+  "If this is an AI Agent without legacy: true in list_resources { resourceType: 'agent', projectId }, the legacy tools cannot edit it — change it with manage_agent and manage_agent_components, and test it with talk_to_agent { agentId, projectId }.";
 
 /**
  * Agent ids look the same for both kinds, so a 404 on an agent record often
@@ -300,7 +260,7 @@ export function annotateAgentKindMismatch(error: any): void {
   if (error?.status !== 404 || typeof error?.url !== "string") return;
   const path = error.url.split("?")[0];
   if (/\/v2\.0\/aiagents\/[^/]+$/.test(path))
-    error.message = `${error.message} — ${V2_AGENT_NOTE}`;
+    error.message = `${error.message} — ${NEW_AGENT_NOTE}`;
   else if (/\/v1\/agents\/[^/]+$/.test(path))
-    error.message = `${error.message} — ${V1_AGENT_NOTE}`;
+    error.message = `${error.message} — ${LEGACY_AGENT_NOTE}`;
 }

@@ -5,6 +5,8 @@ description: "Use when the user wants to set up a voice agent or a Voice Gateway
 
 # Voice Gateway Setup Guide
 
+> For an AI Agent built with `manage_agent`, create the endpoint with `agentId` (plus `projectId`) instead of `flowId`. Give such an agent `agentType: "voice"` and its voice tools (`voice-hangup`, `voice-transfer`) through `manage_agent_components`.
+
 Deploy an AI Agent as a voice-enabled endpoint with WebRTC support. Users can talk to the agent directly in their browser.
 
 ## Prerequisites

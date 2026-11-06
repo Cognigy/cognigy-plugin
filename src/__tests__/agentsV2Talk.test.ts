@@ -12,7 +12,7 @@ const ID = {
 const V1 = "https://api-trial.cognigy.ai";
 const EP = "https://endpoint-trial.cognigy.ai";
 
-describe("talk_to_agent { agentV2Id }", () => {
+describe("talk_to_agent { agentId }", () => {
   let api: any;
   let h: InstanceType<typeof ToolHandlers>;
 
@@ -27,7 +27,7 @@ describe("talk_to_agent { agentV2Id }", () => {
     h = new ToolHandlers(api, EP, "", "", V1);
   });
 
-  it("reads the V2 agent, reuses its REST endpoint and sends to the /test/ URL", async () => {
+  it("reads the AI Agent, reuses its REST endpoint and sends to the /test/ URL", async () => {
     api.get
       .mockResolvedValueOnce({
         id: ID.agent,
@@ -47,7 +47,7 @@ describe("talk_to_agent { agentV2Id }", () => {
     post.mockResolvedValueOnce({ data: { text: "18°C", outputStack: [] } });
 
     const r: any = await h.handleToolCall("talk_to_agent", {
-      agentV2Id: ID.agent,
+      agentId: ID.agent,
       projectId: ID.project,
       message: "weather?",
     });
@@ -78,7 +78,7 @@ describe("talk_to_agent { agentV2Id }", () => {
     });
 
     const r: any = await h.handleToolCall("talk_to_agent", {
-      agentV2Id: ID.agent,
+      agentId: ID.agent,
       projectId: ID.project,
       message: "hi",
     });

@@ -5,6 +5,8 @@ description: "Use when the user wants to add knowledge, RAG, or a knowledge stor
 
 # Adding Knowledge to an Agent
 
+> Creating stores and sources is the same for both kinds of agent. To give an AI Agent (built with `manage_agent`) the store, set its `knowledge` block with `manage_agent { operation: "update" }` — see the agent-creation skill. The `create_tool { toolType: "knowledge" }` steps below are for legacy AI Agents.
+
 ## Prerequisites
 
 - An **embedding model** must be configured in the project before creating knowledge stores.

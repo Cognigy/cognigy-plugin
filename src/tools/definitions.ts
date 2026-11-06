@@ -25,7 +25,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "create_ai_agent",
     description:
-      "Create a complete AI Agent in one call: the agent resource plus an auto-provisioned flow, AI Agent Job Node and REST endpoint. Do not create those pieces separately. If projectId is omitted, a new project is created from the agent name. Passing knowledgeStoreReferenceId also attaches a knowledge-search tool to the Job Node. agentNodeType 'llmPrompt' (only when the user asks for an LLM Prompt node by name) builds the flow on an LLM Prompt node driven by systemPrompt, with no agent resource. Returns the agent, flow and endpoint, the endpointUrl for talk_to_agent, the projectId used, and llmStatus. The agent cannot answer until the project has a working, connected LLM; llmStatus 'unknown' means that is not yet confirmed.",
+      "Create a complete legacy AI Agent in one call: the agent resource plus an auto-provisioned flow, AI Agent Job Node and REST endpoint. Where check_capabilities reports aiAgents available, build agents with manage_agent instead: this tool then creates nothing unless legacy is true or the project has only legacy agents. Do not create the pieces separately. If projectId is omitted, a new project is created from the agent name. Passing knowledgeStoreReferenceId also attaches a knowledge-search tool to the Job Node. agentNodeType 'llmPrompt' (only when the user asks for an LLM Prompt node by name) builds the flow on an LLM Prompt node driven by systemPrompt, with no agent resource. Returns the agent, flow and endpoint, the endpointUrl for talk_to_agent, the projectId used, and llmStatus. The agent cannot answer until the project has a working, connected LLM; llmStatus 'unknown' means that is not yet confirmed.",
     annotations: {
       title: "Create AI Agent",
       readOnlyHint: false,
@@ -61,6 +61,11 @@ export const tools: ToolDefinition[] = [
           description:
             "Which node drives the agent. Omit for the AI Agent default. Pass 'llmPrompt' only when the user asked for an LLM Prompt node by name.",
         },
+        legacy: {
+          type: "boolean",
+          description:
+            "true only when the user explicitly asked for a legacy AI Agent. Without it, where AI Agents are available and the project is not legacy-only, the call is refused and nothing is created.",
+        },
         systemPrompt: {
           type: "string",
           description:
@@ -75,7 +80,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "update_ai_agent",
     description:
-      "Update an existing AI Agent: its identity fields (name, persona in description, guardrails in instructions) and its AI Agent Job Node config (jobConfig: job name, scope, procedures, LLM, temperature, maxTokens) in one call. Only the fields you pass change. Spread configuration across the matching fields rather than putting everything into description. To give the agent knowledge, use create_tool with toolType 'knowledge' instead of persona text. Requires aiAgentId (from create_ai_agent or list_resources { resourceType: 'agent' }).",
+      "Update an existing legacy AI Agent (AI Agents are changed with manage_agent): its identity fields (name, persona in description, guardrails in instructions) and its AI Agent Job Node config (jobConfig: job name, scope, procedures, LLM, temperature, maxTokens) in one call. Only the fields you pass change. Spread configuration across the matching fields rather than putting everything into description. To give the agent knowledge, use create_tool with toolType 'knowledge' instead of persona text. Requires aiAgentId (from create_ai_agent or list_resources { resourceType: 'agent' }).",
     annotations: {
       title: "Update AI Agent",
       readOnlyHint: false,
@@ -256,7 +261,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "talk_to_agent",
     description:
-      "Send one message to a Cognigy AI Agent through its REST endpoint and return the reply, for testing during iterative development. Pass endpointUrl directly, aiAgentId to have the tool find or create a REST endpoint for the agent's flow, or agentV2Id + projectId for an Agents V2 agent. Reuse the returned sessionId across calls for a multi-turn conversation. The project needs a working LLM, otherwise the reply is empty. Messages go through Cognigy Endpoint Test Mode by default, which is not billed (fair use: about 600 test messages per hour). A failed send is never re-sent automatically, because it may already have run; its hints say how to check before retrying. Returns agentResponse, sessionId, endpointUrl and testMode; verbose: true adds the raw API response.",
+      "Send one message to a Cognigy AI Agent through its REST endpoint and return the reply, for testing during iterative development. Pass endpointUrl directly, agentId + projectId for an AI Agent, or aiAgentId for a legacy AI Agent; with an id the tool finds or creates a REST endpoint for the agent. Reuse the returned sessionId across calls for a multi-turn conversation. The project needs a working LLM, otherwise the reply is empty. Messages go through Cognigy Endpoint Test Mode by default, which is not billed (fair use: about 600 test messages per hour). A failed send is never re-sent automatically, because it may already have run; its hints say how to check before retrying. Returns agentResponse, sessionId, endpointUrl and testMode; verbose: true adds the raw API response.",
     annotations: {
       title: "Talk to Agent",
       readOnlyHint: false,
@@ -275,12 +280,12 @@ export const tools: ToolDefinition[] = [
         aiAgentId: {
           type: "string",
           description:
-            "24-char hex AI Agent ID. When endpointUrl is omitted, the tool finds or auto-creates a REST endpoint for this agent's flow.",
+            "24-char hex id of a legacy AI Agent (legacy: true in list_resources). When endpointUrl is omitted, the tool finds or auto-creates a REST endpoint for this agent's flow.",
         },
-        agentV2Id: {
+        agentId: {
           type: "string",
           description:
-            "Agents V2 preview: 24-char hex id of an Agents V2 agent (kind: 'v2' in list_resources { resourceType: 'agent', projectId }). Requires projectId. Not the referenceId UUID. The tool finds or auto-creates a REST endpoint that targets the agent directly (no flow).",
+            "24-char hex id of an AI Agent (its `use` in list_resources { resourceType: 'agent', projectId }), not the referenceId UUID. Requires projectId. The tool finds or creates a REST endpoint that targets the agent.",
         },
         projectId: {
           type: "string",
@@ -323,7 +328,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "list_resources",
     description:
-      "List Cognigy resources of one type, paginated, with optional server-side sort. Types: project (no projectId needed), tool (takes aiAgentId, or flowId for an LLM Prompt flow, instead of projectId), audit_event (organisation-wide, no projectId; answers \"who changed what\" via the actor and eventType filters, Cognigy 2026.17.0+), and the project-scoped agent, flow, endpoint, llm_model, knowledge_store, conversation, extension, function. Packages and snapshots are listed by manage_packages and manage_snapshots. Returns id, name and a few type-specific fields per item; use get_resource for full detail. For recency questions use sort (e.g. 'lastChanged:desc' with a small limit) instead of paging through everything. agent also lists Agents V2 agents; V1 agents then move to legacyAgents.",
+      "List Cognigy resources of one type, paginated, with optional server-side sort. Types: project (no projectId needed), tool (takes aiAgentId, or flowId for an LLM Prompt flow, instead of projectId), audit_event (organisation-wide, no projectId; answers \"who changed what\" via the actor and eventType filters, Cognigy 2026.17.0+), and the project-scoped agent, flow, endpoint, llm_model, knowledge_store, conversation, extension, function. Packages and snapshots are listed by manage_packages and manage_snapshots. Returns id, name and a few type-specific fields per item; use get_resource for full detail. For recency questions use sort (e.g. 'lastChanged:desc' with a small limit) instead of paging through everything. agent lists both kinds: where the project has AI Agents they are the items and legacy AI Agents move to legacyAgents; each agent's use is the id argument to pass on.",
     annotations: {
       title: "List Resources",
       readOnlyHint: true,
@@ -468,7 +473,7 @@ export const tools: ToolDefinition[] = [
         projectId: {
           type: "string",
           description:
-            "24-char hex project ID. Required for endpoint lookups; for agent, also finds Agents V2 agents (tried first).",
+            "24-char hex project ID. Required for endpoint lookups; for agent, also finds AI Agents (tried first) besides legacy ones.",
         },
         raw: {
           type: "boolean",
@@ -516,7 +521,8 @@ export const tools: ToolDefinition[] = [
         },
         projectId: {
           type: "string",
-          description: "24-char hex project ID (required for some types)",
+          description:
+            "24-char hex project ID (required for some types; for agent, needed to find an AI Agent rather than a legacy one)",
         },
         aiAgentId: {
           type: "string",
@@ -1292,7 +1298,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "manage_webchat",
     description:
-      "Create or update a Webchat v3 endpoint that deploys an agent's flow as an embeddable website chat widget. Without endpointId a new endpoint is created (projectId and flowId required); with endpointId the existing endpoint is updated and the given settings are merged, so pass only what should change. stylePreset applies a predefined look, the setting groups (layout, behavior, startBehavior, homeScreen, ...) cover the Webchat settings, and customJson takes anything else. Always returns demoWebchatUrl, a live test page to show the user as a link, plus _integration with the embed snippet.",
+      "Create or update a Webchat v3 endpoint that deploys an agent's flow as an embeddable website chat widget. Without endpointId a new endpoint is created (projectId plus flowId, or agentId for an AI Agent); with endpointId the existing endpoint is updated and the given settings are merged, so pass only what should change. stylePreset applies a predefined look, the setting groups (layout, behavior, startBehavior, homeScreen, ...) cover the Webchat settings, and customJson takes anything else. Always returns demoWebchatUrl, a live test page to show the user as a link, plus _integration with the embed snippet.",
     annotations: {
       title: "Manage Webchat",
       readOnlyHint: false,
@@ -1316,7 +1322,12 @@ export const tools: ToolDefinition[] = [
         flowId: {
           type: "string",
           description:
-            "Flow referenceId to connect the webchat endpoint to. Required for create.",
+            "Flow referenceId to connect the webchat endpoint to (a legacy agent's or any other flow). Create needs flowId or agentId.",
+        },
+        agentId: {
+          type: "string",
+          description:
+            "24-char hex id of an AI Agent to target instead of a flow (from list_resources { resourceType: 'agent', projectId }). Needs projectId on update too unless the endpoint's project is known.",
         },
         name: {
           type: "string",
@@ -1800,7 +1811,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "manage_voice_gateway",
     description:
-      "Create or update a Voice Gateway endpoint with a WebRTC client so users can talk to an agent from the browser. Without endpointId a new voiceGateway2 endpoint is created (projectId and flowId required); with endpointId the existing endpoint is updated and settings are merged. webrtcWidgetConfig customizes theme, transcription, avatar and tagline. Always returns webrtcDemoUrl, a live voice page, plus _integration with the WebSocket URL and embed snippet.",
+      "Create or update a Voice Gateway endpoint with a WebRTC client so users can talk to an agent from the browser. Without endpointId a new voiceGateway2 endpoint is created (projectId plus flowId, or agentId for an AI Agent); with endpointId the existing endpoint is updated and settings are merged. webrtcWidgetConfig customizes theme, transcription, avatar and tagline. Always returns webrtcDemoUrl, a live voice page, plus _integration with the WebSocket URL and embed snippet.",
     annotations: {
       title: "Manage Voice Gateway",
       readOnlyHint: false,
@@ -1824,7 +1835,12 @@ export const tools: ToolDefinition[] = [
         flowId: {
           type: "string",
           description:
-            "Flow referenceId to connect the voice gateway endpoint to. Required for create.",
+            "Flow referenceId to connect the voice gateway endpoint to (a legacy agent's or any other flow). Create needs flowId or agentId.",
+        },
+        agentId: {
+          type: "string",
+          description:
+            "24-char hex id of an AI Agent to target instead of a flow (from list_resources { resourceType: 'agent', projectId }). Needs projectId on update too unless the endpoint's project is known.",
         },
         name: {
           type: "string",
@@ -2164,13 +2180,26 @@ export const tools: ToolDefinition[] = [
       },
     },
   },
-  // Agents V2 preview (branch only)
+  // AI Agents (service-agents). Users hear "AI Agents"; the flow-based kind is "legacy".
   {
-    name: "create_agent_v2",
+    name: "check_capabilities",
     description:
-      "PREVIEW (Agents V2). Create an Agents V2 agent in a project, optionally with one HTTP Request tool, plus a REST endpoint that targets the agent directly (no flow). Use it only when the user asks for Agents V2 or the new Agents editor. Returns agent, tool, endpoint and endpointUrl; talk to it with talk_to_agent { agentV2Id, projectId }.",
+      "Report what this Cognigy environment and organisation support for building agents: aiAgents (whether AI Agents can be built with manage_agent) and customSystemPrompt (whether manage_agent can save a custom system prompt), each available, unavailable or unknown, with the evidence in detail. Read-only and cached for the session. Call it once before creating or changing agents in a new conversation. Never mention agent kinds or versions to the user.",
     annotations: {
-      title: "Create Agents V2 Agent (preview)",
+      title: "Check Capabilities",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "manage_agent",
+    description:
+      "Create and configure AI Agents, the kind to build wherever check_capabilities reports aiAgents available (legacy AI Agents use create_ai_agent / update_ai_agent). create makes an agent (in a new project when projectId is omitted), with role, description, instructions, LLM, knowledge, guardrails, pre-turn hook, persona, skills and tools, plus a REST endpoint for talk_to_agent. update changes only the settings passed, while manage_agent_components attaches and detaches the skills and tools. get_system_prompt, save_system_prompt, reset_system_prompt and preview_system_prompt read and edit the agent's custom system prompt where the environment offers one. Read an agent with get_resource and mark it for deletion with delete_resource { resourceType: 'agent', id, projectId }. Returns the agent summary; create also returns endpointUrl and use.",
+    annotations: {
+      title: "Manage AI Agent",
       readOnlyHint: false,
       destructiveHint: true,
       idempotentHint: false,
@@ -2179,56 +2208,237 @@ export const tools: ToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
+        operation: {
+          type: "string",
+          enum: [
+            "create",
+            "update",
+            "get_system_prompt",
+            "save_system_prompt",
+            "reset_system_prompt",
+            "preview_system_prompt",
+          ],
+        },
         projectId: {
           type: "string",
           description:
-            "24-char hex project ID (required; no auto-create). The project needs an LLM, and the cluster needs Agents V2 (FEATURE_USE_AI_AGENT_V2) with service-agents at https://api-<host>/v1; a 404 or 401 there means Agents V2 is unavailable for this key or cluster.",
+            "24-char hex project ID. Optional for create only: omitted, a new project is created from the agent name.",
         },
-        name: { type: "string", description: "Agent name (1-200 chars)" },
+        agentId: {
+          type: "string",
+          description:
+            "24-char hex AI Agent id for every operation except create (its use in list_resources { resourceType: 'agent', projectId }). Not the referenceId.",
+        },
+        name: {
+          type: "string",
+          description:
+            'Agent name, up to 200 characters, none of \\ / : * ? " < > | ¥. Required for create.',
+        },
+        role: {
+          type: "string",
+          description:
+            "Short role, e.g. 'Customer support specialist' (max 100 chars). Opens the generated system prompt. '' clears it on update.",
+        },
         description: {
           type: "string",
-          description: "Short description shown in the UI.",
+          description: "Who the agent is and how it comes across.",
         },
         instructions: {
           type: "string",
           description:
-            "System instructions fed to the LLM. Falls back to description.",
+            "How the agent does its job: steps, rules, boundaries. Up to 5000 characters; may hold CognigyScript.",
         },
-        httpTool: {
-          type: "object",
+        image: {
+          type: "string",
           description:
-            "Optional HTTP Request tool to create and attach. url and method are fixed; headers optional.",
-          properties: {
-            name: { type: "string" },
-            description: {
-              type: "string",
-              description: "Tells the LLM when to call this tool.",
-            },
-            url: { type: "string", description: "Full URL incl. https://" },
-            method: {
-              type: "string",
-              enum: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-            },
-            headers: {
-              type: "object",
-              description:
-                "Static headers, e.g. { Accept: 'application/json' }. Auth headers go in a Connection set in the Agents V2 editor, not here. The LLM fills the JSON payload for POST/PUT/PATCH.",
-            },
-          },
-          required: ["name", "description", "url"],
+            "Avatar: a URL or base64 data URI. '' clears it on update.",
         },
-        createEndpoint: {
-          type: "boolean",
+        agentType: {
+          type: "string",
+          enum: ["text", "voice"],
           description:
-            "Create a REST endpoint targeting the agent (default true).",
+            "Modality the agent is authored for. Omit on create for the platform default (voice).",
         },
         largeLanguageModelReferenceId: {
           type: "string",
           description:
-            "referenceId of an llm_model in the project to bind to the agent. Omit to use the project default. If talk_to_agent reports the language model is not configured, re-create or PATCH with a working one (list_resources { resourceType: 'llm_model', projectId }).",
+            "referenceId (UUID) of a text llm_model in the project. Omit to use the project default LLM. Never a voice-to-voice model.",
+        },
+        llmConfig: {
+          type: "object",
+          description:
+            "LLM call overrides. On update the whole override is replaced; it cannot be cleared here.",
+          properties: {
+            temperature: { type: "number", minimum: 0, maximum: 2 },
+            maxOutputTokens: { type: "integer", minimum: 1 },
+            reasoningEffort: {
+              type: "string",
+              enum: ["none", "minimal", "low", "medium", "high", "xhigh"],
+            },
+          },
+        },
+        knowledge: {
+          type: "object",
+          description:
+            "Knowledge search: { ragType: cognigy | expert | knowledgeHub, ragMode: always | agent (the LLM decides) | never, onSearchFailure: answerAnyway | declineWithError, context, cognigyParameters: { stores: [knowledge store referenceIds], topK, language } }. On update fields merge one by one; null clears one.",
+        },
+        guardrails: {
+          type: "object",
+          description:
+            "safetySettings switches (all on by default) and dataPrivacy.contactProfilesOption (which Contact Profile data the agent sees; selectedProfileFields lists keys for 'selectedProfileFields'). On update each of the two is replaced whole.",
+          properties: {
+            safetySettings: {
+              type: "object",
+              properties: {
+                avoidHarmfulContent: { type: "boolean" },
+                avoidUngroundedContent: { type: "boolean" },
+                avoidCopyrightInfringements: { type: "boolean" },
+                preventJailbreakAndManipulation: { type: "boolean" },
+              },
+            },
+            dataPrivacy: {
+              type: "object",
+              properties: {
+                contactProfilesOption: {
+                  type: "string",
+                  enum: [
+                    "none",
+                    "completeProfile",
+                    "profileMemoriesOnly",
+                    "selectedProfileFields",
+                  ],
+                },
+                selectedProfileFields: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        hooks: {
+          type: "object",
+          description:
+            "A Flow run before every answer: { preTurn: [{ handler: { kind: 'flow', flowReferenceId } }] }, at most one. null removes it on update.",
+        },
+        personaReferenceId: {
+          type: "string",
+          description:
+            "referenceId of a brand persona (manage_agent_components component 'persona').",
+        },
+        skillReferenceIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "create only: referenceIds of skills to attach.",
+        },
+        toolReferenceIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "create only: referenceIds of tools to attach.",
+        },
+        disabledToolReferenceIds: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "update only: attached tools to switch off for this agent without detaching them. Replaces the list.",
+        },
+        createEndpoint: {
+          type: "boolean",
+          description:
+            "create only: also create a REST endpoint that targets the agent (default true).",
+        },
+        template: {
+          type: "string",
+          description:
+            "save/preview_system_prompt: the prompt text, with agent data tokens like [[agent.name]] and CognigyScript in double braces; up to 32 KiB. Start from get_system_prompt's template.",
+        },
+        onBuildFailure: {
+          type: "string",
+          enum: ["defaultPrompt", "noAnswer"],
+          description:
+            "save_system_prompt: when the template cannot be built, answer with the generated prompt (defaultPrompt) or make no LLM call (noAnswer).",
+        },
+        acknowledgeRisk: {
+          type: "boolean",
+          description:
+            "save_system_prompt: must be true on the save that first replaces the generated prompt. Set it only after the user agreed to replace the generated prompt with a custom one.",
+        },
+        scriptPlaceholders: {
+          type: "boolean",
+          description:
+            "preview_system_prompt: leave CognigyScript unevaluated (rendered empty).",
         },
       },
-      required: ["projectId", "name"],
+      required: ["operation"],
+    },
+  },
+  {
+    name: "manage_agent_components",
+    description:
+      "Manage the building blocks of AI Agents: skills, tools, MCP servers and brand personas. They live in the project, and agents point at the skills and tools by referenceId. catalog lists the skills or tools the platform ships, with their parameters; list, get, create, update and delete manage one component; attach and detach add or remove a skill or tool on an agent (create with agentId also attaches); discover_tools lists an MCP server's remote tools and sync_tools imports or removes them as tools. delete is permanent and detaches the component from every agent. Legacy AI Agents use create_tool / update_tool instead. Returns component summaries (id, referenceId, name), or the full record for get.",
+    annotations: {
+      title: "Manage AI Agent Components",
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    inputSchema: {
+      type: "object",
+      properties: {
+        operation: {
+          type: "string",
+          enum: [
+            "catalog",
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete",
+            "attach",
+            "detach",
+            "discover_tools",
+            "sync_tools",
+          ],
+        },
+        component: {
+          type: "string",
+          enum: ["skill", "tool", "mcp_server", "persona"],
+          description:
+            "catalog, attach and detach take skill or tool; discover_tools and sync_tools take mcp_server.",
+        },
+        projectId: { type: "string", description: "24-char hex project ID." },
+        componentId: {
+          type: "string",
+          description:
+            "id of the component (attach/detach also accept its referenceId). Needed for every operation except catalog, list and create.",
+        },
+        agentId: {
+          type: "string",
+          description:
+            "24-char hex AI Agent id: required for attach/detach; on create it attaches the new skill or tool.",
+        },
+        config: {
+          type: "object",
+          description:
+            "create/update body; shapes per component are in the agent-creation skill. A builtin tool is { builtinSlug, name, description, parameters: { <key>: value | { mode: 'dynamic' | 'aiFilled', value } } } with keys from catalog. An MCP server is { name, url, authType: none | oAuth2 | customHeader, headers?, authConnectionReferenceId? }.",
+        },
+        import: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "sync_tools: remote tool names to import, as discover_tools reports them.",
+        },
+        remove: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "sync_tools: referenceIds of imported tools to remove; removing detaches them from every agent.",
+        },
+        limit: { type: "integer", minimum: 1, maximum: 100 },
+        skip: { type: "integer", minimum: 0 },
+      },
+      required: ["operation", "component", "projectId"],
     },
   },
 ];

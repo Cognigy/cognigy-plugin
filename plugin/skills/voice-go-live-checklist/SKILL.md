@@ -5,6 +5,8 @@ description: "Use when the user wants to audit, validate, or make a Cognigy voic
 
 # Voice Go-Live Checklist Guide
 
+> `audit_voice_agent` reads a flow chart, so it covers legacy AI Agents only. For an AI Agent built with `manage_agent`, tell the user the audit does not apply yet.
+
 `audit_voice_agent` checks a voice AI agent against the deterministic subset of the Voice AI guidebook **Go-Live Checklist** (section 3) and can apply safe fixes. It reads the flow chart (and optionally the endpoint and LLM) over the Cognigy REST API, so it only covers what the API can both read and change. Speech-provider status, failover behaviour, and release-readiness items live in the external Voice Gateway app or are runtime/operational — those are **manual** and out of scope.
 
 ## Quick start

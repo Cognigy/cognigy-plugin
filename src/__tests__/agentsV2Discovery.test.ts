@@ -4,8 +4,8 @@ import { ToolHandlers } from "../tools/handlers.js";
 import { SERVER_INSTRUCTIONS } from "../instructions.js";
 import {
   annotateAgentKindMismatch,
-  V1_AGENT_NOTE,
-  V2_AGENT_NOTE,
+  LEGACY_AGENT_NOTE,
+  NEW_AGENT_NOTE,
 } from "../tools/agentsV2.js";
 
 const ID = {
@@ -16,9 +16,9 @@ const ID = {
 const UUID = "eaeff103-8ef2-4305-9a87-8d8812fb026c";
 
 describe("agent id validation", () => {
-  it("rejects a UUID agentV2Id with the referenceId hint", () => {
+  it("rejects a UUID agentId with the referenceId hint", () => {
     const r = schemas.talkToAgentSchema.safeParse({
-      agentV2Id: UUID,
+      agentId: UUID,
       projectId: ID.project,
       message: "hi",
     });
@@ -40,7 +40,7 @@ describe("agent id validation", () => {
 
   it("accepts a 24-hex id", () => {
     const r = schemas.talkToAgentSchema.safeParse({
-      agentV2Id: ID.agent,
+      agentId: ID.agent,
       projectId: ID.project,
       message: "hi",
     });
@@ -62,7 +62,7 @@ const v2Agent = {
   id: ID.agent,
   referenceId: UUID,
   name: "NiCE Air Support",
-  job: "Support",
+  role: "Support",
   description: "v2",
   agentType: "text",
   projectId: ID.project,
@@ -106,27 +106,26 @@ describe("list_resources { resourceType: 'agent' }", () => {
 
     expect(r.items).toEqual([
       {
-        kind: "v2",
         id: ID.agent,
         referenceId: UUID,
         name: "NiCE Air Support",
-        job: "Support",
+        role: "Support",
         description: "v2",
         agentType: "text",
         projectId: ID.project,
         createdAt: undefined,
-        use: { agentV2Id: ID.agent },
+        use: { agentId: ID.agent },
       },
     ]);
     expect(r.total).toBe(1);
     expect(r.legacyAgents).toHaveLength(1);
     expect(r.legacyAgents[0]).toMatchObject({
-      kind: "v1",
+      legacy: true,
       id: ID.agentV1,
       use: { aiAgentId: ID.agentV1 },
     });
     expect(r.legacyTotal).toBe(1);
-    expect(r._hints.hint).toContain("This project uses Agents V2");
+    expect(r._hints.hint).toContain("The AI Agents in items");
     expect(api.get).toHaveBeenCalledWith(`${V1}/v1/agents`, {
       params: { projectId: ID.project, limit: 25, skip: 0 },
     });
@@ -136,7 +135,7 @@ describe("list_resources { resourceType: 'agent' }", () => {
     const api = makeApi({ v1: async () => ({ items: [v1Agent], total: 1 }) });
     const r: any = await list(new ToolHandlers(api, EP, "", "", V1));
 
-    expect(r.items[0]).toMatchObject({ kind: "v1", name: "Old FAQ Bot" });
+    expect(r.items[0]).toMatchObject({ legacy: true, name: "Old FAQ Bot" });
     expect(r).not.toHaveProperty("legacyAgents");
     expect(r).not.toHaveProperty("_hints");
   });
@@ -153,7 +152,7 @@ describe("list_resources { resourceType: 'agent' }", () => {
     expect(r.items).toEqual([]);
     expect(r.total).toBe(1);
     expect(r.legacyAgents).toEqual([]);
-    expect(r._hints.hint).toContain("This project uses Agents V2");
+    expect(r._hints.hint).toContain("The AI Agents in items");
   });
 
   it("never calls service-agents when no Agents V2 base URL is configured", async () => {
@@ -179,7 +178,7 @@ describe("list_resources { resourceType: 'agent' }", () => {
     });
     const r: any = await list(new ToolHandlers(api, EP, "", "", V1));
 
-    expect(r.items[0].kind).toBe("v1");
+    expect(r.items[0]).not.toHaveProperty("legacy");
     expect(r).not.toHaveProperty("_hints");
   });
 
@@ -195,9 +194,9 @@ describe("list_resources { resourceType: 'agent' }", () => {
     });
     const r: any = await list(new ToolHandlers(api, EP, "", "", V1));
 
-    expect(r.items[0].kind).toBe("v1");
+    expect(r.items[0]).not.toHaveProperty("legacy");
     expect(r._hints.warning).toBe(
-      `Agents V2 agents could not be checked (${label}); the list may be incomplete.`,
+      `AI Agents could not be listed (${label}); the list may be incomplete.`,
     );
   });
 
@@ -208,7 +207,7 @@ describe("list_resources { resourceType: 'agent' }", () => {
     });
     const r: any = await list(new ToolHandlers(api, EP, "", "", V1));
 
-    expect(r.items[0].kind).toBe("v1");
+    expect(r.items[0].legacy).toBe(true);
     expect(r).not.toHaveProperty("legacyAgents");
   });
 
@@ -232,7 +231,7 @@ describe("list_resources { resourceType: 'agent' }", () => {
         sort: "lastChanged:desc",
       },
     });
-    expect(r._hints.warning).toContain("creation order");
+    expect(r._hints.warning).toContain("ordered by creation only");
   });
 
   it("still says 'No agents found.' for an empty project", async () => {
@@ -275,8 +274,8 @@ describe("get_resource { resourceType: 'agent' }", () => {
       projectId: ID.project,
     });
 
-    expect(r.kind).toBe("v2");
-    expect(r.use).toEqual({ agentV2Id: ID.agent });
+    expect(r).not.toHaveProperty("legacy");
+    expect(r.use).toEqual({ agentId: ID.agent });
     expect(r.instructions).toBe("secret-ish long text");
     expect(r.toolReferenceIds).toEqual(["t1"]);
     expect(r).not.toHaveProperty("organisationId");
@@ -299,7 +298,7 @@ describe("get_resource { resourceType: 'agent' }", () => {
       projectId: ID.project,
     });
 
-    expect(r.kind).toBe("v1");
+    expect(r.use).toEqual({ aiAgentId: ID.agent });
     expect(r.name).toBe("Old FAQ Bot");
   });
 
@@ -316,8 +315,11 @@ describe("get_resource { resourceType: 'agent' }", () => {
       id: ID.agent,
     });
 
-    expect(r.kind).toBe("v1");
-    expect(api.get).toHaveBeenCalledTimes(1);
+    expect(r.use).toEqual({ aiAgentId: ID.agent });
+    expect(api.get).not.toHaveBeenCalledWith(
+      `${V1}/v1/agents/${ID.agent}`,
+      expect.anything(),
+    );
   });
 
   it("returns the raw V2 body with raw: true", async () => {
@@ -343,13 +345,13 @@ describe("wrong-kind notes", () => {
   it("adds the V2 note to a 404 on a V1 agent record", () => {
     const e = err404(`/v2.0/aiagents/${ID.agent}`);
     annotateAgentKindMismatch(e);
-    expect(e.message).toBe(`Not found — ${V2_AGENT_NOTE}`);
+    expect(e.message).toBe(`Not found — ${NEW_AGENT_NOTE}`);
   });
 
   it("adds the V1 note to a 404 on a V2 agent record (query string ignored)", () => {
     const e = err404(`${V1}/v1/agents/${ID.agent}?projectId=${ID.project}`);
     annotateAgentKindMismatch(e);
-    expect(e.message).toBe(`Not found — ${V1_AGENT_NOTE}`);
+    expect(e.message).toBe(`Not found — ${LEGACY_AGENT_NOTE}`);
   });
 
   it.each([
@@ -389,7 +391,7 @@ describe("wrong-kind notes", () => {
         projectId: ID.project,
         message: "hi",
       }),
-    ).rejects.toThrow(V2_AGENT_NOTE);
+    ).rejects.toThrow(NEW_AGENT_NOTE);
   });
 });
 
@@ -428,30 +430,28 @@ describe("backup gate with legacy agents", () => {
 });
 
 describe("list hint wording", () => {
-  it("sends `use` to talk_to_agent only and shows how get_resource is called", async () => {
+  it("sends `use` to talk_to_agent only and points changes at manage_agent", async () => {
     const api = makeApi({ v2: async () => ({ items: [v2Agent], total: 1 }) });
     const r: any = await new ToolHandlers(api, EP, "", "", V1).handleToolCall(
       "list_resources",
       { resourceType: "agent", projectId: ID.project },
     );
 
-    // get_resource takes id, not aiAgentId/agentV2Id — `use` would fail there.
+    // get_resource takes id, not aiAgentId/agentId — `use` would fail there.
     expect(r._hints.hint).not.toContain("talk_to_agent / get_resource");
-    expect(r._hints.hint).toContain(
-      "get_resource { resourceType: 'agent', id, projectId }",
-    );
     expect(r._hints.hint).toContain("plus projectId");
+    expect(r._hints.hint).toContain("manage_agent");
   });
 });
 
 describe("always-on instructions", () => {
-  it("does not make create_agent_v2 a default because V2 agents exist", () => {
+  it("makes AI Agents the default and keeps versions away from the user", () => {
     const line = SERVER_INSTRUCTIONS.split("\n").find((l) =>
-      l.includes("Agents V2 preview"),
+      l.startsWith("AGENTS:"),
     )!;
-    expect(line).toContain(
-      "Create one with create_agent_v2 only when the user asks for Agents V2 / the new Agents editor",
-    );
-    expect(line).not.toContain("or the project already has V2 agents.");
+    expect(line).toContain("call check_capabilities once");
+    expect(line).toContain("build AI Agents with manage_agent");
+    expect(line).toContain("create_ai_agent (legacy: true) only when");
+    expect(line).toContain('never say V1, V2 or "Agents V2" to the user');
   });
 });
