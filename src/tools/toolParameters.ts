@@ -249,6 +249,7 @@ export function normalizeToolParameters(raw: string): NormalizedToolParameters {
       `config.parameters is not valid JSON (${e.message}). ` +
         `Cognigy stores it as-is and silently drops unparseable schemas at runtime — the tool would be sent to the LLM with NO parameters. ` +
         `Provide a JSON Schema string like: {"type":"object","properties":{"city":{"type":"string","description":"City name"}},"required":["city"]}`,
+      { cause: e },
     );
   }
 

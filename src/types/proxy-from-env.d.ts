@@ -6,7 +6,8 @@
 declare module "proxy-from-env" {
   /**
    * Returns the proxy URL configured for `url` via the environment
-   * (`HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`/`NPM_CONFIG_*`, in either case),
+   * (`HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`, in either case — v2 dropped the
+   * `NPM_CONFIG_*` variants; `resolveProxyForUrl` in utils/proxy.ts adds them),
    * or an empty string when none applies — including when `NO_PROXY` excludes
    * the target.
    */

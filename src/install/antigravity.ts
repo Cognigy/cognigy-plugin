@@ -113,8 +113,7 @@ export interface AntigravityRemoteServer {
   serverUrl: string;
 }
 export type AntigravityServer =
-  | AntigravityStdioServer
-  | AntigravityRemoteServer;
+  AntigravityStdioServer | AntigravityRemoteServer;
 
 /** Our own version, read from the package.json that ships beside dist/. */
 export function engineVersion(

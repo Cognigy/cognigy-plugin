@@ -28,9 +28,8 @@ jest.unstable_mockModule("../install/desktopLauncher.js", () => ({
   writeDesktopLauncher: () => join(FAKE_HOME, "desktop-launch.mjs"),
 }));
 
-const { installClaudeDesktop, ENGINE_PREFIX, purgeUserHome } = await import(
-  "../install/claudeDesktop.js"
-);
+const { installClaudeDesktop, ENGINE_PREFIX, purgeUserHome } =
+  await import("../install/claudeDesktop.js");
 
 const tmpDirs: string[] = [FAKE_HOME];
 function freshConfigPath(): string {
