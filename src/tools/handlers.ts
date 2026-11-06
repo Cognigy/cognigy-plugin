@@ -2531,8 +2531,8 @@ export class ToolHandlers {
         return withHints(result, {
           hint: usageHint,
           warning:
-            "Could not verify LLM resource in project. The LLM Prompt node will fall back to the project's default Generative AI model — if none is configured, it cannot generate responses.",
-          action: `Inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Reuse an existing LLM (with its connection) via manage_packages export/import, verify with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and only use setup_llm if no reusable LLM exists.`,
+            "Could not verify LLM resource in project. The LLM Prompt node will fall back to the project's default Generative AI model — if none is configured, or the default is an embedding or voice-to-voice (gpt-live-1) model, it cannot generate responses.",
+          action: `Inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Reuse an existing text LLM (with its connection) via manage_packages export/import, verify with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and only use setup_llm if no reusable LLM exists. Do not call talk_to_agent until a text LLM is confirmed.`,
         });
       }
 
