@@ -11,10 +11,11 @@
  * never reached. Hence `proxy: false` on every axios instance plus a real
  * tunnelling agent from here.
  *
- * `getProxyForUrl` (axios' own transitive dependency) resolves the proxy for a
- * given target: it honours upper- and lower-case `HTTP_PROXY`/`HTTPS_PROXY`,
- * `NO_PROXY` exclusions, `ALL_PROXY`, and `NPM_CONFIG_*` variants, so the
- * variables users already set for npm and every other CLI keep working.
+ * `resolveProxyForUrl` resolves the proxy for a given target: proxy-from-env
+ * (axios' own dependency) honours upper- and lower-case `HTTP_PROXY`/
+ * `HTTPS_PROXY`, `NO_PROXY` exclusions and `ALL_PROXY`, and we layer the
+ * `NPM_CONFIG_*` variants on top, so the variables users already set for npm
+ * and every other CLI keep working.
  *
  * TLS-inspecting proxies need one more thing that no library can do for us:
  * the corporate root CA. Node only reads it from `NODE_EXTRA_CA_CERTS` at
@@ -32,6 +33,57 @@ export interface ProxyAxiosOptions {
   proxy: false;
   httpAgent?: Agent;
   httpsAgent?: Agent;
+}
+
+/** Case-insensitive env lookup, lower-case first — proxy-from-env's rule. */
+function readEnv(key: string): string {
+  return process.env[key.toLowerCase()] || process.env[key.toUpperCase()] || "";
+}
+
+/**
+ * `getProxyForUrl` plus the `npm_config_*` variables that proxy-from-env v1
+ * honoured and v2 dropped. The engine is launched through `npx`, which exports
+ * the user's `.npmrc` proxy settings as `npm_config_*`, so a proxy configured
+ * only for npm must keep reaching the engine. Precedence is v1's:
+ * `npm_config_<proto>_proxy` > `<proto>_proxy` > `npm_config_proxy` >
+ * `all_proxy`, and `npm_config_no_proxy` before `no_proxy`. npm itself exports
+ * the `.npmrc` key as `npm_config_noproxy`, so that spelling is read too.
+ *
+ * When any of those are set, the effective values are overlaid onto the
+ * lower-case variables (which proxy-from-env reads first) for the duration of
+ * the synchronous call, so `NO_PROXY` matching stays the library's.
+ */
+export function resolveProxyForUrl(targetUrl: string): string {
+  const proto = new URL(targetUrl).protocol.slice(0, -1).toLowerCase();
+  const npmProxy = readEnv(`npm_config_${proto}_proxy`);
+  const npmFallback = readEnv("npm_config_proxy");
+  const npmNoProxy =
+    readEnv("npm_config_no_proxy") || readEnv("npm_config_noproxy");
+  if (!npmProxy && !npmFallback && !npmNoProxy) {
+    return getProxyForUrl(targetUrl);
+  }
+
+  const overlay: Record<string, string> = {
+    [`${proto}_proxy`]:
+      npmProxy ||
+      readEnv(`${proto}_proxy`) ||
+      npmFallback ||
+      readEnv("all_proxy"),
+    no_proxy: npmNoProxy || readEnv("no_proxy"),
+  };
+  const saved: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(overlay)) {
+    saved[key] = process.env[key];
+    process.env[key] = value;
+  }
+  try {
+    return getProxyForUrl(targetUrl);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 }
 
 /** Raised when a proxy is configured but cannot be used as written. */
@@ -250,9 +302,9 @@ function describeUnsupportedProxy(proxyUrl: string): string | undefined {
  * with a puzzling connection failure.
  */
 export function getProxyAxiosOptions(targetUrl: string): ProxyAxiosOptions {
-  let proxyUrl = "";
+  let proxyUrl: string;
   try {
-    proxyUrl = getProxyForUrl(targetUrl);
+    proxyUrl = resolveProxyForUrl(targetUrl);
   } catch {
     // A malformed target URL is the caller's problem, not ours; let the
     // request itself fail with a useful message instead of throwing here.
@@ -360,9 +412,9 @@ export function clearProxyAgentCache(): void {
  * answers that from the client's own MCP log without asking for a repro.
  */
 export function logProxyConfiguration(apiBaseUrl: string): void {
-  let proxyUrl = "";
+  let proxyUrl: string;
   try {
-    proxyUrl = getProxyForUrl(apiBaseUrl);
+    proxyUrl = resolveProxyForUrl(apiBaseUrl);
   } catch {
     proxyUrl = "";
   }
