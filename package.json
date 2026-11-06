@@ -71,6 +71,7 @@
     "@semantic-release/release-notes-generator": "^14.1.1",
     "@types/jest": "30.0.0",
     "@types/node": "20.19.43",
+    "conventional-changelog-conventionalcommits": "^9.3.1",
     "eslint": "10.14.0",
     "globals": "17.14.0",
     "husky": "^9.1.7",
