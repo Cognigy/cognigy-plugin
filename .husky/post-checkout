@@ -1,0 +1,3 @@
+# Local dev plugin: re-sync its copy of plugin/ after a branch switch.
+# A no-op unless `npm run plugin:dev` is active for this checkout.
+node scripts/dev-plugin.mjs sync || true
