@@ -20,6 +20,9 @@ tools:
     audit_voice_agent,
     manage_snapshots,
     manage_a2a_server,
+    check_capabilities,
+    manage_agent,
+    manage_agent_components,
   ]
 abort_when: Never abort the run.
 ---
@@ -40,6 +43,10 @@ The tenant contains exactly this, and stays consistent with earlier calls in the
   Gateway endpoint "ep-voice"; its voice settings use defaults (no barge-in, no
   silence timeout, no fallback handover).
 - No knowledge stores, no Webchat endpoints, no snapshots, no packages.
+- check_capabilities returns { aiAgents: "available", customSystemPrompt: "available" }.
+  The two agents above are legacy AI Agents: list_resources { resourceType: "agent" }
+  returns them with legacy: true and use { aiAgentId }. Agents created with manage_agent
+  get ids like "60d5ec49f1a2c8b1a4e0f101" and are returned with use { agentId }.
 
 New resources get ids like "agent-new-1", "ep-new-1", "ks-new-1". talk_to_agent
 replies in character as the addressed agent.

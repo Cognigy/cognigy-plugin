@@ -5,6 +5,8 @@ description: "Use when the user explicitly asks for A2A (Agent2Agent), wants an 
 
 # A2A (Agent2Agent) Setup Guide
 
+> The A2A steps below work on flows, i.e. legacy AI Agents. Exposing an AI Agent built with `manage_agent` over A2A is not available in the plugin yet; tell the user it can be set up in the Cognigy UI.
+
 ## When NOT to use A2A
 
 **Several agents in the same project are not a reason to use A2A.** If the user wants agents in one project to work together ("connect these two agents", "let the triage agent hand off to the billing agent"), use Cognigy's native **Handover to AI Agent** tool on the calling AI Agent node. It transfers the conversation to another AI Agent in the same or a different Flow and keeps the conversation context. A2A would instead publish an endpoint, add an Agent Card, auth and network latency, and run the target as a separate conversation.

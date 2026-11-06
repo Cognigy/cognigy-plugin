@@ -5,6 +5,8 @@ description: "Use when creating, updating or configuring Cognigy agent tools (cr
 
 # Adding Tools to an AI Agent
 
+> **Legacy AI Agents only.** `create_tool` / `update_tool` add tool nodes to a legacy agent's flow. AI Agents built with `manage_agent` get their tools, skills and MCP servers through `manage_agent_components` — see the agent-creation skill.
+
 ## What are tools?
 
 Tools give an AI Agent capabilities beyond conversation — calling APIs, executing code, or searching knowledge bases. Without tools, an agent can only chat.

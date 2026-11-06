@@ -2914,6 +2914,7 @@ describe("ToolHandlers v2", () => {
         "name",
         "projectId",
         "referenceId",
+        "use",
       ]);
       // Snapshots are project-scoped, so a caller holding only an agent id
       // needs the project id from somewhere; internals stay stripped.
@@ -4911,7 +4912,7 @@ describe("ToolHandlers v2", () => {
       const result = await h.handleToolCall("manage_voice_gateway", {
         projectId: ID.project,
       });
-      expect(result.error).toContain("flowId is required");
+      expect(result.error).toContain("flowId or agentId is required");
     });
 
     it("updates existing endpoint with new widget config", async () => {

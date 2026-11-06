@@ -54,6 +54,23 @@ const BODY_SNIPPET_LIMIT = 300;
 /** How much of the raw body is read before whitespace collapsing. */
 const RAW_BODY_READ_LIMIT = BODY_SNIPPET_LIMIT * 20;
 
+export function formatApiError(error: AxiosError): Error {
+  const data = error.response?.data as any;
+  if (data) {
+    const message =
+      data.detail || data.title || describeUnexpectedBody(data, error);
+    const enhancedError = new Error(message);
+    (enhancedError as any).status = data.status || error.response?.status;
+    (enhancedError as any).code = data.code;
+    (enhancedError as any).traceId = data.traceId;
+    (enhancedError as any).details = data.details;
+    // Lets callers tell which resource 404'd (see annotateAgentKindMismatch).
+    (enhancedError as any).url = error.config?.url;
+    return enhancedError;
+  }
+  return error;
+}
+
 /**
  * Build the message for a response whose body carries neither `detail` nor
  * `title`, i.e. is not a Cognigy error. This used to collapse to a bare
@@ -243,18 +260,7 @@ export class CognigyApiClient {
   }
 
   private formatError(error: AxiosError): Error {
-    const data = error.response?.data as any;
-    if (data) {
-      const message =
-        data.detail || data.title || describeUnexpectedBody(data, error);
-      const enhancedError = new Error(message);
-      (enhancedError as any).status = data.status || error.response?.status;
-      (enhancedError as any).code = data.code;
-      (enhancedError as any).traceId = data.traceId;
-      (enhancedError as any).details = data.details;
-      return enhancedError;
-    }
-    return error;
+    return formatApiError(error);
   }
 
   async get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {

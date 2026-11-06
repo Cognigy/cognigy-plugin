@@ -5,6 +5,13 @@ description: "Use when a Cognigy agent returns empty responses, a tool call or c
 
 # Troubleshooting
 
+## Agent kind errors
+
+- `error: "use_manage_agent"` from create_ai_agent — nothing was created. This environment builds AI Agents with `manage_agent`; use it, or retry with `legacy: true` only if the user asked for a legacy agent.
+- `error: "ai_agents_unavailable"` from manage_agent — this environment or organisation has no AI Agents. Build the agent with `create_ai_agent` and say nothing about agent kinds.
+- `error: "custom_system_prompt_unavailable"` — the environment does not offer a custom system prompt; shape the agent through role, description and instructions.
+- A 404 on an agent id whose message says "legacy" or "AI Agent" — the id belongs to the other kind. Use the `use` argument from list_resources { resourceType: 'agent', projectId }.
+
 ## Agent returns empty response
 
 1. Inspect the agent flow and tools first:
