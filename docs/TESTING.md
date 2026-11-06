@@ -26,8 +26,9 @@ What it does (see `scripts/dev-plugin.mjs`):
 
 - Generates a gitignored dev marketplace under `.dev-plugin/` whose manifest is a copy of
   `plugin/.claude-plugin/plugin.json` with one change: the `platform` server runs `src/index.ts`
-  directly via **tsx** (`scripts/dev-engine.mjs`, no `npm run build` needed), so engine edits are
-  live. Skills, agents and the rest of `plugin/` (except `evals/`) are **copied**: Claude Code
+  directly via **tsx** (no `npm run build` needed), so engine edits are live. Its launcher
+  (`scripts/dev-engine.mjs`) is copied into `.dev-plugin/`, so the dev install still starts after a
+  switch to a branch that predates it. Skills, agents and the rest of `plugin/` (except `evals/`) are **copied**: Claude Code
   skips plugin paths that resolve outside the plugin directory, so symlinks into the working
   tree do not load. Remote servers (e.g. the bundled `docs` server) are unchanged.
 - The first run uninstalls the prod plugin (avoids duplicate tool names) and installs

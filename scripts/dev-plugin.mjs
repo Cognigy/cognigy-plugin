@@ -35,6 +35,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -107,7 +108,12 @@ function updateInPlace({ allowFailure = false } = {}) {
   return ok;
 }
 
-function generateDevPlugin(fingerprint) {
+/**
+ * Write the dev marketplace to `out`. The engine launcher and its helper are
+ * copied there too: `out` is gitignored, so they survive a switch to a branch
+ * whose scripts/ predates them (the installed manifest points at them).
+ */
+export function generateDevPlugin(fingerprint, out = devRoot) {
   const manifest = JSON.parse(
     readFileSync(
       join(repoRoot, "plugin", ".claude-plugin", "plugin.json"),
@@ -121,19 +127,20 @@ function generateDevPlugin(fingerprint) {
   manifest.description = `${manifest.description} (LOCAL DEV — serves the working tree)`;
   manifest.mcpServers.platform = {
     command: "node",
-    args: [join(repoRoot, "scripts", "dev-engine.mjs")],
+    args: [join(out, "dev-engine.mjs")],
     env: {
       ...manifest.mcpServers.platform.env,
       COGNIGY_DEV_FINGERPRINT: fingerprint,
+      COGNIGY_DEV_REPO: repoRoot,
     },
   };
 
-  rmSync(devRoot, { recursive: true, force: true });
-  mkdirSync(join(devRoot, ".claude-plugin"), { recursive: true });
-  mkdirSync(join(devRoot, "plugin", ".claude-plugin"), { recursive: true });
+  rmSync(out, { recursive: true, force: true });
+  mkdirSync(join(out, ".claude-plugin"), { recursive: true });
+  mkdirSync(join(out, "plugin", ".claude-plugin"), { recursive: true });
 
   writeFileSync(
-    join(devRoot, ".claude-plugin", "marketplace.json"),
+    join(out, ".claude-plugin", "marketplace.json"),
     JSON.stringify(
       {
         name: DEV_MARKETPLACE,
@@ -152,7 +159,7 @@ function generateDevPlugin(fingerprint) {
   );
 
   writeFileSync(
-    join(devRoot, "plugin", ".claude-plugin", "plugin.json"),
+    join(out, "plugin", ".claude-plugin", "plugin.json"),
     JSON.stringify(manifest, null, 2) + "\n",
   );
 
@@ -164,14 +171,18 @@ function generateDevPlugin(fingerprint) {
     // Codex manifests carry the prod-pinned npx engine and evals are not
     // runtime files (see SKIPPED_ENTRIES).
     if (SKIPPED_ENTRIES.has(entry)) continue;
-    cpSync(join(pluginDir, entry), join(devRoot, "plugin", entry), {
+    cpSync(join(pluginDir, entry), join(out, "plugin", entry), {
       recursive: true,
       dereference: true,
       filter: (src) => !src.endsWith(".DS_Store"),
     });
   }
 
-  console.log(`  ✓ generated ${devRoot}`);
+  for (const file of ["dev-engine.mjs", "dev-plugin-snapshot.mjs"]) {
+    cpSync(join(repoRoot, "scripts", file), join(out, file));
+  }
+
+  console.log(`  ✓ generated ${out}`);
 }
 
 function on() {
@@ -251,11 +262,18 @@ Next steps in Claude Code:
   2. /reload-plugins                                 (or restart the session)`);
 }
 
-const mode = process.argv[2];
-if (mode === "on") on();
-else if (mode === "off") off();
-else if (mode === "sync") sync();
-else {
-  console.error("Usage: node scripts/dev-plugin.mjs <on|off|sync>");
-  process.exit(1);
+// Run only as a script; tests import generateDevPlugin. realpath, because the
+// loader resolves symlinks in import.meta.url but not in argv[1].
+const invoked =
+  process.argv[1] &&
+  realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invoked) {
+  const mode = process.argv[2];
+  if (mode === "on") on();
+  else if (mode === "off") off();
+  else if (mode === "sync") sync();
+  else {
+    console.error("Usage: node scripts/dev-plugin.mjs <on|off|sync>");
+    process.exit(1);
+  }
 }
