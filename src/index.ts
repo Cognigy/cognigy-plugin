@@ -44,7 +44,10 @@ async function main() {
       { name: config.serverName, version: config.serverVersion },
       {
         capabilities: { tools: {} },
-        instructions: SERVER_INSTRUCTIONS,
+        // COGNIGY_DEV_NOTICE is set only by scripts/dev-engine.mjs (local dev).
+        instructions: process.env.COGNIGY_DEV_NOTICE
+          ? `${process.env.COGNIGY_DEV_NOTICE}\n\n${SERVER_INSTRUCTIONS}`
+          : SERVER_INSTRUCTIONS,
       },
     );
 
