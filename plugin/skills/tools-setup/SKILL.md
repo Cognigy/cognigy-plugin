@@ -17,6 +17,8 @@ Tools give an AI Agent capabilities beyond conversation — calling APIs, execut
 3. The tool is automatically wired into the agent's flow
 4. Test with talk_to_agent
 
+Name for the humans who will maintain the flow: `name` is a short verb phrase (`Check Order Status`), `toolId` its snake_case form (`check_order_status`), `description` and every parameter description one plain sentence saying what it does or holds. Code inside tools follows the Readability rules of the flow-nodes skill: descriptive labels and keys, source-file formatting, under ~60 lines per Code node.
+
 Rule of thumb: each tool in an agent flow should have a unique `toolId`. If you need more logic, parameters, validation, or HTTP calls for that tool, add them inside the same tool branch instead of creating another tool with the same `toolId`.
 
 ## Parameter schema rules (config.parameters)
@@ -158,7 +160,7 @@ If you are unsure of the exact shape in your Cognigy version, instrument the pos
 
 #### Code node rules
 
-Both `preProcessCode` and `postProcessCode` run inside Cognigy Code nodes. Two rules apply:
+Both `preProcessCode` and `postProcessCode` run inside Cognigy Code nodes. Write them as multi-line source (the examples below are pasted into the Code node as-is), and these two rules apply:
 
 - **No top-level `return`.** Code nodes are not full functions; the engine rejects `return` at the top level. Mutate `input` directly — `input.foo = bar;` instead of `return { foo: bar };`. If you need to short-circuit, set a flag and check it in a downstream node.
 - **`input` is the only persistent surface.** Anything you write to `input.*` is visible to subsequent nodes (post-process, Resolve, downstream flow). Local `const`/`let` variables disappear at the end of the node.
@@ -177,7 +179,10 @@ parameters: '{"type":"object","properties":{"city":{"type":"string","description
 url: "https://api.weather.com/v1/current?q={{input.aiAgent.toolArgs.city}}",
 method: "GET",
 headers: { "X-Api-Key": "your-api-key" },
-postProcessCode: "input.weather = input.httprequest.result.current; delete input.httprequest;"
+postProcessCode: `
+input.weather = input.httprequest.result.current;
+delete input.httprequest;
+`
 }
 }
 ```
@@ -197,8 +202,24 @@ url: "https://api.example.com/orders",
 method: "POST",
 headers: { "Authorization": "Bearer {{context.apiToken}}" },
 body: "{{JSON.stringify(input.orderPayload)}}",
-preProcessCode: "input.orderPayload = { items: input.aiAgent.toolArgs.items, customer: input.aiAgent.toolArgs.customerId, timestamp: new Date().toISOString() };",
-postProcessCode: "input.orderResult = { orderId: input.httprequest.result.id, status: input.httprequest.result.status }; delete input.httprequest;",
+preProcessCode: `
+const order = input.aiAgent.toolArgs;
+
+input.orderPayload = {
+  items: order.items,
+  customer: order.customerId,
+  timestamp: new Date().toISOString(),
+};
+`,
+postProcessCode: `
+const created = input.httprequest.result;
+
+input.orderResult = {
+  orderId: created.id,
+  status: created.status,
+};
+delete input.httprequest;
+`,
 toolResponseValue: "{{JSON.stringify(input.orderResult)}}"
 }
 }
@@ -276,7 +297,15 @@ manage_flow_nodes {
   mode: "appendChild",
   nodeType: "code",
   label: "Validate Order ID",
-  config: { code: "if (!input.aiAgent.toolArgs.orderId) { input.error = 'Missing order ID'; }" }
+  config: {
+    code: `
+const { orderId } = input.aiAgent.toolArgs;
+
+if (!orderId) {
+  input.error = 'Missing order ID';
+}
+`
+  }
 }
 → returns nodeId: "def456..."
 
