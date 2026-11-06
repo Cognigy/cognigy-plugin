@@ -30,6 +30,7 @@
  * additionally guards its published form in CI and pre-commit.
  */
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   cpSync,
   mkdirSync,
@@ -108,6 +109,25 @@ function updateInPlace({ allowFailure = false } = {}) {
   return ok;
 }
 
+/** The dev tooling that shapes the generated manifest and launcher. */
+const DEV_TOOL_FILES = [
+  "dev-plugin.mjs",
+  "dev-engine.mjs",
+  "dev-plugin-snapshot.mjs",
+];
+
+/**
+ * Version suffix: the copied plugin/ files plus the dev tooling and target
+ * folder, so a launcher or manifest change is a new version too (`claude
+ * plugin update` copies nothing when the version is unchanged).
+ */
+function devVersionSuffix(fingerprint, out = devRoot) {
+  const tooling = createHash("sha256").update(out);
+  for (const file of DEV_TOOL_FILES)
+    tooling.update(readFileSync(join(repoRoot, "scripts", file)));
+  return `${fingerprint}.${tooling.digest("hex").slice(0, 8)}`;
+}
+
 /**
  * Write the dev marketplace to `out`. The engine launcher and its helper are
  * copied there too: `out` is gitignored, so they survive a switch to a branch
@@ -121,9 +141,8 @@ export function generateDevPlugin(fingerprint, out = devRoot) {
     ),
   );
 
-  // The fingerprint makes every content change a new version, which is what
-  // `claude plugin update` needs to copy it again.
-  manifest.version = `${manifest.version}-dev.${fingerprint}`;
+  // Every change is a new version, which `claude plugin update` needs to copy it.
+  manifest.version = `${manifest.version}-dev.${devVersionSuffix(fingerprint, out)}`;
   manifest.description = `${manifest.description} (LOCAL DEV — serves the working tree)`;
   manifest.mcpServers.platform = {
     command: "node",
@@ -226,7 +245,7 @@ function sync() {
   const installed = installedDevVersion();
   if (!installed || !devMarketplaceIsHere()) return;
   const fingerprint = pluginFingerprint(pluginDir);
-  if (installed.endsWith(`-dev.${fingerprint}`)) return;
+  if (installed.endsWith(`-dev.${devVersionSuffix(fingerprint)}`)) return;
   console.log("Dev plugin: plugin/ changed, re-syncing the installed copy…");
   generateDevPlugin(fingerprint);
   if (updateInPlace({ allowFailure: true }))
