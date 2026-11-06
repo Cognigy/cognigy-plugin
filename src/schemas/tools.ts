@@ -1063,7 +1063,7 @@ const agentSettingsSchema = {
         .optional(),
     })
     .optional(),
-  knowledge: z.record(z.any()).optional(),
+  knowledge: z.record(z.string(), z.any()).optional(),
   guardrails: z
     .object({
       safetySettings: z
@@ -1089,7 +1089,7 @@ const agentSettingsSchema = {
     })
     .optional(),
   hooks: z
-    .object({ preTurn: z.array(z.record(z.any())) })
+    .object({ preTurn: z.array(z.record(z.string(), z.any())) })
     .nullable()
     .optional(),
   personaReferenceId: z.string().uuid().optional(),
@@ -1142,7 +1142,7 @@ export const AGENT_COMPONENTS = [
 ] as const;
 const componentSchema = z.enum(AGENT_COMPONENTS);
 const componentIdSchema = z.string().min(1);
-const componentConfigSchema = z.record(z.any());
+const componentConfigSchema = z.record(z.string(), z.any());
 
 export const manageAgentComponentsSchema = z.discriminatedUnion("operation", [
   z.object({
