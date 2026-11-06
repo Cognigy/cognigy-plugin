@@ -31,8 +31,12 @@ import {
   type ResponseHints,
 } from "./filters.js";
 import { buildWebchatSettings, deepMerge } from "./webchatSettings.js";
-import { normalizeToolParameters } from "./toolParameters.js";
-import { getNodeEntry, supportedNodeTypes } from "./nodeRegistry.js";
+import { isPlainObject, normalizeToolParameters } from "./toolParameters.js";
+import {
+  getNodeEntry,
+  invalidConfigValues,
+  supportedNodeTypes,
+} from "./nodeRegistry.js";
 import { codeNodeWarnings } from "./codeNodeHints.js";
 import {
   evaluateChecks,
@@ -55,6 +59,7 @@ import {
   chartToMermaid,
   chartToHtml,
   chartLegend,
+  omitDisabled,
 } from "../render/flowRender.js";
 
 // The self-contained mermaid UMD build, inlined into rich flow-viz HTML so it
@@ -194,6 +199,30 @@ function buildSayObject(text: any): Record<string, any> {
   return { ...SAY_DEFAULTS, text: textArr };
 }
 
+/** `{ type: "adaptiveCard", adaptiveCard: <card> }` — the shape the Designer reads. */
+function wrapAdaptiveCard(input: any, fallbackText: string) {
+  let card = input;
+  if (typeof card === "string") {
+    try {
+      card = JSON.parse(card);
+    } catch {
+      throw new Error("adaptiveCard must be an Adaptive Card JSON object");
+    }
+  }
+  // Already wrapped (e.g. copied back from a `get` result) — don't wrap twice.
+  if (isPlainObject(card) && card.type === "adaptiveCard") {
+    card = card.adaptiveCard;
+  }
+  if (!isPlainObject(card)) {
+    throw new Error("adaptiveCard must be an Adaptive Card JSON object");
+  }
+  return {
+    type: "adaptiveCard",
+    adaptiveCard: card,
+    ...(fallbackText ? { fallbackText } : {}),
+  };
+}
+
 function buildRichSayObject(
   text: any,
   outputType: string,
@@ -246,10 +275,16 @@ function buildRichSayObject(
     );
     richPayload = { type: "buttons", text: textStr, buttons: btns };
   } else {
+    // Adaptive Card: the Designer's card editor and the channel renderers read
+    // `_adaptiveCard.adaptiveCard`, not the card object at `_adaptiveCard`
+    // itself. Without the wrapper the Designer opens the card with an empty
+    // body (runtime/REST output still looks right, which hides the problem).
     richPayload =
-      typeof richData === "object"
-        ? { ...richData, text: textStr }
-        : { text: textStr };
+      outputType === "adaptiveCard"
+        ? wrapAdaptiveCard(richData, textStr)
+        : typeof richData === "object"
+          ? { ...richData, text: textStr }
+          : { text: textStr };
   }
 
   const channelData = { [dataKey]: richPayload };
@@ -468,6 +503,7 @@ const TOOL_TYPE_MAP: Record<string, { type: string; extension: string }> = {
   send_email: { type: "sendEmailTool", extension: "@cognigy/basic-nodes" },
   mcp: { type: "aiAgentJobMCPTool", extension: "@cognigy/basic-nodes" },
   http: { type: "aiAgentJobTool", extension: "@cognigy/basic-nodes" },
+  a2a: { type: "aiAgentJobA2AAgent", extension: "@cognigy/basic-nodes" },
 };
 
 // Tool child descriptors when the parent is an LLM Prompt (llmPromptV2) node
@@ -485,7 +521,7 @@ const LLM_PROMPT_TOOL_TYPE_MAP: Record<
   http: { type: "llmPromptTool", extension: "@cognigy/basic-nodes" },
 };
 
-type ToolKind = "tool" | "knowledge" | "send_email" | "mcp";
+type ToolKind = "tool" | "knowledge" | "send_email" | "mcp" | "a2a";
 
 /**
  * The tool kind (create_tool's `toolType` vocabulary) that a tool node's chart
@@ -500,6 +536,7 @@ const TOOL_NODE_TYPE_KIND: Record<string, ToolKind> = {
   llmPromptMCPTool: "mcp",
   knowledgeTool: "knowledge",
   sendEmailTool: "send_email",
+  aiAgentJobA2AAgent: "a2a",
 };
 
 /** Tool-node config keys update_tool can PATCH, per tool kind. */
@@ -508,6 +545,8 @@ const TOOL_CONFIG_KEYS_BY_KIND: Record<ToolKind, string[]> = {
   knowledge: ["knowledgeStoreId", "toolId", "description", "topK"],
   send_email: ["toolId", "description", "recipient"],
   mcp: ["mcpName", "mcpServerUrl", "timeout"],
+  // The remaining A2A fields are applied by applyA2AToolConfig.
+  a2a: ["toolId", "timeout"],
 };
 
 /** Every tool-node config key, in the order they are mapped. */
@@ -531,6 +570,33 @@ const TOOL_NODE_CONFIG_KEYS = [
  * successful update that changed nothing.
  */
 const AI_AGENT_ONLY_CONFIG_KEYS = ["knowledgeStoreId", "topK", "recipient"];
+
+/**
+ * Config keys that exist only on an A2A Agent tool node (applied by
+ * applyA2AToolConfig). `timeout` is left out: MCP tools share it. Any of these
+ * in an update_tool request means the node's real type has to be read —
+ * without it the update falls back to the plain-tool keys and silently drops
+ * every A2A field.
+ */
+const A2A_ONLY_CONFIG_KEYS = [
+  "agentBaseUrl",
+  "agentCardPath",
+  "executionMode",
+  "taskTimeout",
+  "maxAutonomousTurns",
+  "toolFilter",
+  "whitelist",
+  "blacklist",
+  "authType",
+  "apiKeyConnection",
+  "apiKeyHeader",
+  "bearerConnection",
+  "basicConnection",
+  "oAuth2Connection",
+  "authForDiscovery",
+  "agentHeaders",
+  "cacheCard",
+];
 
 /**
  * Map the caller's tool config onto the node config keys the given tool kind
@@ -579,6 +645,7 @@ const RESOLVE_NODE_MAP: Record<string, { type: string; label: string } | null> =
     knowledge: null,
     send_email: null,
     http: null, // HTTP handles its own resolve node creation
+    a2a: { type: "aiAgentJobCallA2AAgent", label: "Call A2A Agent" },
   };
 
 /**
@@ -609,10 +676,54 @@ function buildHttpNodeConfig(http: {
   return cfg;
 }
 
+/**
+ * Copy A2A Agent tool config fields (shared by create_tool and update_tool)
+ * from the user-facing `cfg` object onto the raw node `nodeConfig`.
+ */
+function applyA2AToolConfig(nodeConfig: Record<string, any>, cfg: any): void {
+  if (cfg.agentBaseUrl) nodeConfig.agentBaseUrl = cfg.agentBaseUrl;
+  if (cfg.agentCardPath) nodeConfig.agentCardPath = cfg.agentCardPath;
+  if (cfg.timeout !== undefined) nodeConfig.timeout = cfg.timeout;
+  if (cfg.executionMode) nodeConfig.executionMode = cfg.executionMode;
+  if (cfg.taskTimeout !== undefined) nodeConfig.taskTimeout = cfg.taskTimeout;
+  if (cfg.maxAutonomousTurns !== undefined)
+    nodeConfig.maxAutonomousTurns = cfg.maxAutonomousTurns;
+  if (cfg.toolFilter) nodeConfig.toolFilter = cfg.toolFilter;
+  if (cfg.whitelist) nodeConfig.whitelist = cfg.whitelist;
+  if (cfg.blacklist) nodeConfig.blacklist = cfg.blacklist;
+  if (cfg.authType) nodeConfig.authType = cfg.authType;
+  if (cfg.apiKeyConnection) nodeConfig.apiKeyConnection = cfg.apiKeyConnection;
+  if (cfg.apiKeyHeader) nodeConfig.apiKeyHeader = cfg.apiKeyHeader;
+  if (cfg.bearerConnection) nodeConfig.bearerConnection = cfg.bearerConnection;
+  if (cfg.basicConnection) nodeConfig.basicConnection = cfg.basicConnection;
+  if (cfg.oAuth2Connection) nodeConfig.oAuth2Connection = cfg.oAuth2Connection;
+  if (cfg.authForDiscovery !== undefined)
+    nodeConfig.authForDiscovery = cfg.authForDiscovery;
+  if (cfg.agentHeaders) nodeConfig.agentHeaders = cfg.agentHeaders;
+  if (cfg.cacheCard !== undefined) nodeConfig.cacheCard = cfg.cacheCard;
+}
+
+/**
+ * manage_a2a_server only manages a2aServer endpoints. Any other channel would
+ * get A2A settings patched onto it, or A2A URLs fabricated from its token.
+ */
+function notA2AServerEndpoint(endpointId: string, channel: unknown): any {
+  return withHints(
+    {
+      error: `Endpoint ${endpointId} is a "${String(channel)}" endpoint, not an A2A server (a2aServer) endpoint.`,
+    },
+    {
+      action:
+        "Pass the endpointId of an a2aServer endpoint (list_resources { resourceType: 'endpoint', projectId }), or omit endpointId and pass projectId + flowId to create one. Use manage_webchat / manage_voice_gateway for those channels.",
+    },
+  );
+}
+
 const AI_AGENT_TOOL_TYPES = new Set([
   "aiAgentJobDefault",
   "aiAgentJobTool",
   "aiAgentJobMCPTool",
+  "aiAgentJobA2AAgent",
   "knowledgeTool",
   "handoverToAiAgentTool",
   "handoverToHumanAgentTool",
@@ -626,6 +737,7 @@ const AI_AGENT_TOOL_TYPES = new Set([
 const MCP_MANAGED_TOOL_TYPES = new Set([
   "aiAgentJobTool",
   "aiAgentJobMCPTool",
+  "aiAgentJobA2AAgent",
   "knowledgeTool",
   "sendEmailTool",
   "llmPromptTool",
@@ -654,6 +766,37 @@ function nodeParentId(node: any): string | undefined {
   return raw === undefined || raw === null || raw === ""
     ? undefined
     : String(raw);
+}
+
+/**
+ * The stored `config` of each node, in order. The `/chart/nodes` index's
+ * `config` holds the node type's DEFAULTS (every aiAgentJobTool reads toolId
+ * "unlock_account"), so only the per-node read is real; a failed read yields
+ * {} rather than a default. Batches of 5 keep a node-heavy flow clear of 429s.
+ */
+async function readNodeConfigs(
+  apiClient: CognigyApiClient,
+  flowId: string,
+  nodes: any[],
+): Promise<Record<string, any>[]> {
+  const configs: Record<string, any>[] = [];
+  for (let i = 0; i < nodes.length; i += 5) {
+    configs.push(
+      ...(await Promise.all(
+        nodes.slice(i, i + 5).map(async (n: any) => {
+          try {
+            const full: any = await apiClient.get(
+              `/v2.0/flows/${flowId}/chart/nodes/${n._id || n.id}`,
+            );
+            return full?.config ?? {};
+          } catch {
+            return {};
+          }
+        }),
+      )),
+    );
+  }
+  return configs;
 }
 
 /**
@@ -827,7 +970,9 @@ async function resolveFlowForAgent(
         );
         if (match) return { flowId: match._id || match.id, agent };
 
-        // Last resort: scan all flows for an aiAgentJob node referencing this agent
+        // Last resort: scan all flows for an aiAgentJob node referencing this
+        // agent — pointless (every read wasted) without a reference to match.
+        if (!agent.referenceId) return null;
         for (const f of flowItems) {
           const fid = f._id || f.id;
           try {
@@ -838,12 +983,12 @@ async function resolveFlowForAgent(
               },
             );
             const nodeItems = nodes.items ?? nodes;
-            const jobNode = (Array.isArray(nodeItems) ? nodeItems : []).find(
-              (n: any) =>
-                n.type === "aiAgentJob" &&
-                n.config?.aiAgent === agent.referenceId,
+            const jobNodes = (Array.isArray(nodeItems) ? nodeItems : []).filter(
+              (n: any) => n.type === "aiAgentJob",
             );
-            if (jobNode) return { flowId: fid, agent };
+            const configs = await readNodeConfigs(apiClient, fid, jobNodes);
+            if (configs.some((c) => c.aiAgent === agent.referenceId))
+              return { flowId: fid, agent };
           } catch {
             // skip flows we can't read
           }
@@ -1665,6 +1810,16 @@ export class ToolHandlers {
           data.packageId,
         );
         const payload = this.buildImportPayload(preview, data);
+        const copied = new Set(
+          payload.strategies
+            .filter((s) => s.identityConflictStrategy === "re-identify")
+            .map((s) => s._id),
+        );
+        const importedAsNewCopy = preview.resources
+          .filter((r: any) => r.conflict && copied.has(r.id))
+          .map((r: any) => ({ id: r.id, type: r.type, name: r.name }));
+        const copyInfo =
+          importedAsNewCopy.length > 0 ? { importedAsNewCopy } : {};
         const response: any = await this.apiClient.post(
           `/new/v2.0/packages/${data.packageId}/merge`,
           payload,
@@ -1692,6 +1847,7 @@ export class ToolHandlers {
             },
             selectedResourceCount: payload.resourceIds.length,
             localeMappingCount: payload.localeMapping.length,
+            ...copyInfo,
           };
         }
 
@@ -1708,6 +1864,7 @@ export class ToolHandlers {
           task: normalizedTask,
           selectedResourceCount: payload.resourceIds.length,
           localeMappingCount: payload.localeMapping.length,
+          ...copyInfo,
           ...(timedOut ? { timedOutWaiting: true } : {}),
         };
 
@@ -2425,7 +2582,8 @@ export class ToolHandlers {
    * under a new tool parent (aiAgentJob / llmPromptV2) — UI preview cruft the
    * LLM would otherwise see as a real tool. Scoped to direct children of
    * `parentNodeId`; matched either by the placeholder's own markers
-   * (preview/label/toolId "unlock_account") or, because the llmPromptV2
+   * (preview/label "unlock_account" — not the index's `config.toolId`, which
+   * is that default on every tool) or, because the llmPromptV2
    * placeholder carries none of those, by a bare `childType` match.
    *
    * The bare type match is only sound while the parent has no real tools yet,
@@ -2450,10 +2608,10 @@ export class ToolHandlers {
     // nodes (e.g. every node lacking parentId) — better to leave the
     // placeholder in place than to delete real tools.
     if (!parentNodeId) return [];
+    // Not `config.toolId`: in the node index that is the descriptor default
+    // ("unlock_account") on EVERY tool, so real tools would look like placeholders.
     const isMarkedPlaceholder = (n: any) =>
-      n.preview === "unlock_account" ||
-      n.label === "unlock_account" ||
-      n.config?.toolId === "unlock_account";
+      n.preview === "unlock_account" || n.label === "unlock_account";
     const isCandidate = (n: any) =>
       isMarkedPlaceholder(n) || n.type === childType;
 
@@ -2609,12 +2767,17 @@ export class ToolHandlers {
           // to force the backend to regenerate the proper avatar preview.
           if (needsJobPatch || needsPreviewPatch) {
             // The avatar preview is recomputed server-side from `config.aiAgent`;
-            // omitting it wipes the avatar. The `/chart/nodes` index may not
-            // carry `config`, so prefer the authoritative agent reference from
-            // the resolved agent record, falling back to the node's config.
-            const nodeConfigPatch: Record<string, any> = {
-              aiAgent: resolved.agent?.referenceId ?? jobNode.config?.aiAgent,
-            };
+            // omitting it wipes the avatar. The `/chart/nodes` index's `config`
+            // holds descriptor defaults, so prefer the agent record's reference
+            // and fall back to the node's stored config from the per-node read.
+            const aiAgent =
+              resolved.agent?.referenceId ??
+              (
+                await readNodeConfigs(this.apiClient, resolved.flowId, [
+                  jobNode,
+                ])
+              )[0].aiAgent;
+            const nodeConfigPatch: Record<string, any> = { aiAgent };
             if (needsJobPatch) {
               if (jobConfig!.llmProviderReferenceId !== undefined)
                 nodeConfigPatch.llmProviderReferenceId =
@@ -2630,14 +2793,19 @@ export class ToolHandlers {
               if (jobConfig!.maxTokens !== undefined)
                 nodeConfigPatch.maxTokens = jobConfig!.maxTokens;
             }
-            nodePatch.config = nodeConfigPatch;
+            // Without aiAgent, a preview-only PATCH would wipe the avatar it
+            // exists to refresh — skip it rather than send one.
+            if (needsJobPatch || aiAgent !== undefined)
+              nodePatch.config = nodeConfigPatch;
           }
 
-          jobNodeResult = await this.apiClient.patch(
-            `/v2.0/flows/${resolved.flowId}/chart/nodes/${jobNodeId}`,
-            nodePatch,
-          );
-          updatedParts.push("jobNode");
+          if (nodePatch.config) {
+            jobNodeResult = await this.apiClient.patch(
+              `/v2.0/flows/${resolved.flowId}/chart/nodes/${jobNodeId}`,
+              nodePatch,
+            );
+            updatedParts.push("jobNode");
+          }
         }
       }
     }
@@ -3488,21 +3656,28 @@ export class ToolHandlers {
           },
         );
         const allNodes = nodes.items ?? nodes;
-        items = (Array.isArray(allNodes) ? allNodes : [])
-          .filter((n: any) => AI_AGENT_TOOL_TYPES.has(n.type))
-          .map((n: any) => ({
-            toolId: n._id || n.id,
-            name: n.label || n.name,
-            toolType: n.type,
-            // Which aiAgentJob / llmPromptV2 node the tool hangs off — a flow
-            // can have more than one. Always a string id, whichever shape
-            // the API returned the parent in.
-            parentNodeId: nodeParentId(n),
-            description: n.config?.description,
-            ...(n.config?.knowledgeStoreId
-              ? { knowledgeStoreId: n.config.knowledgeStoreId }
-              : {}),
-          }));
+        const toolNodes = (Array.isArray(allNodes) ? allNodes : []).filter(
+          (n: any) => AI_AGENT_TOOL_TYPES.has(n.type),
+        );
+        // Index `config` is the type's defaults — read each tool's stored one.
+        const configs = await readNodeConfigs(
+          this.apiClient,
+          agentFlowId,
+          toolNodes,
+        );
+        items = toolNodes.map((n: any, i: number) => ({
+          toolId: n._id || n.id,
+          name: n.label || n.name,
+          toolType: n.type,
+          // Which aiAgentJob / llmPromptV2 node the tool hangs off — a flow
+          // can have more than one. Always a string id, whichever shape
+          // the API returned the parent in.
+          parentNodeId: nodeParentId(n),
+          description: configs[i].description,
+          ...(configs[i].knowledgeStoreId
+            ? { knowledgeStoreId: configs[i].knowledgeStoreId }
+            : {}),
+        }));
         total = items.length;
         break;
       }
@@ -4532,8 +4707,8 @@ export class ToolHandlers {
         resolved.agent?.referenceId
       ) {
         // Several AI Agent Job nodes (e.g. a handover pattern) — pick the one
-        // bound to the addressed agent. The node list carries no config, so
-        // read each candidate.
+        // bound to the addressed agent. The node list's config is only the
+        // type defaults, so read each candidate.
         for (const candidate of sameType) {
           let full: any = null;
           try {
@@ -4615,14 +4790,50 @@ export class ToolHandlers {
       const listHasParentRefs = allNodes.some(
         (node: any) => nodeParentId(node) !== undefined,
       );
-      const duplicateTool = allNodes.find(
+      const siblingTools = allNodes.filter(
         (node: any) =>
           MCP_MANAGED_TOOL_TYPES.has(node.type) &&
-          (!listHasParentRefs || nodeParentId(node) === jobNodeId) &&
-          (node.config?.toolId === requestedToolId ||
-            node.label === requestedToolId ||
-            node.name === requestedToolId),
+          (!listHasParentRefs || nodeParentId(node) === jobNodeId),
       );
+      // The index's `config.toolId` is the descriptor default, so a stored
+      // toolId match needs the per-node read — only when label/name miss.
+      let duplicateTool = siblingTools.find(
+        (node: any) =>
+          node.label === requestedToolId || node.name === requestedToolId,
+      );
+      if (!duplicateTool && siblingTools.length > 0) {
+        const configs = await readNodeConfigs(
+          this.apiClient,
+          flowId,
+          siblingTools,
+        );
+        duplicateTool =
+          siblingTools[configs.findIndex((c) => c.toolId === requestedToolId)];
+      }
+
+      // Reusing is only right when the existing node is the same kind of
+      // tool. An A2A request that hit a plain/MCP/knowledge node (or the
+      // reverse) would report success while none of the requested config
+      // exists on the node.
+      if (
+        duplicateTool &&
+        (duplicateTool.type === "aiAgentJobA2AAgent") !==
+          (data.toolType === "a2a")
+      ) {
+        const existingKind =
+          TOOL_NODE_TYPE_KIND[duplicateTool.type] ?? duplicateTool.type;
+        return withHints(
+          {
+            error: `toolId "${requestedToolId}" already belongs to a different kind of tool in this agent flow (existing: "${existingKind}", requested: "${data.toolType}"), so it cannot be reused.`,
+            existingToolNodeId: duplicateTool._id || duplicateTool.id,
+            existingToolType: existingKind,
+          },
+          {
+            action:
+              "Choose a different toolId, or update/delete the existing tool first.",
+          },
+        );
+      }
 
       if (duplicateTool) {
         const duplicateToolNodeId = duplicateTool._id || duplicateTool.id;
@@ -4646,7 +4857,9 @@ export class ToolHandlers {
                   : duplicateTool.type === "aiAgentJobMCPTool" ||
                       duplicateTool.type === "llmPromptMCPTool"
                     ? "mcp"
-                    : data.toolType,
+                    : duplicateTool.type === "aiAgentJobA2AAgent"
+                      ? "a2a"
+                      : data.toolType,
             reusedExisting: true,
           },
           {
@@ -4655,6 +4868,13 @@ export class ToolHandlers {
           },
         );
       }
+    }
+
+    if (data.toolType === "a2a" && !cfg.agentBaseUrl) {
+      return withHints(
+        { error: "agentBaseUrl is required in config for a2a tool type." },
+        { action: "Provide config.agentBaseUrl and retry." },
+      );
     }
 
     // Step 3: Create the tool node
@@ -4702,6 +4922,11 @@ export class ToolHandlers {
           nodeConfig.parameters = normalized.parameters;
           parameterWarnings = normalized.warnings;
         }
+        break;
+      case "a2a":
+        nodeConfig.name = data.name;
+        if (cfg.toolId) nodeConfig.toolId = cfg.toolId;
+        applyA2AToolConfig(nodeConfig, cfg);
         break;
     }
 
@@ -4986,11 +5211,21 @@ export class ToolHandlers {
     const requestedAiAgentOnlyKeys = cfg
       ? AI_AGENT_ONLY_CONFIG_KEYS.filter((key) => (cfg as any)[key])
       : [];
+    // A2A keys count when present at all — taskTimeout: 0 and cacheCard:
+    // false are real values.
+    const requestedA2AKeys = cfg
+      ? A2A_ONLY_CONFIG_KEYS.filter((key) => (cfg as any)[key] !== undefined)
+      : [];
+    // A rename needs the family too: an A2A node keeps its name in
+    // config.name as well as in the label, and both must change together.
     const needsNodeFamily =
-      !!cfg &&
-      (requestedAiAgentOnlyKeys.length > 0 ||
-        toolType === "knowledge" ||
-        toolType === "send_email");
+      (!!cfg &&
+        (requestedAiAgentOnlyKeys.length > 0 ||
+          requestedA2AKeys.length > 0 ||
+          toolType === "knowledge" ||
+          toolType === "send_email")) ||
+      toolType === "a2a" ||
+      !!data.name;
 
     let fetchedToolNode: any;
     if (needsNodeFamily) {
@@ -5014,10 +5249,15 @@ export class ToolHandlers {
         ? fetchedToolNode.type
         : undefined;
     // Dispatch on the node's real type; fall back to the caller's toolType,
-    // and to the plain-tool keys when it was omitted (as before).
+    // then to "a2a" when only A2A keys could have been meant, and to the
+    // plain-tool keys otherwise (as before).
     const effectiveKind: ToolKind =
       (nodeType ? TOOL_NODE_TYPE_KIND[nodeType] : undefined) ??
-      (toolType && toolType !== "http" ? (toolType as ToolKind) : "tool");
+      (toolType && toolType !== "http"
+        ? (toolType as ToolKind)
+        : requestedA2AKeys.length > 0
+          ? "a2a"
+          : "tool");
 
     // Step 1: Update the tool node itself (label and/or tool-node config)
     const patchPayload: any = {};
@@ -5025,13 +5265,19 @@ export class ToolHandlers {
     let ignoredConfigKeys: string[] = [];
     if (data.name) patchPayload.label = data.name;
 
+    const nodeConfig: Record<string, any> = {};
     if (cfg) {
       const mapped = buildToolNodeConfig(effectiveKind, cfg as any);
+      Object.assign(nodeConfig, mapped.nodeConfig);
+      if (effectiveKind === "a2a") applyA2AToolConfig(nodeConfig, cfg);
       parameterWarnings = mapped.parameterWarnings;
       ignoredConfigKeys = mapped.ignored;
-      if (Object.keys(mapped.nodeConfig).length > 0) {
-        patchPayload.config = mapped.nodeConfig;
-      }
+    }
+    // create_tool writes an A2A tool's name into config.name as well as the
+    // label; a rename that only changed the label would leave them apart.
+    if (effectiveKind === "a2a" && data.name) nodeConfig.name = data.name;
+    if (Object.keys(nodeConfig).length > 0) {
+      patchPayload.config = nodeConfig;
     }
 
     // Nothing the caller asked for can land on this node. Say so instead of
@@ -5311,6 +5557,7 @@ export class ToolHandlers {
             label: n.label,
             parentId: n.parentId ?? null,
             isEntryPoint: n.isEntryPoint ?? false,
+            ...(n.isDisabled ? { isDisabled: true } : {}),
           })),
         };
       }
@@ -5385,6 +5632,13 @@ export class ToolHandlers {
           const aliases = aliasMap[k] ?? [k];
           return !aliases.some((a) => cfg[a] !== undefined);
         });
+        const invalidValues = invalidConfigValues(entry, cfg);
+        if (invalidValues) {
+          return withHints(
+            { error: `Invalid config for ${data.nodeType}: ${invalidValues}` },
+            { action: `Fix the config values: ${invalidValues}` },
+          );
+        }
         if (missingKeys.length > 0) {
           const missingKeyLabels = missingKeys.map((k) => {
             const aliases = aliasMap[k] ?? [k];
@@ -5586,6 +5840,16 @@ export class ToolHandlers {
           );
           nodeType = existingNode?.type ?? "";
 
+          const existingEntry = getNodeEntry(nodeType);
+          const invalidValues =
+            existingEntry && invalidConfigValues(existingEntry, data.config);
+          if (invalidValues) {
+            return withHints(
+              { error: `Invalid config for ${nodeType}: ${invalidValues}` },
+              { action: `Fix the config values: ${invalidValues}` },
+            );
+          }
+
           // Strip server-computed, read-only fields before merging them back
           // into the PATCH. `transpiled` (a code node's compiled JS) can be
           // ~200k chars, and echoing `hasError` back is meaningless.
@@ -5655,6 +5919,15 @@ export class ToolHandlers {
           } else {
             const transformed = transformConfigForApi(nodeType, data.config);
             patchPayload.config = deepMerge(existingConfig, transformed);
+            // A card is a whole document: merging would keep keys the new card
+            // dropped (and raw-card keys on legacy unwrapped nodes), so replace it.
+            const card = transformed.say?._cognigy?._default?._adaptiveCard;
+            if (card) {
+              const say = patchPayload.config.say;
+              for (const channel of [say._cognigy, say._data?._cognigy]) {
+                if (channel?._default) channel._default._adaptiveCard = card;
+              }
+            }
           }
         }
 
@@ -5763,18 +6036,20 @@ export class ToolHandlers {
           );
           const items = list.items ?? list;
           if (Array.isArray(items)) {
-            const labelById = new Map<string, string>(
-              items.map((n: any) => [n._id || n.id, n.label]),
+            const byId = new Map<string, any>(
+              items.map((n: any) => [n._id || n.id, n]),
             );
             for (const n of chart.nodes ?? []) {
-              const id = n._id || n.id;
-              const lbl = labelById.get(id);
-              if (!n.label && lbl) n.label = lbl;
+              const listed = byId.get(n._id || n.id);
+              if (!n.label && listed?.label) n.label = listed.label;
+              if (listed?.isDisabled) n.isDisabled = true;
             }
           }
         } catch {
           // Labels are optional — the serializer falls back to preview/type.
         }
+        // Disabled nodes are skipped at runtime, so they are not drawn.
+        chart = omitDisabled(chart);
 
         const format = data.format ?? "both";
         const showLegend = data.legend ?? true;
@@ -5959,7 +6234,7 @@ export class ToolHandlers {
     }
 
     // UPDATE: patch existing endpoint
-    if (!data.name && !hasSettings) {
+    if (!data.name && !data.flowId && !hasSettings) {
       const ep = await this.safeGetEndpoint(endpointId);
       if (ep) {
         return this.buildWebchatResponse({
@@ -6015,6 +6290,274 @@ export class ToolHandlers {
         },
       );
     }
+  }
+
+  // =========================================================================
+  // Tool 17: manage_a2a_server
+  // =========================================================================
+  async handleManageA2AServer(args: any): Promise<any> {
+    const data = schemas.manageA2AServerSchema.parse(args);
+
+    const settings: Record<string, any> = {};
+    if (data.agentName !== undefined) settings.agentName = data.agentName;
+    if (data.agentDescription !== undefined)
+      settings.agentDescription = data.agentDescription;
+    if (data.skills !== undefined) settings.skills = data.skills;
+    if (data.enableStreaming !== undefined)
+      settings.enableStreaming = data.enableStreaming;
+    if (data.authenticationType !== undefined) {
+      settings.a2aServerEndpointAuthentication = {
+        authenticationType: data.authenticationType,
+      };
+    }
+    const hasSettings = Object.keys(settings).length > 0;
+
+    let endpointId = data.endpointId ?? null;
+
+    // CREATE when no endpointId provided, UPDATE when endpointId is explicit
+    if (!endpointId) {
+      if (!data.projectId) {
+        return withHints(
+          { error: "projectId is required to create an A2A server endpoint." },
+          {
+            action:
+              "Provide projectId. Use list_resources { resourceType: 'project' } to find one.",
+          },
+        );
+      }
+      if (!data.flowId) {
+        return withHints(
+          {
+            error:
+              "flowId is required to create an A2A server endpoint. To update an existing one, provide endpointId instead.",
+          },
+          {
+            action:
+              "Provide flowId. Use list_resources { resourceType: 'flow', projectId } to find one, or create an agent first with create_ai_agent.",
+          },
+        );
+      }
+
+      const localeId = await resolveEndpointLocaleId(
+        this.apiClient,
+        data.projectId,
+        data.flowId,
+      );
+
+      const createPayload: any = {
+        projectId: data.projectId,
+        entrypoint: data.projectId,
+        channel: "a2aServer",
+        flowId: data.flowId,
+        name: data.name || "A2A Server",
+        targetType: "flow",
+        agentId: "",
+      };
+      if (localeId) createPayload.localeId = localeId;
+
+      try {
+        const createdEndpoint: any = await this.apiClient.post(
+          "/v2.0/endpoints",
+          createPayload,
+        );
+        endpointId = createdEndpoint._id || createdEndpoint.id;
+      } catch (error: any) {
+        return withHints(
+          { error: `Failed to create A2A server endpoint: ${error.message}` },
+          {
+            action: "Check projectId and flowId, then retry.",
+          },
+        );
+      }
+
+      // The endpoint exists from here on. A failure below must not read as
+      // "creation failed" — a retry of the create would make a duplicate.
+      try {
+        let endpoint: any = await this.apiClient.get(
+          `/v2.0/endpoints/${endpointId}`,
+        );
+
+        let settingsApplied = false;
+        if (hasSettings) {
+          try {
+            const mergedSettings = deepMerge(endpoint.settings ?? {}, settings);
+            await this.apiClient.patch(`/v2.0/endpoints/${endpointId}`, {
+              settings: mergedSettings,
+            });
+            endpoint = await this.apiClient.get(
+              `/v2.0/endpoints/${endpointId}`,
+            );
+            settingsApplied = true;
+          } catch {
+            // Settings patch failed but endpoint was created — continue
+          }
+        }
+
+        const response = await this.buildA2AServerResponse({
+          created: true,
+          endpointId: endpointId!,
+          endpoint,
+        });
+        if (hasSettings && !settingsApplied) {
+          return withHints(response, {
+            warning: "Endpoint created but settings failed to apply.",
+            action: `Retry settings by calling manage_a2a_server { endpointId: "${endpointId}", ...settings }`,
+          });
+        }
+        return response;
+      } catch (error: any) {
+        return withHints(
+          {
+            created: true,
+            endpointId,
+            name: createPayload.name,
+            channel: "a2aServer",
+            error: `Endpoint created, but reading it back failed: ${error.message}`,
+          },
+          {
+            warning:
+              "The A2A server endpoint WAS created. Do not retry the create — that would add a second endpoint.",
+            action: `Call manage_a2a_server { endpointId: "${endpointId}" } to get its agentBaseUrl and live check${
+              hasSettings ? ", passing the Agent Card settings again" : ""
+            }.`,
+          },
+        );
+      }
+    }
+
+    // UPDATE: patch existing endpoint
+    if (!data.name && !data.flowId && !hasSettings) {
+      const ep = await this.safeGetEndpoint(endpointId);
+      if (ep && ep.channel !== "a2aServer") {
+        return notA2AServerEndpoint(endpointId!, ep.channel);
+      }
+      if (ep) {
+        return await this.buildA2AServerResponse({
+          endpointId: endpointId!,
+          endpoint: ep,
+          note: "No changes requested. Returning current endpoint info.",
+        });
+      }
+      return withHints(
+        {
+          error:
+            "Nothing to update. Provide at least one of name, agentName, agentDescription, skills, enableStreaming, authenticationType.",
+        },
+        { action: "Include fields to update." },
+      );
+    }
+
+    try {
+      const fullEndpoint: any = await this.apiClient.get(
+        `/v2.0/endpoints/${endpointId}`,
+      );
+      if (fullEndpoint?.channel !== "a2aServer") {
+        return notA2AServerEndpoint(endpointId!, fullEndpoint?.channel);
+      }
+      const existingSettings = fullEndpoint.settings ?? {};
+      const mergedSettings = deepMerge(existingSettings, settings);
+
+      const patchPayload: any = { settings: mergedSettings };
+      if (data.name) patchPayload.name = data.name;
+      if (data.flowId) patchPayload.flowId = data.flowId;
+
+      await this.apiClient.patch(`/v2.0/endpoints/${endpointId}`, patchPayload);
+      const endpoint: any = await this.apiClient.get(
+        `/v2.0/endpoints/${endpointId}`,
+      );
+
+      return await this.buildA2AServerResponse({
+        updated: true,
+        endpointId: endpointId!,
+        endpoint,
+      });
+    } catch (error: any) {
+      return withHints(
+        { error: `Failed to update A2A server endpoint: ${error.message}` },
+        { action: "Verify endpointId and settings, then retry." },
+      );
+    }
+  }
+
+  /**
+   * GET the Agent Card and report whether the A2A server is actually alive.
+   * Fire-and-report rather than fire-and-forget: never throws, just reduces
+   * to { reachable: false, error } so a dead agent never blocks the response.
+   */
+  private async checkA2AAgentCard(agentCardUrl: string): Promise<{
+    reachable: boolean;
+    agentName?: string;
+    skills?: string[];
+    error?: string;
+  }> {
+    try {
+      // Endpoint traffic does not go through CognigyApiClient, so it needs the
+      // proxy wiring of its own (same as talk_to_agent).
+      const res = await axios.get(agentCardUrl, {
+        timeout: 5000,
+        ...getProxyAxiosOptions(agentCardUrl),
+        beforeRedirect: applyProxyToRedirect,
+      });
+      const card = res.data ?? {};
+      return {
+        reachable: true,
+        agentName: card.name,
+        skills: Array.isArray(card.skills)
+          ? card.skills.map((s: any) => s.id ?? s.name)
+          : undefined,
+      };
+    } catch (error: any) {
+      return {
+        reachable: false,
+        error: error.response ? `HTTP ${error.response.status}` : error.message,
+      };
+    }
+  }
+
+  private async buildA2AServerResponse(opts: {
+    created?: boolean;
+    updated?: boolean;
+    endpointId: string;
+    endpoint: any;
+    note?: string;
+  }): Promise<any> {
+    const { endpoint } = opts;
+    // The a2aServer channel is served under a distinct /a2a/v1/ path prefix —
+    // unlike every other channel (rest, webchat3, mcpServer, ...), which are
+    // served directly at endpointBaseUrl/<URLToken>. Getting this wrong is a
+    // silent 404 on both discovery and every subsequent task call.
+    const agentBaseUrl =
+      endpoint.URLToken && this.endpointBaseUrl
+        ? `${this.endpointBaseUrl}/a2a/v1/${endpoint.URLToken}`
+        : undefined;
+    const agentCardUrl = agentBaseUrl
+      ? `${agentBaseUrl}/.well-known/agent.json`
+      : undefined;
+    const authenticationType =
+      endpoint.settings?.a2aServerEndpointAuthentication?.authenticationType;
+
+    const result: any = {};
+    if (opts.created) result.created = true;
+    if (opts.updated) result.updated = true;
+    result.endpointId = opts.endpointId;
+    result.name = endpoint.name;
+    result.channel = endpoint.channel;
+    result.agentBaseUrl = agentBaseUrl;
+    result.agentCardUrl = agentCardUrl;
+    result.settings = {
+      agentName: endpoint.settings?.agentName,
+      agentDescription: endpoint.settings?.agentDescription,
+      skills: endpoint.settings?.skills,
+      enableStreaming: endpoint.settings?.enableStreaming,
+      authenticationType,
+    };
+    if (agentCardUrl) {
+      // Agent Card discovery is open even when the endpoint requires an API
+      // key (the key guards message requests only), so always probe.
+      result.liveCheck = await this.checkA2AAgentCard(agentCardUrl);
+    }
+    if (opts.note) result.note = opts.note;
+    return result;
   }
 
   /**
@@ -6581,8 +7124,8 @@ export class ToolHandlers {
       flowId = resolved.flowId;
     }
 
-    // The `/chart/nodes` index returns NO `config` and NO ordering — only
-    // id/type/label/preview/isEntryPoint/parentId. The checklist reads
+    // The `/chart/nodes` index returns NO ordering, and its `config` is the
+    // node type's DEFAULTS, not the stored values. The checklist reads
     // `node.config.*` and the auto-fix PATCH merges against existing config, so
     // we must (a) enrich the inspected nodes with their per-node `config` and
     // (b) derive the true first node from the chart `next` chain. Using the bare
@@ -6608,9 +7151,11 @@ export class ToolHandlers {
             const full: any = await this.apiClient.get(
               `/v2.0/flows/${flowId}/chart/nodes/${voiceNodeId(n)}`,
             );
-            return { ...n, config: full?.config ?? n.config ?? {} };
+            return { ...n, config: full?.config ?? {} };
           } catch {
-            return n;
+            // Never keep the index's default config: `undefined` makes the
+            // apply path re-fetch before merging instead of PATCHing defaults.
+            return { ...n, config: undefined };
           }
         }),
       );
@@ -6722,7 +7267,7 @@ export class ToolHandlers {
         summary: summarize(checks),
         checks: checks.map(formatCheck),
         _note:
-          "Dry-run: no changes made. Re-run with apply: true to apply the auto-fixable fixes (the checks with a proposedFix). Use only: [ids] to apply a subset.",
+          "Dry-run: no changes made. After the user has reviewed the report, re-run with apply: true to apply the auto-fixable fixes (the checks with a proposedFix). Use only: [ids] to apply a subset.",
       };
     }
 
@@ -6745,7 +7290,9 @@ export class ToolHandlers {
       try {
         if (fix.kind === "patchNode") {
           // Resolve the current config. If it was never captured, re-fetch the
-          // full node so the merge below preserves existing fields.
+          // full node so the merge below preserves existing fields. If that
+          // read fails too, skip the fix (outer catch → applied: false) rather
+          // than PATCH a config we can't see.
           let existing = nodeConfigById.get(fix.nodeId);
           if (existing === undefined) {
             try {
@@ -6753,8 +7300,10 @@ export class ToolHandlers {
                 `/v2.0/flows/${flowId}/chart/nodes/${fix.nodeId}`,
               );
               existing = full?.config ?? {};
-            } catch {
-              existing = {};
+            } catch (err: any) {
+              throw new Error(
+                `Could not read the node's current config, so the fix was not applied: ${err.message}`,
+              );
             }
           }
           const merged = { ...existing, ...fix.config };
@@ -7878,6 +8427,9 @@ export class ToolHandlers {
           break;
         case "manage_voice_gateway":
           result = await this.handleManageVoiceGateway(args);
+          break;
+        case "manage_a2a_server":
+          result = await this.handleManageA2AServer(args);
           break;
         case "manage_settings":
           result = await this.handleManageSettings(args);

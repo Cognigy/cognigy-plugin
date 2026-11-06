@@ -22,6 +22,7 @@ const ID = {
   pkg: "60d5ec49f1a2c8b1a4e0f00b",
   task: "60d5ec49f1a2c8b1a4e0f00c",
   task2: "60d5ec49f1a2c8b1a4e0f00d",
+  node2: "60d5ec49f1a2c8b1a4e0f00e",
 };
 
 /**
@@ -462,6 +463,116 @@ describe("ToolHandlers v2", () => {
       expect(api.patch).toHaveBeenCalledWith(
         `/v2.0/flows/${ID.flow}/chart/nodes/job-node-id-000000000001`,
         { config: { aiAgent: "ref-uuid" } },
+      );
+    });
+
+    // The `/chart/nodes` index carries the descriptor's DEFAULT config, never
+    // the stored one; only GET /chart/nodes/{id} has the real aiAgent.
+    const JOB_ID = "job-node-id-000000000001";
+    const routeJobFlow = (
+      agent: Record<string, any>,
+      extra: Record<string, any> = {},
+    ) =>
+      api.get.mockImplementation(async (url: string) => {
+        if (url in extra) {
+          if (extra[url] instanceof Error) throw extra[url];
+          return extra[url];
+        }
+        if (url === `/v2.0/aiagents/${ID.agent}`) return agent;
+        if (url === `/v2.0/flows/${ID.flow}/chart/nodes`)
+          return {
+            items: [
+              { _id: JOB_ID, type: "aiAgentJob", config: { aiAgent: "" } },
+            ],
+          };
+        if (url === `/v2.0/flows/${ID.flow}/chart/nodes/${JOB_ID}`)
+          return {
+            _id: JOB_ID,
+            type: "aiAgentJob",
+            config: { aiAgent: "ref-uuid" },
+          };
+        return {};
+      });
+
+    it("re-sends the stored aiAgent, not the index default, when the agent record lacks referenceId", async () => {
+      routeJobFlow({ _id: ID.agent, name: "Agent", flowId: ID.flow });
+      api.patch.mockResolvedValue({ _id: JOB_ID });
+
+      await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        jobConfig: { temperature: 0.5 },
+      });
+
+      expect(api.patch).toHaveBeenCalledWith(
+        `/v2.0/flows/${ID.flow}/chart/nodes/${JOB_ID}`,
+        { config: { aiAgent: "ref-uuid", temperature: 0.5 } },
+      );
+    });
+
+    it("finds the agent's flow by the job node's stored aiAgent in the last-resort scan", async () => {
+      routeJobFlow(
+        {
+          _id: ID.agent,
+          referenceId: "ref-uuid",
+          name: "Agent",
+          projectId: ID.project,
+        },
+        {
+          [`/v2.0/aiagents/${ID.agent}/jobs`]: new Error("Not found"),
+          // No "{name} Flow" match, so only the node scan can find it.
+          "/v2.0/flows": { items: [{ _id: ID.flow, name: "Renamed Flow" }] },
+        },
+      );
+      api.patch.mockResolvedValue({ _id: JOB_ID });
+
+      const result = await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        jobConfig: { temperature: 0.5 },
+      });
+
+      expect(result.updated).toContain("jobNode");
+      expect(api.patch).toHaveBeenCalledWith(
+        `/v2.0/flows/${ID.flow}/chart/nodes/${JOB_ID}`,
+        { config: { aiAgent: "ref-uuid", temperature: 0.5 } },
+      );
+    });
+
+    it("skips the preview-only PATCH when aiAgent cannot be resolved, rather than wiping the avatar", async () => {
+      const agent = { _id: ID.agent, name: "Renamed", flowId: ID.flow };
+      routeJobFlow(agent, {
+        [`/v2.0/flows/${ID.flow}/chart/nodes/${JOB_ID}`]: new Error("timeout"),
+      });
+      api.patch.mockResolvedValue(agent);
+
+      const result = await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        name: "Renamed",
+      });
+
+      expect(result.updated).toEqual(["agent"]);
+      expect(api.patch).not.toHaveBeenCalledWith(
+        expect.stringContaining("/chart/nodes/"),
+        expect.anything(),
+      );
+    });
+
+    it("skips the last-resort flow scan when the agent has no referenceId", async () => {
+      routeJobFlow(
+        { _id: ID.agent, name: "Agent", projectId: ID.project },
+        {
+          [`/v2.0/aiagents/${ID.agent}/jobs`]: new Error("Not found"),
+          "/v2.0/flows": { items: [{ _id: ID.flow, name: "Renamed Flow" }] },
+        },
+      );
+
+      await h.handleToolCall("update_ai_agent", {
+        aiAgentId: ID.agent,
+        jobConfig: { temperature: 0.5 },
+      });
+
+      expect(api.get).not.toHaveBeenCalledWith(
+        expect.stringContaining("/chart/nodes"),
+        expect.anything(),
       );
     });
 
@@ -1337,6 +1448,73 @@ describe("ToolHandlers v2", () => {
       expect(result.items[0].toolType).toBe("aiAgentJobTool");
     });
 
+    it("reads tool description from the per-node config, not the index defaults", async () => {
+      // Real shape: the /chart/nodes index carries the node type's DEFAULT
+      // config; only GET /chart/nodes/{id} returns the stored values.
+      api.get.mockImplementation(async (url: string): Promise<any> => {
+        if (url === `/v2.0/flows/${ID.flow}/chart/nodes`)
+          return {
+            items: [
+              {
+                _id: ID.tool,
+                type: "aiAgentJobTool",
+                label: "Tool",
+                preview: "get_weather",
+                config: {
+                  toolId: "unlock_account",
+                  description: "This tool unlocks a locked user account.",
+                },
+              },
+            ],
+          };
+        if (url === `/v2.0/flows/${ID.flow}/chart/nodes/${ID.tool}`)
+          return {
+            _id: ID.tool,
+            type: "aiAgentJobTool",
+            config: {
+              toolId: "get_weather",
+              description: "Returns the current weather for a given city.",
+            },
+          };
+        return { flowId: ID.flow };
+      });
+
+      const result = await h.handleToolCall("list_resources", {
+        resourceType: "tool",
+        aiAgentId: ID.agent,
+      });
+
+      expect(result.items[0].description).toBe(
+        "Returns the current weather for a given city.",
+      );
+    });
+
+    it("bounds concurrent per-node tool reads and keeps their order", async () => {
+      const ids = Array.from({ length: 7 }, (_, i) => `tool${i}`);
+      let inFlight = 0;
+      let maxInFlight = 0;
+      api.get.mockImplementation(async (url: string): Promise<any> => {
+        if (url === `/v2.0/flows/${ID.flow}/chart/nodes`)
+          return { items: ids.map((_id) => ({ _id, type: "aiAgentJobTool" })) };
+        const id = ids.find((x) => url.endsWith(`/chart/nodes/${x}`));
+        if (!id) return { flowId: ID.flow };
+        maxInFlight = Math.max(maxInFlight, ++inFlight);
+        await new Promise((r) => setTimeout(r, 1));
+        inFlight--;
+        return { config: { description: `desc ${id}` } };
+      });
+
+      const result = await h.handleToolCall("list_resources", {
+        resourceType: "tool",
+        aiAgentId: ID.agent,
+      });
+
+      expect(maxInFlight).toBeLessThanOrEqual(5);
+      expect(result.items.map((t: any) => t.description)).toEqual(
+        ids.map((id) => `desc ${id}`),
+      );
+    });
+
     it("lists conversations with date filters", async () => {
       api.get.mockResolvedValue({
         items: [{ sessionId: "s1", channel: "rest" }],
@@ -2152,6 +2330,240 @@ describe("ToolHandlers v2", () => {
       );
     });
 
+    it("creates an a2a tool", async () => {
+      mockFlowWithJobNode();
+      api.post
+        .mockResolvedValueOnce({ _id: ID.tool })
+        .mockResolvedValueOnce({ _id: ID.node2 });
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "a2a",
+        name: "Flights Agent",
+        config: {
+          agentBaseUrl: "https://endpoint-trial.cognigy.ai/a2a/v1/tok-abc123",
+          agentCardPath: ".well-known/agent.json",
+          executionMode: "blocking",
+          taskTimeout: 0,
+        },
+      });
+
+      expect(result.toolType).toBe("a2a");
+      expect(api.post).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("/chart/nodes"),
+        expect.objectContaining({
+          type: "aiAgentJobA2AAgent",
+          mode: "appendChild",
+          config: expect.objectContaining({
+            name: "Flights Agent",
+            agentBaseUrl: "https://endpoint-trial.cognigy.ai/a2a/v1/tok-abc123",
+            executionMode: "blocking",
+            taskTimeout: 0,
+          }),
+        }),
+      );
+      expect(api.post).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining("/chart/nodes"),
+        expect.objectContaining({ type: "aiAgentJobCallA2AAgent" }),
+      );
+    });
+
+    it("errors when agentBaseUrl is missing for an a2a tool", async () => {
+      mockFlowWithJobNode();
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "a2a",
+        name: "Flights Agent",
+        config: {},
+      });
+
+      expect(result.error).toContain("agentBaseUrl is required");
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it("stores toolId on an a2a tool so it can be reused", async () => {
+      mockFlowWithJobNode();
+      api.post
+        .mockResolvedValueOnce({ _id: ID.tool })
+        .mockResolvedValueOnce({ _id: ID.node2 });
+
+      await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "a2a",
+        name: "Flights Agent",
+        config: {
+          toolId: "flights_agent",
+          agentBaseUrl: "https://endpoint-trial.cognigy.ai/a2a/v1/tok-abc123",
+        },
+      });
+
+      expect(api.post).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("/chart/nodes"),
+        expect.objectContaining({
+          config: expect.objectContaining({ toolId: "flights_agent" }),
+        }),
+      );
+    });
+
+    it("reuses a duplicate a2a tool by toolId instead of creating another", async () => {
+      api.get
+        .mockResolvedValueOnce({ flowId: ID.flow })
+        .mockResolvedValueOnce({
+          items: [
+            { _id: ID.entry, isEntryPoint: true },
+            { _id: ID.node, type: "aiAgentJob" },
+            {
+              _id: ID.tool,
+              type: "aiAgentJobA2AAgent",
+              label: "Flights Agent",
+            },
+          ],
+        })
+        // The stored toolId only comes from the per-node read.
+        .mockResolvedValueOnce({
+          _id: ID.tool,
+          type: "aiAgentJobA2AAgent",
+          config: { toolId: "flights_agent" },
+        });
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "a2a",
+        name: "Flights Agent",
+        config: {
+          toolId: "flights_agent",
+          agentBaseUrl: "https://endpoint-trial.cognigy.ai/a2a/v1/tok-abc123",
+        },
+      });
+
+      expect(result.reusedExisting).toBe(true);
+      expect(result.toolId).toBe(ID.tool);
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    // The real projections: the `/chart/nodes` index carries the descriptor's
+    // DEFAULT config on every tool node; only GET /chart/nodes/{id} has the
+    // stored values. UI-created tools are often labelled just "Tool".
+    const DEFAULT_TOOL_CONFIG = {
+      toolId: "unlock_account",
+      description: "This tool unlocks a locked user account.",
+    };
+    const mockFlowWithStoredTool = (storedToolId: string) => {
+      api.get.mockImplementation(async (url: string) => {
+        if (url === `/v2.0/aiagents/${ID.agent}`) return { flowId: ID.flow };
+        if (url === `/v2.0/flows/${ID.flow}/chart/nodes`)
+          return {
+            items: [
+              { _id: ID.node, type: "aiAgentJob" },
+              {
+                _id: ID.tool,
+                type: "aiAgentJobTool",
+                parentId: ID.node,
+                label: "Tool",
+                preview: storedToolId,
+                config: DEFAULT_TOOL_CONFIG,
+              },
+            ],
+          };
+        if (url === `/v2.0/flows/${ID.flow}/chart/nodes/${ID.tool}`)
+          return {
+            _id: ID.tool,
+            type: "aiAgentJobTool",
+            config: { toolId: storedToolId, description: "Checks a balance" },
+          };
+        return {};
+      });
+    };
+
+    it("reuses a duplicate whose stored toolId only the per-node read shows", async () => {
+      mockFlowWithStoredTool("check_balance");
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "tool",
+        name: "Check Balance",
+        config: { toolId: "check_balance", description: "d" },
+      });
+
+      expect(result.reusedExisting).toBe(true);
+      expect(result.toolId).toBe(ID.tool);
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it("does not treat the index's default toolId as a duplicate", async () => {
+      mockFlowWithStoredTool("check_balance");
+      api.post.mockResolvedValue({ _id: ID.node2 });
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "tool",
+        name: "Unlock Account",
+        config: { toolId: "unlock_account", description: "d" },
+      });
+
+      expect(result.reusedExisting).toBeUndefined();
+      expect(api.post).toHaveBeenCalled();
+    });
+
+    it("refuses to reuse a non-A2A tool that holds the requested toolId", async () => {
+      api.get.mockResolvedValueOnce({ flowId: ID.flow }).mockResolvedValueOnce({
+        items: [
+          { _id: ID.entry, isEntryPoint: true },
+          { _id: ID.node, type: "aiAgentJob" },
+          {
+            _id: ID.tool,
+            type: "aiAgentJobTool",
+            label: "flights_agent",
+            config: { toolId: "flights_agent" },
+          },
+        ],
+      });
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "a2a",
+        name: "Flights Agent",
+        config: {
+          toolId: "flights_agent",
+          agentBaseUrl: "https://endpoint-trial.cognigy.ai/a2a/v1/tok-abc123",
+        },
+      });
+
+      expect(result.error).toContain('existing: "tool", requested: "a2a"');
+      expect(result.existingToolNodeId).toBe(ID.tool);
+      expect(result.reusedExisting).toBeUndefined();
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it("refuses to reuse an A2A tool for a non-A2A tool with the same toolId", async () => {
+      api.get.mockResolvedValueOnce({ flowId: ID.flow }).mockResolvedValueOnce({
+        items: [
+          { _id: ID.entry, isEntryPoint: true },
+          { _id: ID.node, type: "aiAgentJob" },
+          {
+            _id: ID.tool,
+            type: "aiAgentJobA2AAgent",
+            label: "flights_agent",
+            config: { toolId: "flights_agent" },
+          },
+        ],
+      });
+
+      const result = await h.handleToolCall("create_tool", {
+        aiAgentId: ID.agent,
+        toolType: "tool",
+        name: "Flights",
+        config: { toolId: "flights_agent", description: "Flights" },
+      });
+
+      expect(result.error).toContain('existing: "a2a", requested: "tool"');
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
     it("uses toolId as node label instead of display name", async () => {
       mockFlowWithJobNode();
       api.post.mockResolvedValue({ _id: ID.tool });
@@ -2743,6 +3155,88 @@ describe("ToolHandlers v2", () => {
     });
   });
 
+  // =========================================================================
+  // manage_flow_nodes — disabling nodes
+  // =========================================================================
+  describe("manage_flow_nodes — isDisabled", () => {
+    const sayNodeId = "60d5ec49f1a2c8b1a4e0f021";
+    const startId = "60d5ec49f1a2c8b1a4e0f023";
+    const endId = "60d5ec49f1a2c8b1a4e0f024";
+    const childId = "60d5ec49f1a2c8b1a4e0f025";
+
+    it("reports isDisabled in list and get only when the node is disabled", async () => {
+      api.get.mockResolvedValueOnce({
+        items: [
+          { _id: sayNodeId, type: "say", label: "Off", isDisabled: true },
+          { _id: "60d5ec49f1a2c8b1a4e0f022", type: "say", label: "On" },
+        ],
+      });
+
+      const list = await h.handleToolCall("manage_flow_nodes", {
+        operation: "list",
+        flowId: ID.flow,
+      });
+
+      expect(list.nodes[0].isDisabled).toBe(true);
+      expect(list.nodes[1]).not.toHaveProperty("isDisabled");
+
+      api.get.mockResolvedValueOnce({
+        _id: sayNodeId,
+        type: "say",
+        label: "Off",
+        isDisabled: true,
+        config: { text: "Hi" },
+      });
+
+      const got = await h.handleToolCall("manage_flow_nodes", {
+        operation: "get",
+        flowId: ID.flow,
+        nodeId: sayNodeId,
+      });
+
+      expect(got.isDisabled).toBe(true);
+    });
+
+    it("render omits disabled nodes and their branches, wiring past them", async () => {
+      api.get
+        .mockResolvedValueOnce({
+          nodes: [
+            { _id: startId, type: "start" },
+            { _id: sayNodeId, type: "say" },
+            { _id: childId, type: "say" },
+            { _id: endId, type: "end" },
+          ],
+          relations: [
+            { node: startId, next: sayNodeId },
+            { node: sayNodeId, next: endId, children: [childId] },
+            { node: childId, next: null },
+            { node: endId, next: null },
+          ],
+        })
+        .mockResolvedValueOnce({
+          items: [
+            { _id: startId, type: "start", label: "Start" },
+            { _id: sayNodeId, type: "say", label: "Greet", isDisabled: true },
+            { _id: childId, type: "say", label: "Inside" },
+            { _id: endId, type: "end", label: "Finish" },
+          ],
+        });
+
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "render",
+        flowId: ID.flow,
+      });
+
+      for (const out of [result.ascii, result.mermaid]) {
+        expect(out).toContain("Start");
+        expect(out).toContain("Finish");
+        expect(out).not.toContain("Greet");
+        expect(out).not.toContain("Inside");
+      }
+      expect(result.mermaid).toContain(`n_${startId} --> n_${endId}`);
+    });
+  });
+
   describe("manage_flow_nodes — Code Node runtime hints", () => {
     const codeNodeId = "60d5ec49f1a2c8b1a4e0f013";
     const toolNodeId = "60d5ec49f1a2c8b1a4e0f014";
@@ -3082,6 +3576,216 @@ describe("ToolHandlers v2", () => {
           type: "setAdaptiveCardAppState",
           extension: "@cognigy/basic-nodes",
           config: expect.objectContaining({ card, waitForInput: true }),
+        }),
+      );
+    });
+
+    it("creates a say node with the adaptiveCard wrapper the Designer needs", async () => {
+      api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
+
+      const card = {
+        type: "AdaptiveCard",
+        version: "1.6",
+        body: [{ type: "TextBlock", text: "Hi" }],
+      };
+      await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "say",
+        label: "Say card",
+        config: { text: "", adaptiveCard: card },
+      });
+
+      const body = api.post.mock.calls[0][1];
+      const wrapped = { type: "adaptiveCard", adaptiveCard: card };
+      expect(body.config.say.type).toBe("adaptiveCard");
+      expect(body.config.say._cognigy._default._adaptiveCard).toEqual(wrapped);
+      expect(body.config.say._data._cognigy._default._adaptiveCard).toEqual(
+        wrapped,
+      );
+    });
+
+    it("updates a legacy unwrapped adaptive card by replacing it with the wrapper", async () => {
+      const legacyCard = {
+        type: "AdaptiveCard",
+        version: "1.6",
+        body: [{ type: "TextBlock", text: "Old" }],
+        actions: [{ type: "Action.Submit", title: "Old" }],
+      };
+      const legacyDefault = { _adaptiveCard: { ...legacyCard, text: "" } };
+      api.get.mockResolvedValueOnce({
+        _id: newNode,
+        type: "say",
+        config: {
+          say: {
+            type: "adaptiveCard",
+            text: [""],
+            _cognigy: { _default: legacyDefault },
+            _data: { _cognigy: { _default: legacyDefault } },
+          },
+        },
+      });
+      api.patch.mockResolvedValueOnce({ _id: newNode });
+
+      const card = {
+        type: "AdaptiveCard",
+        version: "1.6",
+        body: [{ type: "TextBlock", text: "New" }],
+      };
+      await h.handleToolCall("manage_flow_nodes", {
+        operation: "update",
+        flowId: ID.flow,
+        nodeId: newNode,
+        config: { text: "", adaptiveCard: card },
+      });
+
+      const say = api.patch.mock.calls[0][1].config.say;
+      const wrapped = { type: "adaptiveCard", adaptiveCard: card };
+      expect(say._cognigy._default._adaptiveCard).toEqual(wrapped);
+      expect(say._data._cognigy._default._adaptiveCard).toEqual(wrapped);
+    });
+
+    it("accepts an adaptive card as a JSON string or already wrapped, and adds fallbackText", async () => {
+      const card = { type: "AdaptiveCard", version: "1.6", body: [] };
+      for (const adaptiveCard of [
+        JSON.stringify(card),
+        { type: "adaptiveCard", adaptiveCard: card },
+      ]) {
+        api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
+        await h.handleToolCall("manage_flow_nodes", {
+          operation: "create",
+          flowId: ID.flow,
+          parentNodeId: ID.tool,
+          mode: "append",
+          nodeType: "say",
+          label: "Say card",
+          config: { text: "Approve?", adaptiveCard },
+        });
+        expect(
+          api.post.mock.calls.at(-1)![1].config.say._cognigy._default
+            ._adaptiveCard,
+        ).toEqual({
+          type: "adaptiveCard",
+          adaptiveCard: card,
+          fallbackText: "Approve?",
+        });
+      }
+    });
+
+    it("rejects an adaptive card that is not a JSON object", async () => {
+      await expect(
+        h.handleToolCall("manage_flow_nodes", {
+          operation: "create",
+          flowId: ID.flow,
+          parentNodeId: ID.tool,
+          mode: "append",
+          nodeType: "say",
+          label: "Say card",
+          config: { text: "", adaptiveCard: [] },
+        }),
+      ).rejects.toThrow(/Adaptive Card JSON object/);
+    });
+
+    it("does not crash updating with a passthrough say that has no _data", async () => {
+      api.get.mockResolvedValueOnce({
+        _id: newNode,
+        type: "say",
+        config: { say: { type: "text", text: ["Hi"] } },
+      });
+      api.patch.mockResolvedValueOnce({ _id: newNode });
+      const card = { type: "adaptiveCard", adaptiveCard: { body: [] } };
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "update",
+        flowId: ID.flow,
+        nodeId: newNode,
+        config: {
+          say: {
+            type: "adaptiveCard",
+            text: [""],
+            _cognigy: { _default: { _adaptiveCard: card } },
+          },
+        },
+      });
+      expect(result.updated).toBe(true);
+    });
+
+    it("rejects an invalid cxOneSendCopilotStatus status on update", async () => {
+      api.get.mockResolvedValueOnce({
+        _id: newNode,
+        type: "cxOneSendCopilotStatus",
+        config: { status: "Complete" },
+      });
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "update",
+        flowId: ID.flow,
+        nodeId: newNode,
+        config: { status: "Bogus" },
+      });
+      expect(result.error).toMatch(/status must be one of Complete, Failed/);
+      expect(api.patch).not.toHaveBeenCalled();
+    });
+
+    it("creates a wait node (Wait for Input) with no config", async () => {
+      api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "wait",
+        label: "Wait for Input",
+      });
+      expect(result.error).toBeUndefined();
+      expect(api.post).toHaveBeenCalledWith(
+        expect.stringContaining("/chart/nodes"),
+        expect.objectContaining({
+          type: "wait",
+          extension: "@cognigy/basic-nodes",
+        }),
+      );
+    });
+
+    it("creates a cxOneSendCopilotStatus node and requires status", async () => {
+      const missing = await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "cxOneSendCopilotStatus",
+        label: "Send Status",
+        config: {},
+      });
+      expect(missing.error).toMatch(/Missing required config keys.*status/);
+
+      const wrongCase = await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "cxOneSendCopilotStatus",
+        label: "Send Status",
+        config: { status: "complete" },
+      });
+      expect(wrongCase.error).toMatch(/status must be one of Complete, Failed/);
+
+      api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
+      await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "cxOneSendCopilotStatus",
+        label: "Send Status",
+        config: { status: "Complete", data: { ticketId: "T-1" } },
+      });
+      expect(api.post).toHaveBeenCalledWith(
+        expect.stringContaining("/chart/nodes"),
+        expect.objectContaining({
+          type: "cxOneSendCopilotStatus",
+          extension: "@cognigy/cxone",
+          config: { status: "Complete", data: { ticketId: "T-1" } },
         }),
       );
     });
@@ -3780,6 +4484,8 @@ describe("ToolHandlers v2", () => {
       expect(result.operation).toBe("inspect");
       expect(result.summary.hasFlows).toBe(true);
       expect(result.summary.hasDuplicateKnowledgeStore).toBe(true);
+      expect(result.summary.reidentifyConflictCount).toBe(1);
+      expect(result.summary.conflictWarning).toMatch(/NEW copy/);
       expect(
         result.resources.find((resource: any) => resource.type === "flow")
           .conflict.targetResourceName,
@@ -3834,6 +4540,7 @@ describe("ToolHandlers v2", () => {
         },
       );
       expect(result.task.status).toBe("done");
+      expect(result.importedAsNewCopy).toBeUndefined();
     });
 
     it("returns queued task when import does not wait for completion", async () => {
@@ -3849,6 +4556,9 @@ describe("ToolHandlers v2", () => {
 
       expect(result.task.id).toBe(ID.task2);
       expect(result.task.status).toBe("queued");
+      expect(result.importedAsNewCopy).toEqual([
+        expect.objectContaining({ type: "flow" }),
+      ]);
     });
 
     it("exports resources, includes dependencies by default, and saves the package locally", async () => {
@@ -4534,7 +5244,7 @@ describe("audit_voice_agent", () => {
   /**
    * Wire api.get to the REAL chart projections so the handler must do the right
    * reads:
-   *   - GET /chart/nodes (index): id/type/isEntryPoint only — NO config, NO order
+   *   - GET /chart/nodes (index): config is the type DEFAULTS only, NO order
    *   - GET /chart/nodes/{id}:    full node incl. config (the only config source)
    *   - GET /new/.../chart:       { nodes:[start,…], relations:[{node,next}] }
    * `state` is mutable so the apply path can flip it to the post-fix flow before
@@ -4746,6 +5456,93 @@ describe("audit_voice_agent", () => {
     expect(patchCall![1].config.storeLocation).toBe("stream");
     // The unrelated field from the re-fetched config is preserved.
     expect(patchCall![1].config.temperature).toBe(0.7);
+  });
+
+  it("never merges a fix into the index's default config when enrichment fails", async () => {
+    // Real index shape: `config` is present but holds the descriptor DEFAULTS.
+    // A failed per-node read must not leave those in place as the snapshot the
+    // apply path merges into — that would PATCH defaults over stored values.
+    const indexUrl = `/v2.0/flows/${ID.flow}/chart/nodes`;
+    const perNodeUrl = `${indexUrl}/${ID.entry}`;
+    let perNodeCalls = 0;
+    api.get.mockImplementation(async (url: string) => {
+      if (url === `/new/v2.0/flows/${ID.flow}/chart`) {
+        return {
+          nodes: [
+            { _id: START_ID, type: "start" },
+            { _id: ID.entry, type: "aiAgentJob" },
+          ],
+          relations: [{ node: START_ID, next: [ID.entry] }],
+        };
+      }
+      if (url === perNodeUrl) {
+        perNodeCalls += 1;
+        if (perNodeCalls === 1) throw new Error("transient enrichment failure");
+        return {
+          _id: ID.entry,
+          type: "aiAgentJob",
+          config: { temperature: 0.7, storeLocation: "input" },
+        };
+      }
+      if (url === indexUrl) {
+        return {
+          items: [
+            {
+              _id: ID.entry,
+              type: "aiAgentJob",
+              config: { temperature: 0, storeLocation: "input" },
+            },
+          ],
+        };
+      }
+      return {};
+    });
+    api.patch.mockResolvedValue({});
+
+    await h.handleToolCall("audit_voice_agent", {
+      flowId: ID.flow,
+      apply: true,
+      only: ["agent.stream-output"],
+    });
+
+    const patchCall = api.patch.mock.calls.find((c: any[]) =>
+      c[0].endsWith(`/chart/nodes/${ID.entry}`),
+    );
+    expect(patchCall![1].config.storeLocation).toBe("stream");
+    // The stored value from the re-fetch, not the index default (0).
+    expect(patchCall![1].config.temperature).toBe(0.7);
+  });
+
+  it("skips a fix when neither enrichment nor the re-fetch can read the node", async () => {
+    const indexUrl = `/v2.0/flows/${ID.flow}/chart/nodes`;
+    api.get.mockImplementation(async (url: string): Promise<any> => {
+      if (url === `/new/v2.0/flows/${ID.flow}/chart`) {
+        return {
+          nodes: [
+            { _id: START_ID, type: "start" },
+            { _id: ID.entry, type: "aiAgentJob" },
+          ],
+          relations: [{ node: START_ID, next: [ID.entry] }],
+        };
+      }
+      if (url === `${indexUrl}/${ID.entry}`) throw new Error("read failed");
+      if (url === indexUrl) {
+        return { items: [{ _id: ID.entry, type: "aiAgentJob" }] };
+      }
+      return {};
+    });
+    api.patch.mockResolvedValue({});
+
+    const result = await h.handleToolCall("audit_voice_agent", {
+      flowId: ID.flow,
+      apply: true,
+      only: ["agent.stream-output"],
+    });
+
+    expect(api.patch).not.toHaveBeenCalled();
+    expect(result.appliedFixes).toEqual([
+      expect.objectContaining({ id: "agent.stream-output", applied: false }),
+    ]);
   });
 
   it("only: limits applied fixes to the listed check ids", async () => {

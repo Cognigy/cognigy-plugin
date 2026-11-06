@@ -70,7 +70,7 @@ interface Ctx {
   unknownKeywords: string[];
 }
 
-function isPlainObject(v: unknown): v is Record<string, any> {
+export function isPlainObject(v: unknown): v is Record<string, any> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 

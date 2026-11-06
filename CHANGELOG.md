@@ -1,3 +1,45 @@
+## [1.22.5](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.4...v1.22.5) (2026-10-30)
+
+### Bug Fixes
+
+* **deps:** update vulnerable dependencies ([#64](https://github.com/Cognigy/cognigy-plugin/issues/64)) ([9353ef8](https://github.com/Cognigy/cognigy-plugin/commit/9353ef8fb6e8d0a8b2694134f1164fd87f47459c))
+
+## [1.22.4](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.3...v1.22.4) (2026-10-27)
+
+### Bug Fixes
+
+* **tools:** read stored node config, not the chart index defaults ([#60](https://github.com/Cognigy/cognigy-plugin/issues/60)) ([3cec0db](https://github.com/Cognigy/cognigy-plugin/commit/3cec0dbca5871234dfa8aef8ae9002bf79926e9c))
+
+## [1.22.3](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.2...v1.22.3) (2026-10-23)
+
+### Bug Fixes
+
+* **tools:** slim tool descriptions and server instructions to contracts ([#55](https://github.com/Cognigy/cognigy-plugin/issues/55)) ([f1a82da](https://github.com/Cognigy/cognigy-plugin/commit/f1a82dadf210aa3a0ed3b8b6f438b7451ef337ac)), closes [#43](https://github.com/Cognigy/cognigy-plugin/issues/43)
+
+## [1.22.2](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.1...v1.22.2) (2026-10-19)
+
+### Bug Fixes
+
+* **agents:** preload subagent skills and add plugin eval suite ([#56](https://github.com/Cognigy/cognigy-plugin/issues/56)) ([81109b6](https://github.com/Cognigy/cognigy-plugin/commit/81109b6ecdfd8451e7579275615c308caa6e9817))
+
+## [1.22.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.0...v1.22.1) (2026-10-12)
+
+### Bug Fixes
+
+* **flow-nodes:** support Copilot wait/status nodes, wrap adaptive cards, flag duplicate imports ([#57](https://github.com/Cognigy/cognigy-plugin/issues/57)) ([bbf474e](https://github.com/Cognigy/cognigy-plugin/commit/bbf474e093d8cc53b12535986ff7ef2229a9bec8))
+
+## [1.22.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.21.0...v1.22.0) (2026-10-09)
+
+### Features
+
+* **tools:** add A2A agent-to-agent delegation support ([#53](https://github.com/Cognigy/cognigy-plugin/issues/53)) ([16ff421](https://github.com/Cognigy/cognigy-plugin/commit/16ff42186893a2ed1e68df4d27160b23c8ac3522))
+
+## [1.21.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.20.1...v1.21.0) (2026-10-01)
+
+### Features
+
+* **flow-nodes:** show disabled nodes in list and omit them from render ([#51](https://github.com/Cognigy/cognigy-plugin/issues/51)) ([c8179e3](https://github.com/Cognigy/cognigy-plugin/commit/c8179e3c3da8ffbd696dc5e897afe6d74c8635dd))
+
 ## [1.20.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.20.0...v1.20.1) (2026-09-22)
 
 ### Bug Fixes

@@ -1,6 +1,6 @@
 ---
 name: flow-nodes
-description: "Use when adding custom logic inside a Cognigy tool branch with manage_flow_nodes, or when rendering/visualizing a flow as a diagram — supported node types, config schemas, placement rules, the tool-first workflow, and the render operation."
+description: "Use when adding, editing or debugging custom logic inside a Cognigy tool branch with manage_flow_nodes (code, HTTP Request, if/else and other nodes), or when rendering/visualizing a flow as a diagram — supported node types, config schemas, placement rules, the tool-first workflow, and the render operation."
 ---
 
 # Flow Node Reference
@@ -20,7 +20,8 @@ Use `manage_flow_nodes` to add logic nodes **inside tool branches only**. Nodes 
 2. Get the flowId — from create_ai_agent response, or list_resources { resourceType: 'flow', projectId }
 3. Add a node inside the tool — manage_flow_nodes { operation: 'create', flowId, parentNodeId: '<toolNodeId>', mode: 'appendChild', nodeType: 'code', label: 'Validate Order', config: { code: '...' } }
 4. Add more nodes — manage_flow_nodes { operation: 'create', flowId, parentNodeId: '<previousNodeId>', mode: 'append', nodeType: 'say', label: 'Confirm', config: { text: 'Order processed!' } }
-5. List all nodes — manage_flow_nodes { operation: 'list', flowId }
+5. List all nodes — manage_flow_nodes { operation: 'list', flowId } (id, type, label, parentId, isDisabled when true — no config)
+   Read one node with its config before editing — manage_flow_nodes { operation: 'get', flowId, nodeId: '<id>' }
 6. Update a node — manage_flow_nodes { operation: 'update', flowId, nodeId: '<id>', config: { text: 'Updated!' } }
 7. Delete a node — manage_flow_nodes { operation: 'delete', flowId, nodeId: '<id>' }
 ```
@@ -53,7 +54,7 @@ Send a text message to the user. Supports rich output types.
 | audio | object | No | Audio output `{ url }` |
 | video | object | No | Video output `{ url }` |
 | image | object | No | Image output `{ url }` |
-| adaptiveCard | object | No | Microsoft Adaptive Card JSON |
+| adaptiveCard | object | No | Microsoft Adaptive Card JSON (the card object itself — the plugin wraps it for the Designer). `text` is still required; pass `""` for a card-only message |
 | data | object | No | Custom data payload attached to the message |
 
 **Example:**
@@ -71,6 +72,59 @@ Send a text message to the user. Supports rich output types.
       { "title": "Talk to human", "payload": "handover" }
     ]
   }
+}
+```
+
+---
+
+### wait — Wait for Input
+
+Category: logic
+
+Stops the flow and waits for the next input, with no timeout. On that input the flow continues at the node after `wait`, using the same per-session mechanism as `question`. Unlike `question`, it stores no answer at `input.result`: read the incoming message directly (`input.text`, or `input.data` for a data payload such as a submitted Adaptive Card).
+
+It only resumes if the session's flow state survives until the next input. It does **not** resume, and the next input starts the flow at Start, when:
+- the flow is a Tool Flow, which runs once per tool call and keeps no state between turns. Tool branches under an AI Agent node run in the normal session, so they are expected to resume (not yet verified live)
+- the flow is reset between turns. For example, a REST endpoint resets when the user's last flow, entrypoint or locale differs, and a new `sessionId` also starts fresh
+
+Intended Copilot pattern: `say` (Adaptive Card with `actions`) → `wait` → nodes that read the submission from `input.data`. Resumption has not been verified end-to-end on the Copilot channel, so test the flow there (or in the Interaction Panel) before relying on it.
+
+**Config:** none.
+
+```json
+{
+  "operation": "create",
+  "flowId": "<flowId>",
+  "parentNodeId": "<adaptiveCardSayNodeId>",
+  "mode": "append",
+  "nodeType": "wait",
+  "label": "Wait for Input"
+}
+```
+
+---
+
+### cxOneSendCopilotStatus — Send Status to CXone Copilot
+
+Category: handover (extension `@cognigy/cxone`, beta; only available when the CXone Send Copilot Status feature is enabled for the organisation)
+
+Reports the workflow outcome to CXone Agent Copilot. Without it Copilot never learns that the workflow finished or failed.
+
+**Config:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| status | string | Yes | `Complete` or `Failed` (case-sensitive) |
+| data | object | No | Optional JSON object sent with the status |
+
+```json
+{
+  "operation": "create",
+  "flowId": "<flowId>",
+  "parentNodeId": "<precedingNodeId>",
+  "mode": "append",
+  "nodeType": "cxOneSendCopilotStatus",
+  "label": "Send Status - Complete",
+  "config": { "status": "Complete" }
 }
 ```
 
@@ -226,6 +280,7 @@ Run custom **TypeScript** (a single source string — not multiple files, not HT
 
 **Documented footguns (not flagged — just know them):**
 
+- No top-level `return` — Code nodes are not full functions and the engine rejects it. Mutate `input` (or `context`) directly: `input.foo = bar;` instead of `return { foo: bar };`.
 - `api.deleteContext("a.b")` — only removes **top-level** keys; a dot-path silently does nothing. Use `delete context.a.b;`.
 - More than 100 `api.*` calls per execution — the platform aborts the node ([limits](https://docs.cognigy.com/ai/administer/limitations)).
 

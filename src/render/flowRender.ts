@@ -21,6 +21,7 @@ export interface ChartNode {
   type?: string;
   label?: string;
   preview?: string | { text?: string | string[]; aiAgentName?: string };
+  isDisabled?: boolean;
 }
 
 export interface ChartRelation {
@@ -95,6 +96,52 @@ function index(chart: Chart): Indexed {
   }
 
   return { byId, rel, startId: startId ? nodeId(startId) : undefined };
+}
+
+/**
+ * Drop disabled nodes from the chart. Runtime skips a disabled node and
+ * continues at its `next`, so whatever pointed at it is wired to that `next`;
+ * its `children` only run through it, so the whole branch goes too.
+ */
+export function omitDisabled(chart: Chart): Chart {
+  const { byId, rel } = index(chart);
+  const disabled = [...byId.values()].filter((n) => n.isDisabled).map(nodeId);
+  if (!disabled.length) return chart;
+
+  const gone = new Set<string>();
+  const dropBranch = (id: string) => {
+    if (gone.has(id)) return;
+    gone.add(id);
+    const r = rel.get(id);
+    for (const x of [...(r?.children ?? []), ...nextIds(r)]) dropBranch(x);
+  };
+  for (const id of disabled) {
+    for (const c of rel.get(id)?.children ?? []) dropBranch(c);
+  }
+  for (const id of disabled) gone.add(id);
+
+  // First kept node on the `next` chain from `id`; undefined if none.
+  const skip = (id: string): string | undefined => {
+    const seen = new Set<string>();
+    let cur: string | undefined = id;
+    while (cur && gone.has(cur) && !seen.has(cur)) {
+      seen.add(cur);
+      cur = nextIds(rel.get(cur))[0];
+    }
+    return cur && !gone.has(cur) ? cur : undefined;
+  };
+  const kept = (ids: string[]) => ids.map(skip).filter((x): x is string => !!x);
+
+  return {
+    nodes: (chart.nodes ?? []).filter((n) => !gone.has(nodeId(n))),
+    relations: (chart.relations ?? [])
+      .filter((r) => !gone.has(r.node))
+      .map((r) => ({
+        ...r,
+        next: kept(nextIds(r)),
+        ...(r.children ? { children: kept(r.children) } : {}),
+      })),
+  };
 }
 
 // ---- ASCII tree (terminal-native) ------------------------------------------

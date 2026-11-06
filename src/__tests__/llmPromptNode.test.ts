@@ -967,6 +967,58 @@ describe("LLM Prompt node support", () => {
       expect(result.placeholderToolsRemoved).toBeUndefined();
     });
 
+    it("does not take the node index's default toolId for a placeholder marker", async () => {
+      // Chart read unavailable → the sweep falls back to the /chart/nodes
+      // index, whose `config` is the descriptor DEFAULT on every tool node
+      // (toolId "unlock_account"); `preview` carries each tool's real toolId.
+      const defaults = {
+        toolId: "unlock_account",
+        description: "This tool unlocks a locked user account.",
+      };
+      api.post.mockResolvedValueOnce({ _id: ID.node, parentId: null });
+      api.get.mockImplementation(async (url: string) => {
+        if (url === `/v2.0/flows/${ID.flow}`)
+          return { _id: ID.flow, localeReference: "loc-ref-1" };
+        if (url === `/new/v2.0/flows/${ID.flow}/chart`)
+          throw new Error("chart unavailable");
+        if (url === `/v2.0/flows/${ID.flow}/chart/nodes`)
+          return {
+            items: [
+              {
+                _id: ID.tool,
+                type: "llmPromptTool",
+                parentId: ID.node,
+                label: "Tool",
+                preview: "fetch_weather",
+                config: defaults,
+              },
+              {
+                _id: ID.placeholder,
+                type: "llmPromptTool",
+                parentId: ID.node,
+                label: "Tool",
+                preview: "send_email",
+                config: defaults,
+              },
+            ],
+          };
+        return {};
+      });
+      api.delete.mockResolvedValue({});
+
+      await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        nodeType: "llmPrompt",
+        label: "Summarize",
+        parentNodeId: ID.entry,
+        mode: "append",
+        config: { prompt: "Summarize the conversation." },
+      });
+
+      expect(api.delete).not.toHaveBeenCalled();
+    });
+
     it("requires config.prompt", async () => {
       const result = await h.handleToolCall("manage_flow_nodes", {
         operation: "create",

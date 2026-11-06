@@ -23,8 +23,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # HEAD is GitHub's test merge of the PR into the current base: ^1 is the base tip,
+      # ^2 the PR head, so this lints only the PR's own commits. (base.sha..github.sha
+      # also swept in base commits merged after a stale base.sha, e.g. a squash title
+      # pushed over 100 chars by its " (#NN)" suffix.)
       - name: Validate commit messages
-        run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.sha }} --verbose
+        run: npx commitlint --from HEAD^1 --to HEAD^2 --verbose
 
       # PRs are squash-merged, so the PR title becomes the commit subject on main that
       # semantic-release reads to decide the version bump. It must be a conventional commit.

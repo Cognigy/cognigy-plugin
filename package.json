@@ -1,6 +1,6 @@
 {
   "name": "@cognigy/plugin-engine",
-  "version": "1.20.1",
+  "version": "1.22.5",
   "description": "MCP server engine for the NiCE Cognigy Plugin (Claude Code, Codex, and more)",
   "main": "dist/index.js",
   "type": "module",
@@ -28,7 +28,10 @@
     "prettier:write": "prettier --write",
     "lint": "eslint src --ext .ts",
     "prepublishOnly": "npm run build",
-    "prepare": "husky"
+    "prepare": "husky",
+    "evals": "claude plugin eval plugin --ablation none --model claude-sonnet-5-5 --judge-model claude-haiku-5-5 --no-publish",
+    "evals:tools": "tsx scripts/gen-eval-tools.ts",
+    "evals:compare": "node scripts/eval-compare.mjs"
   },
   "keywords": [
     "mcp",
@@ -48,9 +51,9 @@
     "access": "public"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.27.1",
-    "axios": "1.13.6",
-    "form-data": "4.0.5",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "axios": "1.21.0",
+    "form-data": "4.0.6",
     "http-proxy-agent": "9.1.0",
     "https-proxy-agent": "9.1.0",
     "proxy-from-env": "1.1.0",

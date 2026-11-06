@@ -45,7 +45,8 @@ export interface VoiceCheck {
 export interface AuditContext {
   /**
    * Chart nodes, each enriched by the handler with its full `config` via the
-   * per-node read (the `/chart/nodes` index carries NO config). Shape per node:
+   * per-node read (the `/chart/nodes` index's config is only the type defaults).
+   * Shape per node:
    * `{ type, config, _id/id, ... }`.
    */
   nodes: any[];

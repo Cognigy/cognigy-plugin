@@ -38,7 +38,7 @@ Credentials do **not** go into any `mcp_config.json` (shared, hand-edited, paste
 
 ## Tools — few tools, many operations
 
-17 tools, each often a multi-operation dispatcher (e.g. `manage_flow_nodes { operation }`, `manage_knowledge`, `manage_packages`). Prefer extending an existing tool over adding one. Each tool spans:
+18 tools, each often a multi-operation dispatcher (e.g. `manage_flow_nodes { operation }`, `manage_knowledge`, `manage_packages`). Prefer extending an existing tool over adding one. Each tool spans:
 
 | File                        | Role                                                                            |
 | --------------------------- | ------------------------------------------------------------------------------- |
@@ -50,9 +50,11 @@ Credentials do **not** go into any `mcp_config.json` (shared, hand-edited, paste
 
 Helpers: `withHints(result, { warning, action })` attaches `_hints`; `resolveFlowForAgent(apiClient, aiAgentId)` maps an agent → its flow.
 
+**Three channels, three jobs.** A tool `description` is a short contract (what it does, what it does not do, one clause per operation, what it returns — 3-6 sentences, ≤ 1000 chars). Step-by-step workflow, prerequisites and platform gotchas live in the skill. "What to do next" after a specific result (offer a backup, poll a task, show a demo URL) lives in a `withHints` `action`, which fires exactly when relevant and works in every client. `src/__tests__/toolSurfaceBudget.test.ts` caps descriptions, field descriptions, the total definitions payload and `src/instructions.ts`; when it fails, move prose out instead of raising the cap.
+
 ## Skills
 
-Workflow guidance lives only as plugin skills `plugin/skills/<id>/SKILL.md` (hand-authored: `name`/`description` frontmatter + body), which auto-load on intent in clients that support skills (e.g. Claude Code, Antigravity — the latter gets them copied into its plugin dir, see above). `src/instructions.ts` is the always-on baseline — an overview plus genuinely cross-tool hard rules, injected every session — and matters most for clients that don't load skills (e.g. Codex); keep it terse and let the skills own the step-by-step workflow detail. Agents are `plugin/agents/*.md`.
+Workflow guidance lives only as plugin skills `plugin/skills/<id>/SKILL.md` (hand-authored: `name`/`description` frontmatter + body), which auto-load on intent in clients that support skills (e.g. Claude Code, Antigravity — the latter gets them copied into its plugin dir, see above). The plugin expects its skills to be loaded. `src/instructions.ts` is the always-on baseline, injected every session: what the plugin is, and only the hard rules where a miss is irreversible or misleads the user (credentials, the backup hold, restore). Any other rule belongs in a tool description, a skill or a `_hints` action, not here. A session without skills is a troubleshooting case for the user (README), not something the instructions guard against. Agents are `plugin/agents/*.md`.
 
 ## Versions
 
@@ -81,7 +83,7 @@ Endpoints under `/v2.0/flows/{flowId}/chart`:
 - **Ordering is a `next` chain, not children.** Top-level nodes link `start → aiAgentJob → …` via `relations[].next`. `children` is only for nesting (tool branches, if/else, switch). The real root is a separate `start` node.
 - **Insert before a top-level node → `mode: "prepend"`** (rewires the `next` chain via the target's predecessor). `insertBefore` searches `children`, finds nothing, and throws "Error while reading ChartData". Can't `prepend` on `start`, can't `append` on `end`.
 - **`isEntryPoint` is a per-descriptor flag, NOT "the first node".** `aiAgentJob` has `behavior.entrypoint: true`, so every AI Agent node reports `isEntryPoint: true`. Find the real first node by walking `relations[].next` from `start`.
-- **`GET /chart/nodes` returns no `config` and no ordering** (only id/type/label/preview/isEntryPoint/parentId). `GET /chart` returns node excerpts + relations. Full `config` only from the per-node `GET /chart/nodes/{id}`.
+- **`GET /chart/nodes` returns no ordering, and its `config` is the node type's DEFAULTS, not the stored values** (e.g. every `aiAgentJobTool` reads `toolId: "unlock_account"`). `GET /chart` returns node excerpts + relations. Real `config` only from the per-node `GET /chart/nodes/{id}`.
 - **`preview` is server-computed, never stored.** A config PATCH that omits `aiAgent` makes the backend recompute `preview` as a bare string (the node name), wiping the avatar. **Never hand-craft `preview`; always re-send `config.aiAgent` in any aiAgentJob config PATCH.**
 
 ## Commands
@@ -92,6 +94,7 @@ Endpoints under `/v2.0/flows/{flowId}/chart`:
 - Lint: `npm run lint`. Format: `npx prettier --write <file>`.
 - The manifest's engine pin uses an **npm alias** (`cognigy-engine@npm:@cognigy/plugin-engine@<pin>`) on purpose: a plain spec makes `npm exec` treat this repo's own `package.json` (same name + version) as satisfying the pin in sessions rooted here, skip the install, and fail with `cognigy-mcp: command not found` (MCP `-32000`). The alias name never matches, so npm always installs from the registry. Never "simplify" it back — `npm run check:manifest` enforces the alias form.
 - Local plugin testing: `npm run plugin:dev` installs a generated dev marketplace (`.dev-plugin/`, gitignored) serving the working tree — engine runs from `src/` via tsx (no build), skills/agents symlinked; iterate with `/reload-plugins`. `npm run plugin:dev:off` restores the GitHub install. Never edit the tracked `plugin.json` for testing — `npm run check:manifest` guards it in pre-commit and CI.
+- Evals: `npm run evals` runs `claude plugin eval` on `plugin/evals/` (paid); `npm run evals:compare` diffs the newest run against the committed `plugin/evals/baseline.json` and exits 1 on a drop. Run both after changing a skill, agent or tool description. Writing cases, mocks, graders and re-baselining: dev skill `.claude/skills/add-eval/SKILL.md`.
 
 ## Conventions
 
