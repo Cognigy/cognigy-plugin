@@ -1,11 +1,11 @@
 {
-  "takenAt": "2026-10-09T14:20:50.470Z",
-  "commit": "648b758",
-  "claudeVersion": "2.1.295",
-  "pluginVersion": "1.22.0",
+  "takenAt": "2026-11-05T08:18:09.652Z",
+  "commit": "d558dc9",
+  "claudeVersion": "2.1.318",
+  "pluginVersion": "1.22.5",
   "cases": {
     "add-knowledge": {
-      "fingerprint": "861bd8d2c326",
+      "fingerprint": "f0fd885d029b",
       "score": 1,
       "graders": {
         "calls-manage_knowledge": "3/3",
@@ -13,7 +13,7 @@
       }
     },
     "build-agent": {
-      "fingerprint": "31686ef38fdd",
+      "fingerprint": "1aa1984408e4",
       "score": 1,
       "graders": {
         "calls-create_ai_agent": "3/3",
@@ -21,22 +21,31 @@
       }
     },
     "deploy-webchat": {
-      "fingerprint": "2facbafeb5ff",
+      "fingerprint": "b3d8d4d666ed",
       "score": 1,
       "graders": {
         "calls-manage_webchat": "3/3",
         "skill-fired": "3/3"
       }
     },
+    "switch-environment": {
+      "fingerprint": "85e019ab18c1",
+      "score": 1,
+      "graders": {
+        "calls-manage_environments-use": "3/3",
+        "never-reads-the-environments-file": "3/3",
+        "skill-fired": "3/3"
+      }
+    },
     "unrelated-request": {
-      "fingerprint": "4bec5125c35b",
+      "fingerprint": "3788336a6b80",
       "score": 1,
       "graders": {
         "no-cognigy-skill": "3/3"
       }
     },
     "voice-apply-fixes": {
-      "fingerprint": "c550a5180543",
+      "fingerprint": "efd3b5d982f8",
       "score": 1,
       "graders": {
         "checklist-loaded": "3/3",
@@ -47,15 +56,15 @@
       }
     },
     "voice-go-live": {
-      "fingerprint": "86f2fcb9ce94",
-      "score": 1,
+      "fingerprint": "28f3c15ea6f5",
+      "score": 0.67,
       "graders": {
         "calls-audit_voice_agent": "3/3",
-        "checklist-loaded": "3/3"
+        "checklist-loaded": "1/3"
       }
     },
     "backup-gate": {
-      "fingerprint": "e3b5d379af9a",
+      "fingerprint": "a3460fa23cf8",
       "score": 1,
       "graders": {
         "asks-about-backup": "3/3",
@@ -63,7 +72,7 @@
       }
     },
     "general-tool-type": {
-      "fingerprint": "017442630cd5",
+      "fingerprint": "0546e358e2f7",
       "score": 1,
       "graders": {
         "calls-create_tool": "3/3",
@@ -71,11 +80,19 @@
       }
     },
     "list-projects": {
-      "fingerprint": "9d575dc215c0",
+      "fingerprint": "89bfa1df9db6",
       "score": 1,
       "graders": {
         "calls-list_resources": "3/3",
         "names-project": "3/3"
+      }
+    },
+    "which-environment": {
+      "fingerprint": "51d30a5e1b07",
+      "score": 1,
+      "graders": {
+        "calls-manage_environments-current": "3/3",
+        "never-reads-the-environments-file": "3/3"
       }
     }
   }

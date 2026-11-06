@@ -35,11 +35,11 @@ import {
 } from "../install/desktopLauncher.js";
 import {
   detectClients,
-  isMainModule,
   parseClientSelection,
   parseFlags,
   parseSubcommand,
 } from "../setup.js";
+import { isMainModule } from "../utils/cli.js";
 
 const tmpDirs: string[] = [];
 function freshDir(): string {
@@ -349,8 +349,8 @@ describe("isMainModule", () => {
 });
 
 describe("package.json bin", () => {
-  it("declares both bins; all invocations must use the `npx -p` form", () => {
-    // Two bins (cognigy-setup, cognigy-mcp) mean npx cannot pick a default —
+  it("declares all bins; all invocations must use the `npx -p` form", () => {
+    // Several bins (cognigy-setup, cognigy-env, cognigy-mcp) mean npx cannot pick a default —
     // a bare `npx @cognigy/plugin-engine cognigy-setup` treats the positional
     // as an ARG, not a bin selector, and throws "could not determine
     // executable to run". Every invocation MUST name the command explicitly
@@ -359,6 +359,7 @@ describe("package.json bin", () => {
     const pkgPath = join(process.cwd(), "package.json");
     const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
     expect(Object.keys(pkg.bin).sort()).toEqual([
+      "cognigy-env",
       "cognigy-mcp",
       "cognigy-setup",
     ]);

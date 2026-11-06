@@ -38,7 +38,7 @@ Credentials do **not** go into any `mcp_config.json` (shared, hand-edited, paste
 
 ## Tools — few tools, many operations
 
-18 tools, each often a multi-operation dispatcher (e.g. `manage_flow_nodes { operation }`, `manage_knowledge`, `manage_packages`). Prefer extending an existing tool over adding one. Each tool spans:
+19 tools, each often a multi-operation dispatcher (e.g. `manage_flow_nodes { operation }`, `manage_knowledge`, `manage_packages`). Prefer extending an existing tool over adding one. Each tool spans:
 
 | File                        | Role                                                                            |
 | --------------------------- | ------------------------------------------------------------------------------- |
@@ -51,6 +51,10 @@ Credentials do **not** go into any `mcp_config.json` (shared, hand-edited, paste
 Helpers: `withHints(result, { warning, action })` attaches `_hints`; `resolveFlowForAgent(apiClient, aiAgentId)` maps an agent → its flow.
 
 **Three channels, three jobs.** A tool `description` is a short contract (what it does, what it does not do, one clause per operation, what it returns — 3-6 sentences, ≤ 1000 chars). Step-by-step workflow, prerequisites and platform gotchas live in the skill. "What to do next" after a specific result (offer a backup, poll a task, show a demo URL) lives in a `withHints` `action`, which fires exactly when relevant and works in every client. `src/__tests__/toolSurfaceBudget.test.ts` caps descriptions, field descriptions, the total definitions payload and `src/instructions.ts`; when it fails, move prose out instead of raising the cap.
+
+## Environments (per-session switching)
+
+`src/environmentRuntime.ts` `EnvironmentRuntime` owns "config + API client + `ToolHandlers`" for the process. It starts on `loadConfig()` (env vars, then `config.json`) and never reads `~/.cognigy-plugin/environments.json` at start, so that file cannot stop the engine booting. `manage_environments` (handled in `src/index.ts` via `src/tools/environments.ts`, not by `ToolHandlers`) pins a named environment from the flat `environments.json` for THIS process only, in memory, building a fresh `ToolHandlers` (they hold per-environment session state). The pinned config is fixed at the switch: a rotated key needs another switch. While pinned, the `COGNIGY_API_*` and `COGNIGY_*_BASE_URL` process variables are ignored (`loadConfigForEnvironment`). The terminal tool is `cognigy-env` (`src/env.ts`, a port of the original `cognigy-env.py`): it manages `environments.json` and `use` writes `config.json` — a default for new sessions only, and not applicable where the client supplies the credentials itself (Claude Code keychain). Keep the tool description one terse line (the description budget is nearly spent); per-operation detail lives in the `operation` field description.
 
 ## Skills
 

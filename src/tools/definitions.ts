@@ -2158,4 +2158,34 @@ export const tools: ToolDefinition[] = [
       },
     },
   },
+  // 19. manage_environments
+  {
+    name: "manage_environments",
+    description:
+      "Show or switch the Cognigy environment this session uses. Never handles API keys.",
+    annotations: {
+      title: "Manage Environments",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    inputSchema: {
+      type: "object",
+      properties: {
+        operation: {
+          type: "string",
+          enum: ["list", "current", "use"],
+          description:
+            "list: the defined environments (the user adds them in a terminal with 'cognigy-env add'). current: the one in use. use: switch this engine process from the next call. Claude Code sessions each have their own engine; in Claude Desktop, Codex and Antigravity chats sharing one engine all move together. Returns names and base URLs, never keys.",
+        },
+        name: {
+          type: "string",
+          description:
+            "Environment name for 'use': exact, any letter case. Call list first if unsure.",
+        },
+      },
+      required: ["operation"],
+    },
+  },
 ];

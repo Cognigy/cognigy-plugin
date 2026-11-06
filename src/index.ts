@@ -8,8 +8,8 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 
 import { loadConfig } from "./config.js";
-import { CognigyApiClient } from "./api/client.js";
-import { ToolHandlers } from "./tools/handlers.js";
+import { EnvironmentRuntime } from "./environmentRuntime.js";
+import { handleManageEnvironments } from "./tools/environments.js";
 import { tools } from "./tools/definitions.js";
 import { SERVER_INSTRUCTIONS } from "./instructions.js";
 import { logger } from "./utils/logger.js";
@@ -25,19 +25,19 @@ async function main() {
       name: config.serverName,
       version: config.serverVersion,
     });
-    logProxyConfiguration(config.apiBaseUrl);
 
-    const apiClient = new CognigyApiClient({
-      baseUrl: config.apiBaseUrl,
-      apiKey: config.apiKey,
-      auditAttribution: config.auditAttribution,
+    // Which environment this process talks to, and the client + handlers built
+    // for it (see environmentRuntime.ts); the handlers are replaced, never
+    // reused, when the environment changes.
+    const runtime = new EnvironmentRuntime(config);
+    const boot = runtime.describe();
+    // Names and URLs only: never the key.
+    logger.info("Cognigy environment", {
+      environment: boot.name ?? "plugin credentials",
+      apiBaseUrl: boot.apiBaseUrl,
+      source: boot.source,
     });
-    const toolHandlers = new ToolHandlers(
-      apiClient,
-      config.endpointBaseUrl,
-      config.webchatBaseUrl,
-      config.staticFilesBaseUrl,
-    );
+
     const rateLimiter = new RateLimiter(config.rateLimit);
 
     const server = new Server(
@@ -53,20 +53,50 @@ async function main() {
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
 
-      const rateLimitKey = config.apiKey.substring(0, 10);
-      if (!rateLimiter.check(rateLimitKey)) {
-        // Logged with the tool name: a rejected call never reaches the
-        // `Tool call received` line below, so without this a throttling
-        // incident would leave no trace of which tool was being hammered.
-        logger.warn(`Tool call rate limited: ${name}`);
+      const toolError = (error: any) => {
+        logger.error("Tool execution error", {
+          tool: name,
+          error: error.message,
+        });
         return {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify({ error: "Rate limit exceeded" }),
+              text: JSON.stringify({
+                error: error.message,
+                status: error.status,
+                code: error.code,
+                traceId: error.traceId,
+              }),
             },
           ],
+          isError: true,
         };
+      };
+
+      // manage_environments only reads or changes which environment this
+      // process uses and makes no Cognigy request, so it needs neither the rate
+      // limiter nor the current environment's handlers. Every other call is
+      // resolved against the environment in effect NOW, so a call that started
+      // before a switch finishes on the environment it started with.
+      let call: ReturnType<typeof runtime.current> | undefined;
+      if (name !== "manage_environments") {
+        call = runtime.current();
+        const rateLimitKey = call.config.apiKey.substring(0, 10);
+        if (!rateLimiter.check(rateLimitKey)) {
+          // Logged with the tool name: a rejected call never reaches the
+          // `Tool call received` line below, so without this a throttling
+          // incident would leave no trace of which tool was being hammered.
+          logger.warn(`Tool call rate limited: ${name}`);
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ error: "Rate limit exceeded" }),
+              },
+            ],
+          };
+        }
       }
 
       // One task id per tool call, shared by every Cognigy API request the
@@ -78,29 +108,14 @@ async function main() {
           sessionId: getSessionId(),
         });
         try {
-          const result = await toolHandlers.handleToolCall(name, args || {});
+          const result = call
+            ? await call.toolHandlers.handleToolCall(name, args || {})
+            : handleManageEnvironments(args || {}, runtime);
           return {
             content: [{ type: "text" as const, text: JSON.stringify(result) }],
           };
         } catch (error: any) {
-          logger.error("Tool execution error", {
-            tool: name,
-            error: error.message,
-          });
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
-                  error: error.message,
-                  status: error.status,
-                  code: error.code,
-                  traceId: error.traceId,
-                }),
-              },
-            ],
-            isError: true,
-          };
+          return toolError(error);
         }
       });
     });
