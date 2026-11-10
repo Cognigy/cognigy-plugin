@@ -63,7 +63,7 @@ Cognigy has two kinds of agent. With the user, call both "AI Agents"; say "legac
 | llmConfig                        | `{ temperature, maxOutputTokens, reasoningEffort }`. On update the whole block is replaced                                         |
 | knowledge                        | Knowledge search — see "Knowledge" below                                                                                            |
 | guardrails                       | `safetySettings` switches (all on by default) and `dataPrivacy.contactProfilesOption` (none, completeProfile, profileMemoriesOnly, selectedProfileFields) |
-| hooks                            | `{ preTurn: [{ handler: { kind: "flow", flowReferenceId } }] }` — a Flow that runs before every answer. `null` removes it            |
+| hooks                            | `{ preTurn: [{ handler: { kind: "conversationFlow", flowReferenceId } }] }` — a Flow that runs before every answer. `null` removes it            |
 | personaReferenceId               | A brand persona shared by several agents                                                                                            |
 | image                            | Avatar URL or base64 data URI                                                                                                       |
 | skillReferenceIds / toolReferenceIds | create only; later use attach/detach                                                                                            |
@@ -84,7 +84,7 @@ Components live in the project; an agent points at skills and tools by `referenc
 - **Skills:** `catalog { component: "skill" }` for the builtin ones (`config: { builtinSlug }`), or your own:
   `create { component: "skill", projectId, agentId, config: { name, description, instructions, bundledTools?: [tool referenceIds], resources?: [{ path, content, encoding: "utf8" }] } }`.
   A skill packages instructions (and the tools they need) for one capability; prefer a skill over growing the agent's instructions.
-- **MCP servers:** `create { component: "mcp_server", config: { name, url, authType: "none" | "oAuth2" | "customHeader", headers? } }` → `discover_tools` → `sync_tools { import: ["<name>"] }` → `attach` each imported tool by its referenceId.
+- **MCP servers:** `create { component: "mcp_server", config: { name, url, authType: "none" | "oAuth2" | "customHeader", headers? } }` → `discover_tools` → `sync_tools { import: ["<name>"] }` → `attach` each imported tool by its referenceId. To remove a server, first `sync_tools { remove: [imported tool referenceIds] }`; the platform refuses to delete a server whose tools still exist.
 - **Brand personas:** `create { component: "persona", config: { name, description, speakingStyle: { formality, completeness }, voiceConfig: { ttsVendor, ttsVoice, ttsModel, ttsLabel } } }`, then manage_agent `update { personaReferenceId }`. The API requires real `voiceConfig` values (empty strings are rejected): copy them from an existing persona (`list` / `get` with component `persona`) or ask the user. Never invent them.
 - `delete` is permanent and detaches the component from every agent; tell the user before you delete one that agents use.
 

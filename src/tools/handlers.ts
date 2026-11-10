@@ -7321,6 +7321,10 @@ export class ToolHandlers {
         patchPayload.createWebrtcClient = true;
         patchPayload.channel = "voiceGateway2";
         patchPayload.URLToken = endpoint.URLToken;
+        // service-api reads these from the body, not the stored endpoint, and
+        // answers "Mandatory fields missing" without them (same as create).
+        patchPayload.name ??= endpoint.name;
+        patchPayload.localeId ??= endpoint.localeId;
         if (!patchPayload.webrtcWidgetConfig) {
           patchPayload.webrtcWidgetConfig = {
             label: "",

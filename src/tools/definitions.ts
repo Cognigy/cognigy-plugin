@@ -2319,7 +2319,7 @@ export const tools: ToolDefinition[] = [
         hooks: {
           type: "object",
           description:
-            "A Flow run before every answer: { preTurn: [{ handler: { kind: 'flow', flowReferenceId } }] }, at most one. null removes it on update.",
+            "A Flow run before every answer: { preTurn: [{ handler: { kind: 'conversationFlow', flowReferenceId } }] }, at most one. null removes it on update.",
         },
         personaReferenceId: {
           type: "string",

@@ -4988,6 +4988,35 @@ describe("ToolHandlers v2", () => {
       );
     });
 
+    it("sends the stored name and locale when provisioning WebRTC on a plain retry", async () => {
+      const existingEndpoint = {
+        _id: ID.endpoint,
+        URLToken: "vg-token-789",
+        channel: "voiceGateway2",
+        name: "Voice Agent",
+        localeId: "loc-ref",
+      };
+      api.get
+        .mockResolvedValueOnce(existingEndpoint)
+        .mockResolvedValueOnce({ ...existingEndpoint, webrtcClient: true });
+      api.patch.mockResolvedValueOnce({});
+
+      await h.handleToolCall("manage_voice_gateway", {
+        endpointId: ID.endpoint,
+      });
+
+      // service-api: "Mandatory fields missing" without name + localeId.
+      expect(api.patch).toHaveBeenCalledWith(
+        `/new/v2.0/endpoints/${ID.endpoint}`,
+        expect.objectContaining({
+          createWebrtcClient: true,
+          name: "Voice Agent",
+          localeId: "loc-ref",
+          URLToken: "vg-token-789",
+        }),
+      );
+    });
+
     it("returns current info when no changes requested on existing endpoint", async () => {
       const existingEndpoint = {
         _id: ID.endpoint,
