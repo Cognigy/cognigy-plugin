@@ -2319,12 +2319,12 @@ export const tools: ToolDefinition[] = [
         hooks: {
           type: "object",
           description:
-            "A Flow run before every answer: { preTurn: [{ handler: { kind: 'conversationFlow', flowReferenceId } }] }, at most one. null removes it on update.",
+            "A pre-turn Flow run before every answer: { preTurn: [{ handler: { kind: 'conversationFlow', flowReferenceId } }] }, at most one; it must end with the continueToAgent node. null removes it on update.",
         },
         personaReferenceId: {
           type: "string",
           description:
-            "referenceId of a brand persona (manage_agent_components component 'persona').",
+            "referenceId of a brand persona (manage_agent_components component 'persona'). '' removes it on update.",
         },
         skillReferenceIds: {
           type: "array",
@@ -2421,7 +2421,7 @@ export const tools: ToolDefinition[] = [
         config: {
           type: "object",
           description:
-            "create/update body; shapes per component are in the agent-creation skill. A builtin tool is { builtinSlug, name, description, parameters: { <key>: value | { mode: 'dynamic' | 'aiFilled', value } } } with keys from catalog. An MCP server is { name, url, authType: none | oAuth2 | customHeader, headers?, authConnectionReferenceId? }.",
+            "create/update body; shapes per component are in the agent-creation skill. A builtin tool is { builtinSlug, name, description, parameters: { <key>: value | { mode: 'dynamic' | 'aiFilled', value } } } with keys from catalog. An MCP server is { name, url, authType: none | oAuth2 | customHeader, headers?, authConnectionReferenceId? }; oAuth2 and customHeader need the Connection's authConnectionReferenceId.",
         },
         import: {
           type: "array",

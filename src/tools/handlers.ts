@@ -1242,6 +1242,8 @@ export class ToolHandlers {
   /** Pagination guard for listAllSnapshots (100 per page). */
   private static readonly MAX_SNAPSHOT_PAGES = 20;
   private static readonly TASK_POLL_INTERVAL_MS = 3000;
+  /** Step between retries while service-agents does not know a new project yet. */
+  static NEW_PROJECT_RETRY_MS = 2000;
 
   /**
    * Resource types a snapshot does NOT capture. Deleting one of these is not
@@ -3278,6 +3280,18 @@ export class ToolHandlers {
           { action: "Pass at least one setting to change." },
         );
       }
+      // service-agents stores a safety toggle left out of safetySettings as
+      // off, so lay the given toggles over the stored ones.
+      if (patch.guardrails?.safetySettings) {
+        const current: any = await this.apiClient.get(agentUrl, { params });
+        patch.guardrails = {
+          ...patch.guardrails,
+          safetySettings: {
+            ...current?.guardrails?.safetySettings,
+            ...patch.guardrails.safetySettings,
+          },
+        };
+      }
       const updated: any = await this.apiClient.patch(agentUrl, patch, {
         params,
       });
@@ -3350,10 +3364,35 @@ export class ToolHandlers {
       this.apiClient,
       projectId,
     );
-    const agent: any = await this.apiClient.post(
-      `${this.agentsV2BaseUrl}/v1/agents`,
-      { projectId, localeReferenceId, ...fields },
-    );
+    // The platform leaves an agent without an LLM when none is given (and the
+    // project has no default), so bind the model create_ai_agent would pick.
+    let llm: ReturnType<typeof pickDefaultLlm>;
+    if (!fields.largeLanguageModelReferenceId) {
+      llm = pickDefaultLlm(
+        await fetchLlmsForUseCase(this.apiClient, projectId, "aiAgent").catch(
+          () => undefined,
+        ),
+      );
+      if (llm) fields.largeLanguageModelReferenceId = llm.refId;
+    }
+    let agent: any;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        agent = await this.apiClient.post(`${this.agentsV2BaseUrl}/v1/agents`, {
+          projectId,
+          localeReferenceId,
+          ...fields,
+        });
+        break;
+      } catch (error: any) {
+        // service-agents learns about a new project some seconds after it
+        // exists (live: 15-20 s) and answers 403 until then.
+        if (given || error?.status !== 403 || attempt > 6) throw error;
+        await new Promise((r) =>
+          setTimeout(r, ToolHandlers.NEW_PROJECT_RETRY_MS * attempt),
+        );
+      }
+    }
     for (const key of [agent?.id, agent?.referenceId]) {
       if (key) this.resourcesCreatedThisSession.add(String(key));
     }
@@ -3376,15 +3415,33 @@ export class ToolHandlers {
     }
 
     const hints: ResponseHints = {
-      action: `Test it with talk_to_agent { agentId: "${agent.id}", projectId: "${projectId}", message }.${fields.largeLanguageModelReferenceId ? "" : " It answers with the project's default LLM; if replies are empty, bind a working one with largeLanguageModelReferenceId."}`,
+      action: fields.largeLanguageModelReferenceId
+        ? `Test it with talk_to_agent { agentId: "${agent.id}", projectId: "${projectId}", message }.`
+        : `The project has no text LLM for it. Set one up (llm-providers skill), then bind it with manage_agent { operation: "update", agentId: "${agent.id}", projectId: "${projectId}", largeLanguageModelReferenceId } before talk_to_agent.`,
     };
-    if (endpointError)
-      hints.warning = `The agent was created, but its REST endpoint was not (${endpointError}); talk_to_agent creates one on first use.`;
+    const warnings = [
+      llm && !llm.connected
+        ? `The agent was bound to LLM "${llm.refId}", which has no connection, so it cannot answer until that model gets one or another model is bound.`
+        : "",
+      endpointError
+        ? `The agent was created, but its REST endpoint was not (${endpointError}); talk_to_agent creates one on first use.`
+        : "",
+    ].filter(Boolean);
+    if (warnings.length) hints.warning = warnings.join(" ");
     return withHints(
       {
         projectId,
         ...(given ? {} : { createdProject: true }),
         agent: RESOURCE_FILTERS_GET.agent_v2(agent),
+        ...(llm
+          ? {
+              llm: {
+                referenceId: llm.refId,
+                isDefault: llm.isDefault,
+                connected: llm.connected,
+              },
+            }
+          : {}),
         endpointUrl,
         use: { agentId: agent.id },
       },
@@ -3479,13 +3536,39 @@ export class ToolHandlers {
           ...summarizeComponent(data.component, updated ?? {}),
         };
       }
-      case "delete":
+      case "delete": {
+        // Deleting a tool detaches it everywhere; deleting a skill leaves it
+        // on the agents that use it, so take it off them afterwards.
+        const skill: any =
+          data.component === "skill"
+            ? await this.apiClient.get(`${base}/${data.componentId}`, {
+                params,
+              })
+            : null;
         await this.apiClient.delete(`${base}/${data.componentId}`, { params });
+        const detachedFrom: string[] = [];
+        if (skill?.referenceId) {
+          // ponytail: only the first 100 agents of the project are checked.
+          const agents = await listAgentsV2(
+            this.apiClient,
+            this.agentsV2BaseUrl,
+            data.projectId,
+            { limit: 100, skip: 0 },
+          );
+          for (const a of agents.available ? agents.items : []) {
+            if (a?.skillReferenceIds?.includes(skill.referenceId)) {
+              await this.attachComponent(data, a.id, skill.referenceId, false);
+              detachedFrom.push(a.id);
+            }
+          }
+        }
         return {
           deleted: true,
           component: data.component,
           componentId: data.componentId,
+          ...(detachedFrom.length ? { detachedFrom } : {}),
         };
+      }
       case "attach":
       case "detach": {
         let referenceId = data.componentId;

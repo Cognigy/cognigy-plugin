@@ -79,6 +79,31 @@ Send a text message to the user. Supports rich output types.
 
 ---
 
+### continueToAgent — Continue to AI Agent
+
+Category: service
+
+The last node of an AI Agent's pre-turn hook Flow (agent-creation skill, "Pre-turn hook"). It hands the message back to the agent; without it the agent gives no answer. Only allowed in a Flow of kind `preTurnFlow`. Place it after Start or after the nodes that prepare the turn (`parentNodeId: <previous node>`, `mode: "append"`).
+
+**Config (all optional):**
+- `text` — the message the agent gets (default `{{input.text}}`)
+- `dataMode` — `"forward"` (default, passes `input.data` on) or `"custom"` (sends `customData`)
+- `turnContext` — label → value pairs the agent sees with the message, e.g. `{ "customer_tier": "{{context.tier}}" }` (max 20, values up to 500 characters)
+
+```json
+{
+  "operation": "create",
+  "flowId": "<pre-turn flowId>",
+  "parentNodeId": "<startNodeId>",
+  "mode": "append",
+  "nodeType": "continueToAgent",
+  "label": "Continue to AI Agent",
+  "config": { "turnContext": { "customer_tier": "gold" } }
+}
+```
+
+---
+
 ### wait — Wait for Input
 
 Category: logic

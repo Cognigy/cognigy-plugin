@@ -1092,7 +1092,8 @@ const agentSettingsSchema = {
     .object({ preTurn: z.array(z.record(z.string(), z.any())) })
     .nullable()
     .optional(),
-  personaReferenceId: z.string().uuid().optional(),
+  // "" removes the persona from the agent.
+  personaReferenceId: z.union([z.string().uuid(), z.literal("")]).optional(),
 };
 
 const agentTargetSchema = { agentId: agentIdSchema, projectId: idSchema };

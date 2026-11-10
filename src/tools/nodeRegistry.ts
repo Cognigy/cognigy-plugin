@@ -315,6 +315,18 @@ export const NODE_REGISTRY: Record<string, NodeRegistryEntry> = {
     requiredConfigKeys: ["prompt"],
   },
 
+  continueToAgent: {
+    type: "agentV2ContinueToAgent",
+    extension: "@cognigy/basic-nodes",
+    category: "service",
+    summary:
+      "Continue to AI Agent — the last node of an AI Agent's pre-turn hook Flow: hands the message (text, default {{input.text}}), its data and optional turnContext (label → value pairs the agent sees with the message) back to the agent. Without it the agent gives no answer.",
+    placement: "flow",
+    configKeys: ["text", "dataMode", "customData", "turnContext"],
+    requiredConfigKeys: [],
+    allowedConfigValues: { dataMode: ["forward", "custom"] },
+  },
+
   wait: {
     type: "wait",
     extension: "@cognigy/basic-nodes",

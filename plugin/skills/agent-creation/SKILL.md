@@ -42,8 +42,8 @@ Cognigy has two kinds of agent. With the user, call both "AI Agents"; say "legac
 ## Path A — AI Agents (manage_agent)
 
 1. manage_agent { operation: "create", projectId, name, role, description, instructions, largeLanguageModelReferenceId }
-   — Returns: agent, endpointUrl, use. A REST endpoint for testing is created too.
-   — Bind the text LLM from the shared steps by its `referenceId`. Omit it only when the project default is known to work, and never bind a voice-to-voice model (gpt-live-1).
+   — Returns: agent, endpointUrl, use, and `llm` when the plugin picked the model. A REST endpoint for testing is created too.
+   — Bind the text LLM from the shared steps by its `referenceId`. Omitted, the plugin binds the model create_ai_agent would pick (a connected or NiCE-provided one, the project default first). Never bind a voice-to-voice model (gpt-live-1).
    — `agentType`: "text" for a chat agent, "voice" for a phone or voice agent. Omitted, the platform makes a voice agent.
 2. Add skills, tools and knowledge — see "Skills, tools, MCP servers and personas" below.
 3. Only after the project has a confirmed working LLM: talk_to_agent { agentId, projectId, message }
@@ -63,8 +63,8 @@ Cognigy has two kinds of agent. With the user, call both "AI Agents"; say "legac
 | llmConfig                        | `{ temperature, maxOutputTokens, reasoningEffort }`. On update the whole block is replaced                                         |
 | knowledge                        | Knowledge search — see "Knowledge" below                                                                                            |
 | guardrails                       | `safetySettings` switches (all on by default) and `dataPrivacy.contactProfilesOption` (none, completeProfile, profileMemoriesOnly, selectedProfileFields) |
-| hooks                            | `{ preTurn: [{ handler: { kind: "conversationFlow", flowReferenceId } }] }` — a Flow that runs before every answer. `null` removes it            |
-| personaReferenceId               | A brand persona shared by several agents                                                                                            |
+| hooks                            | `{ preTurn: [{ handler: { kind: "conversationFlow", flowReferenceId } }] }` — a pre-turn Flow that runs before every answer (see below). `null` removes it |
+| personaReferenceId               | A brand persona shared by several agents; `""` removes it                                                                         |
 | image                            | Avatar URL or base64 data URI                                                                                                       |
 | skillReferenceIds / toolReferenceIds | create only; later use attach/detach                                                                                            |
 | disabledToolReferenceIds         | update only: switch attached tools off without detaching them                                                                       |
@@ -84,15 +84,19 @@ Components live in the project; an agent points at skills and tools by `referenc
 - **Skills:** `catalog { component: "skill" }` for the builtin ones (`config: { builtinSlug }`), or your own:
   `create { component: "skill", projectId, agentId, config: { name, description, instructions, bundledTools?: [tool referenceIds], resources?: [{ path, content, encoding: "utf8" }] } }`.
   A skill packages instructions (and the tools they need) for one capability; prefer a skill over growing the agent's instructions.
-- **MCP servers:** `create { component: "mcp_server", config: { name, url, authType: "none" | "oAuth2" | "customHeader", headers? } }` → `discover_tools` → `sync_tools { import: ["<name>"] }` → `attach` each imported tool by its referenceId. To remove a server, first `sync_tools { remove: [imported tool referenceIds] }`; the platform refuses to delete a server whose tools still exist.
+- **MCP servers:** `create { component: "mcp_server", config: { name, url, authType: "none" | "oAuth2" | "customHeader", headers?, authConnectionReferenceId? } }`. `headers` are plain, non-secret headers. `oAuth2` and `customHeader` need `authConnectionReferenceId`, a Connection that holds the credentials (for customHeader also the header name); the user creates it in Cognigy, never invent one. Then `discover_tools` → `sync_tools { import: ["<name>"] }` → `attach` each imported tool by its referenceId. To remove a server, first `sync_tools { remove: [imported tool referenceIds] }`; the platform refuses to delete a server whose tools still exist.
 - **Brand personas:** `create { component: "persona", config: { name, description, speakingStyle: { formality, completeness }, voiceConfig: { ttsVendor, ttsVoice, ttsModel, ttsLabel } } }`, then manage_agent `update { personaReferenceId }`. The API requires real `voiceConfig` values (empty strings are rejected): copy them from an existing persona (`list` / `get` with component `persona`) or ask the user. Never invent them.
-- `delete` is permanent and detaches the component from every agent; tell the user before you delete one that agents use.
+- `delete` is permanent and detaches the component from every agent (the result's `detachedFrom` lists the agents a deleted skill was taken off); tell the user before you delete one that agents use.
 
 ### Knowledge
 
 Create and fill a store first (knowledge-setup skill), then:
 `manage_agent { operation: "update", agentId, projectId, knowledge: { ragType: "cognigy", ragMode: "agent", onSearchFailure: "answerAnyway", cognigyParameters: { stores: ["<store referenceId>"], topK: 5 } } }`.
 `ragMode` "agent" lets the LLM decide when to search, "always" searches on every turn, "never" switches it off.
+
+### Pre-turn hook
+
+The hook Flow must be a pre-turn Flow (kind `preTurnFlow`) that ends with the **Continue to AI Agent** node; without that node the agent gives no answer. The plugin cannot create a Flow: the user creates it in the agent's Advanced tab (Hooks → Pre-Turn Flow → Create new flow), which adds the node and sets the hook. Find it with `list_resources { resourceType: "flow", projectId }`, then edit it with manage_flow_nodes (flow-nodes skill, node `continueToAgent`): its `turnContext` (label → value pairs) reaches the agent with the user's message, and nodes placed before it can compute those values.
 
 ### Custom system prompt
 
@@ -103,6 +107,7 @@ Only when `check_capabilities` reports `customSystemPrompt: "available"` and the
 3. manage_agent { operation: "preview_system_prompt", template } — fix every warning.
 4. Tell the user a custom prompt replaces the generated one, and get their OK.
 5. manage_agent { operation: "save_system_prompt", template, acknowledgeRisk: true }. `reset_system_prompt` goes back to the generated prompt.
+   — `onBuildFailure` decides what happens when the template cannot be built (too large, empty, or the script engine fails; a CognigyScript mistake only renders empty): `"defaultPrompt"` falls back to the generated prompt, `"noAnswer"` sends no reply.
 
 ### Deploy and remove
 

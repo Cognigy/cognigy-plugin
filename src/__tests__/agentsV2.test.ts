@@ -198,6 +198,152 @@ describe("manage_agent", () => {
     expect(r._hints.action).toContain(`agentId: "${ID.agent}"`);
   });
 
+  it("binds the model create_ai_agent would pick when no LLM is given", async () => {
+    const api = routedApi({
+      "GET /v2.0/locales": () => ({ items: [{ referenceId: "loc-1" }] }),
+      "GET /new/v2.0/largelanguagemodels": () => ({
+        items: [
+          { referenceId: "broken", isDefault: true },
+          { referenceId: "nice", isInPlatformLlm: true, modelType: "gpt-x" },
+        ],
+      }),
+      [`POST ${V1}/v1/agents`]: () => agentRecord,
+    });
+    const r: any = await handlers(api).handleToolCall("manage_agent", {
+      operation: "create",
+      projectId: ID.project,
+      name: "Bot",
+      createEndpoint: false,
+    });
+    expect(api.post.mock.calls[0][1].largeLanguageModelReferenceId).toBe(
+      "nice",
+    );
+    expect(r.llm).toEqual({
+      referenceId: "nice",
+      isDefault: false,
+      connected: true,
+    });
+    expect(r._hints.action).toContain("talk_to_agent");
+  });
+
+  it("says so when the project has no text LLM for a new agent", async () => {
+    const api = routedApi({
+      "GET /v2.0/locales": () => ({ items: [{ referenceId: "loc-1" }] }),
+      "GET /new/v2.0/largelanguagemodels": () => ({ items: [] }),
+      [`POST ${V1}/v1/agents`]: () => agentRecord,
+    });
+    const r: any = await handlers(api).handleToolCall("manage_agent", {
+      operation: "create",
+      projectId: ID.project,
+      name: "Bot",
+      createEndpoint: false,
+    });
+    expect(api.post.mock.calls[0][1]).not.toHaveProperty(
+      "largeLanguageModelReferenceId",
+    );
+    expect(r.llm).toBeUndefined();
+    expect(r._hints.action).toContain("no text LLM");
+  });
+
+  it("waits for service-agents to know a project it just created", async () => {
+    ToolHandlers.NEW_PROJECT_RETRY_MS = 0;
+    let calls = 0;
+    const api = routedApi({
+      "POST /v2.0/projects": () => ({ _id: ID.project }),
+      "GET /v2.0/locales": () => ({ items: [{ referenceId: "loc-1" }] }),
+      [`POST ${V1}/v1/agents`]: () => {
+        if (++calls < 3)
+          throw httpError(403, "access denied: project not authorized");
+        return agentRecord;
+      },
+    });
+    const r: any = await handlers(api).handleToolCall("manage_agent", {
+      operation: "create",
+      name: "Bot",
+      largeLanguageModelReferenceId: LLM,
+      createEndpoint: false,
+    });
+    expect(calls).toBe(3);
+    expect(r.createdProject).toBe(true);
+    expect(r.use).toEqual({ agentId: ID.agent });
+  });
+
+  it("does not retry a 403 for a project it did not create", async () => {
+    const api = routedApi({
+      "GET /v2.0/locales": () => ({ items: [{ referenceId: "loc-1" }] }),
+      [`POST ${V1}/v1/agents`]: () => {
+        throw httpError(403, "access denied: project not authorized");
+      },
+    });
+    await expect(
+      handlers(api).handleToolCall("manage_agent", {
+        operation: "create",
+        projectId: ID.project,
+        name: "Bot",
+        largeLanguageModelReferenceId: LLM,
+      }),
+    ).rejects.toThrow("not authorized");
+    expect(api.post).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the stored safety toggles an update does not name", async () => {
+    const api = routedApi({
+      [`GET ${V1}/v1/agents/${ID.agent}`]: () => ({
+        ...agentRecord,
+        guardrails: {
+          safetySettings: {
+            avoidHarmfulContent: true,
+            avoidUngroundedContent: true,
+            avoidCopyrightInfringements: true,
+            preventJailbreakAndManipulation: true,
+          },
+        },
+      }),
+      [`PATCH ${V1}/v1/agents/${ID.agent}`]: (body) => ({
+        ...agentRecord,
+        ...body,
+      }),
+    });
+    const h = handlers(api);
+    await h.handleToolCall("manage_snapshots", {
+      operation: "decline",
+      projectId: ID.project,
+    });
+    await h.handleToolCall("manage_agent", {
+      operation: "update",
+      agentId: ID.agent,
+      projectId: ID.project,
+      guardrails: { safetySettings: { avoidCopyrightInfringements: false } },
+    });
+    expect(api.patch.mock.calls[0][1].guardrails.safetySettings).toEqual({
+      avoidHarmfulContent: true,
+      avoidUngroundedContent: true,
+      avoidCopyrightInfringements: false,
+      preventJailbreakAndManipulation: true,
+    });
+  });
+
+  it("removes the persona with an empty string", async () => {
+    const api = routedApi({
+      [`PATCH ${V1}/v1/agents/${ID.agent}`]: (body) => ({
+        ...agentRecord,
+        ...body,
+      }),
+    });
+    const h = handlers(api);
+    await h.handleToolCall("manage_snapshots", {
+      operation: "decline",
+      projectId: ID.project,
+    });
+    await h.handleToolCall("manage_agent", {
+      operation: "update",
+      agentId: ID.agent,
+      projectId: ID.project,
+      personaReferenceId: "",
+    });
+    expect(api.patch.mock.calls[0][1]).toEqual({ personaReferenceId: "" });
+  });
+
   it("creates nothing where AI Agents are unavailable", async () => {
     const api = routedApi({
       [`GET ${V1}/v1/agents`]: () => {
@@ -458,6 +604,38 @@ describe("manage_agent_components", () => {
       agentId: ID.agent,
     });
     expect(r.skillReferenceIds).toEqual(["keep"]);
+  });
+
+  it("takes a deleted skill off the agents that still use it", async () => {
+    const api = routedApi({
+      [`GET ${V1}/v1/skills/${ID.skill}`]: () => ({ referenceId: "s-ref" }),
+      [`DELETE ${V1}/v1/skills/${ID.skill}`]: () => ({}),
+      [`GET ${V1}/v1/agents`]: () => ({
+        items: [
+          { id: ID.agent, skillReferenceIds: ["s-ref", "keep"] },
+          { id: "other", skillReferenceIds: ["keep"] },
+        ],
+        total: 2,
+      }),
+      [`GET ${V1}/v1/agents/${ID.agent}`]: () => ({
+        skillReferenceIds: ["s-ref", "keep"],
+      }),
+      [`PATCH ${V1}/v1/agents/${ID.agent}`]: () => ({}),
+    });
+    const h = handlers(api);
+    await h.handleToolCall("manage_snapshots", {
+      operation: "decline",
+      projectId: ID.project,
+    });
+    const r: any = await h.handleToolCall("manage_agent_components", {
+      operation: "delete",
+      component: "skill",
+      projectId: ID.project,
+      componentId: ID.skill,
+    });
+    expect(r.detachedFrom).toEqual([ID.agent]);
+    expect(api.patch).toHaveBeenCalledTimes(1);
+    expect(api.patch.mock.calls[0][1]).toEqual({ skillReferenceIds: ["keep"] });
   });
 
   it("syncs MCP tools with everything discovery showed as reviewed", async () => {
