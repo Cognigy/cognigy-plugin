@@ -4156,6 +4156,46 @@ describe("ToolHandlers v2", () => {
       expect(result._hints).toBeUndefined();
     });
 
+    it("treats a NiCE-provided LLM as working without a connection", async () => {
+      api.post
+        .mockResolvedValueOnce({ _id: ID.agent, referenceId: "ref-uuid" })
+        .mockResolvedValueOnce({ _id: ID.flow, referenceId: "flow-uuid" })
+        .mockResolvedValueOnce({ _id: ID.node })
+        .mockResolvedValueOnce({ _id: ID.endpoint, URLToken: "abc123" });
+      api.get
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.entry, isEntryPoint: true }],
+        })
+        .mockResolvedValueOnce({
+          items: [
+            // A project default without a connection loses to the NiCE model.
+            { _id: ID.llm, referenceId: "broken-ref", isDefault: true },
+            {
+              _id: ID.llm,
+              referenceId: "nice-ref",
+              isInPlatformLlm: true,
+              modelType: "gpt-5.6-luna",
+            },
+          ],
+        });
+      api.patch.mockResolvedValue({});
+
+      const result = await h.handleToolCall("create_ai_agent", {
+        projectId: ID.project,
+        name: "Test Agent",
+        description: "A test agent",
+      });
+
+      expect(result.llm).toEqual({
+        referenceId: "nice-ref",
+        isDefault: false,
+        connected: true,
+      });
+      expect(result.llmConnected).toBeUndefined();
+      expect(result._hints.warning).not.toContain("empty responses");
+      expect(result._hints.warning).toContain('"broken-ref" has no connection');
+    });
+
     it("refetches the unfiltered LLM list when the useCase filter is unsupported", async () => {
       const mockAgent = {
         _id: ID.agent,

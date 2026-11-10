@@ -864,6 +864,11 @@ async function fetchLlmsForUseCase(
   }
 }
 
+/** NiCE-provided ("Included by NiCE Cognigy") models answer without a connection. */
+function canAnswer(llm: any): boolean {
+  return Boolean(llm?.connectionId || llm?.isInPlatformLlm);
+}
+
 /**
  * Pick the LLM to auto-assign to a new agent node from a
  * largelanguagemodels list response. An LLM without its connection cannot
@@ -896,7 +901,7 @@ function pickDefaultLlm(llmList: any):
   if (!Array.isArray(llmItems) || llmItems.length === 0) return undefined;
   const pool = llmItems.filter((l: any) => !isEmbeddingModel(l));
   if (pool.length === 0) return undefined;
-  const connected = pool.filter((l: any) => l.connectionId);
+  const connected = pool.filter(canAnswer);
   const candidates = connected.length > 0 ? connected : pool;
   const chosen = candidates.find((l: any) => l.isDefault) ?? candidates[0];
   const refId = chosen?.referenceId ?? chosen?._id;
@@ -910,7 +915,7 @@ function pickDefaultLlm(llmList: any):
     : undefined;
   return {
     refId: String(refId),
-    connected: Boolean(chosen.connectionId),
+    connected: canAnswer(chosen),
     isDefault,
     defaultSkipped: Boolean(projectDefault),
     ...(skippedDefaultRefId

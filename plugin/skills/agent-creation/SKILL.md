@@ -22,11 +22,11 @@ Cognigy has two kinds of agent. With the user, call both "AI Agents"; say "legac
 2. Choose the target project
    - If it already exists: use its projectId
    - If the user wants a new project: Path A creates one when `manage_agent create` gets no projectId; Path B when `create_ai_agent` gets none. Keep the returned projectId and run steps 3-6 for it before testing.
-3. Run list_resources { resourceType: "llm_model", projectId } — check whether the target project already has a reusable LLM with a non-empty connectionId
+3. Run list_resources { resourceType: "llm_model", projectId } — check whether the target project already has a working LLM: a text model with a non-empty connectionId, or a NiCE-provided one (`isInPlatformLlm: true`, shown as "Included by NiCE Cognigy"), which needs no connection. Either one is enough; skip steps 4-6.
 4. If the target project has no reusable LLM, check the other projects for reusable LLMs
    - Run list_resources { resourceType: "llm_model", projectId } for each other project
    - Choose only candidates whose llm_model has a non-empty connectionId
-   - Do not treat an LLM without connectionId as a valid reuse candidate
+   - Do not treat an LLM without connectionId as a valid reuse candidate. NiCE-provided models are never transferred; they are already in the target project or not available at all
 5. If another project already has a reusable LLM, transfer the required model set together with its connection resource(s):
    - manage_packages { operation: "list_exportable", projectId: "<sourceProjectId>" }
    - If this workflow will use knowledge, identify the source project's exact Knowledge Search model and embedding model before exporting anything

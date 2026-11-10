@@ -86,6 +86,7 @@ export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
     provider: r.provider,
     modelType: r.modelType,
     connectionId: r.connectionId,
+    isInPlatformLlm: r.isInPlatformLlm,
     isDefault: r.isDefault,
     apiType: r.apiType,
     openAICompatible: r.openAICompatible,

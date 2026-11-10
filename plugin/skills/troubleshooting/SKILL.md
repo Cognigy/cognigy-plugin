@@ -27,7 +27,8 @@ description: "Use when a Cognigy agent returns empty responses, a tool call or c
    session whose FIRST message hit the stale config stays cached as broken — wait a
    few seconds and retry with a NEW sessionId, not the same one.
 6. LLM Prompt flows: the assigned LLM must have a connection (`connectionId` set on
-   the llm_model). A connectionless LLM fails silently — the node's default error
+   the llm_model) or be NiCE-provided (`isInPlatformLlm: true`, needs none). Any
+   other connectionless LLM fails silently — the node's default error
    handling is "continue" with an empty message, which looks like an empty response.
 
 ## talk_to_agent fails (any HTTP error or timeout)
