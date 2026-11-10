@@ -63,7 +63,7 @@ Cognigy has two kinds of agent. With the user, call both "AI Agents"; say "legac
 | llmConfig                        | `{ temperature, maxOutputTokens, reasoningEffort }`. On update the whole block is replaced                                         |
 | knowledge                        | Knowledge search — see "Knowledge" below                                                                                            |
 | guardrails                       | `safetySettings` switches (all on by default) and `dataPrivacy.contactProfilesOption` (none, completeProfile, profileMemoriesOnly, selectedProfileFields) |
-| hooks                            | `{ preTurn: [{ handler: { kind: "conversationFlow", flowReferenceId } }] }` — a pre-turn Flow that runs before every answer (see below). `null` removes it |
+| hooks                            | `{ preTurn: [{ handler: { kind: "conversationFlow", flowReferenceId } }] }` — a pre-turn Flow that runs before every answer (see "Pre-turn hook"). `null` removes it |
 | personaReferenceId               | A brand persona shared by several agents; `""` removes it                                                                         |
 | image                            | Avatar URL or base64 data URI                                                                                                       |
 | skillReferenceIds / toolReferenceIds | create only; later use attach/detach                                                                                            |
@@ -80,7 +80,7 @@ Components live in the project; an agent points at skills and tools by `referenc
   - `mode: "dynamic"` — you fix the value now (a URL, a method). `mode: "aiFilled"` — the LLM fills it per turn (a query, a payload). A plain value (`url: "https://…"`) makes the parameter dynamic; pass `{ mode: "aiFilled" }` to leave it to the LLM.
   - `description` tells the LLM when to call the tool; write it for that.
   - Parameters of type `connection` hold credentials. Never invent them: the user picks the Connection in the agent editor.
-  - Common ones: `http-request` (call an API), `knowledge-search`, `send-email`, `handoff-to-flow`; for voice agents `voice-hangup`, `voice-transfer`, `voice-config-defaults`.
+  - Common ones: `http-request` (call an API), `knowledge-search`, `send-email`, `handoff-to-flow`, `execute-tool-flow` (see "A Flow as a tool"); for voice agents `voice-hangup`, `voice-transfer`, `voice-config-defaults`.
 - **Skills:** `catalog { component: "skill" }` for the builtin ones (`config: { builtinSlug }`), or your own:
   `create { component: "skill", projectId, agentId, config: { name, description, instructions, bundledTools?: [tool referenceIds], resources?: [{ path, content, encoding: "utf8" }] } }`.
   A skill packages instructions (and the tools they need) for one capability; prefer a skill over growing the agent's instructions.
@@ -96,7 +96,21 @@ Create and fill a store first (knowledge-setup skill), then:
 
 ### Pre-turn hook
 
-The hook Flow must be a pre-turn Flow (kind `preTurnFlow`) that ends with the **Continue to AI Agent** node; without that node the agent gives no answer. The plugin cannot create a Flow: the user creates it in the agent's Advanced tab (Hooks → Pre-Turn Flow → Create new flow), which adds the node and sets the hook. Find it with `list_resources { resourceType: "flow", projectId }`, then edit it with manage_flow_nodes (flow-nodes skill, node `continueToAgent`): its `turnContext` (label → value pairs) reaches the agent with the user's message, and nodes placed before it can compute those values.
+A pre-turn Flow runs before every answer and can rewrite the message or add context for that one turn.
+
+1. `manage_agent { operation: "create_flow", projectId, flowType: "preTurn", name }` makes the Flow with its closing **Continue to AI Agent** node. Without that node the agent gives no answer.
+2. Add the Flow's logic with manage_flow_nodes (flow-nodes skill): `mode: "append"` on the Start node (`startNodeId`) or on the node before, so Continue stays last. Set Continue's `turnContext` (label → value pairs the agent sees with the message) or `text` with manage_flow_nodes `update` on `closingNodeId`.
+3. Set the hook: `manage_agent { operation: "update", agentId, projectId, hooks: { preTurn: [{ handler: { kind: "conversationFlow", flowReferenceId } }] } }`.
+
+### A Flow as a tool (Execute Tool Flow)
+
+Use it when a tool needs Flow logic (several API calls, Code nodes, branching). The agent calls the tool, the Flow runs, and its **Tool Result** answer is what the call returns.
+
+1. `manage_agent { operation: "create_flow", projectId, flowType: "tool", name, answer? }` makes the Flow with its closing Tool Result node. The call's arguments arrive in the Flow as `input.data.toolArgs`; `answer` (CognigyScript) is what the agent gets back, by default the arguments as JSON.
+2. Add the logic with manage_flow_nodes (`mode: "append"` on `startNodeId`, Tool Result stays last) and set the real answer with manage_flow_nodes `update { nodeId: closingNodeId, config: { answer } }`.
+3. Add the tool: `manage_agent_components { operation: "create", component: "tool", projectId, agentId, config: { builtinSlug: "execute-tool-flow", name, description, parameters: { flowReferenceId, <argument>: { mode: "aiFilled", description } } } }`. Every parameter besides `flowReferenceId` is an argument: `aiFilled` ones the LLM fills, a plain value is fixed. The `description` tells the LLM when to call the tool.
+
+A Flow that ends without Tool Result answers "The flow finished without returning an answer."; a failed one "The flow failed before returning an answer." Neither Flow kind can wait for the user (no Question nodes).
 
 ### Custom system prompt
 

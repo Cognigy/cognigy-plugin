@@ -11,6 +11,7 @@ description: "Use when a Cognigy agent returns empty responses, a tool call or c
 - `error: "ai_agents_unavailable"` from manage_agent — this environment or organisation has no AI Agents. Build the agent with `create_ai_agent` and say nothing about agent kinds.
 - `error: "custom_system_prompt_unavailable"` — the environment does not offer a custom system prompt; shape the agent through role, description and instructions.
 - An AI Agent answers with empty text although its LLM works — check for a pre-turn hook (`get_resource { resourceType: "agent", id, projectId }` → `hooks`). The hook Flow runs before every answer and must end with the Continue to AI Agent node (`continueToAgent`); a Flow without it leaves the turn without a reply. Test with `manage_agent { operation: "update", hooks: null }`.
+- An AI Agent's Execute Tool Flow tool returns "The flow finished without returning an answer." — the Flow ended without reaching its Tool Result node (`toolResult`), or its answer rendered empty. "The flow failed before returning an answer." means the Flow hit an error; check the project logs.
 - A 404 on an agent id whose message says "legacy" or "AI Agent" — the id belongs to the other kind. Use the `use` argument from list_resources { resourceType: 'agent', projectId }.
 
 ## Agent returns empty response

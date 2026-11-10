@@ -327,6 +327,24 @@ export const NODE_REGISTRY: Record<string, NodeRegistryEntry> = {
     allowedConfigValues: { dataMode: ["forward", "custom"] },
   },
 
+  toolResult: {
+    type: "agentV2ResolveToolAction",
+    extension: "@cognigy/basic-nodes",
+    category: "service",
+    summary:
+      "Tool Result — ends a Flow run by an AI Agent's Execute Tool Flow tool: its answer (CognigyScript, required) is what the agent's tool call returns. The call's arguments arrive in the Flow as input.data.toolArgs. Only in a Flow made with manage_agent create_flow { flowType: 'tool' }; nothing after it runs.",
+    placement: "flow",
+    configKeys: ["answer", "shareConversationHistory"],
+    requiredConfigKeys: ["answer"],
+    allowedConfigValues: {
+      shareConversationHistory: [
+        "lastExchangeOnly",
+        "fullConversation",
+        "none",
+      ],
+    },
+  },
+
   wait: {
     type: "wait",
     extension: "@cognigy/basic-nodes",

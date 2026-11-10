@@ -1133,6 +1133,13 @@ export const manageAgentSchema = z.discriminatedUnion("operation", [
     template: z.string().min(1),
     scriptPlaceholders: z.boolean().optional(),
   }),
+  z.object({
+    operation: z.literal("create_flow"),
+    projectId: idSchema,
+    flowType: z.enum(["preTurn", "tool"]),
+    name: z.string().min(1).max(200),
+    answer: z.string().min(1).optional(),
+  }),
 ]);
 
 export const AGENT_COMPONENTS = [

@@ -138,11 +138,16 @@ export async function resolveLocaleReferenceId(
   return locale.referenceId;
 }
 
+/** Builtin tools whose extra parameters become the arguments a Flow receives. */
+const FLOW_ARGUMENT_TOOLS = new Set(["execute-tool-flow"]);
+
 /**
  * A builtin tool instance's parameters: the live descriptor's list with the
  * caller's values laid over it. service-agents validates every instance
  * against the descriptor, so keys, names and types always come from it. An
- * override is a plain value (sets `value`) or `{ mode, value }`.
+ * override is a plain value (sets `value`) or `{ mode, value }`. Only
+ * execute-tool-flow takes keys the descriptor lacks: the call's arguments,
+ * `{ mode (default aiFilled), description, type (default string), value }`.
  */
 export function builtinToolParameters(
   descriptor: any,
@@ -157,12 +162,13 @@ export function builtinToolParameters(
   const unknown = Object.keys(overrides).filter(
     (k) => !base.some((p) => p.key === k),
   );
-  if (unknown.length) {
+  const slug = descriptor?.slug ?? descriptor?.type;
+  if (unknown.length && !FLOW_ARGUMENT_TOOLS.has(slug)) {
     throw new Error(
       `Unknown parameter(s) ${unknown.join(", ")}; this builtin tool takes ${base.map((p) => p.key).join(", ")}.`,
     );
   }
-  return base.map((p) => {
+  const known = base.map((p) => {
     const raw = overrides[p.key];
     const o =
       raw && typeof raw === "object" && !Array.isArray(raw) && "mode" in raw
@@ -185,6 +191,23 @@ export function builtinToolParameters(
       ...(p.connectionTypes ? { connectionTypes: p.connectionTypes } : {}),
     };
   });
+  const extra = unknown.map((key) => {
+    const raw = overrides[key];
+    const o =
+      raw && typeof raw === "object" && !Array.isArray(raw)
+        ? raw
+        : { mode: "dynamic", value: raw };
+    const mode = o.mode ?? "aiFilled";
+    return {
+      key,
+      name: key,
+      description: o.description ?? "",
+      mode,
+      type: o.type ?? "string",
+      value: /ai_?filled/i.test(mode) ? null : (o.value ?? null),
+    };
+  });
+  return [...known, ...extra];
 }
 
 /** Find the REST endpoint that targets this AI Agent, or create one. */

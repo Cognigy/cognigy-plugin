@@ -83,7 +83,7 @@ Send a text message to the user. Supports rich output types.
 
 Category: service
 
-The last node of an AI Agent's pre-turn hook Flow (agent-creation skill, "Pre-turn hook"). It hands the message back to the agent; without it the agent gives no answer. Only allowed in a Flow of kind `preTurnFlow`. Place it after Start or after the nodes that prepare the turn (`parentNodeId: <previous node>`, `mode: "append"`).
+The last node of an AI Agent's pre-turn hook Flow (agent-creation skill, "Pre-turn hook"). It hands the message back to the agent; without it the agent gives no answer. Only allowed in a Flow of kind `preTurnFlow`. `manage_agent { operation: "create_flow", flowType: "preTurn" }` places it already; add the nodes that prepare the turn before it (`mode: "append"` on Start or the previous node).
 
 **Config (all optional):**
 - `text` — the message the agent gets (default `{{input.text}}`)
@@ -99,6 +99,27 @@ The last node of an AI Agent's pre-turn hook Flow (agent-creation skill, "Pre-tu
   "nodeType": "continueToAgent",
   "label": "Continue to AI Agent",
   "config": { "turnContext": { "customer_tier": "gold" } }
+}
+```
+
+---
+
+### toolResult — Tool Result
+
+Category: service
+
+Ends a Flow that an AI Agent runs through its Execute Tool Flow tool (agent-creation skill, "A Flow as a tool"): its `answer` is what the tool call returns. The call's arguments are in `input.data.toolArgs`. Only allowed in a Flow of kind `flowExecutionTool`; `manage_agent { operation: "create_flow", flowType: "tool" }` places it already. The first Tool Result that runs answers and stops the Flow.
+
+**Config:**
+- `answer` (required) — CognigyScript, e.g. `"Order {{input.data.toolArgs.orderId}} ships on {{context.shipDate}}"`
+- `shareConversationHistory` — what the agent sees of the Flow's own messages: `"lastExchangeOnly"` (default), `"fullConversation"` or `"none"`
+
+```json
+{
+  "operation": "update",
+  "flowId": "<tool flowId>",
+  "nodeId": "<closingNodeId>",
+  "config": { "answer": "Order {{input.data.toolArgs.orderId}}: {{context.status}}" }
 }
 ```
 

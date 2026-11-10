@@ -1310,11 +1310,11 @@ export class ToolHandlers {
     }
 
     const operation = args?.operation;
-    // A new AI Agent, or a skill/tool not yet attached to one, changes no
-    // existing agent.
+    // A new AI Agent or Flow, or a skill/tool not yet attached to one,
+    // changes no existing agent.
     if (
       (toolName === "manage_agent" || toolName === "manage_agent_components") &&
-      operation === "create" &&
+      (operation === "create" || operation === "create_flow") &&
       !args?.agentId
     ) {
       return false;
@@ -3268,6 +3268,7 @@ export class ToolHandlers {
   async handleManageAgent(args: any): Promise<any> {
     const data = schemas.manageAgentSchema.parse(args);
     if (data.operation === "create") return this.createAgent(data);
+    if (data.operation === "create_flow") return this.createAgentFlow(data);
 
     const agentUrl = `${this.agentsV2BaseUrl}/v1/agents/${data.agentId}`;
     const params = { projectId: data.projectId };
@@ -3446,6 +3447,69 @@ export class ToolHandlers {
         use: { agentId: agent.id },
       },
       hints,
+    );
+  }
+
+  /**
+   * A Flow an AI Agent runs: a pre-turn hook (kind preTurnFlow, ends in
+   * Continue to AI Agent) or the Flow of an execute-tool-flow tool (kind
+   * flowExecutionTool, ends in Tool Result). Each kind only accepts its own
+   * closing node, so the plugin places it right away.
+   */
+  private async createAgentFlow(data: {
+    projectId: string;
+    flowType: "preTurn" | "tool";
+    name: string;
+    answer?: string;
+  }): Promise<any> {
+    const preTurn = data.flowType === "preTurn";
+    const flow: any = await this.apiClient.post("/v2.0/flows", {
+      projectId: data.projectId,
+      name: data.name,
+      kind: preTurn ? "preTurnFlow" : "flowExecutionTool",
+    });
+    const flowId = flow?._id ?? flow?.id;
+    this.resourcesCreatedThisSession.add(String(flowId));
+    const chart: any = await this.apiClient.get(`/v2.0/flows/${flowId}/chart`);
+    const startId = (chart?.nodes ?? []).find(
+      (n: any) => n?.type === "start",
+    )?._id;
+    const entry = getNodeEntry(preTurn ? "continueToAgent" : "toolResult")!;
+    const label = preTurn ? "Continue to AI Agent" : "Tool Result";
+    const node: any = await this.apiClient.post(
+      `/v2.0/flows/${flowId}/chart/nodes`,
+      {
+        type: entry.type,
+        extension: entry.extension,
+        mode: "append",
+        target: startId,
+        label,
+        ...(preTurn
+          ? {}
+          : {
+              config: {
+                answer:
+                  data.answer ?? "{{JSON.stringify(input.data.toolArgs)}}",
+              },
+            }),
+      },
+    );
+    const nodeId = node?._id ?? node?.id;
+    const ref = flow?.referenceId;
+    const logic = `Add the Flow's logic with manage_flow_nodes { operation: "create", flowId: "${flowId}", parentNodeId: "${startId}", mode: "append" } so ${label} (node ${nodeId}) stays last`;
+    return withHints(
+      {
+        flowId,
+        flowReferenceId: ref,
+        kind: flow?.kind,
+        startNodeId: startId,
+        closingNodeId: nodeId,
+      },
+      {
+        action: preTurn
+          ? `${logic}; set its text or turnContext with manage_flow_nodes update. Then set the hook: manage_agent { operation: "update", agentId, projectId: "${data.projectId}", hooks: { preTurn: [{ handler: { kind: "conversationFlow", flowReferenceId: "${ref}" } }] } }.`
+          : `${logic}; the call's arguments are in input.data.toolArgs and its answer is the result. Then add the tool: manage_agent_components { operation: "create", component: "tool", projectId: "${data.projectId}", agentId, config: { builtinSlug: "execute-tool-flow", name, description, parameters: { flowReferenceId: "${ref}", <argument>: { mode: "aiFilled", description } } } }.`,
+      },
     );
   }
 

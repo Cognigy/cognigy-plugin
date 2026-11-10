@@ -344,6 +344,72 @@ describe("manage_agent", () => {
     expect(api.patch.mock.calls[0][1]).toEqual({ personaReferenceId: "" });
   });
 
+  it("creates a pre-turn hook Flow with its closing node, without a backup hold", async () => {
+    const api = routedApi({
+      [`POST /v2.0/flows`]: (body) => ({
+        _id: "6af33f8a694c26ad820bf927",
+        referenceId: "flow-ref",
+        ...body,
+      }),
+      [`GET /v2.0/flows/6af33f8a694c26ad820bf927/chart`]: () => ({
+        nodes: [
+          { _id: "end-1", type: "end" },
+          { _id: "start-1", type: "start" },
+        ],
+      }),
+      [`POST /v2.0/flows/6af33f8a694c26ad820bf927/chart/nodes`]: () => ({
+        _id: "node-1",
+      }),
+    });
+    const r: any = await handlers(api).handleToolCall("manage_agent", {
+      operation: "create_flow",
+      projectId: ID.project,
+      flowType: "preTurn",
+      name: "Tag VIPs",
+    });
+    expect(api.post.mock.calls[0][1]).toEqual({
+      projectId: ID.project,
+      name: "Tag VIPs",
+      kind: "preTurnFlow",
+    });
+    expect(api.post.mock.calls[1][1]).toMatchObject({
+      type: "agentV2ContinueToAgent",
+      mode: "append",
+      target: "start-1",
+    });
+    expect(r).toMatchObject({
+      flowReferenceId: "flow-ref",
+      closingNodeId: "node-1",
+    });
+    expect(r._hints.action).toContain('flowReferenceId: "flow-ref"');
+  });
+
+  it("creates an Execute Tool Flow Flow ending in Tool Result", async () => {
+    const api = routedApi({
+      [`POST /v2.0/flows`]: (body) => ({
+        _id: "f1",
+        referenceId: "r1",
+        ...body,
+      }),
+      [`GET /v2.0/flows/f1/chart`]: () => ({
+        nodes: [{ _id: "start-1", type: "start" }],
+      }),
+      [`POST /v2.0/flows/f1/chart/nodes`]: () => ({ _id: "node-1" }),
+    });
+    const r: any = await handlers(api).handleToolCall("manage_agent", {
+      operation: "create_flow",
+      projectId: ID.project,
+      flowType: "tool",
+      name: "Order lookup",
+    });
+    expect(api.post.mock.calls[0][1].kind).toBe("flowExecutionTool");
+    expect(api.post.mock.calls[1][1]).toMatchObject({
+      type: "agentV2ResolveToolAction",
+      config: { answer: "{{JSON.stringify(input.data.toolArgs)}}" },
+    });
+    expect(r._hints.action).toContain('builtinSlug: "execute-tool-flow"');
+  });
+
   it("creates nothing where AI Agents are unavailable", async () => {
     const api = routedApi({
       [`GET ${V1}/v1/agents`]: () => {
@@ -497,6 +563,48 @@ describe("manage_agent_components", () => {
     expect(() => builtinToolParameters(descriptor, { verb: "GET" })).toThrow(
       /Unknown parameter\(s\) verb/,
     );
+  });
+
+  it("passes extra execute-tool-flow parameters as the Flow's arguments", () => {
+    const params = builtinToolParameters(
+      {
+        slug: "execute-tool-flow",
+        parameters: [
+          {
+            key: "flowReferenceId",
+            name: "flowReferenceId",
+            mode: "dynamic",
+            modeLocked: true,
+            type: "string",
+            value: "",
+          },
+        ],
+      },
+      {
+        flowReferenceId: "flow-ref",
+        orderId: { description: "The order to look up" },
+        region: "EU",
+      },
+    );
+    expect(params).toEqual([
+      expect.objectContaining({ key: "flowReferenceId", value: "flow-ref" }),
+      {
+        key: "orderId",
+        name: "orderId",
+        description: "The order to look up",
+        mode: "aiFilled",
+        type: "string",
+        value: null,
+      },
+      {
+        key: "region",
+        name: "region",
+        description: "",
+        mode: "dynamic",
+        type: "string",
+        value: "EU",
+      },
+    ]);
   });
 
   it("creates a builtin tool and attaches it to an existing agent", async () => {
