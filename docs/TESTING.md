@@ -26,15 +26,26 @@ What it does (see `scripts/dev-plugin.mjs`):
 
 - Generates a gitignored dev marketplace under `.dev-plugin/` whose manifest is a copy of
   `plugin/.claude-plugin/plugin.json` with one change: the `platform` server runs `src/index.ts`
-  directly via **tsx** (no `npm run build` needed). Skills and agents are **symlinked** to the
-  working tree, so edits are live. Remote servers (e.g. the bundled `docs` server) are unchanged.
-- Uninstalls the prod plugin (avoids duplicate tool names) and installs `cognigy@cognigy-dev`.
+  directly via **tsx** (no `npm run build` needed), so engine edits are live. Its launcher
+  (`scripts/dev-engine.mjs`) is copied into `.dev-plugin/`, so the dev install still starts after a
+  switch to a branch that predates it. Skills, agents and the rest of `plugin/` (except `evals/`) are **copied**: Claude Code
+  skips plugin paths that resolve outside the plugin directory, so symlinks into the working
+  tree do not load. Remote servers (e.g. the bundled `docs` server) are unchanged.
+- The first run uninstalls the prod plugin (avoids duplicate tool names) and installs
+  `cognigy@cognigy-dev`. Later runs **update it in place**, which keeps its settings (API base
+  URL and key); a reinstall would drop them.
+- The dev version carries a fingerprint of the copied files (`1.22.5-dev.<fingerprint>`). The
+  husky `post-checkout` and `post-merge` hooks re-sync the install when `plugin/` changed, so a
+  branch switch brings its skills along. If the copy is stale anyway (you edited a skill), the
+  dev engine starts its instructions with "DEV PLUGIN IS STALE", and Claude tells you.
 
 Then, in Claude Code:
 
 1. `/plugin configure cognigy@cognigy-dev` — enter your API base URL + key (once).
 2. `/reload-plugins` (or restart the session).
-3. Iterate: edit `src/**` or `plugin/**`, then `/reload-plugins`. That's the whole loop.
+3. Iterate: edit `src/**`, then `/reload-plugins`. After editing `plugin/**` (skills, agents),
+   re-run `npm run plugin:dev` first. After a branch switch or pull the hooks have re-synced
+   already; just `/reload-plugins`.
 
 Done testing? Restore the published plugin:
 
