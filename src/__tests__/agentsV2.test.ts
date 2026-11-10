@@ -511,6 +511,37 @@ describe("legacy guard on create_ai_agent", () => {
     expect(r.error).not.toBe("use_manage_agent");
   });
 
+  it("ignores agents marked for deletion", async () => {
+    // Only deleted legacy agents: the project counts as empty.
+    let api = routedApi({
+      "GET /v2.0/aiagents": () => ({
+        items: [{ _id: "x", name: "DELETE_Old bot" }],
+        total: 1,
+      }),
+    });
+    let r: any = await handlers(api).handleToolCall("create_ai_agent", {
+      projectId: ID.project,
+      name: "Bot",
+    });
+    expect(r.error).toBe("use_manage_agent");
+
+    // Live legacy agents next to deleted AI Agents: legacy-only.
+    api = routedApi({
+      "GET /v2.0/aiagents": () => ({
+        items: [{ _id: "x", name: "Shop bot" }],
+        total: 1,
+      }),
+      [`GET ${V1}/v1/agents`]: () => ({
+        items: [{ id: "y", name: "DELETE_Old agent" }],
+        total: 1,
+      }),
+    });
+    r = await handlers(api)
+      .handleToolCall("create_ai_agent", { projectId: ID.project, name: "Bot" })
+      .catch((e: any) => ({ error: e.message }));
+    expect(r.error).not.toBe("use_manage_agent");
+  });
+
   it("lets legacy: true through", async () => {
     const api = routedApi({});
     const r: any = await handlers(api)

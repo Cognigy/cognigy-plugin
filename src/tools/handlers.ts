@@ -3234,21 +3234,25 @@ export class ToolHandlers {
     const caps = await this.getCapabilities();
     if (caps.aiAgents !== "available") return null;
     if (projectId) {
+      // ponytail: only the first 100 of each kind are checked; a project with
+      // more than 100 agents marked DELETE_ could be misjudged.
       const [legacy, current] = await Promise.all([
         this.apiClient
-          .get("/v2.0/aiagents", { params: { projectId, limit: 1 } })
+          .get("/v2.0/aiagents", { params: { projectId, limit: 100 } })
           .catch(() => null),
         listAgentsV2(this.apiClient, this.agentsV2BaseUrl, projectId, {
-          limit: 1,
+          limit: 100,
           skip: 0,
         }),
       ]);
-      const legacyItems = (legacy as any)?.items ?? legacy;
-      const legacyTotal =
-        (legacy as any)?.total ??
-        (Array.isArray(legacyItems) ? legacyItems.length : 0);
-      const currentTotal = current.available ? current.total : 0;
-      if (legacyTotal > 0 && currentTotal === 0) return null;
+      // Agents marked for deletion (renamed DELETE_) do not count.
+      const live = (items: any) =>
+        (Array.isArray(items) ? items : []).filter(
+          (a: any) => !String(a?.name ?? "").startsWith(DELETE_PREFIX),
+        ).length;
+      const legacyLive = live((legacy as any)?.items ?? legacy);
+      const currentLive = current.available ? live(current.items) : 0;
+      if (legacyLive > 0 && currentLive === 0) return null;
     }
     return withHints(
       { error: "use_manage_agent", changed: false },
