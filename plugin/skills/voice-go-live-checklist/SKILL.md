@@ -1,6 +1,6 @@
 ---
 name: voice-go-live-checklist
-description: "Use when the user wants to audit, validate, or make a Cognigy voice agent production-ready against the Voice Go-Live Checklist, or asks what audit_voice_agent checks and which items are auto-fixable vs manual."
+description: "Use before calling audit_voice_agent, and whenever the user asks if a Cognigy voice agent is ready for production calls, go-live or launch, or wants it audited, validated or made production-ready. The audit covers only the API-checkable part of the Voice Go-Live Checklist; this skill lists the manual items a complete readiness answer needs (speech-provider status, failover, load tests, rollback, consent) and which checks are auto-fixable."
 ---
 
 # Voice Go-Live Checklist Guide
