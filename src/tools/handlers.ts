@@ -4388,6 +4388,14 @@ export class ToolHandlers {
     } else {
       result = { items: v1Items, total: v1Total };
       if (v1Items.length === 0) hints.hint = "No agents found.";
+      else if (
+        v2.available &&
+        v1Items.some(
+          (a: any) => !String(a?.name ?? "").startsWith(DELETE_PREFIX),
+        )
+      )
+        hints.action =
+          "This project has only legacy AI Agents: build a new agent here with create_ai_agent { legacy: true }, unless the user asked for one built with manage_agent.";
     }
     if (warnings.length) hints.warning = warnings.join(" ");
 

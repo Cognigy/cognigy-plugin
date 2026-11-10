@@ -13,7 +13,7 @@ Call every agent an "AI Agent". Say "legacy" only when you must tell the two kin
 
 ## Workflow
 
-0. **Pick the kind.** `check_capabilities`. Where `aiAgents` is available, build with `manage_agent` (Path A in the skill) unless the caller asked for a legacy agent or the project has only legacy agents. Otherwise use `create_ai_agent` (Path B).
+0. **Pick the kind.** `check_capabilities`, then `list_resources { resourceType: 'agent', projectId }`. Where `aiAgents` is available, build with `manage_agent` (Path A in the skill), except when the caller asked for a legacy agent or the project's agents all have `legacy: true`: then use `create_ai_agent { legacy: true }` (Path B). Where `aiAgents` is unavailable, use `create_ai_agent` (Path B).
 1. **List projects.** `list_resources { resourceType: "project" }`. Decide the target project (ask the caller if ambiguous). For a brand-new project, create the agent first with `projectId` omitted, then continue the LLM checks against the returned `projectId`.
 2. **Ensure an LLM exists — MANDATORY before testing.** Do this before creating the agent when the target project already exists:
    - Check the target project: `list_resources { resourceType: "llm_model", projectId }`. A usable LLM has a non-empty `connectionId` or is NiCE-provided (`isInPlatformLlm: true`), which needs no connection and is never transferred.

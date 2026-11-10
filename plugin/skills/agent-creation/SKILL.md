@@ -10,7 +10,7 @@ description: "Use when the user wants to build, create, or set up a new Cognigy 
 Cognigy has two kinds of agent. With the user, call both "AI Agents"; say "legacy" only when you must tell them apart, and never say "V1", "V2" or "Agents V2".
 
 1. `check_capabilities` once per conversation, before creating or changing any agent.
-2. `aiAgents: "available"` → build with `manage_agent` (**Path A**), unless the user asked for a legacy agent or the project has only legacy agents. Then use **Path B** with `create_ai_agent { legacy: true }`.
+2. `aiAgents: "available"` → first list the project's agents (`list_resources { resourceType: 'agent', projectId }`). If it has agents and every one has `legacy: true`, the project is legacy-only: use **Path B** with `create_ai_agent { legacy: true }`. Do the same when the user asked for a legacy agent. Otherwise build with `manage_agent` (**Path A**); a new project has no agents, so it gets Path A.
 3. `aiAgents: "unavailable"` → **Path B**, `create_ai_agent` without `legacy`. Say nothing about kinds.
 4. `aiAgents: "unknown"` → try Path A; if `manage_agent` fails with 403 or 404, use Path B.
 

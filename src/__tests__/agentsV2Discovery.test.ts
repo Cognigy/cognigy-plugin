@@ -137,7 +137,8 @@ describe("list_resources { resourceType: 'agent' }", () => {
 
     expect(r.items[0]).toMatchObject({ legacy: true, name: "Old FAQ Bot" });
     expect(r).not.toHaveProperty("legacyAgents");
-    expect(r).not.toHaveProperty("_hints");
+    // A legacy-only project builds new agents as legacy too.
+    expect(r._hints.action).toContain("create_ai_agent { legacy: true }");
   });
 
   it("stays in V2 mode when the page skips past every V2 agent", async () => {

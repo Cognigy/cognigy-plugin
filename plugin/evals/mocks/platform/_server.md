@@ -45,7 +45,9 @@ The tenant contains exactly this, and stays consistent with earlier calls in the
 - No knowledge stores, no Webchat endpoints, no snapshots, no packages.
 - check_capabilities returns { aiAgents: "available", customSystemPrompt: "available" }.
   The two agents above are legacy AI Agents: list_resources { resourceType: "agent" }
-  returns them with legacy: true and use { aiAgentId }. Agents created with manage_agent
+  returns them with legacy: true and use { aiAgentId }, plus _hints.action "This
+  project has only legacy AI Agents: build a new agent here with create_ai_agent
+  { legacy: true }, unless the user asked for one built with manage_agent." Agents created with manage_agent
   get ids like "60d5ec49f1a2c8b1a4e0f101" and are returned with use { agentId }.
 
 New resources get ids like "agent-new-1", "ep-new-1", "ks-new-1". talk_to_agent
