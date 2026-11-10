@@ -1,3 +1,9 @@
+## [1.22.7](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.6...v1.22.7) (2026-11-10)
+
+### Bug Fixes
+
+* **llm:** never pick a voice-to-voice model as an agent's default LLM ([#69](https://github.com/Cognigy/cognigy-plugin/issues/69)) ([81efb0f](https://github.com/Cognigy/cognigy-plugin/commit/81efb0f189d70c8e38d88aeb9df9d71d369bf638))
+
 ## [1.22.6](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.5...v1.22.6) (2026-11-06)
 
 ### Bug Fixes
