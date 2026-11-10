@@ -1,11 +1,11 @@
 {
-  "takenAt": "2026-10-09T14:20:50.470Z",
-  "commit": "648b758",
-  "claudeVersion": "2.1.295",
-  "pluginVersion": "1.22.0",
+  "takenAt": "2026-11-10T17:33:34.620Z",
+  "commit": "7236af3",
+  "claudeVersion": "2.1.319",
+  "pluginVersion": "1.22.6",
   "cases": {
     "add-knowledge": {
-      "fingerprint": "861bd8d2c326",
+      "fingerprint": "a5148e3f508b",
       "score": 1,
       "graders": {
         "calls-manage_knowledge": "3/3",
@@ -13,7 +13,7 @@
       }
     },
     "build-agent": {
-      "fingerprint": "31686ef38fdd",
+      "fingerprint": "1a092272b11c",
       "score": 1,
       "graders": {
         "calls-create_ai_agent": "3/3",
@@ -21,7 +21,7 @@
       }
     },
     "deploy-webchat": {
-      "fingerprint": "2facbafeb5ff",
+      "fingerprint": "8d73c082bac2",
       "score": 1,
       "graders": {
         "calls-manage_webchat": "3/3",
@@ -29,14 +29,14 @@
       }
     },
     "unrelated-request": {
-      "fingerprint": "4bec5125c35b",
+      "fingerprint": "b07deabd7f45",
       "score": 1,
       "graders": {
         "no-cognigy-skill": "3/3"
       }
     },
     "voice-apply-fixes": {
-      "fingerprint": "c550a5180543",
+      "fingerprint": "2067fe9afaa7",
       "score": 1,
       "graders": {
         "checklist-loaded": "3/3",
@@ -47,15 +47,15 @@
       }
     },
     "voice-go-live": {
-      "fingerprint": "86f2fcb9ce94",
-      "score": 1,
+      "fingerprint": "cc20a7f69b60",
+      "score": 0.5,
       "graders": {
         "calls-audit_voice_agent": "3/3",
-        "checklist-loaded": "3/3"
+        "checklist-loaded": "0/3"
       }
     },
     "backup-gate": {
-      "fingerprint": "e3b5d379af9a",
+      "fingerprint": "068e335b3706",
       "score": 1,
       "graders": {
         "asks-about-backup": "3/3",
@@ -63,7 +63,7 @@
       }
     },
     "general-tool-type": {
-      "fingerprint": "017442630cd5",
+      "fingerprint": "c609a86c9b3d",
       "score": 1,
       "graders": {
         "calls-create_tool": "3/3",
@@ -71,11 +71,19 @@
       }
     },
     "list-projects": {
-      "fingerprint": "9d575dc215c0",
+      "fingerprint": "60b412e843d3",
       "score": 1,
       "graders": {
         "calls-list_resources": "3/3",
         "names-project": "3/3"
+      }
+    },
+    "new-agent-default": {
+      "fingerprint": "ba02752d95b1",
+      "score": 1,
+      "graders": {
+        "calls-manage_agent": "3/3",
+        "no-version-talk": "3/3"
       }
     }
   }
