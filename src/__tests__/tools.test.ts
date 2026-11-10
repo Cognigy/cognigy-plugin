@@ -4464,6 +4464,44 @@ describe("ToolHandlers v2", () => {
       },
     });
 
+    it("lists AI Agents and their skills and tools as exportable", async () => {
+      api.get.mockResolvedValueOnce({
+        [ID.project]: {
+          resources: [
+            {
+              _id: "a1",
+              type: "aiAgentV2",
+              name: "Weather Bot",
+              referenceId: "r1",
+            },
+            {
+              _id: "t1",
+              type: "aiAgentV2Tool",
+              name: "get_weather",
+              referenceId: "r2",
+            },
+            {
+              _id: "s1",
+              type: "aiAgentV2Skill",
+              name: "packing",
+              referenceId: "r3",
+            },
+          ],
+        },
+      });
+
+      const result = await h.handleToolCall("manage_packages", {
+        operation: "list_exportable",
+        projectId: ID.project,
+      });
+
+      expect(result.resources.map((r: any) => r.type).sort()).toEqual([
+        "aiAgentV2",
+        "aiAgentV2Skill",
+        "aiAgentV2Tool",
+      ]);
+    });
+
     it("lists exportable resources and includes LLM models", async () => {
       api.get.mockResolvedValueOnce(makeGraph());
 
