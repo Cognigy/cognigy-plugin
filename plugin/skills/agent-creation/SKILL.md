@@ -1,6 +1,6 @@
 ---
 name: agent-creation
-description: "Use when the user wants to build, create, or set up a new Cognigy AI Agent from scratch, or change an agent's settings, skills, tools, knowledge or system prompt — covers checking what the environment supports, listing projects, ensuring an LLM exists, creating the agent, testing it, and refining it."
+description: "Use when the user wants to build, create, or set up a new Cognigy AI Agent from scratch, or change an agent's settings, skills, tools, knowledge or system prompt, or make it answer faster — covers checking what the environment supports, listing projects, ensuring an LLM exists, creating the agent, testing it, and refining it."
 ---
 
 # Building a Cognigy AI Agent
@@ -83,10 +83,21 @@ Components live in the project; an agent points at skills and tools by `referenc
   - Common ones: `http-request` (call an API), `knowledge-search`, `send-email`, `handoff-to-flow`, `execute-tool-flow` (see "A Flow as a tool"); for voice agents `voice-hangup`, `voice-transfer`, `voice-config-defaults`.
 - **Skills:** `catalog { component: "skill" }` for the builtin ones (`config: { builtinSlug }`), or your own:
   `create { component: "skill", projectId, agentId, config: { name, description, instructions, bundledTools?: [tool referenceIds], resources?: [{ path, content, encoding: "utf8" }] } }`.
-  A skill packages instructions (and the tools they need) for one capability; prefer a skill over growing the agent's instructions.
+  `update { component: "skill", componentId, config: { bundledTools } }` replaces the skill's whole tool list. A bundled tool does not need to be attached to the agent: the agent gets it when it loads the skill.
+  - **Skill or instructions?** A journey is a series of tool calls the agent makes, in order, to finish one user goal. With one journey, write it into the agent's `instructions`. With two or more, make one skill per journey: its `description` says when to use it, and its tools go in `bundledTools`. Skills hold steps, not facts; rules the agent needs on every turn stay in `instructions`. Write a skill for what the agent got wrong without one, so test with `talk_to_agent` first.
 - **MCP servers:** `create { component: "mcp_server", config: { name, url, authType: "none" | "oAuth2" | "customHeader", headers?, authConnectionReferenceId? } }`. `headers` are plain, non-secret headers. `oAuth2` and `customHeader` need `authConnectionReferenceId`, a Connection that holds the credentials (for customHeader also the header name); the user creates it in Cognigy, never invent one. Then `discover_tools` → `sync_tools { import: ["<name>"] }` → `attach` each imported tool by its referenceId. To remove a server, first `sync_tools { remove: [imported tool referenceIds] }`; the platform refuses to delete a server whose tools still exist.
 - **Brand personas:** `create { component: "persona", config: { name, description, speakingStyle: { formality, completeness }, voiceConfig: { ttsVendor, ttsVoice, ttsModel, ttsLabel } } }`, then manage_agent `update { personaReferenceId }`. The API requires real `voiceConfig` values (empty strings are rejected): copy them from an existing persona (`list` / `get` with component `persona`) or ask the user. Never invent them.
 - `delete` is permanent and detaches the component from every agent (the result's `detachedFrom` lists the agents a deleted skill was taken off); tell the user before you delete one that agents use.
+
+### Faster answers
+
+Loading a skill adds an LLM call to that turn, and a loaded skill stays for the rest of the conversation. To make an agent faster:
+
+- Keep a single journey in `instructions` rather than a skill.
+- Put journeys that always run together in one skill, so a turn does not load several.
+- Attach to the agent only the tools every journey needs; put each journey's other tools in its skill's `bundledTools`.
+- Keep `instructions`, skill text and tool descriptions short, and detach tools and skills the agent no longer uses.
+- A lower `llmConfig.reasoningEffort` answers faster.
 
 ### Knowledge
 
