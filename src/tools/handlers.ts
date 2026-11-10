@@ -808,6 +808,12 @@ async function readNodeConfigs(
  */
 const EMBEDDING_MODEL_PATTERN = /embed/i;
 
+// Voice-to-voice models (gpt-live-1) only serve as an Agents V2 agent's voice
+// model; bound to a text node they return no replies and no error.
+function isVoiceToVoiceModel(llm: any): boolean {
+  return llm?.modelGroup === "voiceToVoice" || llm?.modelType === "gpt-live-1";
+}
+
 function isEmbeddingModel(llm: any): boolean {
   // For openAICompatible and awsBedrock providers `modelType` can be the
   // generic "custom-model", with the real model string under the provider
@@ -857,8 +863,9 @@ async function fetchLlmsForUseCase(
  * largelanguagemodels list response. An LLM without its connection cannot
  * answer — the node then fails silently (default errorHandling "continue"
  * with an empty message) — so prefer connected models over the bare
- * isDefault flag. Embedding models are never candidates: they cannot generate
- * text, so a project that only has embedding models gets no pick (undefined)
+ * isDefault flag. Embedding and voice-to-voice models are never candidates:
+ * they cannot answer a text node, so a project that only has those gets no
+ * pick (undefined)
  * and the caller reports llmStatus "unknown" with the LLM setup guidance
  * instead of wiring the node to a model that can never answer.
  *
@@ -882,7 +889,9 @@ function pickDefaultLlm(llmList: any):
   | undefined {
   const llmItems = llmList?.items ?? llmList;
   if (!Array.isArray(llmItems) || llmItems.length === 0) return undefined;
-  const pool = llmItems.filter((l: any) => !isEmbeddingModel(l));
+  const pool = llmItems.filter(
+    (l: any) => !isEmbeddingModel(l) && !isVoiceToVoiceModel(l),
+  );
   if (pool.length === 0) return undefined;
   const connected = pool.filter((l: any) => l.connectionId);
   const candidates = connected.length > 0 ? connected : pool;
@@ -2525,8 +2534,8 @@ export class ToolHandlers {
         return withHints(result, {
           hint: usageHint,
           warning:
-            "Could not verify LLM resource in project. The LLM Prompt node will fall back to the project's default Generative AI model — if none is configured, it cannot generate responses.",
-          action: `Inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Reuse an existing LLM (with its connection) via manage_packages export/import, verify with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and only use setup_llm if no reusable LLM exists.`,
+            "Could not verify LLM resource in project. The LLM Prompt node will fall back to the project's default Generative AI model — if none is configured, or the default is an embedding or voice-to-voice (gpt-live-1) model, it cannot generate responses.",
+          action: `Inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Reuse an existing text LLM (with its connection) via manage_packages export/import, verify with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and only use setup_llm if no reusable LLM exists. Do not call talk_to_agent until a text LLM is confirmed.`,
         });
       }
 
