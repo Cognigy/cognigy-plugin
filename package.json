@@ -1,6 +1,6 @@
 {
   "name": "@cognigy/plugin-engine",
-  "version": "1.22.5",
+  "version": "1.22.6",
   "description": "MCP server engine for the NiCE Cognigy Plugin (Claude Code, Codex, and more)",
   "main": "dist/index.js",
   "type": "module",
@@ -71,6 +71,7 @@
     "@semantic-release/release-notes-generator": "^14.1.1",
     "@types/jest": "30.0.0",
     "@types/node": "20.19.43",
+    "conventional-changelog-conventionalcommits": "^9.3.1",
     "eslint": "10.14.0",
     "globals": "17.14.0",
     "husky": "^9.1.7",
