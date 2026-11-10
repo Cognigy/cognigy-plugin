@@ -323,6 +323,30 @@ describe("manage_agent_components", () => {
     expect(byKey.auth.connectionTypes).toEqual(["http_customHeader"]);
   });
 
+  it("makes a parameter dynamic when given a plain value, unless its mode is locked", () => {
+    const params = builtinToolParameters(
+      {
+        parameters: [
+          { key: "url", name: "URL", mode: "aiFilled", type: "string" },
+          {
+            key: "to",
+            name: "To",
+            mode: "dynamic",
+            modeLocked: true,
+            type: "string",
+            value: "",
+          },
+        ],
+      },
+      { url: "https://x.test/", to: "a@b.test" },
+    );
+    expect(params[0]).toMatchObject({
+      mode: "dynamic",
+      value: "https://x.test/",
+    });
+    expect(params[1]).toMatchObject({ mode: "dynamic", value: "a@b.test" });
+  });
+
   it("rejects parameter keys the descriptor does not have", () => {
     expect(() => builtinToolParameters(descriptor, { verb: "GET" })).toThrow(
       /Unknown parameter\(s\) verb/,

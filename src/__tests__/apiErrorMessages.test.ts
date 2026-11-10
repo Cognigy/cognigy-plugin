@@ -140,4 +140,21 @@ describe("formatApiError", () => {
     expect((err as any).status).toBe(404);
     expect((err as any).url).toBe("/v2.0/aiagents/abc");
   });
+
+  it("names service-agents field errors", () => {
+    const err = formatApiError({
+      config: { url: "https://api-dev.cognigy.ai/v1/agentpersonas" },
+      response: {
+        status: 400,
+        data: {
+          status: 400,
+          detail: "request body validation failed",
+          errors: [{ field: "voiceConfig", message: "is required" }],
+        },
+      },
+    } as any);
+    expect(err.message).toBe(
+      "request body validation failed (voiceConfig: is required)",
+    );
+  });
 });

@@ -77,7 +77,7 @@ Components live in the project; an agent points at skills and tools by `referenc
 
 - **Builtin tools:** `catalog { component: "tool", projectId }` lists what the platform ships and each tool's parameters. Then
   `create { component: "tool", projectId, agentId, config: { builtinSlug, name, description, parameters: { <key>: value | { mode, value } } } }`.
-  - `mode: "dynamic"` — you fix the value now (a URL, a method). `mode: "aiFilled"` — the LLM fills it per turn (a query, a payload).
+  - `mode: "dynamic"` — you fix the value now (a URL, a method). `mode: "aiFilled"` — the LLM fills it per turn (a query, a payload). A plain value (`url: "https://…"`) makes the parameter dynamic; pass `{ mode: "aiFilled" }` to leave it to the LLM.
   - `description` tells the LLM when to call the tool; write it for that.
   - Parameters of type `connection` hold credentials. Never invent them: the user picks the Connection in the agent editor.
   - Common ones: `http-request` (call an API), `knowledge-search`, `send-email`, `handoff-to-flow`; for voice agents `voice-hangup`, `voice-transfer`, `voice-config-defaults`.
@@ -85,7 +85,7 @@ Components live in the project; an agent points at skills and tools by `referenc
   `create { component: "skill", projectId, agentId, config: { name, description, instructions, bundledTools?: [tool referenceIds], resources?: [{ path, content, encoding: "utf8" }] } }`.
   A skill packages instructions (and the tools they need) for one capability; prefer a skill over growing the agent's instructions.
 - **MCP servers:** `create { component: "mcp_server", config: { name, url, authType: "none" | "oAuth2" | "customHeader", headers? } }` → `discover_tools` → `sync_tools { import: ["<name>"] }` → `attach` each imported tool by its referenceId.
-- **Brand personas:** `create { component: "persona", config: { name, description, speakingStyle: { formality, completeness }, voiceConfig: { ttsVendor, ttsVoice, ttsModel, ttsLabel } } }`, then manage_agent `update { personaReferenceId }`.
+- **Brand personas:** `create { component: "persona", config: { name, description, speakingStyle: { formality, completeness }, voiceConfig: { ttsVendor, ttsVoice, ttsModel, ttsLabel } } }`, then manage_agent `update { personaReferenceId }`. The API requires real `voiceConfig` values (empty strings are rejected): copy them from an existing persona (`list` / `get` with component `persona`) or ask the user. Never invent them.
 - `delete` is permanent and detaches the component from every agent; tell the user before you delete one that agents use.
 
 ### Knowledge

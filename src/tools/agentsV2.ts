@@ -170,7 +170,10 @@ export function builtinToolParameters(
         : raw === undefined
           ? {}
           : { value: raw };
-    const mode = o.mode ?? p.mode;
+    // A plain value is a design-time value, so it makes the parameter dynamic
+    // (unless its mode is locked); aiFilled would drop it.
+    const mode =
+      o.mode ?? (raw !== undefined && !p.modeLocked ? "dynamic" : p.mode);
     return {
       key: p.key,
       name: p.name,

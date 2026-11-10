@@ -57,8 +57,15 @@ const RAW_BODY_READ_LIMIT = BODY_SNIPPET_LIMIT * 20;
 export function formatApiError(error: AxiosError): Error {
   const data = error.response?.data as any;
   if (data) {
+    // service-agents lists field errors in `errors` ([{ field, message }]).
+    const fieldErrors = Array.isArray(data.errors)
+      ? data.errors
+          .map((e: any) => [e?.field, e?.message].filter(Boolean).join(": "))
+          .filter(Boolean)
+      : [];
     const message =
-      data.detail || data.title || describeUnexpectedBody(data, error);
+      (data.detail || data.title || describeUnexpectedBody(data, error)) +
+      (fieldErrors.length ? ` (${fieldErrors.join("; ")})` : "");
     const enhancedError = new Error(message);
     (enhancedError as any).status = data.status || error.response?.status;
     (enhancedError as any).code = data.code;
