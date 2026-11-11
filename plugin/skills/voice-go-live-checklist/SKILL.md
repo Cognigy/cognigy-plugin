@@ -20,6 +20,8 @@ It has two rule sets. **AI Agents** (`list_resources` shows `use: { agentId }`) 
 
 Each fixable check carries a `proposedFix` in the dry-run report, for both kinds of agent. `summary` counts pass/fail/warn/na and how many are `fixable`.
 
+**Dry-run first, always**, even when the user already asked for the fixes. Nothing changes unless you pass `apply: true`, and only the dry-run report shows the user what fails before anything changes.
+
 ## AI Agents
 
 ```
@@ -27,7 +29,7 @@ Each fixable check carries a `proposedFix` in the dry-run report, for both kinds
    audit_voice_agent { agentId, projectId }
    audit_voice_agent { agentId, projectId, endpointId }   // a specific Voice Gateway endpoint
 
-2. Apply all safe fixes (after the dry-run, with the user's OK):
+2. Apply all safe fixes (only after the dry-run, also when the user already asked for them):
    audit_voice_agent { agentId, projectId, apply: true }
 ```
 
@@ -67,7 +69,6 @@ Barge-in differs from the legacy rule on purpose: AI Agents can require several 
 
 - Provide `aiAgentId` (the flow is resolved for you) **or** `flowId` directly.
 - `endpointId` enables the Output Transformer check. `projectId` enables the fallback-LLM check.
-- **Dry-run first, always**, even when the user already asked for the fixes. Nothing changes unless you pass `apply: true`, and only the dry-run report shows the user what fails before anything changes.
 
 ### How it resolves things
 
