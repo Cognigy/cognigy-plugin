@@ -1,3 +1,9 @@
+## [1.22.8](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.7...v1.22.8) (2026-11-11)
+
+### Bug Fixes
+
+* **skills:** load the voice go-live checklist before audit_voice_agent ([#74](https://github.com/Cognigy/cognigy-plugin/issues/74)) ([243c04a](https://github.com/Cognigy/cognigy-plugin/commit/243c04a4dc95ceb8929526b2d8f75424efef8d62))
+
 ## [1.22.7](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.6...v1.22.7) (2026-11-10)
 
 ### Bug Fixes
