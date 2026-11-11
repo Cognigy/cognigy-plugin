@@ -5186,7 +5186,7 @@ export class ToolHandlers {
    * An AI Agent is renamed DELETE_<name> like a legacy one, and the endpoints
    * that target it are taken offline unless cascade is false.
    */
-  /** Target fields for a new endpoint: an AI Agent when agentId is given, else the flow. */
+  /** Endpoint target fields: an AI Agent when agentId is given, else the flow. */
   private async newEndpointTarget(
     projectId: string,
     flowId?: string,
@@ -7307,13 +7307,13 @@ export class ToolHandlers {
 
       const patchPayload: any = { settings: mergedSettings };
       if (data.name) patchPayload.name = data.name;
-      if (data.flowId) patchPayload.flowId = data.flowId;
-      if (data.agentId)
+      // Set all three target fields, or an endpoint on an AI Agent ignores a new flowId.
+      if (data.flowId || data.agentId)
         Object.assign(
           patchPayload,
           await this.newEndpointTarget(
             data.projectId ?? endpointProjectId(fullEndpoint),
-            undefined,
+            data.flowId,
             data.agentId,
           ),
         );
@@ -7828,13 +7828,13 @@ export class ToolHandlers {
 
       const patchPayload: any = {};
       if (data.name) patchPayload.name = data.name;
-      if (data.flowId) patchPayload.flowId = data.flowId;
-      if (data.agentId)
+      // Set all three target fields, or an endpoint on an AI Agent ignores a new flowId.
+      if (data.flowId || data.agentId)
         Object.assign(
           patchPayload,
           await this.newEndpointTarget(
             data.projectId ?? endpointProjectId(endpoint),
-            undefined,
+            data.flowId,
             data.agentId,
           ),
         );

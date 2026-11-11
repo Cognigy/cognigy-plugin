@@ -655,6 +655,24 @@ describe("manage_agent_components", () => {
     );
   });
 
+  it.each(["mcp_server", "persona"])(
+    "creates no %s when agentId asks to attach it",
+    async (component) => {
+      const api = routedApi({});
+      await expect(
+        handlers(api).handleToolCall("manage_agent_components", {
+          operation: "create",
+          component,
+          projectId: ID.project,
+          config: { name: "X" },
+          agentId: ID.agent,
+        }),
+      ).rejects.toThrow(/attaches skills and tools only/);
+      expect(api.post).not.toHaveBeenCalled();
+      expect(api.patch).not.toHaveBeenCalled();
+    },
+  );
+
   it("passes extra execute-tool-flow parameters as the Flow's arguments", () => {
     const params = builtinToolParameters(
       {
@@ -986,6 +1004,38 @@ describe("delete_resource and endpoints for AI Agents", () => {
       flowId: "",
     });
   });
+
+  it.each([
+    ["manage_webchat", "/v2.0/endpoints/60d5ec49f1a2c8b1a4e0f505"],
+    ["manage_voice_gateway", "/new/v2.0/endpoints/60d5ec49f1a2c8b1a4e0f505"],
+  ])(
+    "%s re-points an endpoint from an AI Agent to a flow",
+    async (tool, path) => {
+      const api = routedApi({
+        [`GET ${path}`]: () => ({
+          _id: "60d5ec49f1a2c8b1a4e0f505",
+          projectReference: ID.project,
+          targetType: "agent",
+          agentId: "agent-ref",
+          flowId: "",
+          settings: {},
+        }),
+        [`PATCH ${path}`]: () => ({}),
+      });
+      await handlers(api)
+        .handleToolCall(tool, {
+          endpointId: "60d5ec49f1a2c8b1a4e0f505",
+          flowId: "flow-ref",
+        })
+        .catch(() => null);
+      const patch = api.patch.mock.calls.find((c: any[]) => c[0] === path);
+      expect(patch[1]).toMatchObject({
+        flowId: "flow-ref",
+        targetType: "flow",
+        agentId: "",
+      });
+    },
+  );
 
   it("talk_to_agent rejects agentId without projectId", async () => {
     await expect(
