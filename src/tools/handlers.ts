@@ -72,6 +72,8 @@ import {
   VOICE_SETTINGS_SLUG,
   isVoiceToVoiceModel,
   pickVoiceModel,
+  preferredNiceSpeech,
+  projectLanguage,
   v2vOfferLine,
   findVoiceSettings,
   listSpeechProviders,
@@ -3472,6 +3474,58 @@ export class ToolHandlers {
     }
   }
 
+  /**
+   * Give a new voice agent the preferred NiCE-provided speech in the project's
+   * language: TTS from the first preferred vendor that has a voice for it, and
+   * STT. Returns what was set, or undefined when the org has none.
+   */
+  private async setPreferredSpeech(
+    projectId: string,
+    agentId: string,
+  ): Promise<Record<string, string> | undefined> {
+    const providers = (await listSpeechProviders(this.apiClient, projectId))
+      .items;
+    const language = await projectLanguage(this.apiClient, projectId);
+    if (!language || !providers.some((p) => p.systemProvided)) return undefined;
+    const config: Record<string, string> = {};
+    const speech: Record<string, string> = {};
+    for (const row of preferredNiceSpeech(providers, "tts")) {
+      const voices = await listVoices(
+        this.apiClient,
+        projectId,
+        row.id,
+        language,
+      );
+      if (!voices?.length) continue;
+      // A voice named for the language, when the vendor names them so.
+      const voice = voices.find((v) => v.startsWith(language)) ?? voices[0];
+      Object.assign(config, {
+        ttsCredentialReferenceId: row.referenceId,
+        ttsLanguage: language,
+        ttsVoice: voice,
+      });
+      speech.tts = `${row.vendor}, voice ${voice}, ${language} (NiCE-provided)`;
+      break;
+    }
+    const stt = preferredNiceSpeech(providers, "stt")[0];
+    if (stt) {
+      Object.assign(config, {
+        sttCredentialReferenceId: stt.referenceId,
+        sttLanguage: language,
+      });
+      speech.stt = `${stt.vendor}, ${language} (NiCE-provided)`;
+    }
+    if (!Object.keys(config).length) return undefined;
+    const r: any = await this.voiceSettings({
+      operation: "update",
+      projectId,
+      agentId,
+      config,
+    });
+    if (r?.error) throw new Error(r.error);
+    return speech;
+  }
+
   static readonly V2V_OFF_ACTION =
     "GPT live (V2V) is not enabled on this environment; an admin has to turn on FEATURE_ENABLE_V2V. Tell the user in one line and offer a cascaded voice agent (voice-gateway-setup skill) or a Webchat demo instead. Never switch silently.";
 
@@ -3626,6 +3680,23 @@ export class ToolHandlers {
       `${this.agentsV2BaseUrl}/v1/agents/${agent.id}`,
       { projectId },
     );
+    // A voice agent on speech recognition and synthesis gets the preferred
+    // NiCE-provided speech, unless the caller chose a speech setup ("").
+    let speech: Record<string, string> | undefined;
+    let speechError: string | undefined;
+    if (
+      fields.agentType === "voice" &&
+      !keepSpeech &&
+      (!fields.voiceLargeLanguageModelReferenceId ||
+        voiceDropped.includes("voiceLargeLanguageModelReferenceId"))
+    ) {
+      speech = await this.setPreferredSpeech(projectId, agent.id).catch(
+        (e: any) => {
+          speechError = e?.message ?? String(e);
+          return undefined;
+        },
+      );
+    }
 
     let endpointUrl: string | null = null;
     let endpointError: string | undefined;
@@ -3658,6 +3729,9 @@ export class ToolHandlers {
       endpointError
         ? `The agent was created, but its REST endpoint was not (${endpointError}); talk_to_agent creates one on first use.`
         : "",
+      speechError
+        ? `The agent was created, but its speech was not set (${speechError}); calls use the project's default speech. Set it with manage_agent_components { component: "voice_settings" }.`
+        : "",
     ].filter(Boolean);
     if (warnings.length) hints.warning = warnings.join(" ");
     if (voiceModel && !voiceDropped.length)
@@ -3680,6 +3754,7 @@ export class ToolHandlers {
           : {}),
         endpointUrl,
         use: { agentId: agent.id },
+        ...(speech ? { speech } : {}),
       },
       hints,
     );

@@ -21,8 +21,8 @@ An AI Agent's speech and call behaviour live on the agent itself, in its `voice_
    - The user named a speech setup (e.g. "use Deepgram"): pass `voiceLargeLanguageModelReferenceId: ""` on create, and don't offer voice-to-voice.
    - Otherwise the agent uses speech recognition and synthesis (steps 4-6). The create result's `_hints.hint` then carries one line offering voice-to-voice: make it the last paragraph of the build summary, once, word for word, with no label or bullet. That line is the only mention: don't explain why the agent isn't voice-to-voice ("the project has no voice-to-voice model, so…"), and don't use the line when you already asked about a copy.
 3. **The agent.** `manage_agent { operation: "create", agentType: "voice", ... }` (agent-creation skill), or an existing one from `list_resources { resourceType: "agent", projectId }`. With a voice model, read the v2v-demo skill for the voice and the voice prompt.
-4. **Pick the speech.** `list_resources { resourceType: "speech_provider", projectId }`. Prefer, in this order:
-   - a `niceProvided: true` row, when the user has no preference;
+4. **Pick the speech.** A new voice agent without a voice model already has it: `manage_agent create` sets NiCE-provided speech in the project's language when the organisation has it, and returns it as `speech`. With several NiCE-provided vendors, TTS is Deepgram and STT is NiCE; when Deepgram has no voice for the language, the next one with a voice. Mention the speech in the build summary, and only change it when the user asks. To change it: `list_resources { resourceType: "speech_provider", projectId }`, then prefer, in this order:
+   - a `niceProvided: true` row, Deepgram for TTS and NiCE for STT, when the user has no preference;
    - the project's own credential (`niceProvided: false`, `status: "ok"`);
    - otherwise ask the user. Never invent a credential, vendor or voice id.
    A row serves TTS only with `tts: true` and STT only with `stt: true` (the `nice` vendor is STT only).

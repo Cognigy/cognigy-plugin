@@ -2063,3 +2063,179 @@ describe("voice agents run voice-to-voice when they can", () => {
     expect(r.v2vProviders).toEqual(["openAI"]);
   });
 });
+
+describe("a new cascaded voice agent gets the preferred NiCE-provided speech", () => {
+  const TOOL = "60d5ec49f1a2c8b1a4e0f404";
+  const row = (
+    id: string,
+    vendor: string,
+    tts: boolean,
+    stt: boolean,
+    extra: any = {},
+  ) => ({
+    id,
+    referenceId: `${id}-ref`,
+    name: "Included Speech Provider",
+    vendor,
+    systemProvided: true,
+    useForTts: tts,
+    useForStt: stt,
+    status: { state: "ok" },
+    ...extra,
+  });
+  const azure = row("ms", "microsoft", true, true, { isDefaultTts: true });
+  const deepgram = row("dg", "deepgram", true, true);
+  const niceStt = row("nc", "nice", false, true, { isDefaultStt: true });
+  const descriptor = {
+    defaultParameters: [
+      "ttsVendor",
+      "ttsVoice",
+      "ttsLanguage",
+      "ttsLabel",
+      "ttsCredentialReferenceId",
+      "sttVendor",
+      "sttLanguage",
+      "sttLabel",
+      "sttCredentialReferenceId",
+    ].map((key) => ({
+      key,
+      name: key,
+      mode: "dynamic",
+      type: "string",
+      value: "",
+    })),
+  };
+
+  function speechApi(
+    providers: any[],
+    voices: Record<string, string[]>,
+    extra: Record<string, Route> = {},
+  ) {
+    let stored: any = null;
+    const routes: Record<string, Route> = {
+      "GET /v2.0/locales": () => ({
+        items: [
+          {
+            referenceId: "loc-1",
+            projectReference: ID.project,
+            primary: true,
+            nluLanguage: "de-DE",
+          },
+        ],
+      }),
+      "GET /v2.0/largelanguagemodels": () => ({ items: [] }),
+      [`POST ${V1}/v1/agents`]: (body) => ({ ...agentRecord, ...body }),
+      [`GET ${V1}/v1/agents/${ID.agent}`]: () => ({
+        ...agentRecord,
+        toolReferenceIds: stored ? ["voice-ref"] : [],
+      }),
+      [`PATCH ${V1}/v1/agents/${ID.agent}`]: (body) => ({
+        ...agentRecord,
+        ...body,
+      }),
+      [`GET ${V1}/v1/tools`]: () => ({ items: stored ? [stored] : [] }),
+      [`GET ${V1}/v1/builtin-tools/voice-config-defaults`]: () => descriptor,
+      [`POST ${V1}/v1/tools`]: (body) =>
+        (stored = {
+          id: TOOL,
+          referenceId: "voice-ref",
+          type: "voice-config-defaults",
+          ...body,
+        }),
+      "GET /v2.0/voice/speechCredentials": () => ({ data: providers }),
+      ...extra,
+    };
+    for (const p of providers)
+      routes[`GET /v2.0/voice/speechCredentials/${p.id}/voices`] = (
+        _b,
+        cfg,
+      ) => ({
+        voices: (voices[p.id] ?? [])
+          .filter(() => cfg.params.language === "de-DE")
+          .map((id) => ({ id })),
+      });
+    return routedApi(routes);
+  }
+  const create = (api: any, extra: Record<string, any> = {}) =>
+    handlers(api).handleToolCall("manage_agent", {
+      operation: "create",
+      projectId: ID.project,
+      name: "Praxis",
+      largeLanguageModelReferenceId: LLM,
+      createEndpoint: false,
+      agentType: "voice",
+      ...extra,
+    }) as Promise<any>;
+  const savedSettings = (api: any) => {
+    const call = api.post.mock.calls.find(
+      (c: any[]) => c[0] === `${V1}/v1/tools`,
+    );
+    return call
+      ? Object.fromEntries(call[1].parameters.map((p: any) => [p.key, p.value]))
+      : null;
+  };
+
+  it("prefers Deepgram for TTS and NiCE for STT, in the project's language", async () => {
+    const api = speechApi([azure, deepgram, niceStt], {
+      ms: ["de-DE-KatjaNeural"],
+      dg: ["aura-2-aurelia-de", "aura-2-julius-de"],
+    });
+    const r = await create(api);
+    expect(savedSettings(api)).toMatchObject({
+      ttsVendor: "deepgram",
+      ttsCredentialReferenceId: "dg-ref",
+      ttsVoice: "aura-2-aurelia-de",
+      ttsLanguage: "de-DE",
+      sttVendor: "nice",
+      sttCredentialReferenceId: "nc-ref",
+      sttLanguage: "de-DE",
+    });
+    expect(r.speech.tts).toContain("deepgram");
+  });
+
+  it("falls back to the next NiCE TTS when Deepgram has no voice for the language", async () => {
+    const api = speechApi([azure, deepgram, niceStt], {
+      ms: ["de-DE-KatjaNeural"],
+      dg: [],
+    });
+    await create(api);
+    expect(savedSettings(api)).toMatchObject({
+      ttsVendor: "microsoft",
+      ttsVoice: "de-DE-KatjaNeural",
+    });
+  });
+
+  it("sets nothing without NiCE speech, with GPT live, or when the caller chose a speech setup", async () => {
+    const none = speechApi([], {});
+    expect((await create(none)).speech).toBeUndefined();
+    expect(savedSettings(none)).toBeNull();
+
+    const chosen = speechApi([deepgram], { dg: ["aura-2-aurelia-de"] });
+    await create(chosen, { voiceLargeLanguageModelReferenceId: "" });
+    expect(savedSettings(chosen)).toBeNull();
+
+    const live = speechApi(
+      [deepgram],
+      { dg: ["aura-2-aurelia-de"] },
+      {
+        "GET /v2.0/largelanguagemodels": () => ({
+          items: [
+            {
+              referenceId: "live",
+              name: "GPT Live",
+              provider: "openAI",
+              modelGroup: "voiceToVoice",
+              connectionId: "c",
+            },
+          ],
+        }),
+        [`GET ${V1}/v1/agents/${ID.agent}`]: () => ({
+          ...agentRecord,
+          voiceLargeLanguageModelReferenceId: "live",
+        }),
+      },
+    );
+    await create(live);
+    expect(savedSettings(live)).toBeNull();
+  });
+});

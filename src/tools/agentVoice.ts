@@ -43,6 +43,48 @@ export function v2vOfferLine(niceSpeech: boolean): string {
   return `${niceSpeech ? "It runs on NiCE-provided speech, so it works right away." : "It runs on the project's speech settings."} It can also run voice-to-voice, which responds faster and sounds more natural. If you have an ${keys} API key, I can set that up.`;
 }
 
+/**
+ * Which NiCE-provided speech a new voice agent gets when the organisation has
+ * several (voice PM, 11 Nov): Deepgram for TTS rather than Azure, NiCE for
+ * STT. Vendors not listed come after, in the platform's order.
+ */
+export const NICE_SPEECH_PREFERENCE: Record<"tts" | "stt", string[]> = {
+  tts: ["deepgram"],
+  stt: ["nice"],
+};
+
+/** The working NiCE-provided rows for TTS or STT, preferred vendor first. */
+export function preferredNiceSpeech(
+  providers: any[],
+  kind: "tts" | "stt",
+): any[] {
+  const order = (p: any) => {
+    const i = NICE_SPEECH_PREFERENCE[kind].indexOf(p.vendor);
+    return i === -1 ? NICE_SPEECH_PREFERENCE[kind].length : i;
+  };
+  return providers
+    .filter(
+      (p) =>
+        p.systemProvided === true &&
+        p[kind === "tts" ? "useForTts" : "useForStt"] &&
+        p.status?.state !== "error",
+    )
+    .sort((a, b) => order(a) - order(b));
+}
+
+/** The project's primary language as a BCP-47 tag (e.g. en-US), or undefined. */
+export async function projectLanguage(
+  api: CognigyApiClient,
+  projectId: string,
+): Promise<string | undefined> {
+  const res: any = await api.get("/v2.0/locales", {
+    params: { projectId, limit: 100 },
+  });
+  const items: any[] = res?.items ?? res ?? [];
+  const locale = items.find((l) => l.primary || l.isDefault) ?? items[0];
+  return locale?.nluLanguage || undefined;
+}
+
 /** One speech credential row as the plugin shows it. */
 export function summarizeSpeechProvider(r: any): any {
   return {
