@@ -1849,6 +1849,39 @@ describe("ToolHandlers v2", () => {
       expect(result._hints.warning).toMatch(/deactivated/i);
     });
 
+    it("pages endpoints with skip and deactivates a match on page 2", async () => {
+      // Like the real API: honours `skip`, ignores unknown params such as `offset`.
+      const endpoints = Array.from({ length: 150 }, (_, i) => ({
+        _id: `ep-${i}`,
+        flowId: i === 120 ? "flow-ref" : "other-flow",
+      }));
+      let listCalls = 0;
+      api.get.mockImplementation((url: string, opts?: any) => {
+        if (url === "/v2.0/endpoints") {
+          if (++listCalls > 5) throw new Error("runaway paging");
+          const { skip = 0, limit = 25 } = opts?.params ?? {};
+          return Promise.resolve({
+            items: endpoints.slice(skip, skip + limit),
+          });
+        }
+        return Promise.resolve({
+          _id: ID.flow,
+          name: "My Flow",
+          projectId: ID.project,
+          referenceId: "flow-ref",
+        });
+      });
+      api.patch.mockResolvedValue({});
+
+      const result = await h.handleToolCall("delete_resource", {
+        resourceType: "flow",
+        id: ID.flow,
+      });
+
+      expect(listCalls).toBe(2);
+      expect(result.cascade.deactivated).toEqual(["endpoint:ep-120"]);
+    });
+
     it("marks project for deletion by renaming instead of deleting", async () => {
       api.get.mockResolvedValueOnce({ _id: ID.project, name: "My Project" });
       api.patch.mockResolvedValue({});
