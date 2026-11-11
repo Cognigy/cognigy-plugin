@@ -52,7 +52,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
-    "axios": "1.21.0",
+    "axios": "1.21.1",
     "form-data": "4.0.6",
     "http-proxy-agent": "9.1.0",
     "https-proxy-agent": "9.1.0",
@@ -82,7 +82,7 @@
     "ts-jest": "29.4.15",
     "tsx": "4.23.15",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.72.1"
+    "typescript-eslint": "8.72.2"
   },
   "overrides": {
     "glob": "14.0.4",

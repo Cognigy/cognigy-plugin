@@ -5260,7 +5260,7 @@ export class ToolHandlers {
 
       while (hasMore) {
         const eps: any = await this.apiClient.get("/v2.0/endpoints", {
-          params: { projectId, limit, offset },
+          params: { projectId, limit, skip: offset },
         });
         const epItems = eps.items ?? eps;
         if (!Array.isArray(epItems) || epItems.length === 0) {
