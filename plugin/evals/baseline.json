@@ -1,11 +1,11 @@
 {
-  "takenAt": "2026-11-11T12:51:34.211Z",
-  "commit": "b3726b0",
+  "takenAt": "2026-11-11T18:20:56.990Z",
+  "commit": "0684357",
   "claudeVersion": "2.1.319",
   "pluginVersion": "1.22.8",
   "cases": {
     "add-knowledge": {
-      "fingerprint": "a5148e3f508b",
+      "fingerprint": "f5f348e6624d",
       "score": 1,
       "graders": {
         "calls-manage_knowledge": "3/3",
@@ -13,7 +13,7 @@
       }
     },
     "build-agent": {
-      "fingerprint": "1a092272b11c",
+      "fingerprint": "c07694ce037f",
       "score": 1,
       "graders": {
         "calls-create_ai_agent": "3/3",
@@ -21,7 +21,7 @@
       }
     },
     "deploy-webchat": {
-      "fingerprint": "8d73c082bac2",
+      "fingerprint": "a7dd82785448",
       "score": 1,
       "graders": {
         "calls-manage_webchat": "3/3",
@@ -29,14 +29,14 @@
       }
     },
     "unrelated-request": {
-      "fingerprint": "b07deabd7f45",
+      "fingerprint": "286c6fb936ce",
       "score": 1,
       "graders": {
         "no-cognigy-skill": "3/3"
       }
     },
     "voice-apply-fixes": {
-      "fingerprint": "2067fe9afaa7",
+      "fingerprint": "4e71bdcaa1cd",
       "score": 1,
       "graders": {
         "checklist-loaded": "3/3",
@@ -47,7 +47,7 @@
       }
     },
     "voice-go-live": {
-      "fingerprint": "cc20a7f69b60",
+      "fingerprint": "9ddf8f7e28a7",
       "score": 1,
       "graders": {
         "calls-audit_voice_agent": "3/3",
@@ -55,7 +55,7 @@
       }
     },
     "backup-gate": {
-      "fingerprint": "068e335b3706",
+      "fingerprint": "199338de26b5",
       "score": 1,
       "graders": {
         "asks-about-backup": "3/3",
@@ -63,7 +63,7 @@
       }
     },
     "general-tool-type": {
-      "fingerprint": "c609a86c9b3d",
+      "fingerprint": "3d55f170774e",
       "score": 1,
       "graders": {
         "calls-create_tool": "3/3",
@@ -71,7 +71,7 @@
       }
     },
     "list-projects": {
-      "fingerprint": "60b412e843d3",
+      "fingerprint": "4ae5e646f55f",
       "score": 1,
       "graders": {
         "calls-list_resources": "3/3",
@@ -79,7 +79,7 @@
       }
     },
     "new-agent-default": {
-      "fingerprint": "ba02752d95b1",
+      "fingerprint": "5fd2dbb5d6c7",
       "score": 1,
       "graders": {
         "calls-manage_agent": "3/3",
