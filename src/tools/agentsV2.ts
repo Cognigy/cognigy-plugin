@@ -290,10 +290,13 @@ export const COMPONENT_PATHS: Record<string, string> = {
   persona: "agentpersonas",
 };
 
-/** The brand persona the Cognigy UI creates when a project has none (read live on api-dev). */
+/**
+ * The brand persona the Cognigy UI creates when a project has none: Cognigy/ai-agents-v2
+ * buildDefaultPersonaInput (en-US strings). A weekly scheduled task checks it for drift.
+ */
 export const DEFAULT_PERSONA = {
   name: "NiCE",
-  description: "you represent the brand",
+  description: "You represent the given brand.",
   speakingStyle: {
     completeness: "balanced",
     formality: "professional",
