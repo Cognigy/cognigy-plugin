@@ -40,7 +40,6 @@ Without `endpointId` the audit finds the Voice Gateway endpoint that targets the
 | `agent.speech-resolves` | 3.3     | TTS and STT are complete in the voice settings, or the call falls back to working speech (endpoint, project default, NiCE-provided) | No: the credential is the user's choice      |
 | `agent.barge-in`        | 3.1     | Barge-in on speech, at least 2 words to interrupt, keypresses don't interrupt                                          | Yes: minWordsToInterrupt 2, bargeInOnDtmf off    |
 | `agent.continuous-asr`  | 3.1     | `continuousAsr` off                                                                                                     | Yes                                              |
-| `agent.silence`         | 3.1     | Re-prompt a silent caller after 5-7 s, at least 5 times                                                                 | Yes: 6 s, 5 retries                              |
 | `agent.hangup-tool`     | 3.5     | `voice-hangup` attached                                                                                                 | Yes                                              |
 | `agent.transfer-tool`   | 3.5     | `voice-transfer` attached                                                                                               | No (warn): it needs a transfer target            |
 | `agent.latency`         | 3.2     | `reasoningEffort` none, minimal or low; a thinking sound; at most 3 skills                                              | No (warn)                                        |
@@ -48,7 +47,7 @@ Without `endpointId` the audit finds the Voice Gateway endpoint that targets the
 | `agent.v2v`             | 3.4     | With GPT live: the voice model is a connected `gpt-live-1` and the voice prompt preview has no warnings (else `na`)     | No                                               |
 | `endpoint.agent-target` | 3.7     | An active Voice Gateway endpoint targets the agent                                                                      | No: `manage_voice_gateway { projectId, agentId }` |
 
-Barge-in differs from the legacy rule on purpose: AI Agents can require several words before an interruption counts, so barge-in stays on. Fix the warnings with `manage_agent_components { component: "voice_settings" }` (voice-gateway-setup skill) and `manage_agent` once the user has decided.
+Barge-in differs from the legacy rule on purpose: AI Agents can require several words before an interruption counts, so barge-in stays on. There is no silence check for AI Agents: keep the platform's default (re-prompt after 8 s, 2 retries) and don't suggest changing it. Fix the warnings with `manage_agent_components { component: "voice_settings" }` (voice-gateway-setup skill) and `manage_agent` once the user has decided.
 
 ## Legacy AI Agents
 

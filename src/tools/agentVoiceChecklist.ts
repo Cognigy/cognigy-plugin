@@ -48,7 +48,7 @@ export interface AgentAuditContext {
   voicePromptWarnings?: any[];
 }
 
-const RANGE = { timeout: [5, 7], retries: 5, minWords: 2 } as const;
+const RANGE = { minWords: 2 } as const;
 const FAST_EFFORT = new Set(["none", "minimal", "low"]);
 const MANY_SKILLS = 3;
 
@@ -205,28 +205,8 @@ export function evaluateAgentChecks(ctx: AgentAuditContext): AgentVoiceCheck[] {
       { kind: "voiceSettings", config: { continuousAsr: false } },
     ),
   );
-  const timeout = Number(s.silenceTimeoutSeconds);
-  const retries = Number(s.silenceRetries);
-  const timeoutOk = timeout >= RANGE.timeout[0] && timeout <= RANGE.timeout[1];
-  checks.push(
-    check(
-      "agent.silence",
-      "3.1 Flow Configuration",
-      `Silent callers are re-prompted after ${RANGE.timeout[0]}-${RANGE.timeout[1]} s, at least ${RANGE.retries} times`,
-      s.promptOnSilence === true && timeoutOk && retries >= RANGE.retries
-        ? "pass"
-        : "fail",
-      `promptOnSilence ${s.promptOnSilence}, silenceTimeoutSeconds ${s.silenceTimeoutSeconds}, silenceRetries ${s.silenceRetries}.`,
-      {
-        kind: "voiceSettings",
-        config: {
-          promptOnSilence: true,
-          silenceTimeoutSeconds: timeoutOk ? timeout : 6,
-          silenceRetries: Math.max(RANGE.retries, retries || 0),
-        },
-      },
-    ),
-  );
+  // No silence check: the voice PM keeps the platform default for AI Agents
+  // (re-prompt after 8 s, 2 retries) until the go-live guide says otherwise.
 
   // 3.5 Transactions: the agent can end and hand over a call.
   const has = (slug: string) => ctx.toolTypes.includes(slug);

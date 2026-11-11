@@ -54,8 +54,9 @@ const byId = (checks: any[]) =>
 describe("AI Agent voice go-live checks", () => {
   it("flags the platform defaults the guidebook asks to change, with fixes", () => {
     const checks = evaluateAgentChecks(ctx());
-    expect(checks).toHaveLength(10);
+    expect(checks).toHaveLength(9);
     const c = byId(checks);
+    expect(c["agent.silence"]).toBeUndefined();
     expect(c["agent.barge-in"]).toMatchObject({
       status: "fail",
       fix: {
@@ -66,11 +67,6 @@ describe("AI Agent voice go-live checks", () => {
           bargeInOnDtmf: false,
         },
       },
-    });
-    expect(c["agent.silence"].fix.config).toEqual({
-      promptOnSilence: true,
-      silenceTimeoutSeconds: 6,
-      silenceRetries: 5,
     });
     expect(c["agent.hangup-tool"].fix).toEqual({
       kind: "addTool",

@@ -1873,7 +1873,7 @@ describe("audit_voice_agent for AI Agents", () => {
       projectId: ID.project,
     });
     expect(r.mode).toBe("dry-run");
-    expect(r.summary.fixable).toBe(3);
+    expect(r.summary.fixable).toBe(2);
     expect(api.patch).not.toHaveBeenCalled();
     expect(api.post).not.toHaveBeenCalled();
   });
@@ -1900,7 +1900,7 @@ describe("audit_voice_agent for AI Agents", () => {
       { toolReferenceIds: ["voice-ref", "hangup-ref"] },
       expect.anything(),
     );
-    expect(r.checks.find((c: any) => c.id === "agent.silence").status).toBe(
+    expect(r.checks.find((c: any) => c.id === "agent.barge-in").status).toBe(
       "pass",
     );
   });
@@ -1929,9 +1929,6 @@ describe("audit_voice_agent for AI Agents", () => {
       bargeInOnSpeech: true,
       minWordsToInterrupt: 2,
       bargeInOnDtmf: false,
-      promptOnSilence: true,
-      silenceTimeoutSeconds: 6,
-      silenceRetries: 5,
     });
   });
 
