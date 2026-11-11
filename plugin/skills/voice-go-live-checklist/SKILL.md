@@ -25,7 +25,7 @@ description: "Use before calling audit_voice_agent, and whenever the user asks i
 
 - Provide `aiAgentId` (the flow is resolved for you) **or** `flowId` directly.
 - `endpointId` enables the Output Transformer check. `projectId` enables the fallback-LLM check.
-- **Dry-run is the default.** Nothing changes unless you pass `apply: true`.
+- **Dry-run first, always**, even when the user already asked for the fixes. Nothing changes unless you pass `apply: true`, and only the dry-run report shows the user what fails before anything changes.
 
 ## How it resolves things
 
