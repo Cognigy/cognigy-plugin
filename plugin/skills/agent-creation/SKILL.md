@@ -23,7 +23,7 @@ Cognigy has two kinds of agent. With the user, call both "AI Agents"; say "legac
    - If it already exists: use its projectId
    - If the user wants a new project: Path A creates one when `manage_agent create` gets no projectId; Path B when `create_ai_agent` gets none. Keep the returned projectId and run steps 3-6 for it before testing.
 3. Run list_resources { resourceType: "llm_model", projectId } — check whether the target project already has a working LLM: a text model with a non-empty connectionId, or a NiCE-provided one (`isInPlatformLlm: true`, shown as "Included by NiCE Cognigy"), which needs no connection. Either one is enough; skip steps 4-6.
-4. If the target project has no reusable LLM, check the other projects for reusable LLMs. Run this scan also for a voice agent where `check_capabilities` reports `v2v` available and the target project has no `gpt-live-1` model: note any connected `gpt-live-1` model you see and follow the voice-gateway-setup skill ("Voice-to-voice first") before copying it
+4. If the target project has no reusable LLM, check the other projects for reusable LLMs. Run this scan also for a voice agent where `check_capabilities` reports `s2s` available and the target project has no `gpt-live-1` model: note any connected `gpt-live-1` model you see and follow the voice-gateway-setup skill ("Speech-to-speech first") before copying it
    - Run list_resources { resourceType: "llm_model", projectId } for each other project
    - Choose only candidates whose llm_model has a non-empty connectionId
    - Do not treat an LLM without connectionId as a valid reuse candidate. NiCE-provided models are never transferred; they are already in the target project or not available at all
@@ -43,9 +43,9 @@ Cognigy has two kinds of agent. With the user, call both "AI Agents"; say "legac
 
 1. manage_agent { operation: "create", projectId, name, role, description, instructions, largeLanguageModelReferenceId }
    — Returns: agent, endpointUrl, use, and `llm` when the plugin picked the model. A REST endpoint for testing is created too.
-   — Bind the text LLM from the shared steps by its `referenceId`. Omitted, the plugin binds the model create_ai_agent would pick (a connected or NiCE-provided one, the project default first). Never bind a voice-to-voice model (gpt-live-1).
+   — Bind the text LLM from the shared steps by its `referenceId`. Omitted, the plugin binds the model create_ai_agent would pick (a connected or NiCE-provided one, the project default first). Never bind a speech-to-speech model (gpt-live-1).
    — `agentType`: "text" for a chat agent, "voice" for a phone or voice agent. Omitted, the platform makes a voice agent.
-   — A voice agent runs voice-to-voice when it can: create binds the project's `gpt-live-1` model where `v2v` is available, and `voiceLargeLanguageModelReferenceId: ""` keeps it on speech. Relay the result's `_hints.hint` as it says (voice-gateway-setup skill).
+   — A voice agent runs speech-to-speech (S2S, also called voice-to-voice or V2V) when it can: create binds the project's `gpt-live-1` model where `s2s` is available, and `voiceLargeLanguageModelReferenceId: ""` keeps it on speech. Relay the result's `_hints.hint` as it says (voice-gateway-setup skill).
 2. Add skills, tools and knowledge — see "Skills, tools, MCP servers and personas" below.
 3. Only after the project has a confirmed working LLM: talk_to_agent { agentId, projectId, message }
    — If the result carries `error` (e.g. "language model isn't fully configured"), fix the LLM binding with manage_agent { operation: "update", largeLanguageModelReferenceId } before anything else.

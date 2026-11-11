@@ -12,35 +12,35 @@ import { CognigyApiClient } from "../api/client.js";
 export const VOICE_SETTINGS_SLUG = "voice-config-defaults";
 
 /**
- * Providers whose LLMs can run voice-to-voice (GPT live), with the name the
+ * Providers whose LLMs can run speech-to-speech (GPT Live), with the name the
  * user knows. The platform checks this inside service-resources and does not
  * list it over REST, so it is kept here: setup_llm's check, the create hint
- * and check_capabilities (v2vProviders, which the skills read) all use it.
+ * and check_capabilities (s2sProviders, which the skills read) all use it.
  */
-export const V2V_PROVIDERS: Record<string, string> = { openAI: "OpenAI" };
+export const S2S_PROVIDERS: Record<string, string> = { openAI: "OpenAI" };
 
-// Voice-to-voice models (gpt-live-1) only serve as an AI Agent's voice model;
+// Speech-to-speech models (gpt-live-1) only serve as an AI Agent's voice model;
 // bound as a text model they return no replies and no error.
 export function isVoiceToVoiceModel(llm: any): boolean {
   return llm?.modelGroup === "voiceToVoice" || llm?.modelType === "gpt-live-1";
 }
 
-/** A connected voice-to-voice model an AI Agent can call through, or undefined. */
+/** A connected speech-to-speech model an AI Agent can call through, or undefined. */
 export function pickVoiceModel(llms: any[]): any | undefined {
   return llms.find(
     (m) =>
-      isVoiceToVoiceModel(m) && m.provider in V2V_PROVIDERS && m.connectionId,
+      isVoiceToVoiceModel(m) && m.provider in S2S_PROVIDERS && m.connectionId,
   );
 }
 
 /**
  * The one build-summary line for a new voice agent on speech recognition and
- * synthesis where GPT live is available. It states what the user got first and
- * offers voice-to-voice as an option, never as the better thing they missed.
+ * synthesis where GPT Live is available. It states what the user got first and
+ * offers speech-to-speech as an option, never as the better thing they missed.
  */
-export function v2vOfferLine(niceSpeech: boolean): string {
-  const keys = Object.values(V2V_PROVIDERS).join(" or ");
-  return `${niceSpeech ? "It runs on NiCE-provided speech, so it works right away." : "It runs on the project's speech settings."} It can also run voice-to-voice, which responds faster and sounds more natural. If you have an ${keys} API key, I can set that up.`;
+export function s2sOfferLine(niceSpeech: boolean): string {
+  const keys = Object.values(S2S_PROVIDERS).join(" or ");
+  return `${niceSpeech ? "It runs on NiCE-provided speech, so it works right away." : "It runs on the project's speech settings."} It can also run speech-to-speech, which responds faster and sounds more natural. If you have an ${keys} API key, I can set that up.`;
 }
 
 /**

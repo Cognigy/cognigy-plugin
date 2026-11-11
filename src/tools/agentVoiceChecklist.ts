@@ -273,7 +273,7 @@ export function evaluateAgentChecks(ctx: AgentAuditContext): AgentVoiceCheck[] {
       ? `Its text LLM ${ref} is not in this project.`
       : "No text LLM is bound and the project has no default."
     : text.modelGroup === "voiceToVoice" || text.modelType === "gpt-live-1"
-      ? `Its text LLM "${text.name}" is a voice-to-voice model, which cannot answer text turns.`
+      ? `Its text LLM "${text.name}" is a speech-to-speech model, which cannot answer text turns.`
       : !text.connectionId && !text.isInPlatformLlm
         ? `Its text LLM "${text.name}" has no connection.`
         : "";
@@ -281,20 +281,20 @@ export function evaluateAgentChecks(ctx: AgentAuditContext): AgentVoiceCheck[] {
     check(
       "agent.text-llm",
       "3.2 Error Handling & Latency",
-      "A connected text LLM answers, never a voice-to-voice model",
+      "A connected text LLM answers, never a speech-to-speech model",
       textProblem ? "fail" : "pass",
       textProblem || `"${text.name}" (${text.modelType}).`,
     ),
   );
 
-  // 3.4 Prompting, GPT live only.
+  // 3.4 Prompting, GPT Live only.
   const voiceRef = ctx.agent?.voiceLargeLanguageModelReferenceId;
   if (!voiceRef) {
     checks.push(
       check(
-        "agent.v2v",
+        "agent.s2s",
         "3.4 Prompting",
-        "GPT live voice model and voice prompt",
+        "Speech-to-speech (S2S): voice model and voice prompt",
         "na",
         "No voice model: calls use speech recognition and synthesis.",
       ),
@@ -305,7 +305,7 @@ export function evaluateAgentChecks(ctx: AgentAuditContext): AgentVoiceCheck[] {
     const problem = !live
       ? `Its voice model ${voiceRef} is not in this project.`
       : live.modelGroup !== "voiceToVoice"
-        ? `Its voice model "${live.name}" is not a voice-to-voice model.`
+        ? `Its voice model "${live.name}" is not a speech-to-speech model.`
         : !live.connectionId
           ? `Its voice model "${live.name}" has no connection.`
           : warnings.length
@@ -313,9 +313,9 @@ export function evaluateAgentChecks(ctx: AgentAuditContext): AgentVoiceCheck[] {
             : "";
     checks.push(
       check(
-        "agent.v2v",
+        "agent.s2s",
         "3.4 Prompting",
-        "GPT live voice model and voice prompt",
+        "Speech-to-speech (S2S): voice model and voice prompt",
         problem ? "fail" : "pass",
         problem ||
           `"${live.name}", voice ${ctx.agent?.realtimeVoice || "marin"}, voice prompt without warnings.`,

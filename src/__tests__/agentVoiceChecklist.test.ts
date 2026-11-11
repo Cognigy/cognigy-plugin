@@ -74,7 +74,7 @@ describe("AI Agent voice go-live checks", () => {
     });
     expect(c["agent.transfer-tool"].status).toBe("warn");
     expect(c["agent.latency"].status).toBe("warn");
-    expect(c["agent.v2v"].status).toBe("na");
+    expect(c["agent.s2s"].status).toBe("na");
     expect(c["agent.speech-resolves"]).toMatchObject({ status: "pass" });
     expect(c["agent.speech-resolves"].detail).toContain("NiCE-provided");
   });
@@ -167,7 +167,7 @@ describe("AI Agent voice go-live checks", () => {
     );
   });
 
-  it("fails a voice-to-voice text LLM and a GPT live prompt with warnings", () => {
+  it("fails a speech-to-speech text LLM and a GPT Live prompt with warnings", () => {
     const live = {
       ...textLlm,
       referenceId: "live",
@@ -189,7 +189,7 @@ describe("AI Agent voice go-live checks", () => {
       ),
     );
     expect(c["agent.text-llm"].status).toBe("fail");
-    expect(c["agent.v2v"].detail).toContain("Unknown variable");
+    expect(c["agent.s2s"].detail).toContain("Unknown variable");
     expect(c["endpoint.agent-target"]).toMatchObject({
       status: "fail",
       autoFixable: false,

@@ -157,7 +157,7 @@ describe("check_capabilities", () => {
     expect(agentProbes).toHaveLength(2);
   });
 
-  it("reads v2v from the voice-prompt route and niceSpeech from the speech providers", async () => {
+  it("reads s2s from the voice-prompt route and niceSpeech from the speech providers", async () => {
     const api = routedApi({
       [`GET ${V1}/v1/agents/capability-probe/voice-prompt`]: () => {
         throw httpError(404);
@@ -167,7 +167,7 @@ describe("check_capabilities", () => {
       }),
     });
     const r: any = await handlers(api).handleToolCall("check_capabilities", {});
-    expect(r).toMatchObject({ v2v: "unavailable", niceSpeech: "available" });
+    expect(r).toMatchObject({ s2s: "unavailable", niceSpeech: "available" });
   });
 
   it("reads the custom system prompt flag from the gated route", async () => {
@@ -1640,7 +1640,7 @@ describe("voice settings for AI Agents", () => {
   });
 });
 
-describe("GPT live (V2V) for AI Agents", () => {
+describe("GPT Live (S2S) for AI Agents", () => {
   const LIVE = "597e276b-0bd0-40e8-86df-d4d743ea311c";
   const agentUrl = `${V1}/v1/agents/${ID.agent}`;
 
@@ -1678,7 +1678,7 @@ describe("GPT live (V2V) for AI Agents", () => {
       modelType: "gpt-live-1",
       apiKey: "k",
     });
-    expect(r).toMatchObject({ error: "v2v_not_enabled", changed: false });
+    expect(r).toMatchObject({ error: "s2s_not_enabled", changed: false });
     expect(api.post.mock.calls.at(-1)[1].isDefault).toBe(false);
     expect(api.delete).toHaveBeenCalledWith("/v2.0/connections/conn1");
   });
@@ -1724,13 +1724,13 @@ describe("GPT live (V2V) for AI Agents", () => {
     });
     expect(r).toMatchObject({
       updated: true,
-      error: "v2v_not_enabled",
+      error: "s2s_not_enabled",
       dropped: ["voiceLargeLanguageModelReferenceId", "realtimeVoice"],
     });
     expect(r._hints.action).toContain("FEATURE_ENABLE_V2V");
   });
 
-  it("checks resets too: a voice model that stayed, or any reset while V2V is off", async () => {
+  it("checks resets too: a voice model that stayed, or any reset while S2S is off", async () => {
     const stillThere = routedApi({
       [`PATCH ${agentUrl}`]: () => agentRecord,
       [`GET ${agentUrl}`]: () => ({
@@ -1803,7 +1803,7 @@ describe("GPT live (V2V) for AI Agents", () => {
     });
   });
 
-  it("reads and previews the voice prompt, and says when GPT live is off", async () => {
+  it("reads and previews the voice prompt, and says when GPT Live is off", async () => {
     const api = routedApi({
       [`GET ${agentUrl}/voice-prompt`]: () => ({
         template: "T",
@@ -1845,7 +1845,7 @@ describe("GPT live (V2V) for AI Agents", () => {
       agentId: ID.agent,
       projectId: ID.project,
     });
-    expect(r).toMatchObject({ error: "v2v_not_enabled", changed: false });
+    expect(r).toMatchObject({ error: "s2s_not_enabled", changed: false });
   });
 });
 
@@ -2069,7 +2069,7 @@ describe("audit_voice_agent for AI Agents", () => {
   });
 });
 
-describe("voice agents run voice-to-voice when they can", () => {
+describe("voice agents run speech-to-speech when they can", () => {
   const LIVE = "597e276b-0bd0-40e8-86df-d4d743ea311c";
   const liveModel = {
     referenceId: LIVE,
@@ -2109,24 +2109,24 @@ describe("voice agents run voice-to-voice when they can", () => {
   const sent = (api: any) =>
     api.post.mock.calls.find((c: any[]) => c[0] === `${V1}/v1/agents`)[1];
 
-  it("binds a GPT live model that is already in the project", async () => {
+  it("binds a GPT Live model that is already in the project", async () => {
     const api = createApi([liveModel]);
     const r = await create(api);
     expect(sent(api).voiceLargeLanguageModelReferenceId).toBe(LIVE);
-    expect(r._hints.hint).toContain('voice-to-voice on "GPT Live"');
+    expect(r._hints.hint).toContain('speech-to-speech (S2S) on "GPT Live"');
   });
 
-  it("offers voice-to-voice once, as an option, when the project has no model", async () => {
+  it("offers speech-to-speech once, as an option, when the project has no model", async () => {
     const api = createApi([]);
     const r = await create(api);
     expect(sent(api).voiceLargeLanguageModelReferenceId).toBeUndefined();
     expect(r._hints.hint).toContain(
-      '"It runs on NiCE-provided speech, so it works right away. It can also run voice-to-voice, which responds faster and sounds more natural. If you have an OpenAI API key, I can set that up."',
+      '"It runs on NiCE-provided speech, so it works right away. It can also run speech-to-speech, which responds faster and sounds more natural. If you have an OpenAI API key, I can set that up."',
     );
     expect(r._hints.hint).not.toMatch(/best|fallback|unfortunately/i);
   });
 
-  it("never mentions voice-to-voice where it is not enabled", async () => {
+  it("never mentions speech-to-speech where it is not enabled", async () => {
     const api = createApi([liveModel], {
       [`GET ${V1}/v1/agents/capability-probe/voice-prompt`]: () => {
         throw httpError(404);
@@ -2134,7 +2134,7 @@ describe("voice agents run voice-to-voice when they can", () => {
     });
     const r = await create(api);
     expect(sent(api).voiceLargeLanguageModelReferenceId).toBeUndefined();
-    expect(JSON.stringify(r)).not.toMatch(/voice-to-voice|GPT live/i);
+    expect(JSON.stringify(r)).not.toMatch(/speech-to-speech|GPT Live/i);
   });
 
   it("keeps speech when the caller passes '' and leaves text agents alone", async () => {
@@ -2149,12 +2149,12 @@ describe("voice agents run voice-to-voice when they can", () => {
     expect(t._hints.hint).toBeUndefined();
   });
 
-  it("names the voice-to-voice providers in check_capabilities", async () => {
+  it("names the speech-to-speech providers in check_capabilities", async () => {
     const r: any = await handlers(createApi([])).handleToolCall(
       "check_capabilities",
       {},
     );
-    expect(r.v2vProviders).toEqual(["openAI"]);
+    expect(r.s2sProviders).toEqual(["openAI"]);
   });
 });
 
@@ -2299,7 +2299,7 @@ describe("a new cascaded voice agent gets the preferred NiCE-provided speech", (
     });
   });
 
-  it("sets nothing without NiCE speech, with GPT live, or when the caller chose a speech setup", async () => {
+  it("sets nothing without NiCE speech, with GPT Live, or when the caller chose a speech setup", async () => {
     const none = speechApi([], {});
     expect((await create(none)).speech).toBeUndefined();
     expect(savedSettings(none)).toBeNull();

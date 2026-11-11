@@ -21,8 +21,8 @@ export interface Capabilities {
   aiAgents: Availability;
   /** The custom system prompt editor (FEATURE_ENABLE_AGENTS_V2_CUSTOM_SYSTEM_PROMPT). */
   customSystemPrompt: Availability;
-  /** GPT live voice-to-voice for AI Agents (FEATURE_ENABLE_V2V). */
-  v2v: Availability;
+  /** Speech-to-speech (S2S) with GPT Live for AI Agents (FEATURE_ENABLE_V2V). */
+  s2s: Availability;
   detail: string[];
 }
 
@@ -52,13 +52,13 @@ export async function probeCapabilities(
   const caps: Capabilities = {
     aiAgents: "unknown",
     customSystemPrompt: "unknown",
-    v2v: "unknown",
+    s2s: "unknown",
     detail: [],
   };
   if (!v1) {
     caps.aiAgents = "unavailable";
     caps.customSystemPrompt = "unavailable";
-    caps.v2v = "unavailable";
+    caps.s2s = "unavailable";
     caps.detail.push("No API base URL configured.");
     return caps;
   }
@@ -80,13 +80,13 @@ export async function probeCapabilities(
   }
   if (caps.aiAgents !== "available") {
     caps.customSystemPrompt = caps.aiAgents;
-    caps.v2v = caps.aiAgents;
+    caps.s2s = caps.aiAgents;
     return caps;
   }
-  [caps.customSystemPrompt, caps.v2v] = await Promise.all(
+  [caps.customSystemPrompt, caps.s2s] = await Promise.all(
     [
       ["system-prompt", "The custom system prompt"],
-      ["voice-prompt", "GPT live (V2V)"],
+      ["voice-prompt", "Speech-to-speech (S2S)"],
     ].map(async ([route, what]): Promise<Availability> => {
       try {
         await api.get(`${v1}/v1/agents/capability-probe/${route}`);

@@ -148,7 +148,7 @@
           },
           "modelType": {
             "type": "string",
-            "description": "Model type string, e.g. chat 'gpt-4o', 'claude-sonnet-4-0', embedding 'text-embedding-3-small', GPT live 'gpt-live-1' (openAI, an AI Agent's voice model, never default). openAICompatible requires 'custom-model' (chat) or 'custom-embedding-model' (embedding), with the real name in customModel. awsBedrock takes a supported Bedrock model id (e.g. 'amazon.nova-pro-v1:0'; list in the llm-providers skill) or 'custom-model' + customModel."
+            "description": "Model type string, e.g. chat 'gpt-4o', 'claude-sonnet-4-0', embedding 'text-embedding-3-small', GPT Live 'gpt-live-1' (openAI, an AI Agent's voice model, never default). openAICompatible requires 'custom-model' (chat) or 'custom-embedding-model' (embedding), with the real name in customModel. awsBedrock takes a supported Bedrock model id (e.g. 'amazon.nova-pro-v1:0'; list in the llm-providers skill) or 'custom-model' + customModel."
           },
           "name": {
             "type": "string",
@@ -2128,7 +2128,7 @@
     },
     {
       "name": "audit_voice_agent",
-      "description": "Audit a voice agent against the deterministic checks of the Voice AI Go-Live Checklist. An AI Agent (agentId + projectId): speech, barge-in, voice tools, latency, LLMs, GPT live and its endpoint. A legacy AI Agent (aiAgentId or flowId): its flow's Set Session Config, timeouts, streaming, error handling and latency logging, plus endpointId and projectId for the output transformer and fallback LLM. Dry-run by default: each failing check reports a proposedFix and nothing changes. apply: true applies the safe fixes, optionally narrowed with only. Checks outside this subset are listed in the voice-go-live-checklist skill.",
+      "description": "Audit a voice agent against the deterministic checks of the Voice AI Go-Live Checklist. An AI Agent (agentId + projectId): speech, barge-in, voice tools, latency, LLMs, GPT Live and its endpoint. A legacy AI Agent (aiAgentId or flowId): its flow's Set Session Config, timeouts, streaming, error handling and latency logging, plus endpointId and projectId for the output transformer and fallback LLM. Dry-run by default: each failing check reports a proposedFix and nothing changes. apply: true applies the safe fixes, optionally narrowed with only. Checks outside this subset are listed in the voice-go-live-checklist skill.",
       "annotations": {
         "title": "Audit Voice Agent",
         "readOnlyHint": false,
@@ -2331,7 +2331,7 @@
     },
     {
       "name": "check_capabilities",
-      "description": "Report what this Cognigy environment and organisation support for building agents: aiAgents (whether AI Agents can be built with manage_agent), customSystemPrompt (whether manage_agent can save a custom system prompt), v2v (GPT live voice-to-voice for AI Agents) and niceSpeech (NiCE-provided speech, no Connection needed), each available, unavailable or unknown, with the evidence in detail. Read-only and cached for the session. Call it once before creating or changing agents in a new conversation. Never mention agent kinds or versions to the user.",
+      "description": "Report what this Cognigy environment and organisation support for building agents: aiAgents (whether AI Agents can be built with manage_agent), customSystemPrompt (whether manage_agent can save a custom system prompt), s2s (speech-to-speech with GPT Live, also called voice-to-voice or V2V) and niceSpeech (NiCE-provided speech, no Connection needed), each available, unavailable or unknown, with the evidence in detail. Read-only and cached for the session. Call it once before creating or changing agents in a new conversation. Never mention agent kinds or versions to the user.",
       "annotations": {
         "title": "Check Capabilities",
         "readOnlyHint": true,
@@ -2346,7 +2346,7 @@
     },
     {
       "name": "manage_agent",
-      "description": "Create and configure AI Agents, the kind to build wherever check_capabilities reports aiAgents available (legacy AI Agents use create_ai_agent / update_ai_agent). create makes an agent with its settings, skills and tools, plus a REST endpoint for talk_to_agent. update changes only the settings passed, while manage_agent_components attaches and detaches the skills and tools. A voice model makes calls run on GPT live (v2v); voice_prompt and preview_voice_prompt read and try its voice prompt. get_system_prompt, save_system_prompt, reset_system_prompt and preview_system_prompt read and edit the agent's custom system prompt where the environment offers one. create_flow makes the Flow for a pre-turn hook or an Execute Tool Flow tool, with its closing node in place. Read an agent with get_resource and mark it for deletion with delete_resource { resourceType: 'agent', id, projectId }. Returns the agent summary; create also returns endpointUrl and use.",
+      "description": "Create and configure AI Agents, the kind to build wherever check_capabilities reports aiAgents available (legacy AI Agents use create_ai_agent / update_ai_agent). create makes an agent with its settings, skills and tools, plus a REST endpoint for talk_to_agent. update changes only the settings passed, while manage_agent_components attaches and detaches the skills and tools. A voice model makes calls run speech-to-speech (S2S) on GPT Live; voice_prompt and preview_voice_prompt read and try its voice prompt. get_system_prompt, save_system_prompt, reset_system_prompt and preview_system_prompt read and edit the agent's custom system prompt where the environment offers one. create_flow makes the Flow for a pre-turn hook or an Execute Tool Flow tool, with its closing node in place. Read an agent with get_resource and mark it for deletion with delete_resource { resourceType: 'agent', id, projectId }. Returns the agent summary; create also returns endpointUrl and use.",
       "annotations": {
         "title": "Manage AI Agent",
         "readOnlyHint": false,
@@ -2421,7 +2421,7 @@
           },
           "largeLanguageModelReferenceId": {
             "type": "string",
-            "description": "referenceId (UUID) of a text llm_model in the project. Omit to use the project default LLM. Never a voice-to-voice model."
+            "description": "referenceId (UUID) of a text llm_model in the project. Omit to use the project default LLM. Never a speech-to-speech model."
           },
           "llmConfig": {
             "type": "object",
@@ -2506,15 +2506,15 @@
           },
           "voiceLargeLanguageModelReferenceId": {
             "type": "string",
-            "description": "referenceId of a gpt-live-1 llm_model: calls run on GPT live while the text LLM still reasons. Creating a voice agent picks the project's GPT live model where v2v is available. '' keeps or turns it off."
+            "description": "referenceId of a gpt-live-1 llm_model: calls run on GPT Live while the text LLM still reasons. Creating a voice agent picks the project's GPT Live model where s2s is available. '' keeps or turns it off."
           },
           "realtimeVoice": {
             "type": "string",
-            "description": "GPT live voice, e.g. marin (default), cedar, coral; voice_prompt lists them. null resets it."
+            "description": "GPT Live voice, e.g. marin (default), cedar, coral; voice_prompt lists them. null resets it."
           },
           "voicePromptTemplate": {
             "type": "string",
-            "description": "update only: the GPT live voice prompt, with {{group.key}} tokens from voice_prompt. null resets it to the default."
+            "description": "update only: the GPT Live voice prompt, with {{group.key}} tokens from voice_prompt. null resets it to the default."
           },
           "skillReferenceIds": {
             "type": "array",

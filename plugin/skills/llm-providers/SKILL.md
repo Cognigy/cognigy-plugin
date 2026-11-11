@@ -39,7 +39,7 @@ If any step is missing, stop and do it first. To list existing LLMs use `list_re
 - Embedding models: used for knowledge-store vector indexing.
   Examples: `text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-ada-002`, `luminous-embedding-128`, `amazon.titan-embed-text-v2:0`, `Pharia-1-Embedding-4608`, `gemini-embedding-001`, `custom-embedding-model`.
 
-- Voice-to-voice (GPT live): `gpt-live-1`, provider `openAI` only, `modelGroup: "voiceToVoice"`. It is only ever an AI Agent's voice model (`manage_agent` `voiceLargeLanguageModelReferenceId`), never a text LLM and never the project default; `setup_llm` creates it with `isDefault: false`. On an environment without GPT live, `setup_llm` returns `error: "v2v_not_enabled"` and creates nothing. Full recipe: v2v-demo skill.
+- Speech-to-speech (S2S, also called voice-to-voice or V2V; the model is GPT Live): `gpt-live-1`, provider `openAI` only, `modelGroup: "voiceToVoice"`. It is only ever an AI Agent's voice model (`manage_agent` `voiceLargeLanguageModelReferenceId`), never a text LLM and never the project default; `setup_llm` creates it with `isDefault: false`. On an environment without speech-to-speech, `setup_llm` returns `error: "s2s_not_enabled"` and creates nothing. Full recipe: s2s-demo skill.
 
 Chat/completion models are not embedding models. `gpt-4o-mini` is a chat model, not a valid embedding-model choice for knowledge-store indexing.
 

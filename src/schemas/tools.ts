@@ -1103,7 +1103,7 @@ const agentSettingsSchema = {
     .optional(),
   // No "": the UI marks the brand persona required and can't save an agent without one.
   personaReferenceId: z.string().uuid().optional(),
-  // GPT live (V2V): "" turns the voice model off; null resets the voice.
+  // GPT Live (S2S): "" turns the voice model off; null resets the voice.
   voiceLargeLanguageModelReferenceId: z
     .union([z.string().uuid(), z.literal("")])
     .optional(),

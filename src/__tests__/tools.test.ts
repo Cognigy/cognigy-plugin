@@ -4320,7 +4320,7 @@ describe("ToolHandlers v2", () => {
       { label: "only gpt-live-1", withText: false },
       { label: "gpt-live-1 plus a text model", withText: true },
     ])(
-      "never picks a voice-to-voice model as the default ($label)",
+      "never picks a speech-to-speech model as the default ($label)",
       async ({ withText }) => {
         api.post
           .mockResolvedValueOnce({ _id: ID.agent, referenceId: "ref-uuid" })

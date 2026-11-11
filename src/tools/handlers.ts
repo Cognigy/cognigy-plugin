@@ -69,13 +69,13 @@ import {
   type AgentVoiceCheck,
 } from "./agentVoiceChecklist.js";
 import {
-  V2V_PROVIDERS,
+  S2S_PROVIDERS,
   VOICE_SETTINGS_SLUG,
   isVoiceToVoiceModel,
   pickVoiceModel,
   preferredNiceSpeech,
   projectLanguage,
-  v2vOfferLine,
+  s2sOfferLine,
   findVoiceSettings,
   listSpeechProviders,
   listVoices,
@@ -901,7 +901,7 @@ function canAnswer(llm: any): boolean {
  * largelanguagemodels list response. An LLM without its connection cannot
  * answer — the node then fails silently (default errorHandling "continue"
  * with an empty message) — so prefer connected models over the bare
- * isDefault flag. Embedding and voice-to-voice models are never candidates:
+ * isDefault flag. Embedding and speech-to-speech models are never candidates:
  * they cannot answer a text node, so a project that only has those gets no
  * pick (undefined)
  * and the caller reports llmStatus "unknown" with the LLM setup guidance
@@ -2616,7 +2616,7 @@ export class ToolHandlers {
         return withHints(result, {
           hint: usageHint,
           warning:
-            "Could not verify LLM resource in project. The LLM Prompt node will fall back to the project's default Generative AI model — if none is configured, or the default is an embedding or voice-to-voice (gpt-live-1) model, it cannot generate responses.",
+            "Could not verify LLM resource in project. The LLM Prompt node will fall back to the project's default Generative AI model — if none is configured, or the default is an embedding or speech-to-speech (gpt-live-1) model, it cannot generate responses.",
           action: `Inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Reuse an existing text LLM (with its connection) via manage_packages export/import, verify with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and only use setup_llm if no reusable LLM exists. Do not call talk_to_agent until a text LLM is confirmed.`,
         });
       }
@@ -2928,10 +2928,10 @@ export class ToolHandlers {
   // =========================================================================
   async handleSetupLlm(args: any): Promise<any> {
     const data = schemas.setupLlmSchema.parse(args);
-    // GPT live is an AI Agent's voice model only: never the project default.
-    const isV2V = data.modelType === "gpt-live-1";
-    if (isV2V && !(data.provider in V2V_PROVIDERS)) {
-      const providers = Object.keys(V2V_PROVIDERS).join("' or '");
+    // GPT Live is an AI Agent's voice model only: never the project default.
+    const isS2S = data.modelType === "gpt-live-1";
+    if (isS2S && !(data.provider in S2S_PROVIDERS)) {
+      const providers = Object.keys(S2S_PROVIDERS).join("' or '");
       return withHints(
         { error: `gpt-live-1 needs provider '${providers}'.`, changed: false },
         { action: `Retry with provider '${providers}'.` },
@@ -3100,7 +3100,7 @@ export class ToolHandlers {
         modelType: data.modelType,
         provider: data.provider,
         connectionId: connectionRefId,
-        isDefault: isV2V ? false : (data.isDefault ?? true),
+        isDefault: isS2S ? false : (data.isDefault ?? true),
         ...(data.apiType ? { apiType: data.apiType } : {}),
         [data.provider]: providerMeta,
       });
@@ -3109,10 +3109,10 @@ export class ToolHandlers {
         await this.apiClient
           .delete(`/v2.0/connections/${autoConnectionId}`)
           .catch(() => undefined);
-      if (isV2V && error?.status === 400 && /not enabled/i.test(error.message))
+      if (isS2S && error?.status === 400 && /not enabled/i.test(error.message))
         return withHints(
-          { error: "v2v_not_enabled", changed: false },
-          { action: `Nothing was created. ${ToolHandlers.V2V_OFF_ACTION}` },
+          { error: "s2s_not_enabled", changed: false },
+          { action: `Nothing was created. ${ToolHandlers.S2S_OFF_ACTION}` },
         );
       return withHints(
         { error: error.message },
@@ -3223,7 +3223,7 @@ export class ToolHandlers {
           msg: testResponse.msg,
         },
       };
-      if (!isV2V) return ok;
+      if (!isS2S) return ok;
       return withHints(ok, {
         action: `Make it an AI Agent's voice model: manage_agent { operation: "update", agentId, projectId: "${data.projectId}", voiceLargeLanguageModelReferenceId: "${result.referenceId}" }. Never bind it as a text LLM.`,
         // service-resources makes a project's first LLM its default, whatever it is.
@@ -3328,10 +3328,10 @@ export class ToolHandlers {
       {
         aiAgents: caps.aiAgents,
         customSystemPrompt: caps.customSystemPrompt,
-        v2v: caps.v2v,
-        ...(caps.v2v === "unavailable"
+        s2s: caps.s2s,
+        ...(caps.s2s === "unavailable"
           ? {}
-          : { v2vProviders: Object.keys(V2V_PROVIDERS) }),
+          : { s2sProviders: Object.keys(S2S_PROVIDERS) }),
         niceSpeech,
         ...(caps.detail.length ? { detail: caps.detail } : {}),
       },
@@ -3434,13 +3434,13 @@ export class ToolHandlers {
         if (res?.isDefault) delete res.defaultTemplate;
         return res;
       } catch (error: any) {
-        // The voice-prompt routes answer 404 like a missing path while V2V is off.
+        // The voice-prompt routes answer 404 like a missing path while S2S is off.
         if (error?.status !== 404) throw error;
         const caps = await this.getCapabilities();
-        if (caps.v2v !== "unavailable") throw error;
+        if (caps.s2s !== "unavailable") throw error;
         return withHints(
-          { error: "v2v_not_enabled", changed: false },
-          { action: ToolHandlers.V2V_OFF_ACTION },
+          { error: "s2s_not_enabled", changed: false },
+          { action: ToolHandlers.S2S_OFF_ACTION },
         );
       }
     }
@@ -3527,12 +3527,12 @@ export class ToolHandlers {
     return speech;
   }
 
-  static readonly V2V_OFF_ACTION =
-    "GPT live (V2V) is not enabled on this environment; an admin has to turn on FEATURE_ENABLE_V2V. Tell the user in one line and offer a cascaded voice agent (voice-gateway-setup skill) or a Webchat demo instead. Never switch silently.";
+  static readonly S2S_OFF_ACTION =
+    "Speech-to-speech (S2S) is not enabled on this environment; an admin has to turn on FEATURE_ENABLE_V2V. Tell the user in one line, in speech-to-speech terms, and offer a cascaded voice agent (voice-gateway-setup skill) or a Webchat demo instead. Never switch silently.";
 
   /**
-   * service-agents drops the V2V fields from a write, without an error, while
-   * V2V is off, so read the agent back and name the fields that did not stick.
+   * service-agents drops the S2S fields from a write, without an error, while
+   * S2S is off, so read the agent back and name the fields that did not stick.
    */
   private async voiceFieldsDropped(
     sent: Record<string, any>,
@@ -3546,15 +3546,15 @@ export class ToolHandlers {
     ].filter((k) => sent[k] !== undefined);
     if (!keys.length) return [];
     const stored: any = await this.apiClient.get(agentUrl, { params });
-    // "" and null reset a field. While V2V is off the service hides these
+    // "" and null reset a field. While S2S is off the service hides these
     // fields, so a dropped reset reads like a done one: ask the probe then.
     const isReset = (v: any) => v === "" || v === null;
-    const v2vOff =
+    const s2sOff =
       keys.some((k) => isReset(sent[k])) &&
-      (await this.getCapabilities()).v2v === "unavailable";
+      (await this.getCapabilities()).s2s === "unavailable";
     return keys.filter((k) =>
       isReset(sent[k])
-        ? v2vOff ||
+        ? s2sOff ||
           (!!stored?.[k] && !(k === "realtimeVoice" && stored[k] === "marin"))
         : stored?.[k] !== sent[k],
     );
@@ -3569,10 +3569,10 @@ export class ToolHandlers {
     const dropped = await this.voiceFieldsDropped(sent, agentUrl, params);
     if (!dropped.length) return result;
     return withHints(
-      { ...result, error: "v2v_not_enabled", dropped },
+      { ...result, error: "s2s_not_enabled", dropped },
       {
-        warning: `${dropped.join(", ")} did not stick: GPT live is off for AI Agents here. The other settings were saved.`,
-        action: ToolHandlers.V2V_OFF_ACTION,
+        warning: `${dropped.join(", ")} did not stick: speech-to-speech (S2S) is off for AI Agents here. The other settings were saved.`,
+        action: ToolHandlers.S2S_OFF_ACTION,
       },
     );
   }
@@ -3599,11 +3599,11 @@ export class ToolHandlers {
       this.resourcesCreatedThisSession.add(projectId);
     }
     let llm: ReturnType<typeof pickDefaultLlm>;
-    // Voice agents run voice-to-voice when they can (plugin owner, 11 Nov):
-    // a GPT live model already in the project becomes the voice model. ""
+    // Voice agents run speech-to-speech when they can (plugin owner, 11 Nov):
+    // a GPT Live model already in the project becomes the voice model. ""
     // keeps the agent on speech recognition and synthesis.
     let voiceModel: any;
-    let offerV2V = false;
+    let offerS2S = false;
     const keepSpeech = fields.voiceLargeLanguageModelReferenceId === "";
     if (keepSpeech) delete fields.voiceLargeLanguageModelReferenceId;
     // A new agent has nothing to reset.
@@ -3631,7 +3631,7 @@ export class ToolHandlers {
         !fields.voiceLargeLanguageModelReferenceId
       ) {
         const caps = await this.getCapabilities();
-        if (caps.v2v !== "unavailable") {
+        if (caps.s2s !== "unavailable") {
           const all: any = await this.apiClient
             .get("/v2.0/largelanguagemodels", {
               params: { projectId, limit: 100 },
@@ -3640,7 +3640,7 @@ export class ToolHandlers {
           voiceModel = pickVoiceModel(all?.items ?? all ?? []);
           if (voiceModel)
             fields.voiceLargeLanguageModelReferenceId = voiceModel.referenceId;
-          else offerV2V = caps.v2v === "available";
+          else offerS2S = caps.s2s === "available";
         }
       }
       for (let attempt = 1; ; attempt++) {
@@ -3732,7 +3732,7 @@ export class ToolHandlers {
     };
     const warnings = [
       voiceDropped.length
-        ? `GPT live is off for AI Agents on this environment, so ${voiceDropped.join(", ")} did not stick; the agent was created without them. ${ToolHandlers.V2V_OFF_ACTION}`
+        ? `Speech-to-speech (S2S) is off for AI Agents on this environment, so ${voiceDropped.join(", ")} did not stick; the agent was created without them. ${ToolHandlers.S2S_OFF_ACTION}`
         : "",
       llm && !llm.connected
         ? `The agent was bound to LLM "${llm.refId}", which has no connection, so it cannot answer until that model gets one or another model is bound.`
@@ -3746,9 +3746,9 @@ export class ToolHandlers {
     ].filter(Boolean);
     if (warnings.length) hints.warning = warnings.join(" ");
     if (voiceModel && !voiceDropped.length)
-      hints.hint = `Calls run voice-to-voice on "${voiceModel.name}", the project's GPT live model. Say so in the build summary.`;
-    else if (offerV2V)
-      hints.hint = `Unless the user asked for a particular speech setup or declined voice-to-voice, make this line the last paragraph of the build summary, word for word, with no label or bullet, and don't repeat it later: "${v2vOfferLine((await this.getNiceSpeech()) === "available")}"`;
+      hints.hint = `Calls run speech-to-speech (S2S) on "${voiceModel.name}", the project's GPT Live model. Say so in the build summary, in speech-to-speech terms.`;
+    else if (offerS2S)
+      hints.hint = `Unless the user asked for a particular speech setup or declined speech-to-speech, make this line the last paragraph of the build summary, word for word, with no label or bullet, and don't repeat it later: "${s2sOfferLine((await this.getNiceSpeech()) === "available")}"`;
     return withHints(
       {
         projectId,

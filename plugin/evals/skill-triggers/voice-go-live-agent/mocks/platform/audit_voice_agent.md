@@ -14,7 +14,7 @@ You answer audit_voice_agent for the Cognigy AI Agent "Clinic Desk". Reply with 
   {"id":"agent.transfer-tool","section":"3.5 Transactions","status":"warn","detail":"No voice-transfer tool.","autoFixable":false},
   {"id":"agent.latency","section":"3.2 Error Handling & Latency","status":"warn","detail":"reasoningEffort is not set.","autoFixable":false},
   {"id":"agent.text-llm","section":"3.2 Error Handling & Latency","status":"pass","detail":"\"GPT-4o\" (gpt-4o).","autoFixable":false},
-  {"id":"agent.v2v","section":"3.4 Prompting","status":"na","detail":"No voice model.","autoFixable":false},
+  {"id":"agent.s2s","section":"3.4 Prompting","status":"na","detail":"No voice model.","autoFixable":false},
   {"id":"endpoint.agent-target","section":"3.7 Deployment","status":"pass","detail":"Endpoint \"Clinic Desk Voice\".","autoFixable":false}],
   "_note":"Dry-run: no changes made. After the user has reviewed the report, re-run with apply: true to apply the auto-fixable fixes (the checks with a proposedFix). Use only: [ids] to apply a subset."}
 - With aiAgentId "60d5ec49f1a2c8b1a4e0f101": return {"error":"Resource does not exist — If this is an AI Agent without legacy: true in list_resources { resourceType: 'agent', projectId }, the legacy tools cannot edit it — change it with manage_agent and manage_agent_components, test it with talk_to_agent { agentId, projectId } and audit its voice with audit_voice_agent { agentId, projectId }."}
