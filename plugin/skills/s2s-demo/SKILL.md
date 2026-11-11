@@ -5,7 +5,7 @@ description: "Use when the user wants a speech-to-speech (S2S, also called voice
 
 # Speech-to-speech (S2S) demo
 
-Speech-to-speech (S2S) is the product's name for this. Users may also say voice-to-voice or V2V: it is the same thing. Always answer in speech-to-speech terms.
+Speech-to-speech (S2S) is the product's name for this. Users may also say voice-to-voice or V2V: it is the same thing. Call it speech-to-speech in every answer, also when the user said V2V or voice-to-voice: never write "V2V demo", "V2V" or "voice-to-voice" yourself.
 
 A speech-to-speech demo is four things: a `gpt-live-1` voice model (GPT Live), an AI Agent that keeps a normal text LLM and points at the voice model, a Voice Gateway endpoint on that agent, and its click-to-call page. Nothing on the endpoint says "speech-to-speech": a call runs speech-to-speech because the agent has a voice model. GPT Live hands the reasoning to the agent's text LLM, so the agent's role, instructions and tools still do the real work. The agent hears and speaks directly, for faster replies and natural interruptions.
 
