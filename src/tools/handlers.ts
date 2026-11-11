@@ -55,6 +55,7 @@ import {
   type Capabilities,
   COMPONENT_PATHS,
   findOrCreateAgentEndpoint,
+  projectEndpoints,
   isAgentsV2Absent,
   listAgentsV2,
   probeCapabilities,
@@ -3487,10 +3488,21 @@ export class ToolHandlers {
       "voiceLargeLanguageModelReferenceId",
       "realtimeVoice",
       "voicePromptTemplate",
-    ].filter((k) => sent[k]);
+    ].filter((k) => sent[k] !== undefined);
     if (!keys.length) return [];
     const stored: any = await this.apiClient.get(agentUrl, { params });
-    return keys.filter((k) => stored?.[k] !== sent[k]);
+    // "" and null reset a field. While V2V is off the service hides these
+    // fields, so a dropped reset reads like a done one: ask the probe then.
+    const isReset = (v: any) => v === "" || v === null;
+    const v2vOff =
+      keys.some((k) => isReset(sent[k])) &&
+      (await this.getCapabilities()).v2v === "unavailable";
+    return keys.filter((k) =>
+      isReset(sent[k])
+        ? v2vOff ||
+          (!!stored?.[k] && !(k === "realtimeVoice" && stored[k] === "marin"))
+        : stored?.[k] !== sent[k],
+    );
   }
 
   private async checkVoiceFieldsKept(
@@ -3539,6 +3551,8 @@ export class ToolHandlers {
     let offerV2V = false;
     const keepSpeech = fields.voiceLargeLanguageModelReferenceId === "";
     if (keepSpeech) delete fields.voiceLargeLanguageModelReferenceId;
+    // A new agent has nothing to reset.
+    if (fields.realtimeVoice === null) delete fields.realtimeVoice;
     let agent: any;
     try {
       const localeReferenceId = await resolveLocaleReferenceId(
@@ -8789,15 +8803,12 @@ export class ToolHandlers {
   ): Promise<any | null> {
     let id = endpointId;
     if (!id) {
-      // ponytail: only the first 100 endpoints of the project are searched.
-      const res: any = await this.apiClient.get("/v2.0/endpoints", {
-        params: { projectId, limit: 100 },
-      });
-      const hit = (res?.items ?? res ?? []).find(
-        (e: any) =>
-          e?.channel === "voiceGateway2" && e?.agentId === agentReferenceId,
-      );
-      id = hit?._id ?? hit?.id;
+      for await (const e of projectEndpoints(this.apiClient, projectId)) {
+        if (e?.channel === "voiceGateway2" && e?.agentId === agentReferenceId) {
+          id = e._id ?? e.id;
+          break;
+        }
+      }
     }
     if (!id) return null;
     const ep: any = await this.apiClient.get(`/v2.0/endpoints/${id}`);

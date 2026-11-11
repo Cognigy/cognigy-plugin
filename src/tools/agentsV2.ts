@@ -224,24 +224,35 @@ export function builtinToolParameters(
   return [...known, ...extra];
 }
 
-/** Find the REST endpoint that targets this AI Agent, or create one. */
-export async function findOrCreateAgentEndpoint(
+/**
+ * Every endpoint of a project, page by page. The list pages with `skip`: it
+ * ignores `offset` and would answer the first page again.
+ */
+export async function* projectEndpoints(
   api: CognigyApiClient,
   projectId: string,
-  agent: { referenceId: string; name?: string },
-): Promise<{ endpoint: any; autoCreated: boolean }> {
+): AsyncGenerator<any> {
   const pageSize = 100;
   for (let skip = 0; ; skip += pageSize) {
     const eps: any = await api.get("/v2.0/endpoints", {
       params: { projectId, limit: pageSize, skip },
     });
     const items: any[] = eps?.items ?? eps;
-    if (!Array.isArray(items) || items.length === 0) break;
-    const hit = items.find(
-      (ep) => ep.channel === "rest" && ep.agentId === agent.referenceId,
-    );
-    if (hit) return { endpoint: hit, autoCreated: false };
-    if (items.length < pageSize) break;
+    if (!Array.isArray(items) || items.length === 0) return;
+    yield* items;
+    if (items.length < pageSize) return;
+  }
+}
+
+/** Find the REST endpoint that targets this AI Agent, or create one. */
+export async function findOrCreateAgentEndpoint(
+  api: CognigyApiClient,
+  projectId: string,
+  agent: { referenceId: string; name?: string },
+): Promise<{ endpoint: any; autoCreated: boolean }> {
+  for await (const ep of projectEndpoints(api, projectId)) {
+    if (ep.channel === "rest" && ep.agentId === agent.referenceId)
+      return { endpoint: ep, autoCreated: false };
   }
   const endpoint = await api.post("/v2.0/endpoints", {
     projectId,

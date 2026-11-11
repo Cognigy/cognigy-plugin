@@ -1636,6 +1636,54 @@ describe("GPT live (V2V) for AI Agents", () => {
     expect(r._hints.action).toContain("FEATURE_ENABLE_V2V");
   });
 
+  it("checks resets too: a voice model that stayed, or any reset while V2V is off", async () => {
+    const stillThere = routedApi({
+      [`PATCH ${agentUrl}`]: () => agentRecord,
+      [`GET ${agentUrl}`]: () => ({
+        ...agentRecord,
+        voiceLargeLanguageModelReferenceId: LIVE,
+      }),
+    });
+    const h1 = await declined(stillThere);
+    const r1: any = await h1.handleToolCall("manage_agent", {
+      operation: "update",
+      agentId: ID.agent,
+      projectId: ID.project,
+      voiceLargeLanguageModelReferenceId: "",
+    });
+    expect(r1.dropped).toEqual(["voiceLargeLanguageModelReferenceId"]);
+
+    const off = routedApi({
+      [`GET ${V1}/v1/agents/capability-probe/voice-prompt`]: () => {
+        throw httpError(404);
+      },
+      [`PATCH ${agentUrl}`]: () => agentRecord,
+      [`GET ${agentUrl}`]: () => agentRecord,
+    });
+    const h2 = await declined(off);
+    const r2: any = await h2.handleToolCall("manage_agent", {
+      operation: "update",
+      agentId: ID.agent,
+      projectId: ID.project,
+      realtimeVoice: null,
+      voicePromptTemplate: null,
+    });
+    expect(r2.dropped).toEqual(["realtimeVoice", "voicePromptTemplate"]);
+
+    const on = routedApi({
+      [`PATCH ${agentUrl}`]: () => agentRecord,
+      [`GET ${agentUrl}`]: () => ({ ...agentRecord, realtimeVoice: "marin" }),
+    });
+    const h3 = await declined(on);
+    const r3: any = await h3.handleToolCall("manage_agent", {
+      operation: "update",
+      agentId: ID.agent,
+      projectId: ID.project,
+      realtimeVoice: null,
+    });
+    expect(r3.error).toBeUndefined();
+  });
+
   it("passes when the voice fields stuck", async () => {
     const stored = {
       ...agentRecord,
@@ -1784,6 +1832,39 @@ describe("audit_voice_agent for AI Agents", () => {
       }),
     });
   }
+
+  it("finds the agent's Voice Gateway endpoint past the first page", async () => {
+    const filler = Array.from({ length: 100 }, (_, i) => ({
+      _id: `f${i}`,
+      channel: "rest",
+      agentId: "agent-ref",
+    }));
+    const api = auditApi();
+    api.get.mockImplementation(
+      ((orig: any) => async (url: string, cfg?: any) =>
+        url === "/v2.0/endpoints"
+          ? {
+              items:
+                cfg.params.skip === 0
+                  ? filler
+                  : [
+                      {
+                        _id: "ep1",
+                        channel: "voiceGateway2",
+                        agentId: "agent-ref",
+                      },
+                    ],
+            }
+          : orig(url, cfg))(api.get.getMockImplementation()),
+    );
+    const r: any = await handlers(api).handleToolCall("audit_voice_agent", {
+      agentId: ID.agent,
+      projectId: ID.project,
+    });
+    expect(
+      r.checks.find((c: any) => c.id === "endpoint.agent-target").status,
+    ).toBe("pass");
+  });
 
   it("reports without changing anything by default", async () => {
     const api = auditApi();
