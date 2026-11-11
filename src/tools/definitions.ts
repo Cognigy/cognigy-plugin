@@ -2354,7 +2354,7 @@ export const tools: ToolDefinition[] = [
         voiceLargeLanguageModelReferenceId: {
           type: "string",
           description:
-            "referenceId of a gpt-live-1 llm_model: calls run on GPT live while the text LLM still reasons. '' turns it off.",
+            "referenceId of a gpt-live-1 llm_model: calls run on GPT live while the text LLM still reasons. Creating a voice agent picks the project's GPT live model where v2v is available. '' keeps or turns it off.",
         },
         realtimeVoice: {
           type: "string",

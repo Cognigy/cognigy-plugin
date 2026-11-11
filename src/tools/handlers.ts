@@ -67,7 +67,11 @@ import {
   type AgentVoiceCheck,
 } from "./agentVoiceChecklist.js";
 import {
+  V2V_PROVIDERS,
   VOICE_SETTINGS_SLUG,
+  isVoiceToVoiceModel,
+  pickVoiceModel,
+  v2vOfferLine,
   findVoiceSettings,
   listSpeechProviders,
   listVoices,
@@ -835,12 +839,6 @@ async function readNodeConfigs(
  * rather than the literal word "embedding".
  */
 const EMBEDDING_MODEL_PATTERN = /embed/i;
-
-// Voice-to-voice models (gpt-live-1) only serve as an Agents V2 agent's voice
-// model; bound to a text node they return no replies and no error.
-function isVoiceToVoiceModel(llm: any): boolean {
-  return llm?.modelGroup === "voiceToVoice" || llm?.modelType === "gpt-live-1";
-}
 
 function isEmbeddingModel(llm: any): boolean {
   // For openAICompatible and awsBedrock providers `modelType` can be the
@@ -2923,10 +2921,11 @@ export class ToolHandlers {
     const data = schemas.setupLlmSchema.parse(args);
     // GPT live is an AI Agent's voice model only: never the project default.
     const isV2V = data.modelType === "gpt-live-1";
-    if (isV2V && data.provider !== "openAI") {
+    if (isV2V && !(data.provider in V2V_PROVIDERS)) {
+      const providers = Object.keys(V2V_PROVIDERS).join("' or '");
       return withHints(
-        { error: "gpt-live-1 is an openAI model.", changed: false },
-        { action: "Retry with provider 'openAI'." },
+        { error: `gpt-live-1 needs provider '${providers}'.`, changed: false },
+        { action: `Retry with provider '${providers}'.` },
       );
     }
 
@@ -3301,10 +3300,13 @@ export class ToolHandlers {
     }
   }
 
+  private getNiceSpeech(): Promise<Availability> {
+    return (this.niceSpeechPromise ??= this.probeNiceSpeech());
+  }
+
   async handleCheckCapabilities(): Promise<any> {
     const caps = await this.getCapabilities();
-    this.niceSpeechPromise ??= this.probeNiceSpeech();
-    const niceSpeech = await this.niceSpeechPromise;
+    const niceSpeech = await this.getNiceSpeech();
     const actions: Record<string, string> = {
       available:
         "Build AI Agents with manage_agent. Use create_ai_agent only when the user asks for a legacy AI Agent or the project has only legacy agents.",
@@ -3318,6 +3320,9 @@ export class ToolHandlers {
         aiAgents: caps.aiAgents,
         customSystemPrompt: caps.customSystemPrompt,
         v2v: caps.v2v,
+        ...(caps.v2v === "unavailable"
+          ? {}
+          : { v2vProviders: Object.keys(V2V_PROVIDERS) }),
         niceSpeech,
         ...(caps.detail.length ? { detail: caps.detail } : {}),
       },
@@ -3536,6 +3541,30 @@ export class ToolHandlers {
       );
       if (llm) fields.largeLanguageModelReferenceId = llm.refId;
     }
+    // Voice agents run voice-to-voice when they can (plugin owner, 11 Nov):
+    // a GPT live model already in the project becomes the voice model. ""
+    // keeps the agent on speech recognition and synthesis.
+    let voiceModel: any;
+    let offerV2V = false;
+    if (fields.voiceLargeLanguageModelReferenceId === "")
+      delete fields.voiceLargeLanguageModelReferenceId;
+    else if (
+      fields.agentType === "voice" &&
+      !fields.voiceLargeLanguageModelReferenceId
+    ) {
+      const caps = await this.getCapabilities();
+      if (caps.v2v !== "unavailable") {
+        const all: any = await this.apiClient
+          .get("/v2.0/largelanguagemodels", {
+            params: { projectId, limit: 100 },
+          })
+          .catch(() => null);
+        voiceModel = pickVoiceModel(all?.items ?? all ?? []);
+        if (voiceModel)
+          fields.voiceLargeLanguageModelReferenceId = voiceModel.referenceId;
+        else offerV2V = caps.v2v === "available";
+      }
+    }
     let agent: any;
     for (let attempt = 1; ; attempt++) {
       try {
@@ -3597,6 +3626,10 @@ export class ToolHandlers {
         : "",
     ].filter(Boolean);
     if (warnings.length) hints.warning = warnings.join(" ");
+    if (voiceModel && !voiceDropped.length)
+      hints.hint = `Calls run voice-to-voice on "${voiceModel.name}", the project's GPT live model. Say so in the build summary.`;
+    else if (offerV2V)
+      hints.hint = `Unless the user asked for a particular speech setup or declined voice-to-voice, end the build summary with this line, once, and don't repeat it later: "${v2vOfferLine((await this.getNiceSpeech()) === "available")}"`;
     return withHints(
       {
         projectId,

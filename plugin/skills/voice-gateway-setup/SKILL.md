@@ -13,14 +13,20 @@ Where `check_capabilities` reports `aiAgents: "available"`, follow **AI Agents**
 
 An AI Agent's speech and call behaviour live on the agent itself, in its `voice_settings` (`manage_agent_components { component: "voice_settings" }`). Nothing to set there means the defaults: the call takes its speech from the endpoint, then the project's default speech credential, then NiCE-provided speech.
 
-1. **Check the environment.** `check_capabilities` → `niceSpeech: "available"` means the organisation has NiCE-provided speech: no Connection and no customer key needed.
-2. **The agent.** `manage_agent { operation: "create", agentType: "voice", ... }` (agent-creation skill), or an existing one from `list_resources { resourceType: "agent", projectId }`.
-3. **Pick the speech.** `list_resources { resourceType: "speech_provider", projectId }`. Prefer, in this order:
+1. **Check the environment.** `check_capabilities` → `niceSpeech: "available"` means the organisation has NiCE-provided speech: no Connection and no customer key needed. `v2v` says whether voice-to-voice (GPT live) is on, and `v2vProviders` which LLM providers can run it.
+2. **Voice-to-voice first.** Voice-to-voice responds faster and sounds more natural, so a new voice agent gets it whenever possible. Never present speech recognition and synthesis as a fallback or a downgrade. The platform ships no voice-to-voice model: it needs one the user brought.
+   - `v2v` is `unavailable`: skip this step and never mention voice-to-voice.
+   - The project has a `gpt-live-1` model (`modelGroup: "voiceToVoice"`): nothing to do, `manage_agent create` binds it for a voice agent.
+   - Another project has one: you see it in the agent-creation skill's LLM scan (shared step 4), which also runs for a voice agent whose project has no such model. Ask once: "Project X has a voice-to-voice model. Copy it here?" The copy carries that model's API key into this project, which may belong to another team. On yes, copy it with packages (shared step 5, the LLM alone; its Connection comes with it) before `manage_agent create`, or set it afterwards with `manage_agent { operation: "update", voiceLargeLanguageModelReferenceId }`. On no, carry on with speech.
+   - The user named a speech setup (e.g. "use Deepgram"): pass `voiceLargeLanguageModelReferenceId: ""` on create, and don't offer voice-to-voice.
+   - Otherwise the agent uses speech recognition and synthesis (steps 4-6). The create result's `_hints.hint` then carries one line offering voice-to-voice: put it at the end of the build summary, once, as written. Don't use it when you already asked about a copy.
+3. **The agent.** `manage_agent { operation: "create", agentType: "voice", ... }` (agent-creation skill), or an existing one from `list_resources { resourceType: "agent", projectId }`. With a voice model, read the v2v-demo skill for the voice and the voice prompt.
+4. **Pick the speech.** `list_resources { resourceType: "speech_provider", projectId }`. Prefer, in this order:
    - a `niceProvided: true` row, when the user has no preference;
    - the project's own credential (`niceProvided: false`, `status: "ok"`);
    - otherwise ask the user. Never invent a credential, vendor or voice id.
    A row serves TTS only with `tts: true` and STT only with `stt: true` (the `nice` vendor is STT only).
-4. **Set the agent's speech.**
+5. **Set the agent's speech.**
    ```json
    {
      "operation": "update",
@@ -36,7 +42,7 @@ An AI Agent's speech and call behaviour live on the agent itself, in its `voice_
    }
    ```
    The credential also fills `ttsVendor`/`ttsLabel` (or `sttVendor`/`sttLabel`). Without `ttsVoice` the result lists `voices` for that language: pick one (ask the user when it matters) and update `ttsVoice`. Each block counts only when complete: TTS needs vendor, voice and language; STT needs vendor and language. An incomplete block is ignored on calls, and the result warns about it.
-5. **Call behaviour (optional), same `config`:**
+6. **Call behaviour (optional), same `config`:**
    | Key | Meaning (default) |
    | --- | --- |
    | `greetingMode`, `greetingText` | who speaks first: `agent` (default), `static` speaks `greetingText`, `none` waits |
@@ -45,10 +51,10 @@ An AI Agent's speech and call behaviour live on the agent itself, in its `voice_
    | `thinkingSound`, `backgroundSound` | `typing_loop` while thinking (default), `none`; background `none` or `hold_music` |
    | `maxUtteranceChars` | longest spoken reply (240) |
    `get` shows every key and its value; `delete` resets the agent to the defaults.
-6. **Voice preview for the click-to-call page.** The WebRTC client needs the project's voice preview provider, for AI Agents too: `manage_settings { operation: "set_voice_preview", projectId, provider: "microsoft", isNiceProvided: true }` with a vendor that has a `niceProvided` row, else the provider's Connection (settings skill).
-7. **The endpoint.** `manage_voice_gateway { projectId, agentId, name, webrtcWidgetConfig }` → show `webrtcDemoUrl`. Don't try to set speech on the endpoint for an AI Agent: the agent's `voice_settings` are the place.
-8. **Voice tools.** Let the agent end calls: `manage_agent_components { operation: "create", component: "tool", projectId, agentId, config: { builtinSlug: "voice-hangup", ... } }`; add `voice-transfer` when calls get handed to a person.
-9. **Test.** `talk_to_agent { agentId, projectId }` tests the answers as text only. The voice itself is tested by calling `webrtcDemoUrl`; say so to the user.
+7. **Voice preview for the click-to-call page.** The WebRTC client needs the project's voice preview provider, for AI Agents too: `manage_settings { operation: "set_voice_preview", projectId, provider: "microsoft", isNiceProvided: true }` with a vendor that has a `niceProvided` row, else the provider's Connection (settings skill).
+8. **The endpoint.** `manage_voice_gateway { projectId, agentId, name, webrtcWidgetConfig }` → show `webrtcDemoUrl`. Don't try to set speech on the endpoint for an AI Agent: the agent's `voice_settings` are the place.
+9. **Voice tools.** Let the agent end calls: `manage_agent_components { operation: "create", component: "tool", projectId, agentId, config: { builtinSlug: "voice-hangup", ... } }`; add `voice-transfer` when calls get handed to a person.
+10. **Test.** `talk_to_agent { agentId, projectId }` tests the answers as text only. The voice itself is tested by calling `webrtcDemoUrl`; say so to the user.
 
 ## Legacy AI Agents and flows
 

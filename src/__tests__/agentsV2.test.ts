@@ -1542,3 +1542,92 @@ describe("audit_voice_agent for AI Agents", () => {
     );
   });
 });
+
+describe("voice agents run voice-to-voice when they can", () => {
+  const LIVE = "597e276b-0bd0-40e8-86df-d4d743ea311c";
+  const liveModel = {
+    referenceId: LIVE,
+    name: "GPT Live",
+    provider: "openAI",
+    modelType: "gpt-live-1",
+    modelGroup: "voiceToVoice",
+    connectionId: "c-openai",
+  };
+  const NICE = { vendor: "microsoft", systemProvided: true };
+
+  function createApi(llms: any[], extra: Record<string, Route> = {}) {
+    return routedApi({
+      "GET /v2.0/locales": () => ({
+        items: [{ referenceId: "loc-1", projectReference: ID.project }],
+      }),
+      "GET /v2.0/largelanguagemodels": () => ({ items: llms }),
+      [`POST ${V1}/v1/agents`]: (body) => ({ ...agentRecord, ...body }),
+      [`GET ${V1}/v1/agents/${ID.agent}`]: () => ({
+        ...agentRecord,
+        voiceLargeLanguageModelReferenceId: LIVE,
+      }),
+      "GET /v2.0/voice/speechCredentials": () => ({ data: [NICE] }),
+      ...extra,
+    });
+  }
+  const create = (api: any, extra: Record<string, any> = {}) =>
+    handlers(api).handleToolCall("manage_agent", {
+      operation: "create",
+      projectId: ID.project,
+      name: "Clinic Desk",
+      largeLanguageModelReferenceId: LLM,
+      createEndpoint: false,
+      agentType: "voice",
+      ...extra,
+    }) as Promise<any>;
+  const sent = (api: any) =>
+    api.post.mock.calls.find((c: any[]) => c[0] === `${V1}/v1/agents`)[1];
+
+  it("binds a GPT live model that is already in the project", async () => {
+    const api = createApi([liveModel]);
+    const r = await create(api);
+    expect(sent(api).voiceLargeLanguageModelReferenceId).toBe(LIVE);
+    expect(r._hints.hint).toContain('voice-to-voice on "GPT Live"');
+  });
+
+  it("offers voice-to-voice once, as an option, when the project has no model", async () => {
+    const api = createApi([]);
+    const r = await create(api);
+    expect(sent(api).voiceLargeLanguageModelReferenceId).toBeUndefined();
+    expect(r._hints.hint).toContain(
+      '"It runs on NiCE-provided speech, so it works right away. It can also run voice-to-voice, which responds faster and sounds more natural. If you have an OpenAI API key, I can set that up."',
+    );
+    expect(r._hints.hint).not.toMatch(/best|fallback|unfortunately/i);
+  });
+
+  it("never mentions voice-to-voice where it is not enabled", async () => {
+    const api = createApi([liveModel], {
+      [`GET ${V1}/v1/agents/capability-probe/voice-prompt`]: () => {
+        throw httpError(404);
+      },
+    });
+    const r = await create(api);
+    expect(sent(api).voiceLargeLanguageModelReferenceId).toBeUndefined();
+    expect(JSON.stringify(r)).not.toMatch(/voice-to-voice|GPT live/i);
+  });
+
+  it("keeps speech when the caller passes '' and leaves text agents alone", async () => {
+    const speech = createApi([liveModel]);
+    const r = await create(speech, { voiceLargeLanguageModelReferenceId: "" });
+    expect("voiceLargeLanguageModelReferenceId" in sent(speech)).toBe(false);
+    expect(r._hints.hint).toBeUndefined();
+
+    const text = createApi([liveModel]);
+    const t = await create(text, { agentType: "text" });
+    expect(sent(text).voiceLargeLanguageModelReferenceId).toBeUndefined();
+    expect(t._hints.hint).toBeUndefined();
+  });
+
+  it("names the voice-to-voice providers in check_capabilities", async () => {
+    const r: any = await handlers(createApi([])).handleToolCall(
+      "check_capabilities",
+      {},
+    );
+    expect(r.v2vProviders).toEqual(["openAI"]);
+  });
+});
