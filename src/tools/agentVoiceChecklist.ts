@@ -11,7 +11,7 @@
  *
  * A pure function of the fetched resources, like voiceChecklist.ts.
  */
-import { speechBlocks } from "./agentVoice.js";
+import { speechBlocks, speechCredentialFor } from "./agentVoice.js";
 import type { CheckStatus } from "./voiceChecklist.js";
 
 export type AgentVoiceFix =
@@ -34,10 +34,12 @@ export interface AgentAuditContext {
   agent: any;
   /** The agent's voice settings: its instance's values or the defaults. */
   settings: Record<string, any>;
-  /** Builtin slugs (`type`) of the tools available to the agent. */
+  /** Builtin slugs (`type`) of the tools the agent can call. */
   toolTypes: string[];
-  /** The project's speech credentials (raw rows). */
-  providers: any[];
+  /** Builtin slugs of tools attached to the agent but switched off for it. */
+  disabledToolTypes?: string[];
+  /** The project's speech credentials (raw rows); null when unreadable. */
+  providers: any[] | null;
   /** The project's LLMs. */
   llms: any[];
   /** The Voice Gateway endpoint that targets the agent; null when none does. */
@@ -67,20 +69,82 @@ const check = (
   ...(fix && status === "fail" ? { fix } : {}),
 });
 
-/** Where a call gets TTS or STT from when the agent's block is empty. */
-function fallbackSpeech(
+/**
+ * What a call speaks or listens with, as a check result: "ok" with a label,
+ * "fail" with a reason, or "unknown" when the credentials cannot be read.
+ */
+function resolveSpeech(
   kind: "tts" | "stt",
+  block: "complete" | "empty" | "incomplete",
+  s: Record<string, any>,
   ctx: AgentAuditContext,
-): string | null {
-  if (ctx.endpoint?.voiceSettings?.[kind]?.credentialId)
-    return "the endpoint's speech settings";
+): { state: "ok" | "fail" | "unknown"; text: string } {
+  const label = kind.toUpperCase();
+  if (block === "incomplete")
+    return {
+      state: "fail",
+      text: `${label}: incomplete in the voice settings, so calls ignore it.`,
+    };
+  if (!ctx.providers)
+    return {
+      state: "unknown",
+      text: `${label}: the project's speech credentials could not be read.`,
+    };
   const serves = (p: any) => p?.[kind === "tts" ? "useForTts" : "useForStt"];
+  const usable = (p: any, what: string) =>
+    !p
+      ? {
+          state: "fail" as const,
+          text: `${label}: ${what} is not in this project.`,
+        }
+      : !serves(p)
+        ? {
+            state: "fail" as const,
+            text: `${label}: ${what} "${p.name}" does not offer ${label}.`,
+          }
+        : p.status?.state === "error"
+          ? {
+              state: "fail" as const,
+              text: `${label}: ${what} "${p.name}" fails its test.`,
+            }
+          : null;
+  if (block === "complete") {
+    const row = speechCredentialFor(kind, s, ctx.providers);
+    const bad = usable(row, "the agent's speech credential");
+    if (bad) return bad;
+    if (row.vendor !== s[`${kind}Vendor`])
+      return {
+        state: "fail",
+        text: `${label}: the settings say ${s[`${kind}Vendor`]}, but the credential "${row.name}" is ${row.vendor}.`,
+      };
+    return {
+      state: "ok",
+      text: `${label}: the agent's own (${row.vendor}, ${row.name}).`,
+    };
+  }
+  const endpointCredential = ctx.endpoint?.voiceSettings?.[kind]?.credentialId;
+  if (endpointCredential) {
+    const row = ctx.providers.find((p) => p.id === endpointCredential);
+    return (
+      usable(row, "the endpoint's speech credential") ?? {
+        state: "ok",
+        text: `${label}: none set; calls use the endpoint's (${row.vendor}).`,
+      }
+    );
+  }
   const isDefault = kind === "tts" ? "isDefaultTts" : "isDefaultStt";
   const row =
     ctx.providers.find((p) => serves(p) && p[isDefault]) ??
     ctx.providers.find((p) => serves(p) && p.systemProvided === true);
-  if (!row || row.status?.state === "error") return null;
-  return `${row.vendor} (${row.name}${row.systemProvided ? ", NiCE-provided" : ""})`;
+  if (!row || row.status?.state === "error")
+    return {
+      state: "fail",
+      text: `${label}: none set and no working fallback.`,
+    };
+  return {
+    state: "ok",
+    text: `${label}: none set; calls use ${row.vendor} (${row.name}${row.systemProvided ? ", NiCE-provided" : ""}).`,
+  };
 }
 
 export function evaluateAgentChecks(ctx: AgentAuditContext): AgentVoiceCheck[] {
@@ -89,41 +153,20 @@ export function evaluateAgentChecks(ctx: AgentAuditContext): AgentVoiceCheck[] {
 
   // 3.3 Speech services: what the caller hears and how they are heard.
   const blocks = speechBlocks(s);
-  const speech: string[] = [];
-  let speechOk = true;
-  for (const kind of ["tts", "stt"] as const) {
-    const label = kind.toUpperCase();
-    if (blocks[kind] === "complete") {
-      const ref = s[`${kind}CredentialReferenceId`];
-      const row = ctx.providers.find((p) => p.referenceId === ref);
-      if (row?.status?.state === "error") {
-        speechOk = false;
-        speech.push(
-          `${label}: its speech credential "${row.name}" fails its test.`,
-        );
-      } else speech.push(`${label}: the agent's own (${s[`${kind}Vendor`]}).`);
-    } else if (blocks[kind] === "incomplete") {
-      speechOk = false;
-      speech.push(
-        `${label}: incomplete in the voice settings, so calls ignore it.`,
-      );
-    } else {
-      const from = fallbackSpeech(kind, ctx);
-      if (!from) speechOk = false;
-      speech.push(
-        from
-          ? `${label}: none set; calls use ${from}.`
-          : `${label}: none set and no working fallback.`,
-      );
-    }
-  }
+  const speech = (["tts", "stt"] as const).map((k) =>
+    resolveSpeech(k, blocks[k], s, ctx),
+  );
   checks.push(
     check(
       "agent.speech-resolves",
       "3.3 Speech Services",
       "Speech output and recognition resolve to a working credential",
-      speechOk ? "pass" : "fail",
-      speech.join(" "),
+      speech.some((r) => r.state === "fail")
+        ? "fail"
+        : speech.some((r) => r.state === "unknown")
+          ? "warn"
+          : "pass",
+      speech.map((r) => r.text).join(" "),
     ),
   );
 
@@ -187,6 +230,10 @@ export function evaluateAgentChecks(ctx: AgentAuditContext): AgentVoiceCheck[] {
 
   // 3.5 Transactions: the agent can end and hand over a call.
   const has = (slug: string) => ctx.toolTypes.includes(slug);
+  const off = (slug: string) =>
+    (ctx.disabledToolTypes ?? []).includes(slug)
+      ? ` It is attached but switched off for this agent.`
+      : "";
   checks.push(
     check(
       "agent.hangup-tool",
@@ -195,7 +242,7 @@ export function evaluateAgentChecks(ctx: AgentAuditContext): AgentVoiceCheck[] {
       has("voice-hangup") ? "pass" : "fail",
       has("voice-hangup")
         ? "voice-hangup is attached."
-        : "No voice-hangup tool: the agent cannot end a call itself.",
+        : `No usable voice-hangup tool: the agent cannot end a call itself.${off("voice-hangup")}`,
       { kind: "addTool", builtinSlug: "voice-hangup" },
     ),
   );
@@ -207,7 +254,7 @@ export function evaluateAgentChecks(ctx: AgentAuditContext): AgentVoiceCheck[] {
       has("voice-transfer") ? "pass" : "warn",
       has("voice-transfer")
         ? "voice-transfer is attached."
-        : "No voice-transfer tool. Add one when calls must reach a person; it needs a transfer target, so it is not added automatically.",
+        : `No usable voice-transfer tool. Add one when calls must reach a person; it needs a transfer target, so it is not added automatically.${off("voice-transfer")}`,
     ),
   );
 

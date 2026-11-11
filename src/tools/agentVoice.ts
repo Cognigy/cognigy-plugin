@@ -106,6 +106,80 @@ export function settingsMap(
   );
 }
 
+/**
+ * The settings a call uses: the descriptor's defaults with the stored values
+ * over them. Voice Studio stores only the keys that are set, so a stored
+ * parameter list is never the whole picture.
+ */
+export function resolveVoiceSettings(
+  defaults: any[] | undefined,
+  stored: any[] | undefined,
+): Record<string, any> {
+  return { ...settingsMap(defaults), ...settingsMap(stored) };
+}
+
+const isUnset = (v: any) =>
+  v === "" ||
+  v == null ||
+  (typeof v === "object" && !Array.isArray(v) && !Object.keys(v).length);
+
+/**
+ * The stored parameter list after `changes`, in Voice Studio's shape: only
+ * the keys that are set. An unset value ("", null, {}) removes the key, so it
+ * inherits again; 0 and false are real values. Fields of a stored parameter
+ * the plugin does not set are kept. Throws on a key the descriptor lacks.
+ */
+export function voiceParameters(
+  defaults: any[],
+  stored: any[],
+  changes: Record<string, any>,
+): any[] {
+  const known = new Map(defaults.map((p) => [p.key, p]));
+  const unknown = Object.keys(changes).filter((k) => !known.has(k));
+  if (unknown.length)
+    throw new Error(
+      `Unknown voice setting(s) ${unknown.join(", ")}; the settings are ${[...known.keys()].join(", ")}.`,
+    );
+  const out = new Map(stored.map((p) => [p.key, p]));
+  for (const [key, value] of Object.entries(changes)) {
+    if (isUnset(value)) {
+      out.delete(key);
+      continue;
+    }
+    const d = known.get(key);
+    out.set(key, {
+      ...out.get(key),
+      key,
+      name: d.name ?? key,
+      description: d.description ?? "",
+      mode: "dynamic",
+      type: d.type,
+      value,
+    });
+  }
+  return [...out.values()];
+}
+
+/**
+ * The speech credential a TTS or STT block points at: by referenceId, else
+ * (settings saved before the referenceId existed) by vendor and label, the
+ * way the gateway picks it. Undefined when the project has none that fits.
+ */
+export function speechCredentialFor(
+  kind: "tts" | "stt",
+  s: Record<string, any>,
+  providers: any[],
+): any | undefined {
+  const ref = s[`${kind}CredentialReferenceId`];
+  if (ref) return providers.find((p) => p.referenceId === ref);
+  return providers.find(
+    (p) =>
+      p[kind === "tts" ? "useForTts" : "useForStt"] &&
+      p.vendor === s[`${kind}Vendor`] &&
+      (!s[`${kind}Label`] || p.name === s[`${kind}Label`]),
+  );
+}
+
 type Block = "complete" | "empty" | "incomplete";
 
 /** All or nothing per block, as the call resolves it. */

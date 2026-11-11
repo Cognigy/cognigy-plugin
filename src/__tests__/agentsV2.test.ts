@@ -1182,6 +1182,7 @@ describe("voice settings for AI Agents", () => {
       "sttLanguage",
       "sttLabel",
       "sttCredentialReferenceId",
+      "greetingText",
     ]
       .map((key) => ({
         key,
@@ -1375,6 +1376,108 @@ describe("voice settings for AI Agents", () => {
       `${V1}/v1/tools/${TOOL}`,
       expect.anything(),
     );
+  });
+
+  it("updates a Voice Studio instance that stores only some keys, and keeps it sparse", async () => {
+    const studio = {
+      id: TOOL,
+      referenceId: "voice-ref",
+      type: "voice-config-defaults",
+      parameters: [
+        {
+          key: "greetingText",
+          name: "greetingText",
+          mode: "dynamic",
+          type: "string",
+          value: "Hi!",
+          widget: "text",
+        },
+      ],
+    };
+    const api = voiceApi(studio);
+    const h = await declined(api);
+    const r = await call(h, "update", { minWordsToInterrupt: 2 });
+    expect(r.settings).toMatchObject({
+      greetingText: "Hi!",
+      minWordsToInterrupt: 2,
+      ttsVoice: "",
+    });
+    const [, body] = api.patch.mock.calls.at(-1);
+    expect(body.parameters.map((p: any) => p.key)).toEqual([
+      "greetingText",
+      "minWordsToInterrupt",
+    ]);
+    expect(body.parameters[0].widget).toBe("text");
+
+    await call(h, "update", { greetingText: "" });
+    const [, cleared] = api.patch.mock.calls.at(-1);
+    expect(cleared.parameters.map((p: any) => p.key)).toEqual([
+      "minWordsToInterrupt",
+    ]);
+  });
+
+  it("refuses a provider switch that leaves a voice the new provider lacks", async () => {
+    const dg = {
+      ...nice,
+      id: "dg1",
+      referenceId: "dg-ref",
+      name: "Acme Deepgram",
+      vendor: "deepgram",
+      systemProvided: false,
+    };
+    const set = {
+      id: TOOL,
+      referenceId: "voice-ref",
+      type: "voice-config-defaults",
+      parameters: [
+        ["ttsVendor", "microsoft"],
+        ["ttsVoice", "en-US-AvaNeural"],
+        ["ttsLanguage", "en-US"],
+        ["ttsLabel", "Included Speech Provider"],
+        ["ttsCredentialReferenceId", "nice-ms"],
+      ].map(([key, value]) => ({
+        key,
+        name: key,
+        mode: "dynamic",
+        type: "string",
+        value,
+      })),
+    };
+    const api = voiceApi(set, {
+      "GET /v2.0/voice/speechCredentials": () => ({ data: [nice, dg] }),
+      [`GET /v2.0/voice/speechCredentials/dg1/voices`]: () => ({
+        voices: [{ id: "aura-2-thalia-en" }],
+      }),
+    });
+    const h = await declined(api);
+    const r = await call(h, "update", { ttsCredentialReferenceId: "dg-ref" });
+    expect(r).toMatchObject({
+      error: "unknown_voice",
+      changed: false,
+      ttsVoice: "en-US-AvaNeural",
+      voices: ["aura-2-thalia-en"],
+    });
+    expect(r._hints.action).toContain("same update");
+    expect(api.patch).not.toHaveBeenCalled();
+  });
+
+  it("runs parallel writes on one agent one after another, creation included", async () => {
+    const api = voiceApi();
+    const h = await declined(api);
+    await Promise.all([
+      call(h, "update", { greetingText: "Hello" }),
+      call(h, "update", { minWordsToInterrupt: 3 }),
+    ]);
+    expect(api.post).toHaveBeenCalledTimes(1);
+    const [, body] = api.patch.mock.calls
+      .filter((c: any[]) => c[0] === `${V1}/v1/tools/${TOOL}`)
+      .at(-1);
+    expect(
+      Object.fromEntries(body.parameters.map((p: any) => [p.key, p.value])),
+    ).toEqual({
+      greetingText: "Hello",
+      minWordsToInterrupt: 3,
+    });
   });
 
   it("sends the generic tool path for voice-config-defaults to voice_settings", async () => {
@@ -1619,7 +1722,11 @@ describe("audit_voice_agent for AI Agents", () => {
     id: TOOL,
     referenceId: "voice-ref",
     type: "voice-config-defaults",
-    parameters: params({
+    // Voice Studio stores only the keys that are set.
+    parameters: params({ greetingMode: "static", greetingText: "Hi!" }),
+  };
+  const auditDescriptor = {
+    defaultParameters: params({
       bargeInOnSpeech: true,
       minWordsToInterrupt: 1,
       bargeInOnDtmf: false,
@@ -1628,24 +1735,30 @@ describe("audit_voice_agent for AI Agents", () => {
       silenceRetries: 2,
       continuousAsr: false,
       greetingMode: "agent",
+      greetingText: "",
       thinkingSound: "typing_loop",
     }),
   };
 
-  function auditApi() {
+  function auditApi(
+    agentExtra: Record<string, any> = {},
+    agentTools: any[] = [],
+  ) {
     let stored = instance;
+    let agent: any = {
+      ...agentRecord,
+      toolReferenceIds: ["voice-ref"],
+      ...agentExtra,
+    };
     return routedApi({
-      [`GET ${V1}/v1/agents/${ID.agent}`]: () => ({
-        ...agentRecord,
-        toolReferenceIds: ["voice-ref"],
-      }),
-      [`PATCH ${V1}/v1/agents/${ID.agent}`]: (body) => ({
-        ...agentRecord,
-        ...body,
-      }),
+      [`GET ${V1}/v1/agents/${ID.agent}`]: () => agent,
+      [`GET ${V1}/v1/builtin-tools/voice-config-defaults`]: () =>
+        auditDescriptor,
+      [`PATCH ${V1}/v1/agents/${ID.agent}`]: (body) =>
+        (agent = { ...agent, ...body }),
       [`GET ${V1}/v1/tools`]: (_b, cfg) =>
         cfg.params.agentReferenceId
-          ? { items: [stored] }
+          ? { items: [stored, ...agentTools] }
           : { items: [{ referenceId: "hangup-ref", type: "voice-hangup" }] },
       [`PATCH ${V1}/v1/tools/${TOOL}`]: (body) =>
         (stored = { ...stored, ...body }),
@@ -1707,6 +1820,78 @@ describe("audit_voice_agent for AI Agents", () => {
       expect.anything(),
     );
     expect(r.checks.find((c: any) => c.id === "agent.silence").status).toBe(
+      "pass",
+    );
+  });
+
+  it("keeps Voice Studio's stored keys when it applies settings fixes", async () => {
+    const api = auditApi();
+    const h = handlers(api);
+    await h.handleToolCall("manage_snapshots", {
+      operation: "decline",
+      projectId: ID.project,
+    });
+    await h.handleToolCall("audit_voice_agent", {
+      agentId: ID.agent,
+      projectId: ID.project,
+      apply: true,
+    });
+    const [, body] = api.patch.mock.calls.find(
+      (c: any[]) => c[0] === `${V1}/v1/tools/${TOOL}`,
+    );
+    const byKey = Object.fromEntries(
+      body.parameters.map((p: any) => [p.key, p.value]),
+    );
+    expect(byKey).toEqual({
+      greetingMode: "static",
+      greetingText: "Hi!",
+      bargeInOnSpeech: true,
+      minWordsToInterrupt: 2,
+      bargeInOnDtmf: false,
+      promptOnSilence: true,
+      silenceTimeoutSeconds: 6,
+      silenceRetries: 5,
+    });
+  });
+
+  it("does not count a switched-off voice-hangup, and switches it back on", async () => {
+    const hangup = { referenceId: "hangup-ref", type: "voice-hangup" };
+    const api = auditApi({ disabledToolReferenceIds: ["hangup-ref"] }, [
+      hangup,
+    ]);
+    const h = handlers(api);
+    const dry: any = await h.handleToolCall("audit_voice_agent", {
+      agentId: ID.agent,
+      projectId: ID.project,
+    });
+    const check = dry.checks.find((c: any) => c.id === "agent.hangup-tool");
+    expect(check).toMatchObject({ status: "fail", autoFixable: true });
+    expect(check.detail).toContain("switched off");
+
+    await h.handleToolCall("manage_snapshots", {
+      operation: "decline",
+      projectId: ID.project,
+    });
+    const r: any = await h.handleToolCall("audit_voice_agent", {
+      agentId: ID.agent,
+      projectId: ID.project,
+      apply: true,
+      only: ["agent.hangup-tool"],
+    });
+    expect(r.appliedFixes).toEqual([
+      {
+        id: "agent.hangup-tool",
+        applied: true,
+        tool: "voice-hangup",
+        how: "enabled",
+      },
+    ]);
+    expect(api.patch).toHaveBeenCalledWith(
+      `${V1}/v1/agents/${ID.agent}`,
+      { disabledToolReferenceIds: [] },
+      expect.anything(),
+    );
+    expect(r.checks.find((c: any) => c.id === "agent.hangup-tool").status).toBe(
       "pass",
     );
   });

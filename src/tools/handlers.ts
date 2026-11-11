@@ -75,7 +75,10 @@ import {
   findVoiceSettings,
   listSpeechProviders,
   listVoices,
+  resolveVoiceSettings,
   settingsMap,
+  speechCredentialFor,
+  voiceParameters,
   speechBlocks,
   summarizeSpeechProvider,
 } from "./agentVoice.js";
@@ -1418,8 +1421,8 @@ export class ToolHandlers {
    * own step 5 (`update_ai_agent` right after `create_ai_agent`).
    */
   private readonly resourcesCreatedThisSession = new Set<string>();
-  /** Last pending skill/tool list change per AI Agent, so parallel attaches queue up. */
-  private readonly agentListChanges = new Map<string, Promise<unknown>>();
+  /** Last pending read-modify-write per AI Agent (forAgent), so parallel changes queue up. */
+  private readonly agentChanges = new Map<string, Promise<unknown>>();
   /**
    * Highest backup version this session handed out. Version numbers come from
    * the project's existing backups, so without this floor a create → delete →
@@ -3923,10 +3926,22 @@ export class ToolHandlers {
 
   /**
    * An AI Agent's voice settings: its one voice-config-defaults tool. create
-   * and update both upsert it, get shows the stored values (or the defaults)
-   * and delete removes it, which resets the agent to the defaults.
+   * and update both upsert it, get shows the stored values over the defaults
+   * and delete removes it, which resets the agent to the defaults. Writes run
+   * in the agent's queue: they read the tool and the agent's tool list and
+   * write them back whole.
    */
-  private async voiceSettings(data: {
+  private voiceSettings(data: {
+    operation: "get" | "create" | "update" | "delete";
+    projectId: string;
+    agentId: string;
+    config?: Record<string, any>;
+  }): Promise<any> {
+    if (data.operation === "get") return this.voiceSettingsNow(data);
+    return this.forAgent(data.agentId, () => this.voiceSettingsNow(data));
+  }
+
+  private async voiceSettingsNow(data: {
     operation: "get" | "create" | "update" | "delete";
     projectId: string;
     agentId: string;
@@ -3949,24 +3964,17 @@ export class ToolHandlers {
         await this.apiClient.delete(`${v1}/tools/${current.id}`, { params });
       return { reset: true, agentId, removed: !!current };
     }
-    const base: any =
-      current ??
-      (await this.apiClient.get(`${v1}/builtin-tools/${VOICE_SETTINGS_SLUG}`, {
-        params,
-      }));
+    const descriptor: any = await this.apiClient.get(
+      `${v1}/builtin-tools/${VOICE_SETTINGS_SLUG}`,
+      { params },
+    );
+    const defaults: any[] = descriptor?.defaultParameters ?? [];
     let saved: any = current;
     const providers = (await listSpeechProviders(this.apiClient, projectId))
       .items;
     // The TTS credential's voices for the settings' language, or null.
     const voicesFor = async (s: Record<string, any>) => {
-      const row =
-        providers.find((p) => p.referenceId === s.ttsCredentialReferenceId) ??
-        providers.find(
-          (p) =>
-            p.useForTts &&
-            p.vendor === s.ttsVendor &&
-            (!s.ttsLabel || p.name === s.ttsLabel),
-        );
+      const row = speechCredentialFor("tts", s, providers);
       return row && s.ttsLanguage
         ? listVoices(this.apiClient, projectId, row.id, s.ttsLanguage)
         : null;
@@ -3991,25 +3999,43 @@ export class ToolHandlers {
         config[`${kind}Label`] ??= row.name;
       }
       const next = {
-        ...settingsMap(base.parameters ?? base.defaultParameters),
+        ...resolveVoiceSettings(defaults, current?.parameters),
         ...config,
       };
-      const voices = config.ttsVoice ? await voicesFor(next) : null;
-      if (voices?.length && !voices.includes(config.ttsVoice)) {
+      // Any change to the voice, its credential, vendor or language must
+      // leave a voice that provider offers for that language.
+      const ttsChanged = [
+        "ttsVoice",
+        "ttsCredentialReferenceId",
+        "ttsVendor",
+        "ttsLabel",
+        "ttsLanguage",
+      ].some((k) => k in config);
+      const voices = ttsChanged && next.ttsVoice ? await voicesFor(next) : null;
+      if (voices?.length && !voices.includes(next.ttsVoice)) {
         return withHints(
           {
             error: "unknown_voice",
             changed: false,
-            ttsVoice: config.ttsVoice,
+            ttsVoice: next.ttsVoice,
             voices: voices.slice(0, 60),
           },
-          { action: `Pick ttsVoice from voices and retry.` },
+          {
+            action: config.ttsVoice
+              ? "Pick ttsVoice from voices and retry."
+              : `The agent's voice ${next.ttsVoice} is not offered for this credential and language: retry with a ttsVoice from voices in the same update.`,
+          },
         );
       }
+      const parameters = voiceParameters(
+        defaults,
+        current?.parameters ?? [],
+        config,
+      );
       if (current) {
         saved = await this.apiClient.patch(
           `${v1}/tools/${current.id}`,
-          { parameters: builtinToolParameters(current, config) },
+          { parameters },
           { params },
         );
       } else {
@@ -4018,22 +4044,29 @@ export class ToolHandlers {
           source: "builtin",
           type: VOICE_SETTINGS_SLUG,
           builtinSlug: VOICE_SETTINGS_SLUG,
-          name: base.name ?? "Voice defaults",
-          description: base.description ?? "",
-          parameters: builtinToolParameters(base, config),
+          name: descriptor?.name ?? "Voice defaults",
+          description: descriptor?.description ?? "",
+          parameters,
         });
-        await this.attachComponent(
-          { component: "tool", projectId },
-          agentId,
-          saved.referenceId,
-          true,
-        );
+        // Already in the agent's queue, so the raw list change.
+        try {
+          await this.changeAgentList(
+            { component: "tool", projectId },
+            agentId,
+            saved.referenceId,
+            true,
+          );
+        } catch (e) {
+          // Like Voice Studio: an instance no agent points at is removed again.
+          await this.apiClient
+            .delete(`${v1}/tools/${saved.id}`, { params })
+            .catch(() => undefined);
+          throw e;
+        }
       }
     }
 
-    const settings = settingsMap(
-      (saved ?? base).parameters ?? base.defaultParameters,
-    );
+    const settings = resolveVoiceSettings(defaults, saved?.parameters);
     const speech = speechBlocks(settings);
     const needs = {
       tts: "ttsVendor, ttsVoice and ttsLanguage",
@@ -4081,10 +4114,22 @@ export class ToolHandlers {
     referenceId: string,
     attach: boolean,
   ): Promise<any> {
-    const run = (this.agentListChanges.get(agentId) ?? Promise.resolve())
+    return this.forAgent(agentId, () =>
+      this.changeAgentList(data, agentId, referenceId, attach),
+    );
+  }
+
+  /**
+   * Run a read-modify-write on one AI Agent (its skill or tool lists, its voice
+   * settings) after the previous one on that agent has finished. Code already
+   * inside fn calls changeAgentList directly: queueing again would wait on
+   * itself.
+   */
+  private forAgent<T>(agentId: string, fn: () => Promise<T>): Promise<T> {
+    const run = (this.agentChanges.get(agentId) ?? Promise.resolve())
       .catch(() => undefined)
-      .then(() => this.changeAgentList(data, agentId, referenceId, attach));
-    this.agentListChanges.set(agentId, run);
+      .then(fn);
+    this.agentChanges.set(agentId, run);
     return run;
   }
 
@@ -8547,9 +8592,10 @@ export class ToolHandlers {
             },
           })
           .then((r: any) => (r?.items ?? []) as any[]),
+        // null: unreadable, which the speech check reports instead of failing.
         listSpeechProviders(this.apiClient, projectId)
-          .then((r) => r.items)
-          .catch(() => []),
+          .then((r): any[] | null => r.items)
+          .catch(() => null),
         this.apiClient
           .get("/v2.0/largelanguagemodels", {
             params: { projectId, limit: 100 },
@@ -8558,14 +8604,12 @@ export class ToolHandlers {
         this.agentVoiceEndpoint(projectId, agent.referenceId, data.endpointId),
       ]);
       const instance = tools.find((t) => t?.type === VOICE_SETTINGS_SLUG);
-      const parameters =
-        instance?.parameters ??
-        (
-          (await this.apiClient.get(
-            `${v1}/builtin-tools/${VOICE_SETTINGS_SLUG}`,
-            { params },
-          )) as any
-        )?.defaultParameters;
+      const descriptor: any = await this.apiClient.get(
+        `${v1}/builtin-tools/${VOICE_SETTINGS_SLUG}`,
+        { params },
+      );
+      // The tools list includes the ones switched off for this agent.
+      const off = new Set<string>(agent.disabledToolReferenceIds ?? []);
       let voicePromptWarnings: any[] | undefined;
       if (agent.voiceLargeLanguageModelReferenceId) {
         try {
@@ -8587,8 +8631,16 @@ export class ToolHandlers {
       }
       return {
         agent,
-        settings: settingsMap(parameters),
-        toolTypes: tools.map((t) => t?.type),
+        settings: resolveVoiceSettings(
+          descriptor?.defaultParameters,
+          instance?.parameters,
+        ),
+        toolTypes: tools
+          .filter((t) => !off.has(t?.referenceId))
+          .map((t) => t?.type),
+        disabledToolTypes: tools
+          .filter((t) => off.has(t?.referenceId))
+          .map((t) => t?.type),
         providers,
         llms,
         endpoint,
@@ -8647,38 +8699,10 @@ export class ToolHandlers {
     for (const c of toApply.filter((c) => c.fix!.kind === "addTool")) {
       const slug = (c.fix as any).builtinSlug;
       try {
-        // Attach a project tool of that kind when there is one, else create it.
-        const existing: any = await this.apiClient.get(`${v1}/tools`, {
-          params: { projectId, source: "builtin", limit: 100 },
-        });
-        const found = (existing?.items ?? []).find(
-          (t: any) => t?.type === slug,
+        const how = await this.forAgent(agentId, () =>
+          this.giveAgentTool(projectId, agentId, slug),
         );
-        if (found) {
-          await this.attachComponent(
-            { component: "tool", projectId },
-            agentId,
-            found.referenceId,
-            true,
-          );
-        } else {
-          const descriptor: any = await this.apiClient.get(
-            `${v1}/builtin-tools/${slug}`,
-            { params },
-          );
-          await this.handleManageAgentComponents({
-            operation: "create",
-            component: "tool",
-            projectId,
-            agentId,
-            config: {
-              builtinSlug: slug,
-              name: descriptor?.name ?? slug,
-              description: descriptor?.description ?? "",
-            },
-          });
-        }
-        appliedFixes.push({ id: c.id, applied: true, tool: slug });
+        appliedFixes.push({ id: c.id, applied: true, tool: slug, how });
       } catch (e: any) {
         appliedFixes.push({ id: c.id, applied: false, error: e?.message });
       }
@@ -8693,6 +8717,68 @@ export class ToolHandlers {
       _note:
         "Applied the auto-fixable fixes and re-audited. Advisory checks (warn) and manual items are not auto-fixed.",
     };
+  }
+
+  /**
+   * Make a builtin tool usable for an AI Agent: switch it back on when the
+   * agent has it switched off, else attach the project's tool of that kind,
+   * else create one. Runs inside forAgent, so it changes the lists directly.
+   */
+  private async giveAgentTool(
+    projectId: string,
+    agentId: string,
+    slug: string,
+  ): Promise<"enabled" | "attached" | "created"> {
+    const v1 = `${this.agentsV2BaseUrl}/v1`;
+    const params = { projectId };
+    const agentUrl = `${v1}/agents/${agentId}`;
+    const agent: any = await this.apiClient.get(agentUrl, { params });
+    const off: string[] = agent?.disabledToolReferenceIds ?? [];
+    const mine: any = await this.apiClient.get(`${v1}/tools`, {
+      params: { projectId, agentReferenceId: agent.referenceId, limit: 100 },
+    });
+    const switchedOff = (mine?.items ?? []).find(
+      (t: any) => t?.type === slug && off.includes(t.referenceId),
+    );
+    if (switchedOff) {
+      await this.apiClient.patch(
+        agentUrl,
+        {
+          disabledToolReferenceIds: off.filter(
+            (r) => r !== switchedOff.referenceId,
+          ),
+        },
+        { params },
+      );
+      return "enabled";
+    }
+    const list = { component: "tool", projectId };
+    const existing: any = await this.apiClient.get(`${v1}/tools`, {
+      params: { projectId, source: "builtin", limit: 100 },
+    });
+    const found = (existing?.items ?? []).find((t: any) => t?.type === slug);
+    if (found) {
+      await this.changeAgentList(list, agentId, found.referenceId, true);
+      return "attached";
+    }
+    const descriptor: any = await this.apiClient.get(
+      `${v1}/builtin-tools/${slug}`,
+      { params },
+    );
+    const created: any = await this.apiClient.post(`${v1}/tools`, {
+      projectId,
+      source: "builtin",
+      type: slug,
+      builtinSlug: slug,
+      name: descriptor?.name ?? slug,
+      description: descriptor?.description ?? "",
+      parameters: builtinToolParameters(descriptor, {}),
+    });
+    for (const key of [created?.id, created?.referenceId]) {
+      if (key) this.resourcesCreatedThisSession.add(String(key));
+    }
+    await this.changeAgentList(list, agentId, created.referenceId, true);
+    return "created";
   }
 
   /** The Voice Gateway endpoint that targets an AI Agent, read in full; null when none. */

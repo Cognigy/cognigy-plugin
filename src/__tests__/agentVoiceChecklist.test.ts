@@ -104,6 +104,51 @@ describe("AI Agent voice go-live checks", () => {
     ).toEqual([]);
   });
 
+  it("resolves the credential a complete block points at", () => {
+    const tts = {
+      ...defaults,
+      ttsVendor: "microsoft",
+      ttsVoice: "en-US-AvaNeural",
+      ttsLanguage: "en-US",
+    };
+    const speech = (over: Partial<AgentAuditContext>) =>
+      byId(evaluateAgentChecks(ctx(over)))["agent.speech-resolves"];
+
+    const missing = speech({
+      settings: { ...tts, ttsCredentialReferenceId: "gone" },
+    });
+    expect(missing.status).toBe("fail");
+    expect(missing.detail).toContain("not in this project");
+
+    const sttOnly = { ...niceMs, referenceId: "stt", useForTts: false };
+    expect(
+      speech({
+        settings: { ...tts, ttsCredentialReferenceId: "stt" },
+        providers: [sttOnly],
+      }).detail,
+    ).toContain("does not offer TTS");
+
+    const mismatch = speech({
+      settings: {
+        ...tts,
+        ttsVendor: "deepgram",
+        ttsCredentialReferenceId: "nice-ms",
+      },
+    });
+    expect(mismatch.detail).toContain("is microsoft");
+
+    // Saved before the referenceId existed: found by vendor and label.
+    expect(
+      speech({ settings: { ...tts, ttsLabel: "Included Speech Provider" } })
+        .status,
+    ).toBe("pass");
+    expect(
+      speech({ settings: { ...tts, ttsLabel: "Someone else's" } }).status,
+    ).toBe("fail");
+
+    expect(speech({ providers: null }).status).toBe("warn");
+  });
+
   it("fails speech that the call ignores or cannot resolve", () => {
     const partial = byId(
       evaluateAgentChecks(
