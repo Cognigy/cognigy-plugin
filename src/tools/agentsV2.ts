@@ -21,6 +21,8 @@ export interface Capabilities {
   aiAgents: Availability;
   /** The custom system prompt editor (FEATURE_ENABLE_AGENTS_V2_CUSTOM_SYSTEM_PROMPT). */
   customSystemPrompt: Availability;
+  /** Speech-to-speech (S2S) with GPT Live for AI Agents (FEATURE_ENABLE_V2V). */
+  s2s: Availability;
   detail: string[];
 }
 
@@ -39,7 +41,9 @@ export function isAgentsV2Absent(error: any): boolean {
  * permission check (other 403s carry "access denied: …"), a cluster without
  * the service answers 404 or does not connect, and a feature-gated route
  * answers 404 "like an unregistered path" while its flag is off. With the flag
- * on, a malformed agent id reaches the ownership lookup and gets a 400.
+ * on, a malformed agent id reaches the ownership lookup and gets a 400. The
+ * voice-prompt routes are gated by FEATURE_ENABLE_V2V, which every service
+ * resolves the same way at cluster level.
  */
 export async function probeCapabilities(
   api: CognigyApiClient,
@@ -48,11 +52,13 @@ export async function probeCapabilities(
   const caps: Capabilities = {
     aiAgents: "unknown",
     customSystemPrompt: "unknown",
+    s2s: "unknown",
     detail: [],
   };
   if (!v1) {
     caps.aiAgents = "unavailable";
     caps.customSystemPrompt = "unavailable";
+    caps.s2s = "unavailable";
     caps.detail.push("No API base URL configured.");
     return caps;
   }
@@ -74,19 +80,27 @@ export async function probeCapabilities(
   }
   if (caps.aiAgents !== "available") {
     caps.customSystemPrompt = caps.aiAgents;
+    caps.s2s = caps.aiAgents;
     return caps;
   }
-  try {
-    await api.get(`${v1}/v1/agents/capability-probe/system-prompt`);
-    caps.customSystemPrompt = "available";
-  } catch (error: any) {
-    if (error?.status === 400) caps.customSystemPrompt = "available";
-    else if (error?.status === 404) caps.customSystemPrompt = "unavailable";
-    else
-      caps.detail.push(
-        `The custom system prompt could not be checked (${error?.status ?? error?.message}).`,
-      );
-  }
+  [caps.customSystemPrompt, caps.s2s] = await Promise.all(
+    [
+      ["system-prompt", "The custom system prompt"],
+      ["voice-prompt", "Speech-to-speech (S2S)"],
+    ].map(async ([route, what]): Promise<Availability> => {
+      try {
+        await api.get(`${v1}/v1/agents/capability-probe/${route}`);
+        return "available";
+      } catch (error: any) {
+        if (error?.status === 400) return "available";
+        if (error?.status === 404) return "unavailable";
+        caps.detail.push(
+          `${what} could not be checked (${error?.status ?? error?.message}).`,
+        );
+        return "unknown";
+      }
+    }),
+  );
   return caps;
 }
 
@@ -210,24 +224,35 @@ export function builtinToolParameters(
   return [...known, ...extra];
 }
 
-/** Find the REST endpoint that targets this AI Agent, or create one. */
-export async function findOrCreateAgentEndpoint(
+/**
+ * Every endpoint of a project, page by page. The list pages with `skip`: it
+ * ignores `offset` and would answer the first page again.
+ */
+export async function* projectEndpoints(
   api: CognigyApiClient,
   projectId: string,
-  agent: { referenceId: string; name?: string },
-): Promise<{ endpoint: any; autoCreated: boolean }> {
+): AsyncGenerator<any> {
   const pageSize = 100;
   for (let skip = 0; ; skip += pageSize) {
     const eps: any = await api.get("/v2.0/endpoints", {
       params: { projectId, limit: pageSize, skip },
     });
     const items: any[] = eps?.items ?? eps;
-    if (!Array.isArray(items) || items.length === 0) break;
-    const hit = items.find(
-      (ep) => ep.channel === "rest" && ep.agentId === agent.referenceId,
-    );
-    if (hit) return { endpoint: hit, autoCreated: false };
-    if (items.length < pageSize) break;
+    if (!Array.isArray(items) || items.length === 0) return;
+    yield* items;
+    if (items.length < pageSize) return;
+  }
+}
+
+/** Find the REST endpoint that targets this AI Agent, or create one. */
+export async function findOrCreateAgentEndpoint(
+  api: CognigyApiClient,
+  projectId: string,
+  agent: { referenceId: string; name?: string },
+): Promise<{ endpoint: any; autoCreated: boolean }> {
+  for await (const ep of projectEndpoints(api, projectId)) {
+    if (ep.channel === "rest" && ep.agentId === agent.referenceId)
+      return { endpoint: ep, autoCreated: false };
   }
   const endpoint = await api.post("/v2.0/endpoints", {
     projectId,
@@ -319,7 +344,7 @@ export const LEGACY_AGENT_NOTE =
   "If this is a legacy AI Agent (legacy: true in list_resources { resourceType: 'agent', projectId }), pass it as aiAgentId instead of agentId.";
 
 export const NEW_AGENT_NOTE =
-  "If this is an AI Agent without legacy: true in list_resources { resourceType: 'agent', projectId }, the legacy tools cannot edit it — change it with manage_agent and manage_agent_components, and test it with talk_to_agent { agentId, projectId }.";
+  "If this is an AI Agent without legacy: true in list_resources { resourceType: 'agent', projectId }, the legacy tools cannot edit it — change it with manage_agent and manage_agent_components, test it with talk_to_agent { agentId, projectId } and audit its voice with audit_voice_agent { agentId, projectId }.";
 
 /**
  * Agent ids look the same for both kinds, so a 404 on an agent record often

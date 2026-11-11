@@ -1,19 +1,31 @@
 {
-  "takenAt": "2026-11-11T18:20:56.990Z",
-  "commit": "0684357",
+  "takenAt": "2026-11-11T15:58:25.575Z",
+  "commit": "695a7ec",
   "claudeVersion": "2.1.319",
   "pluginVersion": "1.22.8",
   "cases": {
     "add-knowledge": {
-      "fingerprint": "f5f348e6624d",
+      "fingerprint": "a5148e3f508b",
       "score": 1,
       "graders": {
         "calls-manage_knowledge": "3/3",
         "skill-fired": "3/3"
       }
     },
+    "agent-voice-speech": {
+      "fingerprint": "7fdd8e207c85",
+      "score": 1,
+      "graders": {
+        "lists-speech-providers": "3/3",
+        "nice-tts-credential": "3/3",
+        "offered-british-female-voice": "3/3",
+        "reports-outcome": "3/3",
+        "two-words-to-interrupt": "3/3",
+        "uses-voice-settings": "3/3"
+      }
+    },
     "build-agent": {
-      "fingerprint": "c07694ce037f",
+      "fingerprint": "1a092272b11c",
       "score": 1,
       "graders": {
         "calls-create_ai_agent": "3/3",
@@ -21,7 +33,7 @@
       }
     },
     "deploy-webchat": {
-      "fingerprint": "a7dd82785448",
+      "fingerprint": "8d73c082bac2",
       "score": 1,
       "graders": {
         "calls-manage_webchat": "3/3",
@@ -29,14 +41,74 @@
       }
     },
     "unrelated-request": {
-      "fingerprint": "286c6fb936ce",
+      "fingerprint": "b07deabd7f45",
       "score": 1,
       "graders": {
         "no-cognigy-skill": "3/3"
       }
     },
+    "v2v-demo-reuse": {
+      "fingerprint": "cbf09997b4c3",
+      "score": 1,
+      "graders": {
+        "binds-existing-voice-model": "3/3",
+        "click-to-call-on-agent": "3/3",
+        "hands-back-link": "3/3",
+        "no-new-voice-model": "3/3",
+        "skill-or-subagent": "3/3"
+      }
+    },
+    "v2v-no-key": {
+      "fingerprint": "7ef6895940bb",
+      "score": 1,
+      "graders": {
+        "asks-for-key": "3/3",
+        "no-invented-key": "3/3"
+      }
+    },
+    "v2v-off": {
+      "fingerprint": "8f504047f242",
+      "score": 1,
+      "graders": {
+        "no-agent-create": "3/3",
+        "no-create_ai_agent": "3/3",
+        "no-manage_voice_gateway": "3/3",
+        "no-setup_llm": "3/3",
+        "says-why-and-offers": "3/3"
+      }
+    },
+    "voice-agent-speech-offer": {
+      "fingerprint": "a950e54f8a8b",
+      "score": 1,
+      "graders": {
+        "creates-voice-agent": "3/3",
+        "no-downgrade-elsewhere": "3/3",
+        "no-new-model": "3/3",
+        "offer-line": "3/3"
+      }
+    },
+    "voice-agent-v2v-model": {
+      "fingerprint": "745830cf6675",
+      "score": 1,
+      "graders": {
+        "creates-voice-agent": "3/3",
+        "no-new-model": "3/3",
+        "reports-voice-to-voice": "3/3"
+      }
+    },
     "voice-apply-fixes": {
-      "fingerprint": "4e71bdcaa1cd",
+      "fingerprint": "2067fe9afaa7",
+      "score": 1,
+      "graders": {
+        "checklist-loaded": "3/3",
+        "declines-backup": "3/3",
+        "dry-run-first": "3/3",
+        "fixes-applied": "3/3",
+        "no-unwanted-snapshot": "3/3"
+      }
+    },
+    "voice-apply-fixes-agent": {
+      "fingerprint": "e2a06ddcc768",
       "score": 1,
       "graders": {
         "checklist-loaded": "3/3",
@@ -47,15 +119,25 @@
       }
     },
     "voice-go-live": {
-      "fingerprint": "9ddf8f7e28a7",
+      "fingerprint": "cc20a7f69b60",
       "score": 1,
       "graders": {
         "calls-audit_voice_agent": "3/3",
         "checklist-loaded": "3/3"
       }
     },
+    "voice-go-live-agent": {
+      "fingerprint": "f6b2e4de1b1c",
+      "score": 1,
+      "graders": {
+        "audits-by-agentId": "3/3",
+        "changes-nothing": "3/3",
+        "checklist-loaded": "3/3",
+        "complete-answer": "3/3"
+      }
+    },
     "backup-gate": {
-      "fingerprint": "199338de26b5",
+      "fingerprint": "068e335b3706",
       "score": 1,
       "graders": {
         "asks-about-backup": "3/3",
@@ -63,7 +145,7 @@
       }
     },
     "general-tool-type": {
-      "fingerprint": "3d55f170774e",
+      "fingerprint": "c609a86c9b3d",
       "score": 1,
       "graders": {
         "calls-create_tool": "3/3",
@@ -71,7 +153,7 @@
       }
     },
     "list-projects": {
-      "fingerprint": "4ae5e646f55f",
+      "fingerprint": "60b412e843d3",
       "score": 1,
       "graders": {
         "calls-list_resources": "3/3",
@@ -79,7 +161,7 @@
       }
     },
     "new-agent-default": {
-      "fingerprint": "5fd2dbb5d6c7",
+      "fingerprint": "ba02752d95b1",
       "score": 1,
       "graders": {
         "calls-manage_agent": "3/3",

@@ -174,7 +174,7 @@ export const tools: ToolDefinition[] = [
         modelType: {
           type: "string",
           description:
-            "Model type string, e.g. chat 'gpt-4o', 'claude-sonnet-4-0', embedding 'text-embedding-3-small'. openAICompatible requires 'custom-model' (chat) or 'custom-embedding-model' (embedding), with the real name in customModel. awsBedrock takes a supported Bedrock model id (e.g. 'amazon.nova-pro-v1:0'; list in the llm-providers skill) or 'custom-model' + customModel.",
+            "Model type string, e.g. chat 'gpt-4o', 'claude-sonnet-4-0', embedding 'text-embedding-3-small', GPT Live 'gpt-live-1' (openAI, an AI Agent's voice model, never default). openAICompatible requires 'custom-model' (chat) or 'custom-embedding-model' (embedding), with the real name in customModel. awsBedrock takes a supported Bedrock model id (e.g. 'amazon.nova-pro-v1:0'; list in the llm-providers skill) or 'custom-model' + customModel.",
         },
         name: {
           type: "string",
@@ -328,7 +328,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "list_resources",
     description:
-      "List Cognigy resources of one type, paginated, with optional server-side sort. Types: project (no projectId needed), tool (takes aiAgentId, or flowId for an LLM Prompt flow, instead of projectId), audit_event (organisation-wide, no projectId; answers \"who changed what\" via the actor and eventType filters, Cognigy 2026.17.0+), and the project-scoped agent, flow, endpoint, llm_model, knowledge_store, conversation, extension, function. Packages and snapshots are listed by manage_packages and manage_snapshots. Returns id, name and a few type-specific fields per item; use get_resource for full detail. For recency questions use sort (e.g. 'lastChanged:desc' with a small limit) instead of paging through everything. agent lists both kinds: where the project has AI Agents they are the items and legacy AI Agents move to legacyAgents; each agent's use is the id argument to pass on.",
+      "List Cognigy resources of one type, paginated, with optional server-side sort. Types: project (no projectId needed), tool (takes aiAgentId, or flowId for an LLM Prompt flow, instead of projectId), audit_event (organisation-wide, no projectId; answers \"who changed what\" via the actor and eventType filters, Cognigy 2026.17.0+), and the project-scoped agent, flow, endpoint, llm_model, knowledge_store, conversation, extension, function, speech_provider (STT/TTS credentials; niceProvided ones need no Connection). Packages and snapshots are listed by manage_packages and manage_snapshots. Returns id, name and a few type-specific fields per item; use get_resource for full detail. For recency questions use sort (e.g. 'lastChanged:desc' with a small limit) instead of paging through everything. agent lists both kinds: where the project has AI Agents they are the items and legacy AI Agents move to legacyAgents; each agent's use is the id argument to pass on.",
     annotations: {
       title: "List Resources",
       readOnlyHint: true,
@@ -353,6 +353,7 @@ export const tools: ToolDefinition[] = [
             "function",
             "tool",
             "audit_event",
+            "speech_provider",
           ],
           description: "Type of resource to list",
         },
@@ -1950,6 +1951,11 @@ export const tools: ToolDefinition[] = [
           description:
             "Connection referenceId to use. If omitted, auto-detects an existing speech connection for the provider.",
         },
+        isNiceProvided: {
+          type: "boolean",
+          description:
+            "set_voice_preview: use the NiCE-provided speech of provider (a niceProvided speech_provider row), no Connection.",
+        },
         knowledgeSearchModelId: {
           type: "string",
           description:
@@ -1980,7 +1986,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "audit_voice_agent",
     description:
-      "Audit a voice agent's flow, and optionally its endpoint and LLM, against the deterministic checks of the Voice AI Go-Live Checklist: Set Session Config first, barge-in and continuous ASR off, input and flow timeouts, streaming, error handling, latency logging, fallback LLM, STT hints, output transformer. Dry-run by default: each failing check reports a proposedFix and nothing changes. apply: true applies the safe fixes, optionally narrowed with only. Provide aiAgentId or flowId; endpointId and projectId enable the endpoint and LLM checks. Checks outside this subset are listed in the voice-go-live-checklist skill.",
+      "Audit a voice agent against the deterministic checks of the Voice AI Go-Live Checklist. An AI Agent (agentId + projectId): speech, barge-in, voice tools, latency, LLMs, GPT Live and its endpoint. A legacy AI Agent (aiAgentId or flowId): its flow's Set Session Config, timeouts, streaming, error handling and latency logging, plus endpointId and projectId for the output transformer and fallback LLM. Dry-run by default: each failing check reports a proposedFix and nothing changes. apply: true applies the safe fixes, optionally narrowed with only. Checks outside this subset are listed in the voice-go-live-checklist skill.",
     annotations: {
       title: "Audit Voice Agent",
       readOnlyHint: false,
@@ -1994,7 +2000,12 @@ export const tools: ToolDefinition[] = [
         aiAgentId: {
           type: "string",
           description:
-            "24-char hex AI Agent ID. The flow is resolved automatically. Provide this or flowId.",
+            "24-char hex legacy AI Agent ID; its flow is resolved automatically.",
+        },
+        agentId: {
+          type: "string",
+          description:
+            "24-char hex AI Agent id (list_resources use.agentId), with projectId.",
         },
         flowId: {
           type: "string",
@@ -2184,7 +2195,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "check_capabilities",
     description:
-      "Report what this Cognigy environment and organisation support for building agents: aiAgents (whether AI Agents can be built with manage_agent) and customSystemPrompt (whether manage_agent can save a custom system prompt), each available, unavailable or unknown, with the evidence in detail. Read-only and cached for the session. Call it once before creating or changing agents in a new conversation. Never mention agent kinds or versions to the user.",
+      "Report what this Cognigy environment and organisation support for building agents: aiAgents (whether AI Agents can be built with manage_agent), customSystemPrompt (whether manage_agent can save a custom system prompt), s2s (speech-to-speech with GPT Live, also called voice-to-voice or V2V) and niceSpeech (NiCE-provided speech, no Connection needed), each available, unavailable or unknown, with the evidence in detail. Read-only and cached for the session. Call it once before creating or changing agents in a new conversation. Never mention agent kinds or versions to the user.",
     annotations: {
       title: "Check Capabilities",
       readOnlyHint: true,
@@ -2197,7 +2208,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "manage_agent",
     description:
-      "Create and configure AI Agents, the kind to build wherever check_capabilities reports aiAgents available (legacy AI Agents use create_ai_agent / update_ai_agent). create makes an agent (in a new project when projectId is omitted), with role, description, instructions, LLM, knowledge, guardrails, pre-turn hook, persona, skills and tools, plus a REST endpoint for talk_to_agent. update changes only the settings passed, while manage_agent_components attaches and detaches the skills and tools. get_system_prompt, save_system_prompt, reset_system_prompt and preview_system_prompt read and edit the agent's custom system prompt where the environment offers one. create_flow makes the Flow for a pre-turn hook or an Execute Tool Flow tool, with its closing node in place. Read an agent with get_resource and mark it for deletion with delete_resource { resourceType: 'agent', id, projectId }. Returns the agent summary; create also returns endpointUrl and use.",
+      "Create and configure AI Agents, the kind to build wherever check_capabilities reports aiAgents available (legacy AI Agents use create_ai_agent / update_ai_agent). create makes an agent with its settings, skills and tools, plus a REST endpoint for talk_to_agent. update changes only the settings passed, while manage_agent_components attaches and detaches the skills and tools. A voice model makes calls run speech-to-speech (S2S) on GPT Live; voice_prompt and preview_voice_prompt read and try its voice prompt. get_system_prompt, save_system_prompt, reset_system_prompt and preview_system_prompt read and edit the agent's custom system prompt where the environment offers one. create_flow makes the Flow for a pre-turn hook or an Execute Tool Flow tool, with its closing node in place. Read an agent with get_resource and mark it for deletion with delete_resource { resourceType: 'agent', id, projectId }. Returns the agent summary; create also returns endpointUrl and use.",
     annotations: {
       title: "Manage AI Agent",
       readOnlyHint: false,
@@ -2218,6 +2229,8 @@ export const tools: ToolDefinition[] = [
             "reset_system_prompt",
             "preview_system_prompt",
             "create_flow",
+            "voice_prompt",
+            "preview_voice_prompt",
           ],
         },
         projectId: {
@@ -2274,7 +2287,7 @@ export const tools: ToolDefinition[] = [
         largeLanguageModelReferenceId: {
           type: "string",
           description:
-            "referenceId (UUID) of a text llm_model in the project. Omit to use the project default LLM. Never a voice-to-voice model.",
+            "referenceId (UUID) of a text llm_model in the project. Omit to use the project default LLM. Never a speech-to-speech model.",
         },
         llmConfig: {
           type: "object",
@@ -2329,7 +2342,7 @@ export const tools: ToolDefinition[] = [
           },
         },
         hooks: {
-          type: "object",
+          type: ["object", "null"],
           description:
             "A pre-turn Flow run before every answer: { preTurn: [{ handler: { kind: 'conversationFlow', flowReferenceId } }] }, at most one; make the Flow with create_flow. null removes it on update.",
         },
@@ -2337,6 +2350,21 @@ export const tools: ToolDefinition[] = [
           type: "string",
           description:
             "referenceId of a brand persona (manage_agent_components component 'persona'). Required by the Cognigy UI, so it can be changed but not removed; create picks the project's first persona, or makes the UI's default one, when omitted.",
+        },
+        voiceLargeLanguageModelReferenceId: {
+          type: "string",
+          description:
+            "referenceId of a gpt-live-1 llm_model: calls run on GPT Live while the text LLM still reasons. Creating a voice agent picks the project's GPT Live model where s2s is available. '' keeps or turns it off.",
+        },
+        realtimeVoice: {
+          type: ["string", "null"],
+          description:
+            "GPT Live voice, e.g. marin (default), cedar, coral; voice_prompt lists them. null resets it.",
+        },
+        voicePromptTemplate: {
+          type: ["string", "null"],
+          description:
+            "update only: the GPT Live voice prompt, with {{group.key}} tokens from voice_prompt. null resets it to the default.",
         },
         skillReferenceIds: {
           type: "array",
@@ -2362,7 +2390,7 @@ export const tools: ToolDefinition[] = [
         template: {
           type: "string",
           description:
-            "save/preview_system_prompt: the prompt text, with agent data tokens like [[agent.name]] and CognigyScript in double braces; up to 32 KiB. Start from get_system_prompt's template.",
+            "save/preview_system_prompt: the prompt text, with agent data tokens like [[agent.name]] and CognigyScript in double braces; up to 32 KiB. Start from get_system_prompt's template. preview_voice_prompt: the voice prompt to render.",
         },
         onBuildFailure: {
           type: "string",
@@ -2387,7 +2415,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "manage_agent_components",
     description:
-      "Manage the building blocks of AI Agents: skills, tools, MCP servers and brand personas. They live in the project, and agents point at the skills and tools by referenceId. catalog lists the skills or tools the platform ships, with their parameters; list, get, create, update and delete manage one component; attach and detach add or remove a skill or tool on an agent (create with agentId also attaches); discover_tools lists an MCP server's remote tools and sync_tools imports or removes them as tools. delete is permanent and detaches the component from every agent. Legacy AI Agents use create_tool / update_tool instead. Returns component summaries (id, referenceId, name), or the full record for get.",
+      "Manage the building blocks of AI Agents: skills, tools, MCP servers, brand personas and voice_settings. They live in the project, and agents point at the skills and tools by referenceId. catalog lists the skills or tools the platform ships, with their parameters; list, get, create, update and delete manage one component; attach and detach add or remove a skill or tool on an agent (create with agentId also attaches); discover_tools lists an MCP server's remote tools and sync_tools imports or removes them as tools. voice_settings is one agent's speech and call behaviour: get, create or update (both upsert) and delete (back to defaults) take agentId, not componentId. delete is permanent and detaches the component from every agent. Legacy AI Agents use create_tool / update_tool instead. Returns component summaries (id, referenceId, name), or the full record for get.",
     annotations: {
       title: "Manage AI Agent Components",
       readOnlyHint: false,
@@ -2415,7 +2443,7 @@ export const tools: ToolDefinition[] = [
         },
         component: {
           type: "string",
-          enum: ["skill", "tool", "mcp_server", "persona"],
+          enum: ["skill", "tool", "mcp_server", "persona", "voice_settings"],
           description:
             "catalog, attach and detach take skill or tool; discover_tools and sync_tools take mcp_server.",
         },
@@ -2423,17 +2451,17 @@ export const tools: ToolDefinition[] = [
         componentId: {
           type: "string",
           description:
-            "id of the component (attach/detach also accept its referenceId). Needed for every operation except catalog, list and create.",
+            "id of the component (attach/detach also accept its referenceId). Needed for every operation except catalog, list, create and voice_settings.",
         },
         agentId: {
           type: "string",
           description:
-            "24-char hex AI Agent id: required for attach/detach; on create it attaches the new skill or tool.",
+            "24-char hex AI Agent id: required for attach/detach and voice_settings; on create it attaches the new skill or tool.",
         },
         config: {
           type: "object",
           description:
-            "create/update body; shapes per component are in the agent-creation skill. A builtin tool is { builtinSlug, name, description, parameters: { <key>: value | { mode: 'dynamic' | 'aiFilled', value } } } with keys from catalog. An MCP server is { name, url, authType: none | oAuth2 | customHeader, headers?, authConnectionReferenceId? }; oAuth2 and customHeader need the Connection's authConnectionReferenceId.",
+            "create/update body; shapes per component are in the agent-creation skill. A builtin tool is { builtinSlug, name, description, parameters: { <key>: value | { mode: 'dynamic' | 'aiFilled', value } } } with keys from catalog. An MCP server is { name, url, authType: none | oAuth2 | customHeader, headers?, authConnectionReferenceId? }; oAuth2 and customHeader need the Connection's authConnectionReferenceId. voice_settings: the keys its get shows.",
         },
         import: {
           type: "array",

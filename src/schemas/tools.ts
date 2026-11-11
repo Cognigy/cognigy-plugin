@@ -326,6 +326,7 @@ export const listResourcesSchema = z
       "function",
       "tool",
       "audit_event",
+      "speech_provider",
     ]),
     projectId: idSchema.optional(),
     aiAgentId: agentIdSchema.optional(),
@@ -908,6 +909,7 @@ const manageVoicePreviewSettingsSchema = z.object({
   projectId: idSchema,
   provider: speechProviderEnum,
   connectionId: z.string().optional(),
+  isNiceProvided: z.boolean().optional(),
 });
 
 const manageKnowledgeAiSettingsSchema = z
@@ -959,15 +961,22 @@ export const manageSettingsSchema = z.union([
 export const auditVoiceAgentSchema = z
   .object({
     aiAgentId: agentIdSchema.optional(),
+    // An AI Agent (service-agents); needs projectId.
+    agentId: agentIdSchema.optional(),
     flowId: idSchema.optional(),
     endpointId: idSchema.optional(),
     projectId: idSchema.optional(),
     apply: z.boolean().optional(),
     only: z.array(z.string()).optional(),
   })
-  .refine((d) => d.aiAgentId || d.flowId, {
-    message: "Either aiAgentId or flowId must be provided",
+  .refine((d) => d.aiAgentId || d.flowId || d.agentId, {
+    message:
+      "Either agentId (with projectId), aiAgentId or flowId must be provided",
     path: ["aiAgentId"],
+  })
+  .refine((d) => !d.agentId || d.projectId, {
+    message: "agentId needs projectId",
+    path: ["projectId"],
   });
 
 // Tool 17: manage_snapshots
@@ -1094,6 +1103,11 @@ const agentSettingsSchema = {
     .optional(),
   // No "": the UI marks the brand persona required and can't save an agent without one.
   personaReferenceId: z.string().uuid().optional(),
+  // GPT Live (S2S): "" turns the voice model off; null resets the voice.
+  voiceLargeLanguageModelReferenceId: z
+    .union([z.string().uuid(), z.literal("")])
+    .optional(),
+  realtimeVoice: z.string().min(1).nullable().optional(),
 };
 
 const agentTargetSchema = { agentId: agentIdSchema, projectId: idSchema };
@@ -1114,6 +1128,14 @@ export const manageAgentSchema = z.discriminatedUnion("operation", [
     name: z.string().min(1).max(200).optional(),
     ...agentSettingsSchema,
     disabledToolReferenceIds: referenceIdsSchema.optional(),
+    // null resets the voice prompt to the product default.
+    voicePromptTemplate: z.string().min(1).nullable().optional(),
+  }),
+  z.object({ operation: z.literal("voice_prompt"), ...agentTargetSchema }),
+  z.object({
+    operation: z.literal("preview_voice_prompt"),
+    ...agentTargetSchema,
+    template: z.string().min(1),
   }),
   z.object({ operation: z.literal("get_system_prompt"), ...agentTargetSchema }),
   z.object({
@@ -1152,7 +1174,16 @@ const componentSchema = z.enum(AGENT_COMPONENTS);
 const componentIdSchema = z.string().min(1);
 const componentConfigSchema = z.record(z.string(), z.any());
 
-export const manageAgentComponentsSchema = z.discriminatedUnion("operation", [
+// The agent's one voice-config-defaults tool, addressed by the agent.
+const voiceSettingsSchema = z.object({
+  operation: z.enum(["get", "create", "update", "delete"]),
+  component: z.literal("voice_settings"),
+  projectId: idSchema,
+  agentId: agentIdSchema,
+  config: componentConfigSchema.optional(),
+});
+
+const agentComponentOperationsSchema = z.discriminatedUnion("operation", [
   z.object({
     operation: z.literal("catalog"),
     component: z.enum(["skill", "tool"]),
@@ -1227,4 +1258,9 @@ export const manageAgentComponentsSchema = z.discriminatedUnion("operation", [
     import: z.array(z.string().min(1)).optional(),
     remove: z.array(z.string().min(1)).optional(),
   }),
+]);
+
+export const manageAgentComponentsSchema = z.union([
+  voiceSettingsSchema,
+  agentComponentOperationsSchema,
 ]);

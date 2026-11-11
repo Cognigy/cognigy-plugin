@@ -51,9 +51,11 @@ import {
   annotateAgentKindMismatch,
   ATTACH_FIELDS,
   builtinToolParameters,
+  type Availability,
   type Capabilities,
   COMPONENT_PATHS,
   findOrCreateAgentEndpoint,
+  projectEndpoints,
   isAgentsV2Absent,
   listAgentsV2,
   probeCapabilities,
@@ -61,6 +63,29 @@ import {
   readAgentV2,
   resolveLocaleReferenceId,
 } from "./agentsV2.js";
+import {
+  evaluateAgentChecks,
+  type AgentAuditContext,
+  type AgentVoiceCheck,
+} from "./agentVoiceChecklist.js";
+import {
+  S2S_PROVIDERS,
+  VOICE_SETTINGS_SLUG,
+  isVoiceToVoiceModel,
+  pickVoiceModel,
+  preferredNiceSpeech,
+  projectLanguage,
+  s2sOfferLine,
+  findVoiceSettings,
+  listSpeechProviders,
+  listVoices,
+  resolveVoiceSettings,
+  settingsMap,
+  speechCredentialFor,
+  voiceParameters,
+  speechBlocks,
+  summarizeSpeechProvider,
+} from "./agentVoice.js";
 import {
   chartToAscii,
   chartToMermaid,
@@ -822,12 +847,6 @@ async function readNodeConfigs(
  */
 const EMBEDDING_MODEL_PATTERN = /embed/i;
 
-// Voice-to-voice models (gpt-live-1) only serve as an Agents V2 agent's voice
-// model; bound to a text node they return no replies and no error.
-function isVoiceToVoiceModel(llm: any): boolean {
-  return llm?.modelGroup === "voiceToVoice" || llm?.modelType === "gpt-live-1";
-}
-
 function isEmbeddingModel(llm: any): boolean {
   // For openAICompatible and awsBedrock providers `modelType` can be the
   // generic "custom-model", with the real model string under the provider
@@ -882,7 +901,7 @@ function canAnswer(llm: any): boolean {
  * largelanguagemodels list response. An LLM without its connection cannot
  * answer — the node then fails silently (default errorHandling "continue"
  * with an empty message) — so prefer connected models over the bare
- * isDefault flag. Embedding and voice-to-voice models are never candidates:
+ * isDefault flag. Embedding and speech-to-speech models are never candidates:
  * they cannot answer a text node, so a project that only has those gets no
  * pick (undefined)
  * and the caller reports llmStatus "unknown" with the LLM setup guidance
@@ -1294,6 +1313,8 @@ export class ToolHandlers {
     "discover_tools",
     "get_system_prompt",
     "preview_system_prompt",
+    "voice_prompt",
+    "preview_voice_prompt",
   ]);
 
   /**
@@ -1404,8 +1425,8 @@ export class ToolHandlers {
    * own step 5 (`update_ai_agent` right after `create_ai_agent`).
    */
   private readonly resourcesCreatedThisSession = new Set<string>();
-  /** Last pending skill/tool list change per AI Agent, so parallel attaches queue up. */
-  private readonly agentListChanges = new Map<string, Promise<unknown>>();
+  /** Last pending read-modify-write per AI Agent (forAgent), so parallel changes queue up. */
+  private readonly agentChanges = new Map<string, Promise<unknown>>();
   /**
    * Highest backup version this session handed out. Version numbers come from
    * the project's existing backups, so without this floor a create → delete →
@@ -2595,7 +2616,7 @@ export class ToolHandlers {
         return withHints(result, {
           hint: usageHint,
           warning:
-            "Could not verify LLM resource in project. The LLM Prompt node will fall back to the project's default Generative AI model — if none is configured, or the default is an embedding or voice-to-voice (gpt-live-1) model, it cannot generate responses.",
+            "Could not verify LLM resource in project. The LLM Prompt node will fall back to the project's default Generative AI model — if none is configured, or the default is an embedding or speech-to-speech (gpt-live-1) model, it cannot generate responses.",
           action: `Inspect the other projects with list_resources { resourceType: "project" } and list_resources { resourceType: "llm_model", projectId } for each one. Reuse an existing text LLM (with its connection) via manage_packages export/import, verify with list_resources { resourceType: "llm_model", projectId: "${projectId}" }, and only use setup_llm if no reusable LLM exists. Do not call talk_to_agent until a text LLM is confirmed.`,
         });
       }
@@ -2907,6 +2928,15 @@ export class ToolHandlers {
   // =========================================================================
   async handleSetupLlm(args: any): Promise<any> {
     const data = schemas.setupLlmSchema.parse(args);
+    // GPT Live is an AI Agent's voice model only: never the project default.
+    const isS2S = data.modelType === "gpt-live-1";
+    if (isS2S && !(data.provider in S2S_PROVIDERS)) {
+      const providers = Object.keys(S2S_PROVIDERS).join("' or '");
+      return withHints(
+        { error: `gpt-live-1 needs provider '${providers}'.`, changed: false },
+        { action: `Retry with provider '${providers}'.` },
+      );
+    }
 
     const hasInlineCredentials =
       data.provider === "awsBedrock"
@@ -2928,6 +2958,8 @@ export class ToolHandlers {
     }
 
     let connectionRefId = data.connectionId;
+    // Removed again when the model cannot be created, so no orphan is left.
+    let autoConnectionId: string | undefined;
 
     if (connectionRefId) {
       try {
@@ -3022,6 +3054,7 @@ export class ToolHandlers {
         });
         connectionRefId =
           connection.referenceId || connection._id || connection.id;
+        autoConnectionId = connection._id || connection.id;
       } catch (connError: any) {
         return withHints(
           { error: `Failed to create connection: ${connError.message}` },
@@ -3067,11 +3100,20 @@ export class ToolHandlers {
         modelType: data.modelType,
         provider: data.provider,
         connectionId: connectionRefId,
-        isDefault: data.isDefault ?? true,
+        isDefault: isS2S ? false : (data.isDefault ?? true),
         ...(data.apiType ? { apiType: data.apiType } : {}),
         [data.provider]: providerMeta,
       });
     } catch (error: any) {
+      if (autoConnectionId)
+        await this.apiClient
+          .delete(`/v2.0/connections/${autoConnectionId}`)
+          .catch(() => undefined);
+      if (isS2S && error?.status === 400 && /not enabled/i.test(error.message))
+        return withHints(
+          { error: "s2s_not_enabled", changed: false },
+          { action: `Nothing was created. ${ToolHandlers.S2S_OFF_ACTION}` },
+        );
       return withHints(
         { error: error.message },
         {
@@ -3142,6 +3184,10 @@ export class ToolHandlers {
           }
           await this.apiClient.delete(`/v2.0/largelanguagemodels/${llmId}`);
           cleanedUp = true;
+          if (autoConnectionId)
+            await this.apiClient
+              .delete(`/v2.0/connections/${autoConnectionId}`)
+              .catch(() => undefined);
         } catch (cleanupError: any) {
           logger.warn(
             "Failed to clean up broken LLM model after failed connection test",
@@ -3170,13 +3216,24 @@ export class ToolHandlers {
       }
 
       const filtered = filterResponse("llm_model", result);
-      return {
+      const ok = {
         ...filtered,
         connectionTest: {
           isCredentialsValid: true,
           msg: testResponse.msg,
         },
       };
+      if (!isS2S) return ok;
+      return withHints(ok, {
+        action: `Make it an AI Agent's voice model: manage_agent { operation: "update", agentId, projectId: "${data.projectId}", voiceLargeLanguageModelReferenceId: "${result.referenceId}" }. Never bind it as a text LLM.`,
+        // service-resources makes a project's first LLM its default, whatever it is.
+        ...(result.isDefault
+          ? {
+              warning:
+                "It became the project default because it is the project's first LLM. Set up a text LLM with isDefault true before building agents.",
+            }
+          : {}),
+      });
     } catch (testError: any) {
       logger.warn(
         "Connection test request failed, but model was created successfully",
@@ -3232,8 +3289,33 @@ export class ToolHandlers {
     );
   }
 
+  private niceSpeechPromise: Promise<Availability> | null = null;
+
+  /** NiCE-provided speech is entitled per organisation; any project shows it. */
+  private async probeNiceSpeech(): Promise<Availability> {
+    try {
+      const projects: any = await this.apiClient.get("/v2.0/projects", {
+        params: { limit: 1 },
+      });
+      const projectId = (projects?.items ?? projects)?.[0]?._id;
+      if (!projectId) return "unknown";
+      const { items } = await listSpeechProviders(this.apiClient, projectId);
+      return items.some((r) => r.systemProvided === true)
+        ? "available"
+        : "unavailable";
+    } catch {
+      this.niceSpeechPromise = null;
+      return "unknown";
+    }
+  }
+
+  private getNiceSpeech(): Promise<Availability> {
+    return (this.niceSpeechPromise ??= this.probeNiceSpeech());
+  }
+
   async handleCheckCapabilities(): Promise<any> {
     const caps = await this.getCapabilities();
+    const niceSpeech = await this.getNiceSpeech();
     const actions: Record<string, string> = {
       available:
         "Build AI Agents with manage_agent. Use create_ai_agent only when the user asks for a legacy AI Agent or the project has only legacy agents.",
@@ -3246,6 +3328,11 @@ export class ToolHandlers {
       {
         aiAgents: caps.aiAgents,
         customSystemPrompt: caps.customSystemPrompt,
+        s2s: caps.s2s,
+        ...(caps.s2s === "unavailable"
+          ? {}
+          : { s2sProviders: Object.keys(S2S_PROVIDERS) }),
+        niceSpeech,
         ...(caps.detail.length ? { detail: caps.detail } : {}),
       },
       { action: actions[caps.aiAgents] },
@@ -3321,12 +3408,41 @@ export class ToolHandlers {
       const updated: any = await this.apiClient.patch(agentUrl, patch, {
         params,
       });
-      return {
+      const result = {
         updated: true,
         agent: RESOURCE_FILTERS_GET.agent_v2(
           updated?.id ? updated : { id: agentId, projectId },
         ),
       };
+      return this.checkVoiceFieldsKept(result, patch, agentUrl, params);
+    }
+
+    if (
+      data.operation === "voice_prompt" ||
+      data.operation === "preview_voice_prompt"
+    ) {
+      try {
+        if (data.operation === "preview_voice_prompt")
+          return await this.apiClient.post(
+            `${agentUrl}/voice-prompt/preview`,
+            { template: data.template },
+            { params },
+          );
+        const res: any = await this.apiClient.get(`${agentUrl}/voice-prompt`, {
+          params,
+        });
+        if (res?.isDefault) delete res.defaultTemplate;
+        return res;
+      } catch (error: any) {
+        // The voice-prompt routes answer 404 like a missing path while S2S is off.
+        if (error?.status !== 404) throw error;
+        const caps = await this.getCapabilities();
+        if (caps.s2s !== "unavailable") throw error;
+        return withHints(
+          { error: "s2s_not_enabled", changed: false },
+          { action: ToolHandlers.S2S_OFF_ACTION },
+        );
+      }
     }
 
     // The system prompt routes answer 404 like a missing path while the
@@ -3359,6 +3475,108 @@ export class ToolHandlers {
     }
   }
 
+  /**
+   * Give a new voice agent the preferred NiCE-provided speech in the project's
+   * language: TTS from the first preferred vendor that has a voice for it, and
+   * STT. Returns what was set, or undefined when the org has none.
+   */
+  private async setPreferredSpeech(
+    projectId: string,
+    agentId: string,
+  ): Promise<Record<string, string> | undefined> {
+    const providers = (await listSpeechProviders(this.apiClient, projectId))
+      .items;
+    const language = await projectLanguage(this.apiClient, projectId);
+    if (!language || !providers.some((p) => p.systemProvided)) return undefined;
+    const config: Record<string, string> = {};
+    const speech: Record<string, string> = {};
+    for (const row of preferredNiceSpeech(providers, "tts")) {
+      const voices = await listVoices(
+        this.apiClient,
+        projectId,
+        row.id,
+        language,
+      );
+      if (!voices?.length) continue;
+      // A voice named for the language, when the vendor names them so.
+      const voice = voices.find((v) => v.startsWith(language)) ?? voices[0];
+      Object.assign(config, {
+        ttsCredentialReferenceId: row.referenceId,
+        ttsLanguage: language,
+        ttsVoice: voice,
+      });
+      speech.tts = `${row.vendor}, voice ${voice}, ${language} (NiCE-provided)`;
+      break;
+    }
+    const stt = preferredNiceSpeech(providers, "stt")[0];
+    if (stt) {
+      Object.assign(config, {
+        sttCredentialReferenceId: stt.referenceId,
+        sttLanguage: language,
+      });
+      speech.stt = `${stt.vendor}, ${language} (NiCE-provided)`;
+    }
+    if (!Object.keys(config).length) return undefined;
+    const r: any = await this.voiceSettings({
+      operation: "update",
+      projectId,
+      agentId,
+      config,
+    });
+    if (r?.error) throw new Error(r.error);
+    return speech;
+  }
+
+  static readonly S2S_OFF_ACTION =
+    "Speech-to-speech (S2S) is not enabled on this environment; an admin has to turn on FEATURE_ENABLE_V2V. Tell the user in one line, in speech-to-speech terms, and offer a cascaded voice agent (voice-gateway-setup skill) or a Webchat demo instead. Never switch silently.";
+
+  /**
+   * service-agents drops the S2S fields from a write, without an error, while
+   * S2S is off, so read the agent back and name the fields that did not stick.
+   */
+  private async voiceFieldsDropped(
+    sent: Record<string, any>,
+    agentUrl: string,
+    params: { projectId: string },
+  ): Promise<string[]> {
+    const keys = [
+      "voiceLargeLanguageModelReferenceId",
+      "realtimeVoice",
+      "voicePromptTemplate",
+    ].filter((k) => sent[k] !== undefined);
+    if (!keys.length) return [];
+    const stored: any = await this.apiClient.get(agentUrl, { params });
+    // "" and null reset a field. While S2S is off the service hides these
+    // fields, so a dropped reset reads like a done one: ask the probe then.
+    const isReset = (v: any) => v === "" || v === null;
+    const s2sOff =
+      keys.some((k) => isReset(sent[k])) &&
+      (await this.getCapabilities()).s2s === "unavailable";
+    return keys.filter((k) =>
+      isReset(sent[k])
+        ? s2sOff ||
+          (!!stored?.[k] && !(k === "realtimeVoice" && stored[k] === "marin"))
+        : stored?.[k] !== sent[k],
+    );
+  }
+
+  private async checkVoiceFieldsKept(
+    result: any,
+    sent: Record<string, any>,
+    agentUrl: string,
+    params: { projectId: string },
+  ): Promise<any> {
+    const dropped = await this.voiceFieldsDropped(sent, agentUrl, params);
+    if (!dropped.length) return result;
+    return withHints(
+      { ...result, error: "s2s_not_enabled", dropped },
+      {
+        warning: `${dropped.join(", ")} did not stick: speech-to-speech (S2S) is off for AI Agents here. The other settings were saved.`,
+        action: ToolHandlers.S2S_OFF_ACTION,
+      },
+    );
+  }
+
   private async createAgent(
     data: Extract<
       z.infer<typeof schemas.manageAgentSchema>,
@@ -3381,6 +3599,15 @@ export class ToolHandlers {
       this.resourcesCreatedThisSession.add(projectId);
     }
     let llm: ReturnType<typeof pickDefaultLlm>;
+    // Voice agents run speech-to-speech when they can (plugin owner, 11 Nov):
+    // a GPT Live model already in the project becomes the voice model. ""
+    // keeps the agent on speech recognition and synthesis.
+    let voiceModel: any;
+    let offerS2S = false;
+    const keepSpeech = fields.voiceLargeLanguageModelReferenceId === "";
+    if (keepSpeech) delete fields.voiceLargeLanguageModelReferenceId;
+    // A new agent has nothing to reset.
+    if (fields.realtimeVoice === null) delete fields.realtimeVoice;
     let persona: Awaited<ReturnType<typeof projectPersona>> | undefined;
     let agent: any;
     try {
@@ -3397,6 +3624,24 @@ export class ToolHandlers {
           ),
         );
         if (llm) fields.largeLanguageModelReferenceId = llm.refId;
+      }
+      if (
+        !keepSpeech &&
+        fields.agentType === "voice" &&
+        !fields.voiceLargeLanguageModelReferenceId
+      ) {
+        const caps = await this.getCapabilities();
+        if (caps.s2s !== "unavailable") {
+          const all: any = await this.apiClient
+            .get("/v2.0/largelanguagemodels", {
+              params: { projectId, limit: 100 },
+            })
+            .catch(() => null);
+          voiceModel = pickVoiceModel(all?.items ?? all ?? []);
+          if (voiceModel)
+            fields.voiceLargeLanguageModelReferenceId = voiceModel.referenceId;
+          else offerS2S = caps.s2s === "available";
+        }
       }
       for (let attempt = 1; ; attempt++) {
         try {
@@ -3441,6 +3686,28 @@ export class ToolHandlers {
       if (key) this.resourcesCreatedThisSession.add(String(key));
     }
     this.rememberProjectOf(agent, projectId);
+    const voiceDropped = await this.voiceFieldsDropped(
+      fields,
+      `${this.agentsV2BaseUrl}/v1/agents/${agent.id}`,
+      { projectId },
+    );
+    // A voice agent on speech recognition and synthesis gets the preferred
+    // NiCE-provided speech, unless the caller chose a speech setup ("").
+    let speech: Record<string, string> | undefined;
+    let speechError: string | undefined;
+    if (
+      fields.agentType === "voice" &&
+      !keepSpeech &&
+      (!fields.voiceLargeLanguageModelReferenceId ||
+        voiceDropped.includes("voiceLargeLanguageModelReferenceId"))
+    ) {
+      speech = await this.setPreferredSpeech(projectId, agent.id).catch(
+        (e: any) => {
+          speechError = e?.message ?? String(e);
+          return undefined;
+        },
+      );
+    }
 
     let endpointUrl: string | null = null;
     let endpointError: string | undefined;
@@ -3464,14 +3731,24 @@ export class ToolHandlers {
         : `The project has no text LLM for it. Set one up (llm-providers skill), then bind it with manage_agent { operation: "update", agentId: "${agent.id}", projectId: "${projectId}", largeLanguageModelReferenceId } before talk_to_agent.`,
     };
     const warnings = [
+      voiceDropped.length
+        ? `Speech-to-speech (S2S) is off for AI Agents on this environment, so ${voiceDropped.join(", ")} did not stick; the agent was created without them. ${ToolHandlers.S2S_OFF_ACTION}`
+        : "",
       llm && !llm.connected
         ? `The agent was bound to LLM "${llm.refId}", which has no connection, so it cannot answer until that model gets one or another model is bound.`
         : "",
       endpointError
         ? `The agent was created, but its REST endpoint was not (${endpointError}); talk_to_agent creates one on first use.`
         : "",
+      speechError
+        ? `The agent was created, but its speech was not set (${speechError}); calls use the project's default speech. Set it with manage_agent_components { component: "voice_settings" }.`
+        : "",
     ].filter(Boolean);
     if (warnings.length) hints.warning = warnings.join(" ");
+    if (voiceModel && !voiceDropped.length)
+      hints.hint = `Calls run speech-to-speech (S2S) on "${voiceModel.name}", the project's GPT Live model. Say so in the build summary, in speech-to-speech terms.`;
+    else if (offerS2S)
+      hints.hint = `Unless the user asked for a particular speech setup or declined speech-to-speech, make this line the last paragraph of the build summary, word for word, with no label or bullet, and don't repeat it later: "${s2sOfferLine((await this.getNiceSpeech()) === "available")}"`;
     return withHints(
       {
         projectId,
@@ -3489,6 +3766,7 @@ export class ToolHandlers {
         ...(persona ? { persona } : {}),
         endpointUrl,
         use: { agentId: agent.id },
+        ...(speech ? { speech } : {}),
       },
       hints,
     );
@@ -3564,6 +3842,7 @@ export class ToolHandlers {
 
   async handleManageAgentComponents(args: any): Promise<any> {
     const data = schemas.manageAgentComponentsSchema.parse(args);
+    if (data.component === "voice_settings") return this.voiceSettings(data);
     const v1 = `${this.agentsV2BaseUrl}/v1`;
     const base = `${v1}/${COMPONENT_PATHS[data.component]}`;
     const params = { projectId: data.projectId };
@@ -3594,6 +3873,15 @@ export class ToolHandlers {
         return this.apiClient.get(`${base}/${data.componentId}`, { params });
       case "create": {
         let body: any = { ...data.config, projectId: data.projectId };
+        if (body.builtinSlug === VOICE_SETTINGS_SLUG) {
+          return withHints(
+            { error: "use_voice_settings", changed: false },
+            {
+              action:
+                "An agent has one set of voice settings. Use manage_agent_components { component: 'voice_settings', operation: 'update', projectId, agentId, config }.",
+            },
+          );
+        }
         if (data.component === "tool" && body.builtinSlug) {
           const descriptor: any = await this.apiClient.get(
             `${v1}/builtin-tools/${body.builtinSlug}`,
@@ -3763,6 +4051,184 @@ export class ToolHandlers {
   }
 
   /**
+   * An AI Agent's voice settings: its one voice-config-defaults tool. create
+   * and update both upsert it, get shows the stored values over the defaults
+   * and delete removes it, which resets the agent to the defaults. Writes run
+   * in the agent's queue: they read the tool and the agent's tool list and
+   * write them back whole.
+   */
+  private voiceSettings(data: {
+    operation: "get" | "create" | "update" | "delete";
+    projectId: string;
+    agentId: string;
+    config?: Record<string, any>;
+  }): Promise<any> {
+    if (data.operation === "get") return this.voiceSettingsNow(data);
+    return this.forAgent(data.agentId, () => this.voiceSettingsNow(data));
+  }
+
+  private async voiceSettingsNow(data: {
+    operation: "get" | "create" | "update" | "delete";
+    projectId: string;
+    agentId: string;
+    config?: Record<string, any>;
+  }): Promise<any> {
+    const v1 = `${this.agentsV2BaseUrl}/v1`;
+    const { projectId, agentId } = data;
+    const params = { projectId };
+    const agent: any = await this.apiClient.get(`${v1}/agents/${agentId}`, {
+      params,
+    });
+    const current = await findVoiceSettings(
+      this.apiClient,
+      v1,
+      projectId,
+      agent.referenceId,
+    );
+    if (data.operation === "delete") {
+      if (current)
+        await this.apiClient.delete(`${v1}/tools/${current.id}`, { params });
+      return { reset: true, agentId, removed: !!current };
+    }
+    const descriptor: any = await this.apiClient.get(
+      `${v1}/builtin-tools/${VOICE_SETTINGS_SLUG}`,
+      { params },
+    );
+    const defaults: any[] = descriptor?.defaultParameters ?? [];
+    let saved: any = current;
+    const providers = (await listSpeechProviders(this.apiClient, projectId))
+      .items;
+    // The TTS credential's voices for the settings' language, or null.
+    const voicesFor = async (s: Record<string, any>) => {
+      const row = speechCredentialFor("tts", s, providers);
+      return row && s.ttsLanguage
+        ? listVoices(this.apiClient, projectId, row.id, s.ttsLanguage)
+        : null;
+    };
+
+    if (data.operation !== "get") {
+      const config: Record<string, any> = { ...(data.config ?? {}) };
+      for (const kind of ["tts", "stt"] as const) {
+        const ref = config[`${kind}CredentialReferenceId`];
+        if (!ref) continue;
+        const row = providers.find((p) => p.referenceId === ref);
+        if (!row?.[kind === "tts" ? "useForTts" : "useForStt"]) {
+          return withHints(
+            { error: "unknown_speech_provider", changed: false, [kind]: ref },
+            {
+              action: `Pass the referenceId of a ${kind.toUpperCase()} row from list_resources { resourceType: 'speech_provider', projectId: "${projectId}" }. Never invent one; ask the user when none fits.`,
+            },
+          );
+        }
+        // The gateway picks the credential by vendor + label (its name).
+        config[`${kind}Vendor`] ??= row.vendor;
+        config[`${kind}Label`] ??= row.name;
+      }
+      const next = {
+        ...resolveVoiceSettings(defaults, current?.parameters),
+        ...config,
+      };
+      // Any change to the voice, its credential, vendor or language must
+      // leave a voice that provider offers for that language.
+      const ttsChanged = [
+        "ttsVoice",
+        "ttsCredentialReferenceId",
+        "ttsVendor",
+        "ttsLabel",
+        "ttsLanguage",
+      ].some((k) => k in config);
+      const voices = ttsChanged && next.ttsVoice ? await voicesFor(next) : null;
+      if (voices?.length && !voices.includes(next.ttsVoice)) {
+        return withHints(
+          {
+            error: "unknown_voice",
+            changed: false,
+            ttsVoice: next.ttsVoice,
+            voices: voices.slice(0, 60),
+          },
+          {
+            action: config.ttsVoice
+              ? "Pick ttsVoice from voices and retry."
+              : `The agent's voice ${next.ttsVoice} is not offered for this credential and language: retry with a ttsVoice from voices in the same update.`,
+          },
+        );
+      }
+      const parameters = voiceParameters(
+        defaults,
+        current?.parameters ?? [],
+        config,
+      );
+      if (current) {
+        saved = await this.apiClient.patch(
+          `${v1}/tools/${current.id}`,
+          { parameters },
+          { params },
+        );
+      } else {
+        saved = await this.apiClient.post(`${v1}/tools`, {
+          projectId,
+          source: "builtin",
+          type: VOICE_SETTINGS_SLUG,
+          builtinSlug: VOICE_SETTINGS_SLUG,
+          name: descriptor?.name ?? "Voice defaults",
+          description: descriptor?.description ?? "",
+          parameters,
+        });
+        // Already in the agent's queue, so the raw list change.
+        try {
+          await this.changeAgentList(
+            { component: "tool", projectId },
+            agentId,
+            saved.referenceId,
+            true,
+          );
+        } catch (e) {
+          // Like Voice Studio: an instance no agent points at is removed again.
+          await this.apiClient
+            .delete(`${v1}/tools/${saved.id}`, { params })
+            .catch(() => undefined);
+          throw e;
+        }
+      }
+    }
+
+    const settings = resolveVoiceSettings(defaults, saved?.parameters);
+    const speech = speechBlocks(settings);
+    const needs = {
+      tts: "ttsVendor, ttsVoice and ttsLanguage",
+      stt: "sttVendor and sttLanguage",
+    };
+    const warnings = (["tts", "stt"] as const)
+      .filter((k) => speech[k] === "incomplete")
+      .map(
+        (k) =>
+          `${k.toUpperCase()} is incomplete (it needs ${needs[k]}), so calls ignore it and use the endpoint's speech, the project default, then NiCE-provided speech.`,
+      );
+    // A voice is the piece a caller cannot guess: offer the valid ones.
+    const voices =
+      speech.tts === "incomplete" && !settings.ttsVoice
+        ? await voicesFor(settings)
+        : null;
+    return withHints(
+      {
+        agentId,
+        toolId: saved?.id ?? null,
+        usingDefaults: !saved,
+        speech,
+        settings,
+        ...(voices?.length ? { voices: voices.slice(0, 60) } : {}),
+      },
+      warnings.length
+        ? {
+            warning: warnings.join(" "),
+            action:
+              "Complete the block with update, or clear its fields to fall back on purpose.",
+          }
+        : {},
+    );
+  }
+
+  /**
    * Add or remove a skill/tool referenceId on an AI Agent. The list is read and
    * written back whole, so changes to one agent run one after another; else two
    * parallel attaches both succeed and only the last one is kept.
@@ -3774,10 +4240,22 @@ export class ToolHandlers {
     referenceId: string,
     attach: boolean,
   ): Promise<any> {
-    const run = (this.agentListChanges.get(agentId) ?? Promise.resolve())
+    return this.forAgent(agentId, () =>
+      this.changeAgentList(data, agentId, referenceId, attach),
+    );
+  }
+
+  /**
+   * Run a read-modify-write on one AI Agent (its skill or tool lists, its voice
+   * settings) after the previous one on that agent has finished. Code already
+   * inside fn calls changeAgentList directly: queueing again would wait on
+   * itself.
+   */
+  private forAgent<T>(agentId: string, fn: () => Promise<T>): Promise<T> {
+    const run = (this.agentChanges.get(agentId) ?? Promise.resolve())
       .catch(() => undefined)
-      .then(() => this.changeAgentList(data, agentId, referenceId, attach));
-    this.agentListChanges.set(agentId, run);
+      .then(fn);
+    this.agentChanges.set(agentId, run);
     return run;
   }
 
@@ -4294,6 +4772,16 @@ export class ToolHandlers {
         total = res.total;
         break;
       }
+      case "speech_provider": {
+        const res = await listSpeechProviders(
+          this.apiClient,
+          projectId!,
+          paging,
+        );
+        items = res.items.map(summarizeSpeechProvider);
+        total = res.total;
+        break;
+      }
       case "tool": {
         const resolved = await resolveToolFlow(
           this.apiClient,
@@ -4399,7 +4887,9 @@ export class ToolHandlers {
 
     if (!Array.isArray(items)) items = [];
     const filtered =
-      resourceType === "tool" ? items : filterList(resourceType, items);
+      resourceType === "tool" || resourceType === "speech_provider"
+        ? items
+        : filterList(resourceType, items);
 
     if (resourceType === "endpoint") {
       filtered.forEach((ep: any) => {
@@ -7532,7 +8022,10 @@ export class ToolHandlers {
           }),
           {
             warning: `Endpoint created but WebRTC client provisioning failed: ${error.message}`,
-            action: `Retry by calling manage_voice_gateway { endpointId: "${endpointId}" }`,
+            // Click-to-call needs the project's voice preview provider, for AI Agents too.
+            action: /voice preview/i.test(error.message)
+              ? `Set the project's voice preview first: manage_settings { operation: "set_voice_preview", projectId: "${data.projectId}", provider, isNiceProvided: true } with a niceProvided speech_provider vendor, else the provider's Connection. Then retry manage_voice_gateway { endpointId: "${endpointId}" }.`
+              : `Retry by calling manage_voice_gateway { endpointId: "${endpointId}" }`,
           },
         );
       }
@@ -7658,6 +8151,37 @@ export class ToolHandlers {
         const { projectId, provider } = data;
         let connectionRefId = data.connectionId;
 
+        if (data.isNiceProvided) {
+          const rows = (await listSpeechProviders(this.apiClient, projectId))
+            .items;
+          const nice = rows.filter((r) => r.systemProvided === true);
+          if (!nice.some((r) => r.vendor === provider)) {
+            return withHints(
+              {
+                error: `No NiCE-provided speech for "${provider}" in this organisation.`,
+                niceProvidedVendors: [...new Set(nice.map((r) => r.vendor))],
+              },
+              {
+                action:
+                  "Pick a provider from niceProvidedVendors, or use the provider's own Connection (connectionId) instead.",
+              },
+            );
+          }
+          // The UI's shape: no Connection, the shared credential is looked up
+          // by organisation and provider.
+          await this.apiClient.patch(
+            `/new/v2.0/projects/${projectId}/settings`,
+            {
+              audioPreviewSettings: {
+                provider,
+                isNiceProvided: true,
+                connections: { [provider]: { connectionId: null } },
+              },
+            },
+          );
+          return { updated: true, provider, isNiceProvided: true };
+        }
+
         // Auto-detect speech connection if not provided
         if (!connectionRefId) {
           const providerType =
@@ -7701,6 +8225,7 @@ export class ToolHandlers {
             {
               audioPreviewSettings: {
                 provider,
+                isNiceProvided: false,
                 connections: {
                   [provider]: { connectionId: connectionRefId },
                 },
@@ -7875,7 +8400,7 @@ export class ToolHandlers {
       "ALWAYS show webrtcDemoUrl to the user as a clickable link. This is the live demo page they can open in a browser to talk to the agent via voice. Only mention _integration details if the user asks about embedding.";
 
     result._speechProviderHint =
-      "Voice preview requires a speech provider. Ensure one is configured in Settings > Voice Preview Settings > Speech Provider, or use manage_settings { operation: 'set_voice_preview', projectId, provider } to set it via API.";
+      "Voice preview requires a speech provider. Ensure one is configured in Settings > Voice Preview Settings > Speech Provider, or use manage_settings { operation: 'set_voice_preview', projectId, provider } (isNiceProvided: true for NiCE-provided speech) to set it via API.";
 
     return result;
   }
@@ -7896,6 +8421,12 @@ export class ToolHandlers {
   // =========================================================================
   async handleAuditVoiceAgent(args: any): Promise<any> {
     const data = schemas.auditVoiceAgentSchema.parse(args);
+    if (data.agentId)
+      return this.auditAgentVoice({
+        ...data,
+        agentId: data.agentId,
+        projectId: data.projectId!,
+      });
     const { aiAgentId, endpointId, projectId, apply, only } = data;
 
     // Resolve the flow to audit.
@@ -7907,7 +8438,7 @@ export class ToolHandlers {
           { error: "Could not resolve a flow for this agent." },
           {
             action:
-              "Provide flowId directly, or ensure the agent was created via create_ai_agent.",
+              "If it is an AI Agent (no legacy: true in list_resources { resourceType: 'agent', projectId }), audit it with audit_voice_agent { agentId, projectId }. Otherwise provide flowId directly.",
           },
         );
       }
@@ -8154,6 +8685,246 @@ export class ToolHandlers {
       _note:
         "Applied auto-fixable fixes and re-audited. Verify the flow in the UI — especially node ordering when a Set Session Config node was created. Advisory checks (warn) and manual items are not auto-fixed.",
     };
+  }
+
+  /**
+   * audit_voice_agent for an AI Agent: its voice settings, tools, LLMs and
+   * Voice Gateway endpoint against agentVoiceChecklist.ts. Fixes change only
+   * the agent's voice settings and attach voice-hangup.
+   */
+  private async auditAgentVoice(data: {
+    agentId: string;
+    projectId: string;
+    endpointId?: string;
+    apply?: boolean;
+    only?: string[];
+  }): Promise<any> {
+    const v1 = `${this.agentsV2BaseUrl}/v1`;
+    const { agentId, projectId } = data;
+    const params = { projectId };
+
+    const load = async (): Promise<AgentAuditContext> => {
+      const agent: any = await this.apiClient.get(`${v1}/agents/${agentId}`, {
+        params,
+      });
+      const [tools, providers, llms, endpoint] = await Promise.all([
+        this.apiClient
+          .get(`${v1}/tools`, {
+            params: {
+              projectId,
+              agentReferenceId: agent.referenceId,
+              includeHidden: true,
+              limit: 100,
+            },
+          })
+          .then((r: any) => (r?.items ?? []) as any[]),
+        // null: unreadable, which the speech check reports instead of failing.
+        listSpeechProviders(this.apiClient, projectId)
+          .then((r): any[] | null => r.items)
+          .catch(() => null),
+        this.apiClient
+          .get("/v2.0/largelanguagemodels", {
+            params: { projectId, limit: 100 },
+          })
+          .then((r: any) => (r?.items ?? r ?? []) as any[]),
+        this.agentVoiceEndpoint(projectId, agent.referenceId, data.endpointId),
+      ]);
+      const instance = tools.find((t) => t?.type === VOICE_SETTINGS_SLUG);
+      const descriptor: any = await this.apiClient.get(
+        `${v1}/builtin-tools/${VOICE_SETTINGS_SLUG}`,
+        { params },
+      );
+      // The tools list includes the ones switched off for this agent.
+      const off = new Set<string>(agent.disabledToolReferenceIds ?? []);
+      let voicePromptWarnings: any[] | undefined;
+      if (agent.voiceLargeLanguageModelReferenceId) {
+        try {
+          const url = `${v1}/agents/${agentId}/voice-prompt`;
+          const vp: any = await this.apiClient.get(url, { params });
+          const pv: any = await this.apiClient.post(
+            `${url}/preview`,
+            { template: vp.template },
+            { params },
+          );
+          voicePromptWarnings = pv?.warnings ?? [];
+        } catch (e: any) {
+          voicePromptWarnings = [
+            {
+              message: `the voice prompt could not be read (${e?.status ?? e?.message})`,
+            },
+          ];
+        }
+      }
+      return {
+        agent,
+        settings: resolveVoiceSettings(
+          descriptor?.defaultParameters,
+          instance?.parameters,
+        ),
+        toolTypes: tools
+          .filter((t) => !off.has(t?.referenceId))
+          .map((t) => t?.type),
+        disabledToolTypes: tools
+          .filter((t) => off.has(t?.referenceId))
+          .map((t) => t?.type),
+        providers,
+        llms,
+        endpoint,
+        voicePromptWarnings,
+      };
+    };
+
+    const format = (c: AgentVoiceCheck) => ({
+      id: c.id,
+      section: c.section,
+      title: c.title,
+      status: c.status,
+      detail: c.detail,
+      autoFixable: c.autoFixable,
+      ...(c.fix ? { proposedFix: c.fix } : {}),
+    });
+    const checks = evaluateAgentChecks(await load());
+    if (!data.apply) {
+      return {
+        agentId,
+        mode: "dry-run",
+        summary: summarize(checks),
+        checks: checks.map(format),
+        _note:
+          "Dry-run: no changes made. After the user has reviewed the report, re-run with apply: true to apply the auto-fixable fixes (the checks with a proposedFix). Use only: [ids] to apply a subset.",
+      };
+    }
+
+    const toApply = checks.filter(
+      (c) => c.fix && (!data.only || data.only.includes(c.id)),
+    );
+    const appliedFixes: any[] = [];
+    const settingsFixes = toApply.filter(
+      (c) => c.fix!.kind === "voiceSettings",
+    );
+    if (settingsFixes.length) {
+      const config = Object.assign(
+        {},
+        ...settingsFixes.map((c) => (c.fix as any).config),
+      );
+      const r: any = await this.voiceSettings({
+        operation: "update",
+        projectId,
+        agentId,
+        config,
+      }).catch((e: any) => ({ error: e?.message }));
+      for (const c of settingsFixes)
+        appliedFixes.push({
+          id: c.id,
+          applied: !r?.error,
+          ...(r?.error
+            ? { error: r.error }
+            : { fields: Object.keys((c.fix as any).config) }),
+        });
+    }
+    for (const c of toApply.filter((c) => c.fix!.kind === "addTool")) {
+      const slug = (c.fix as any).builtinSlug;
+      try {
+        const how = await this.forAgent(agentId, () =>
+          this.giveAgentTool(projectId, agentId, slug),
+        );
+        appliedFixes.push({ id: c.id, applied: true, tool: slug, how });
+      } catch (e: any) {
+        appliedFixes.push({ id: c.id, applied: false, error: e?.message });
+      }
+    }
+    const post = evaluateAgentChecks(await load());
+    return {
+      agentId,
+      mode: "apply",
+      appliedFixes,
+      summary: summarize(post),
+      checks: post.map(format),
+      _note:
+        "Applied the auto-fixable fixes and re-audited. Advisory checks (warn) and manual items are not auto-fixed.",
+    };
+  }
+
+  /**
+   * Make a builtin tool usable for an AI Agent: switch it back on when the
+   * agent has it switched off, else attach the project's tool of that kind,
+   * else create one. Runs inside forAgent, so it changes the lists directly.
+   */
+  private async giveAgentTool(
+    projectId: string,
+    agentId: string,
+    slug: string,
+  ): Promise<"enabled" | "attached" | "created"> {
+    const v1 = `${this.agentsV2BaseUrl}/v1`;
+    const params = { projectId };
+    const agentUrl = `${v1}/agents/${agentId}`;
+    const agent: any = await this.apiClient.get(agentUrl, { params });
+    const off: string[] = agent?.disabledToolReferenceIds ?? [];
+    const mine: any = await this.apiClient.get(`${v1}/tools`, {
+      params: { projectId, agentReferenceId: agent.referenceId, limit: 100 },
+    });
+    const switchedOff = (mine?.items ?? []).find(
+      (t: any) => t?.type === slug && off.includes(t.referenceId),
+    );
+    if (switchedOff) {
+      await this.apiClient.patch(
+        agentUrl,
+        {
+          disabledToolReferenceIds: off.filter(
+            (r) => r !== switchedOff.referenceId,
+          ),
+        },
+        { params },
+      );
+      return "enabled";
+    }
+    const list = { component: "tool", projectId };
+    const existing: any = await this.apiClient.get(`${v1}/tools`, {
+      params: { projectId, source: "builtin", limit: 100 },
+    });
+    const found = (existing?.items ?? []).find((t: any) => t?.type === slug);
+    if (found) {
+      await this.changeAgentList(list, agentId, found.referenceId, true);
+      return "attached";
+    }
+    const descriptor: any = await this.apiClient.get(
+      `${v1}/builtin-tools/${slug}`,
+      { params },
+    );
+    const created: any = await this.apiClient.post(`${v1}/tools`, {
+      projectId,
+      source: "builtin",
+      type: slug,
+      builtinSlug: slug,
+      name: descriptor?.name ?? slug,
+      description: descriptor?.description ?? "",
+      parameters: builtinToolParameters(descriptor, {}),
+    });
+    for (const key of [created?.id, created?.referenceId]) {
+      if (key) this.resourcesCreatedThisSession.add(String(key));
+    }
+    await this.changeAgentList(list, agentId, created.referenceId, true);
+    return "created";
+  }
+
+  /** The Voice Gateway endpoint that targets an AI Agent, read in full; null when none. */
+  private async agentVoiceEndpoint(
+    projectId: string,
+    agentReferenceId: string,
+    endpointId?: string,
+  ): Promise<any | null> {
+    let id = endpointId;
+    if (!id) {
+      for await (const e of projectEndpoints(this.apiClient, projectId)) {
+        if (e?.channel === "voiceGateway2" && e?.agentId === agentReferenceId) {
+          id = e._id ?? e.id;
+          break;
+        }
+      }
+    }
+    if (!id) return null;
+    const ep: any = await this.apiClient.get(`/v2.0/endpoints/${id}`);
+    return ep?.agentId === agentReferenceId ? ep : null;
   }
 
   // =========================================================================
@@ -9341,5 +10112,9 @@ const RESOURCE_FILTERS_GET: Record<string, (raw: any) => any> = {
     personaReferenceId: r.personaReferenceId,
     knowledge: r.knowledge,
     guardrails: r.guardrails,
+    voiceLargeLanguageModelReferenceId:
+      r.voiceLargeLanguageModelReferenceId || undefined,
+    realtimeVoice: r.realtimeVoice || undefined,
+    customVoicePrompt: r.voicePromptTemplate ? true : undefined,
   }),
 };
