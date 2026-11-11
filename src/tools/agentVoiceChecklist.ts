@@ -5,9 +5,9 @@
  * its tools, its LLMs and the Voice Gateway endpoint that targets it.
  *
  * Mapped to section 3 of the Voice AI guidebook and agreed with the plugin
- * owner. Two rules differ from the legacy ones on purpose: barge-in stays on
- * but needs at least 2 words (AI Agents can require several words, legacy
- * flows cannot), and the greeting is advisory only.
+ * owner. Barge-in differs from the legacy rule on purpose: it stays on but
+ * needs at least 2 words (AI Agents can require several words, legacy flows
+ * cannot).
  *
  * A pure function of the fetched resources, like voiceChecklist.ts.
  */
@@ -182,25 +182,6 @@ export function evaluateAgentChecks(ctx: AgentAuditContext): AgentVoiceCheck[] {
           silenceRetries: Math.max(RANGE.retries, retries || 0),
         },
       },
-    ),
-  );
-
-  // 3.4 Prompting: the first thing the caller hears. Advisory: the text is the user's.
-  const staticGreeting =
-    s.greetingMode === "static" && String(s.greetingText ?? "").trim() !== "";
-  checks.push(
-    check(
-      "agent.greeting",
-      "3.4 Prompting",
-      "The call opens with a fixed greeting",
-      staticGreeting ? "pass" : "warn",
-      staticGreeting
-        ? "A static greeting plays as soon as the call connects."
-        : s.greetingMode === "none"
-          ? "The agent waits for the caller to speak first, so the caller hears silence."
-          : s.greetingMode === "static"
-            ? "greetingMode is static but greetingText is empty."
-            : "The LLM writes the greeting, which costs a model turn before the caller hears anything. A static greetingText (greetingMode static) picks up faster.",
     ),
   );
 

@@ -41,7 +41,6 @@ Without `endpointId` the audit finds the Voice Gateway endpoint that targets the
 | `agent.barge-in`        | 3.1     | Barge-in on speech, at least 2 words to interrupt, keypresses don't interrupt                                          | Yes: minWordsToInterrupt 2, bargeInOnDtmf off    |
 | `agent.continuous-asr`  | 3.1     | `continuousAsr` off                                                                                                     | Yes                                              |
 | `agent.silence`         | 3.1     | Re-prompt a silent caller after 5-7 s, at least 5 times                                                                 | Yes: 6 s, 5 retries                              |
-| `agent.greeting`        | 3.4     | A static greeting plays at once (the LLM-written default costs a model turn)                                            | No (warn): the text is the user's                |
 | `agent.hangup-tool`     | 3.5     | `voice-hangup` attached                                                                                                 | Yes                                              |
 | `agent.transfer-tool`   | 3.5     | `voice-transfer` attached                                                                                               | No (warn): it needs a transfer target            |
 | `agent.latency`         | 3.2     | `reasoningEffort` none, minimal or low; a thinking sound; at most 3 skills                                              | No (warn)                                        |

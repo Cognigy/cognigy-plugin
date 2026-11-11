@@ -53,7 +53,9 @@ const byId = (checks: any[]) =>
 
 describe("AI Agent voice go-live checks", () => {
   it("flags the platform defaults the guidebook asks to change, with fixes", () => {
-    const c = byId(evaluateAgentChecks(ctx()));
+    const checks = evaluateAgentChecks(ctx());
+    expect(checks).toHaveLength(10);
+    const c = byId(checks);
     expect(c["agent.barge-in"]).toMatchObject({
       status: "fail",
       fix: {
@@ -74,10 +76,6 @@ describe("AI Agent voice go-live checks", () => {
       kind: "addTool",
       builtinSlug: "voice-hangup",
     });
-    expect(c["agent.greeting"]).toMatchObject({
-      status: "warn",
-      autoFixable: false,
-    });
     expect(c["agent.transfer-tool"].status).toBe("warn");
     expect(c["agent.latency"].status).toBe("warn");
     expect(c["agent.v2v"].status).toBe("na");
@@ -97,8 +95,6 @@ describe("AI Agent voice go-live checks", () => {
           minWordsToInterrupt: 2,
           silenceTimeoutSeconds: 6,
           silenceRetries: 5,
-          greetingMode: "static",
-          greetingText: "Hi!",
         },
         toolTypes: ["voice-hangup", "voice-transfer"],
       }),

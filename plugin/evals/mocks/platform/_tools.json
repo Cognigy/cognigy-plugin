@@ -2128,7 +2128,7 @@
     },
     {
       "name": "audit_voice_agent",
-      "description": "Audit a voice agent against the deterministic checks of the Voice AI Go-Live Checklist. An AI Agent (agentId + projectId): speech, barge-in, silence, greeting, voice tools, latency, LLMs, GPT live and its endpoint. A legacy AI Agent (aiAgentId or flowId): its flow's Set Session Config, timeouts, streaming, error handling and latency logging, plus endpointId and projectId for the output transformer and fallback LLM. Dry-run by default: each failing check reports a proposedFix and nothing changes. apply: true applies the safe fixes, optionally narrowed with only. Checks outside this subset are listed in the voice-go-live-checklist skill.",
+      "description": "Audit a voice agent against the deterministic checks of the Voice AI Go-Live Checklist. An AI Agent (agentId + projectId): speech, barge-in, silence, voice tools, latency, LLMs, GPT live and its endpoint. A legacy AI Agent (aiAgentId or flowId): its flow's Set Session Config, timeouts, streaming, error handling and latency logging, plus endpointId and projectId for the output transformer and fallback LLM. Dry-run by default: each failing check reports a proposedFix and nothing changes. apply: true applies the safe fixes, optionally narrowed with only. Checks outside this subset are listed in the voice-go-live-checklist skill.",
       "annotations": {
         "title": "Audit Voice Agent",
         "readOnlyHint": false,
