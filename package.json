@@ -1,6 +1,6 @@
 {
   "name": "@cognigy/plugin-engine",
-  "version": "1.22.6",
+  "version": "1.22.7",
   "description": "MCP server engine for the NiCE Cognigy Plugin (Claude Code, Codex, and more)",
   "main": "dist/index.js",
   "type": "module",
@@ -83,5 +83,9 @@
     "tsx": "4.23.15",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.1"
+  },
+  "overrides": {
+    "glob": "14.0.4",
+    "minimatch": "11.0.5"
   }
 }

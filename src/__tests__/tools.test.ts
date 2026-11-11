@@ -4316,6 +4316,68 @@ describe("ToolHandlers v2", () => {
       expect(result._hints).toBeUndefined();
     });
 
+    it.each([
+      { label: "only gpt-live-1", withText: false },
+      { label: "gpt-live-1 plus a text model", withText: true },
+    ])(
+      "never picks a voice-to-voice model as the default ($label)",
+      async ({ withText }) => {
+        api.post
+          .mockResolvedValueOnce({ _id: ID.agent, referenceId: "ref-uuid" })
+          .mockResolvedValueOnce({ _id: ID.flow, referenceId: "flow-uuid" })
+          .mockResolvedValueOnce({ _id: ID.node })
+          .mockResolvedValueOnce({
+            _id: ID.endpoint,
+            URLToken: "abc123",
+            channel: "rest",
+          });
+        api.get
+          .mockResolvedValueOnce({
+            items: [{ _id: ID.entry, isEntryPoint: true }],
+          })
+          .mockResolvedValueOnce({
+            items: [
+              {
+                _id: "a".repeat(24),
+                referenceId: "live-ref",
+                isDefault: true,
+                connectionId: "conn-1",
+                modelType: "gpt-live-1",
+                modelGroup: "voiceToVoice",
+              },
+              ...(withText
+                ? [
+                    {
+                      _id: "b".repeat(24),
+                      referenceId: "chat-ref",
+                      connectionId: "conn-2",
+                      modelType: "gpt-4o",
+                      modelGroup: "chat",
+                    },
+                  ]
+                : []),
+            ],
+          });
+        api.patch.mockResolvedValue({});
+
+        const result = await h.handleToolCall("create_ai_agent", {
+          projectId: ID.project,
+          name: "Test Agent",
+          description: "A test agent",
+        });
+
+        const llmPatch = api.patch.mock.calls.find(
+          (c: any[]) => c[1]?.config?.llmProviderReferenceId !== undefined,
+        );
+        if (withText) {
+          expect(llmPatch?.[1].config.llmProviderReferenceId).toBe("chat-ref");
+        } else {
+          expect(llmPatch).toBeUndefined();
+          expect(result.llmStatus).toBe("unknown");
+        }
+      },
+    );
+
     it("warns when the project default is skipped for having no connection", async () => {
       const mockAgent = {
         _id: ID.agent,
