@@ -1,3 +1,15 @@
+## [1.23.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.8...v1.23.0) (2026-11-11)
+
+### Features
+
+* **agents:** build AI Agents by default, with skills, tools and settings ([#52](https://github.com/Cognigy/cognigy-plugin/issues/52)) [skip ci] ([bb77894](https://github.com/Cognigy/cognigy-plugin/commit/bb7789401aa0267f14e315c108c8d3cff1877908))
+* **voice:** speech settings, speech-to-speech (S2S) first and the go-live audit for AI Agents ([#75](https://github.com/Cognigy/cognigy-plugin/issues/75)) ([8c947af](https://github.com/Cognigy/cognigy-plugin/commit/8c947afed3478b0a4d9bfc9b31b528b99d30bde1)), closes [#52](https://github.com/Cognigy/cognigy-plugin/issues/52)
+
+### Bug Fixes
+
+* **delete:** page endpoints with skip when deactivating a deleted flow's endpoints ([#76](https://github.com/Cognigy/cognigy-plugin/issues/76)) [skip ci] ([c31ffab](https://github.com/Cognigy/cognigy-plugin/commit/c31ffaba2b4815f1d3b53fbfcf2fc2f54da64905))
+* **deps:** bump axios to 1.21.1 for follow-redirects advisory (GHSA-mrwp-f3q8-3g9p) ([#73](https://github.com/Cognigy/cognigy-plugin/issues/73)) [skip ci] ([65eda18](https://github.com/Cognigy/cognigy-plugin/commit/65eda1892131b8826036da1c3c6f9ccf1b4bde8f)), closes [#71](https://github.com/Cognigy/cognigy-plugin/issues/71)
+
 ## [1.22.8](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.7...v1.22.8) (2026-11-11)
 
 ### Bug Fixes
