@@ -54,6 +54,7 @@ import {
   type Capabilities,
   COMPONENT_PATHS,
   findOrCreateAgentEndpoint,
+  isAgentsV2Absent,
   listAgentsV2,
   probeCapabilities,
   readAgentV2,
@@ -3216,6 +3217,18 @@ export class ToolHandlers {
     return caps;
   }
 
+  /** The answer to an AI Agent call where AI Agents are unavailable, else null. */
+  private async aiAgentsUnavailable(action: string): Promise<any | null> {
+    const caps = await this.getCapabilities();
+    if (caps.aiAgents !== "unavailable") return null;
+    return withHints(
+      { error: "ai_agents_unavailable", changed: false, detail: caps.detail },
+      {
+        action: `${action} Do not mention agent kinds or versions to the user.`,
+      },
+    );
+  }
+
   async handleCheckCapabilities(): Promise<any> {
     const caps = await this.getCapabilities();
     const actions: Record<string, string> = {
@@ -3349,16 +3362,10 @@ export class ToolHandlers {
       { operation: "create" }
     >,
   ): Promise<any> {
-    const caps = await this.getCapabilities();
-    if (caps.aiAgents === "unavailable") {
-      return withHints(
-        { error: "ai_agents_unavailable", changed: false, detail: caps.detail },
-        {
-          action:
-            "Build the agent with create_ai_agent instead. Do not mention agent kinds or versions to the user.",
-        },
-      );
-    }
+    const refusal = await this.aiAgentsUnavailable(
+      "Build the agent with create_ai_agent instead.",
+    );
+    if (refusal) return refusal;
     const {
       operation: _op,
       createEndpoint,
@@ -3471,6 +3478,11 @@ export class ToolHandlers {
     name: string;
     answer?: string;
   }): Promise<any> {
+    // Without AI Agents the platform rejects these Flow kinds with a bare 400.
+    const refusal = await this.aiAgentsUnavailable(
+      "Pre-turn hooks and Execute Tool Flow tools are not available on this environment: tell the user. For an agent built with create_ai_agent, put that logic into its flow with manage_flow_nodes.",
+    );
+    if (refusal) return refusal;
     const preTurn = data.flowType === "preTurn";
     const flow: any = await this.apiClient.post("/v2.0/flows", {
       projectId: data.projectId,
@@ -9066,9 +9078,16 @@ export class ToolHandlers {
       // Before anything mutates an existing agent, give the user one chance to
       // take a backup. Must precede the switch — a post-hoc hint arrives after
       // the change and is therefore useless.
+      const aiAgentTool =
+        toolName === "manage_agent" || toolName === "manage_agent_components";
       if (
         ToolHandlers.isBackupWorthyCall(toolName, args) &&
-        !this.targetsNewResource(args)
+        !this.targetsNewResource(args) &&
+        // These fail anyway where AI Agents are unavailable: offer no backup.
+        !(
+          aiAgentTool &&
+          (await this.getCapabilities()).aiAgents === "unavailable"
+        )
       ) {
         const gate = this.backupGateFor(toolName, args);
         if (gate) {
@@ -9153,6 +9172,15 @@ export class ToolHandlers {
       logger.info(`Tool call successful: ${toolName}`);
       return result;
     } catch (error: any) {
+      // service-agents answers an org without AI Agents with a bare 403/404 on
+      // every route: say what that means instead of passing the status on.
+      const path = String(error?.url ?? "").split("?")[0];
+      if (/\/v1\//.test(path) && isAgentsV2Absent(error)) {
+        const refusal = await this.aiAgentsUnavailable(
+          "Use create_ai_agent, update_ai_agent, create_tool and talk_to_agent { aiAgentId } on this environment.",
+        ).catch(() => null);
+        if (refusal) return refusal;
+      }
       annotateAgentKindMismatch(error);
       logger.error(`Tool call failed: ${toolName}`, { error: error.message });
       throw error;

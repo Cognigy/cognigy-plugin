@@ -425,6 +425,72 @@ describe("manage_agent", () => {
     expect(api.post).not.toHaveBeenCalled();
   });
 
+  it("creates no hook Flow where AI Agents are unavailable", async () => {
+    const api = routedApi({
+      [`GET ${V1}/v1/agents`]: () => {
+        throw httpError(403, "forbidden");
+      },
+    });
+    const r: any = await handlers(api).handleToolCall("manage_agent", {
+      operation: "create_flow",
+      projectId: ID.project,
+      flowType: "preTurn",
+      name: "Hook",
+    });
+    expect(r.error).toBe("ai_agents_unavailable");
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("explains a bare 403 from service-agents only where AI Agents are unavailable", async () => {
+    const forbidden = () => {
+      throw Object.assign(httpError(403, "forbidden"), {
+        url: `${V1}/v1/tools`,
+      });
+    };
+    const off = routedApi({
+      [`GET ${V1}/v1/agents`]: () => {
+        throw httpError(403, "forbidden");
+      },
+      [`GET ${V1}/v1/tools`]: forbidden,
+    });
+    const args = {
+      operation: "list",
+      component: "tool",
+      projectId: ID.project,
+    };
+    const r: any = await handlers(off).handleToolCall(
+      "manage_agent_components",
+      args,
+    );
+    expect(r.error).toBe("ai_agents_unavailable");
+    expect(r._hints.action).toContain("talk_to_agent { aiAgentId }");
+
+    const on = routedApi({ [`GET ${V1}/v1/tools`]: forbidden });
+    await expect(
+      handlers(on).handleToolCall("manage_agent_components", args),
+    ).rejects.toThrow("forbidden");
+  });
+
+  it("offers no backup for an update that cannot run without AI Agents", async () => {
+    const api = routedApi({
+      [`GET ${V1}/v1/agents`]: () => {
+        throw httpError(403, "forbidden");
+      },
+      [`PATCH ${V1}/v1/agents/${ID.agent}`]: () => {
+        throw Object.assign(httpError(403, "forbidden"), {
+          url: `${V1}/v1/agents/${ID.agent}`,
+        });
+      },
+    });
+    const r: any = await handlers(api).handleToolCall("manage_agent", {
+      operation: "update",
+      agentId: ID.agent,
+      projectId: ID.project,
+      role: "Support",
+    });
+    expect(r.error).toBe("ai_agents_unavailable");
+  });
+
   it("holds the first update for a backup, then patches only what was passed", async () => {
     const api = routedApi({
       [`PATCH ${V1}/v1/agents/${ID.agent}`]: (body) => ({
