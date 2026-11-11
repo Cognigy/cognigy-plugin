@@ -1170,13 +1170,22 @@ export const manageAgentComponentsSchema = z.discriminatedUnion("operation", [
     projectId: idSchema,
     componentId: componentIdSchema,
   }),
-  z.object({
-    operation: z.literal("create"),
-    component: componentSchema,
-    projectId: idSchema,
-    config: componentConfigSchema,
-    agentId: agentIdSchema.optional(),
-  }),
+  z
+    .object({
+      operation: z.literal("create"),
+      component: componentSchema,
+      projectId: idSchema,
+      config: componentConfigSchema,
+      agentId: agentIdSchema.optional(),
+    })
+    .refine(
+      (d) => !d.agentId || d.component === "skill" || d.component === "tool",
+      {
+        path: ["agentId"],
+        message:
+          "agentId on create attaches skills and tools only. Set a persona with manage_agent update { personaReferenceId }; for an MCP server, sync_tools and attach the imported tools.",
+      },
+    ),
   z.object({
     operation: z.literal("update"),
     component: componentSchema,
