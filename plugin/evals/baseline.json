@@ -1,8 +1,8 @@
 {
-  "takenAt": "2026-11-10T17:33:34.620Z",
-  "commit": "7236af3",
+  "takenAt": "2026-11-11T12:51:34.211Z",
+  "commit": "b3726b0",
   "claudeVersion": "2.1.319",
-  "pluginVersion": "1.22.6",
+  "pluginVersion": "1.22.8",
   "cases": {
     "add-knowledge": {
       "fingerprint": "a5148e3f508b",
@@ -48,10 +48,10 @@
     },
     "voice-go-live": {
       "fingerprint": "cc20a7f69b60",
-      "score": 0.5,
+      "score": 1,
       "graders": {
         "calls-audit_voice_agent": "3/3",
-        "checklist-loaded": "0/3"
+        "checklist-loaded": "3/3"
       }
     },
     "backup-gate": {
