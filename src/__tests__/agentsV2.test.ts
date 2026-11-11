@@ -286,6 +286,25 @@ describe("manage_agent", () => {
     expect(api.post).toHaveBeenCalledTimes(1);
   });
 
+  it("hands back the project it created when the agent fails", async () => {
+    const api = routedApi({
+      "POST /v2.0/projects": () => ({ _id: ID.project }),
+      "GET /v2.0/locales": () => ({ items: [{ referenceId: "loc-1" }] }),
+      [`POST ${V1}/v1/agents`]: () => {
+        throw httpError(400, "instructions too long");
+      },
+    });
+    const r: any = await handlers(api).handleToolCall("manage_agent", {
+      operation: "create",
+      name: "Bot",
+      largeLanguageModelReferenceId: LLM,
+      createEndpoint: false,
+    });
+    expect(r).toMatchObject({ projectId: ID.project, projectCreated: true });
+    expect(r.error).toContain("instructions too long");
+    expect(r._hints.action).toContain(`projectId: "${ID.project}"`);
+  });
+
   it("keeps the stored safety toggles an update does not name", async () => {
     const api = routedApi({
       [`GET ${V1}/v1/agents/${ID.agent}`]: () => ({
@@ -828,6 +847,106 @@ describe("manage_agent_components", () => {
     expect(r.detachedFrom).toEqual([ID.agent]);
     expect(api.patch).toHaveBeenCalledTimes(1);
     expect(api.patch.mock.calls[0][1]).toEqual({ skillReferenceIds: ["keep"] });
+  });
+
+  it("deletes no skill while the agents that use it cannot be listed", async () => {
+    const api = routedApi({
+      [`GET ${V1}/v1/skills/${ID.skill}`]: () => ({ referenceId: "s-ref" }),
+      [`GET ${V1}/v1/agents`]: (_: any, opts: any) => {
+        if (opts?.params?.limit === 100) throw httpError(500, "boom");
+        return { items: [], total: 0 };
+      },
+    });
+    const h = handlers(api);
+    await h.handleToolCall("manage_snapshots", {
+      operation: "decline",
+      projectId: ID.project,
+    });
+    await expect(
+      h.handleToolCall("manage_agent_components", {
+        operation: "delete",
+        component: "skill",
+        projectId: ID.project,
+        componentId: ID.skill,
+      }),
+    ).rejects.toThrow(/Skill not deleted/);
+    expect(api.delete).not.toHaveBeenCalled();
+  });
+
+  it("keeps both skills when two attaches to one agent run in parallel", async () => {
+    let stored: string[] = [];
+    const api = routedApi({
+      [`GET ${V1}/v1/agents/${ID.agent}`]: async () => {
+        const seen = [...stored];
+        await new Promise((r) => setTimeout(r, 5));
+        return { skillReferenceIds: seen };
+      },
+      [`PATCH ${V1}/v1/agents/${ID.agent}`]: (body: any) => {
+        stored = body.skillReferenceIds;
+        return {};
+      },
+    });
+    const h = handlers(api);
+    await h.handleToolCall("manage_snapshots", {
+      operation: "decline",
+      projectId: ID.project,
+    });
+    const attach = (componentId: string) =>
+      h.handleToolCall("manage_agent_components", {
+        operation: "attach",
+        component: "skill",
+        projectId: ID.project,
+        componentId,
+        agentId: ID.agent,
+      });
+    await Promise.all([attach("s-1"), attach("s-2")]);
+    expect([...stored].sort()).toEqual(["s-1", "s-2"]);
+  });
+
+  it("keeps a parameter's other fields when an update changes another one", async () => {
+    const api = routedApi({
+      [`GET ${V1}/v1/tools/t1`]: () => ({
+        id: "t1",
+        type: "execute-tool-flow",
+        parameters: [
+          {
+            key: "flowReferenceId",
+            name: "Flow",
+            mode: "dynamic",
+            type: "string",
+            value: "old-flow",
+          },
+          {
+            key: "count",
+            name: "count",
+            mode: "aiFilled",
+            type: "number",
+            value: null,
+            default: 5,
+          },
+        ],
+      }),
+      [`PATCH ${V1}/v1/tools/t1`]: (body: any) => body,
+    });
+    const h = handlers(api);
+    await h.handleToolCall("manage_snapshots", {
+      operation: "decline",
+      projectId: ID.project,
+    });
+    await h.handleToolCall("manage_agent_components", {
+      operation: "update",
+      component: "tool",
+      projectId: ID.project,
+      componentId: "t1",
+      config: { parameters: { flowReferenceId: "new-flow" } },
+    });
+    const sent = api.patch.mock.calls.find(
+      (c: any[]) => c[0] === `${V1}/v1/tools/t1`,
+    )[1];
+    expect(sent.parameters).toEqual([
+      expect.objectContaining({ key: "flowReferenceId", value: "new-flow" }),
+      expect.objectContaining({ key: "count", default: 5 }),
+    ]);
   });
 
   it("syncs MCP tools with everything discovery showed as reviewed", async () => {

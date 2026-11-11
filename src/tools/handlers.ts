@@ -1403,6 +1403,8 @@ export class ToolHandlers {
    * own step 5 (`update_ai_agent` right after `create_ai_agent`).
    */
   private readonly resourcesCreatedThisSession = new Set<string>();
+  /** Last pending skill/tool list change per AI Agent, so parallel attaches queue up. */
+  private readonly agentListChanges = new Map<string, Promise<unknown>>();
   /**
    * Highest backup version this session handed out. Version numbers come from
    * the project's existing backups, so without this floor a create → delete →
@@ -3377,38 +3379,52 @@ export class ToolHandlers {
       projectId = await this.createProjectFor(data.name);
       this.resourcesCreatedThisSession.add(projectId);
     }
-    const localeReferenceId = await resolveLocaleReferenceId(
-      this.apiClient,
-      projectId,
-    );
-    // The platform leaves an agent without an LLM when none is given (and the
-    // project has no default), so bind the model create_ai_agent would pick.
     let llm: ReturnType<typeof pickDefaultLlm>;
-    if (!fields.largeLanguageModelReferenceId) {
-      llm = pickDefaultLlm(
-        await fetchLlmsForUseCase(this.apiClient, projectId, "aiAgent").catch(
-          () => undefined,
-        ),
-      );
-      if (llm) fields.largeLanguageModelReferenceId = llm.refId;
-    }
     let agent: any;
-    for (let attempt = 1; ; attempt++) {
-      try {
-        agent = await this.apiClient.post(`${this.agentsV2BaseUrl}/v1/agents`, {
-          projectId,
-          localeReferenceId,
-          ...fields,
-        });
-        break;
-      } catch (error: any) {
-        // service-agents learns about a new project some seconds after it
-        // exists (live: 15-20 s) and answers 403 until then.
-        if (given || error?.status !== 403 || attempt > 6) throw error;
-        await new Promise((r) =>
-          setTimeout(r, ToolHandlers.NEW_PROJECT_RETRY_MS * attempt),
+    try {
+      const localeReferenceId = await resolveLocaleReferenceId(
+        this.apiClient,
+        projectId,
+      );
+      // The platform leaves an agent without an LLM when none is given (and the
+      // project has no default), so bind the model create_ai_agent would pick.
+      if (!fields.largeLanguageModelReferenceId) {
+        llm = pickDefaultLlm(
+          await fetchLlmsForUseCase(this.apiClient, projectId, "aiAgent").catch(
+            () => undefined,
+          ),
         );
+        if (llm) fields.largeLanguageModelReferenceId = llm.refId;
       }
+      for (let attempt = 1; ; attempt++) {
+        try {
+          agent = await this.apiClient.post(
+            `${this.agentsV2BaseUrl}/v1/agents`,
+            { projectId, localeReferenceId, ...fields },
+          );
+          break;
+        } catch (error: any) {
+          // service-agents learns about a new project some seconds after it
+          // exists (live: 15-20 s) and answers 403 until then.
+          if (given || error?.status !== 403 || attempt > 6) throw error;
+          await new Promise((r) =>
+            setTimeout(r, ToolHandlers.NEW_PROJECT_RETRY_MS * attempt),
+          );
+        }
+      }
+    } catch (error: any) {
+      if (given) throw error;
+      // The project exists now: hand it back, or a retry makes another one.
+      return withHints(
+        {
+          error: `The agent was not created: ${error?.message ?? error}`,
+          projectId,
+          projectCreated: true,
+        },
+        {
+          action: `Fix the cause, then retry with projectId: "${projectId}" so no second project is created. Tell the user this empty project exists.`,
+        },
+      );
     }
     for (const key of [agent?.id, agent?.referenceId]) {
       if (key) this.resourcesCreatedThisSession.add(String(key));
@@ -3609,7 +3625,13 @@ export class ToolHandlers {
             `${base}/${data.componentId}`,
             { params },
           );
-          body.parameters = builtinToolParameters(current, body.parameters);
+          // Keep the fields the rebuild leaves out, e.g. a Flow argument's default.
+          const prior = new Map<string, any>(
+            (current?.parameters ?? []).map((p: any) => [p.key, p]),
+          );
+          body.parameters = builtinToolParameters(current, body.parameters).map(
+            (p) => ({ ...prior.get(p.key), ...p }),
+          );
         }
         const updated: any = await this.apiClient.patch(
           `${base}/${data.componentId}`,
@@ -3623,14 +3645,14 @@ export class ToolHandlers {
       }
       case "delete": {
         // Deleting a tool detaches it everywhere; deleting a skill leaves it
-        // on the agents that use it, so take it off them afterwards.
+        // on the agents that use it, so take it off them first. A failure
+        // there stops before the delete, so a retry can finish the job.
         const skill: any =
           data.component === "skill"
             ? await this.apiClient.get(`${base}/${data.componentId}`, {
                 params,
               })
             : null;
-        await this.apiClient.delete(`${base}/${data.componentId}`, { params });
         const detachedFrom: string[] = [];
         if (skill?.referenceId) {
           // ponytail: only the first 100 agents of the project are checked.
@@ -3640,13 +3662,19 @@ export class ToolHandlers {
             data.projectId,
             { limit: 100, skip: 0 },
           );
-          for (const a of agents.available ? agents.items : []) {
+          if (!agents.available) {
+            throw new Error(
+              `Skill not deleted: the agents that use it could not be listed${agents.warning ? ` (${agents.warning})` : ""}. Retry the delete.`,
+            );
+          }
+          for (const a of agents.items) {
             if (a?.skillReferenceIds?.includes(skill.referenceId)) {
               await this.attachComponent(data, a.id, skill.referenceId, false);
               detachedFrom.push(a.id);
             }
           }
         }
+        await this.apiClient.delete(`${base}/${data.componentId}`, { params });
         return {
           deleted: true,
           component: data.component,
@@ -3697,8 +3725,26 @@ export class ToolHandlers {
     }
   }
 
-  /** Add or remove a skill/tool referenceId on an AI Agent. */
-  private async attachComponent(
+  /**
+   * Add or remove a skill/tool referenceId on an AI Agent. The list is read and
+   * written back whole, so changes to one agent run one after another; else two
+   * parallel attaches both succeed and only the last one is kept.
+   * ponytail: this queues calls within this server only, not edits made elsewhere.
+   */
+  private attachComponent(
+    data: { component: string; projectId: string },
+    agentId: string,
+    referenceId: string,
+    attach: boolean,
+  ): Promise<any> {
+    const run = (this.agentListChanges.get(agentId) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(() => this.changeAgentList(data, agentId, referenceId, attach));
+    this.agentListChanges.set(agentId, run);
+    return run;
+  }
+
+  private async changeAgentList(
     data: { component: string; projectId: string },
     agentId: string,
     referenceId: string,
