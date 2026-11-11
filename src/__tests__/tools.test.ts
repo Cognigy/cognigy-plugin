@@ -2947,6 +2947,7 @@ describe("ToolHandlers v2", () => {
         "name",
         "projectId",
         "referenceId",
+        "use",
       ]);
       // Snapshots are project-scoped, so a caller holding only an agent id
       // needs the project id from somewhere; internals stay stripped.
@@ -4188,6 +4189,46 @@ describe("ToolHandlers v2", () => {
       expect(result._hints).toBeUndefined();
     });
 
+    it("treats a NiCE-provided LLM as working without a connection", async () => {
+      api.post
+        .mockResolvedValueOnce({ _id: ID.agent, referenceId: "ref-uuid" })
+        .mockResolvedValueOnce({ _id: ID.flow, referenceId: "flow-uuid" })
+        .mockResolvedValueOnce({ _id: ID.node })
+        .mockResolvedValueOnce({ _id: ID.endpoint, URLToken: "abc123" });
+      api.get
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.entry, isEntryPoint: true }],
+        })
+        .mockResolvedValueOnce({
+          items: [
+            // A project default without a connection loses to the NiCE model.
+            { _id: ID.llm, referenceId: "broken-ref", isDefault: true },
+            {
+              _id: ID.llm,
+              referenceId: "nice-ref",
+              isInPlatformLlm: true,
+              modelType: "gpt-5.6-luna",
+            },
+          ],
+        });
+      api.patch.mockResolvedValue({});
+
+      const result = await h.handleToolCall("create_ai_agent", {
+        projectId: ID.project,
+        name: "Test Agent",
+        description: "A test agent",
+      });
+
+      expect(result.llm).toEqual({
+        referenceId: "nice-ref",
+        isDefault: false,
+        connected: true,
+      });
+      expect(result.llmConnected).toBeUndefined();
+      expect(result._hints.warning).not.toContain("empty responses");
+      expect(result._hints.warning).toContain('"broken-ref" has no connection');
+    });
+
     it("refetches the unfiltered LLM list when the useCase filter is unsupported", async () => {
       const mockAgent = {
         _id: ID.agent,
@@ -4556,6 +4597,44 @@ describe("ToolHandlers v2", () => {
           },
         ],
       },
+    });
+
+    it("lists AI Agents and their skills and tools as exportable", async () => {
+      api.get.mockResolvedValueOnce({
+        [ID.project]: {
+          resources: [
+            {
+              _id: "a1",
+              type: "aiAgentV2",
+              name: "Weather Bot",
+              referenceId: "r1",
+            },
+            {
+              _id: "t1",
+              type: "aiAgentV2Tool",
+              name: "get_weather",
+              referenceId: "r2",
+            },
+            {
+              _id: "s1",
+              type: "aiAgentV2Skill",
+              name: "packing",
+              referenceId: "r3",
+            },
+          ],
+        },
+      });
+
+      const result = await h.handleToolCall("manage_packages", {
+        operation: "list_exportable",
+        projectId: ID.project,
+      });
+
+      expect(result.resources.map((r: any) => r.type).sort()).toEqual([
+        "aiAgentV2",
+        "aiAgentV2Skill",
+        "aiAgentV2Tool",
+      ]);
     });
 
     it("lists exportable resources and includes LLM models", async () => {
@@ -5006,7 +5085,7 @@ describe("ToolHandlers v2", () => {
       const result = await h.handleToolCall("manage_voice_gateway", {
         projectId: ID.project,
       });
-      expect(result.error).toContain("flowId is required");
+      expect(result.error).toContain("flowId or agentId is required");
     });
 
     it("updates existing endpoint with new widget config", async () => {
@@ -5078,6 +5157,35 @@ describe("ToolHandlers v2", () => {
         expect.objectContaining({
           createWebrtcClient: true,
           name: "Updated Name",
+        }),
+      );
+    });
+
+    it("sends the stored name and locale when provisioning WebRTC on a plain retry", async () => {
+      const existingEndpoint = {
+        _id: ID.endpoint,
+        URLToken: "vg-token-789",
+        channel: "voiceGateway2",
+        name: "Voice Agent",
+        localeId: "loc-ref",
+      };
+      api.get
+        .mockResolvedValueOnce(existingEndpoint)
+        .mockResolvedValueOnce({ ...existingEndpoint, webrtcClient: true });
+      api.patch.mockResolvedValueOnce({});
+
+      await h.handleToolCall("manage_voice_gateway", {
+        endpointId: ID.endpoint,
+      });
+
+      // service-api: "Mandatory fields missing" without name + localeId.
+      expect(api.patch).toHaveBeenCalledWith(
+        `/new/v2.0/endpoints/${ID.endpoint}`,
+        expect.objectContaining({
+          createWebrtcClient: true,
+          name: "Voice Agent",
+          localeId: "loc-ref",
+          URLToken: "vg-token-789",
         }),
       );
     });

@@ -5,6 +5,8 @@ description: "Use when the user wants to deploy a Cognigy agent to a Webchat end
 
 # Webchat v3 Setup Guide
 
+> For an AI Agent built with `manage_agent`, create the endpoint with `agentId` (plus `projectId`) instead of `flowId`; everything else below is the same.
+
 ## What is Webchat v3?
 Webchat v3 is Cognigy's embeddable chat widget for websites. It connects to a Webchat v3 Endpoint, which links a Flow to the widget and holds all appearance/behavior configuration.
 

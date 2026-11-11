@@ -14,6 +14,8 @@ description: "Use when configuring or choosing an LLM for a Cognigy agent — va
 3. Where another project has a reusable LLM with a non-empty `connectionId`, you attempted to transfer it together with its connection via `manage_packages` (see the package-management skill).
 4. You are proceeding only because reuse is unavailable, the transfer failed, or the user explicitly asked for a brand-new LLM.
 
+A NiCE-provided model in the target project (`isInPlatformLlm: true`, shown as "Included by NiCE Cognigy") works without a connection, so it needs no setup_llm and no transfer.
+
 If any step is missing, stop and do it first. To list existing LLMs use `list_resources { resourceType: "llm_model", projectId }`; to delete one use `delete_resource { resourceType: "llm_model", id }`.
 
 ## setup_llm parameters

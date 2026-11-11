@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import type { AxiosError } from "axios";
-import { describeUnexpectedBody } from "../api/client.js";
+import { describeUnexpectedBody, formatApiError } from "../api/client.js";
 
 const PROXY_ENV_VARS = [
   "HTTP_PROXY",
@@ -124,5 +124,37 @@ describe("describeUnexpectedBody", () => {
       errorWith(407),
     );
     expect(message).toContain("proxy authentication required");
+  });
+});
+
+describe("formatApiError", () => {
+  it("keeps the request URL on the error", () => {
+    const err = formatApiError({
+      config: {
+        url: "/v2.0/aiagents/abc",
+        baseURL: "https://api-trial.cognigy.ai",
+      },
+      response: { status: 404, data: { status: 404, detail: "Not found" } },
+    } as any);
+    expect(err.message).toBe("Not found");
+    expect((err as any).status).toBe(404);
+    expect((err as any).url).toBe("/v2.0/aiagents/abc");
+  });
+
+  it("names service-agents field errors", () => {
+    const err = formatApiError({
+      config: { url: "https://api-dev.cognigy.ai/v1/agentpersonas" },
+      response: {
+        status: 400,
+        data: {
+          status: 400,
+          detail: "request body validation failed",
+          errors: [{ field: "voiceConfig", message: "is required" }],
+        },
+      },
+    } as any);
+    expect(err.message).toBe(
+      "request body validation failed (voiceConfig: is required)",
+    );
   });
 });

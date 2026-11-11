@@ -10,6 +10,7 @@ import {
 import { loadConfig } from "./config.js";
 import { CognigyApiClient } from "./api/client.js";
 import { ToolHandlers } from "./tools/handlers.js";
+import { agentsV2BaseUrl } from "./tools/agentsV2.js";
 import { tools } from "./tools/definitions.js";
 import { SERVER_INSTRUCTIONS } from "./instructions.js";
 import { logger } from "./utils/logger.js";
@@ -37,6 +38,7 @@ async function main() {
       config.endpointBaseUrl,
       config.webchatBaseUrl,
       config.staticFilesBaseUrl,
+      agentsV2BaseUrl(config.apiBaseUrl),
     );
     const rateLimiter = new RateLimiter(config.rateLimit);
 

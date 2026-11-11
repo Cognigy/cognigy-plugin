@@ -5,6 +5,8 @@ description: "Use when adding, editing or debugging custom logic inside a Cognig
 
 # Flow Node Reference
 
+> Flow nodes belong to legacy AI Agents and other flows. AI Agents built with `manage_agent` have no flow to edit; their custom logic goes into tools and skills (`manage_agent_components`).
+
 Use `manage_flow_nodes` to add logic nodes **inside tool branches only**. Nodes are helpers for tools — they must ALWAYS be created under a tool, never as standalone pre-agent nodes.
 
 **CRITICAL: NEVER add nodes before the AI Agent Job node.** Pre-agent nodes cause conversation loops and break the agent's ability to orchestrate. ALL logic — including authentication, data collection, greetings, and conditional behavior — must be implemented as agent tools.
@@ -72,6 +74,52 @@ Send a text message to the user. Supports rich output types.
       { "title": "Talk to human", "payload": "handover" }
     ]
   }
+}
+```
+
+---
+
+### continueToAgent — Continue to AI Agent
+
+Category: service
+
+The last node of an AI Agent's pre-turn hook Flow (agent-creation skill, "Pre-turn hook"). It hands the message back to the agent; without it the agent gives no answer. Only allowed in a Flow of kind `preTurnFlow`. `manage_agent { operation: "create_flow", flowType: "preTurn" }` places it already; add the nodes that prepare the turn before it (`mode: "append"` on Start or the previous node).
+
+**Config (all optional):**
+- `text` — the message the agent gets (default `{{input.text}}`)
+- `dataMode` — `"forward"` (default, passes `input.data` on) or `"custom"` (sends `customData`)
+- `turnContext` — label → value pairs the agent sees with the message, e.g. `{ "customer_tier": "{{context.tier}}" }` (max 20, values up to 500 characters)
+
+```json
+{
+  "operation": "create",
+  "flowId": "<pre-turn flowId>",
+  "parentNodeId": "<startNodeId>",
+  "mode": "append",
+  "nodeType": "continueToAgent",
+  "label": "Continue to AI Agent",
+  "config": { "turnContext": { "customer_tier": "gold" } }
+}
+```
+
+---
+
+### toolResult — Tool Result
+
+Category: service
+
+Ends a Flow that an AI Agent runs through its Execute Tool Flow tool (agent-creation skill, "A Flow as a tool"): its `answer` is what the tool call returns. The call's arguments are in `input.data.toolArgs`. Only allowed in a Flow of kind `flowExecutionTool`; `manage_agent { operation: "create_flow", flowType: "tool" }` places it already. The first Tool Result that runs answers and stops the Flow.
+
+**Config:**
+- `answer` (required) — CognigyScript, e.g. `"Order {{input.data.toolArgs.orderId}} ships on {{context.shipDate}}"`
+- `shareConversationHistory` — what the agent sees of the Flow's own messages: `"lastExchangeOnly"` (default), `"fullConversation"` or `"none"`
+
+```json
+{
+  "operation": "update",
+  "flowId": "<tool flowId>",
+  "nodeId": "<closingNodeId>",
+  "config": { "answer": "Order {{input.data.toolArgs.orderId}}: {{context.status}}" }
 }
 ```
 

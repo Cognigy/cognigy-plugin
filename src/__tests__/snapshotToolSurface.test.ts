@@ -60,6 +60,8 @@ describe("backup gate classification", () => {
   /** Mutating tools that deliberately do NOT warrant a backup offer. */
   const EXEMPT: Record<string, string> = {
     create_ai_agent: "creates new material; nothing to roll back to",
+    create_agent_v2:
+      "Agents V2 preview: creates new material; nothing to roll back to",
     setup_llm: "additive: adds an LLM + connection, changes no agent",
     manage_knowledge:
       "Knowledge AI is NOT captured in a snapshot, so a backup would not protect it",
