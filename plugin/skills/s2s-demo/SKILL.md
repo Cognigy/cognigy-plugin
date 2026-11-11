@@ -1,6 +1,6 @@
 ---
 name: s2s-demo
-description: "Use when the user wants a speech-to-speech (S2S, also called voice-to-voice or V2V) voice agent, or a callable realtime voice demo for a customer from one prompt. Covers the GPT Live voice model, the agent's voice and voice prompt, the click-to-call page, and what to do when speech-to-speech is not enabled."
+description: "Use when the user wants a speech-to-speech (S2S, also called voice-to-voice or V2V) voice agent, or a callable realtime voice demo for a customer from one prompt. Covers the GPT Live voice model, the agent's voice and voice prompt, the click-to-call page, and what to do when speech-to-speech is not enabled. Call it speech-to-speech in every reply, also when the user said V2V or voice-to-voice."
 ---
 
 # Speech-to-speech (S2S) demo

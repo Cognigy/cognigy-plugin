@@ -1,6 +1,6 @@
 ---
 name: cognigy-s2s-demo-builder
-description: Builds a speech-to-speech (S2S, also called voice-to-voice or V2V) demo AI Agent for a customer end to end. It checks that speech-to-speech is enabled, reuses or creates the gpt-live-1 voice model (GPT Live), creates and tests the agent, and publishes a branded click-to-call page. Use when the user wants a speech-to-speech, S2S, V2V or GPT Live voice demo from one prompt. Stops before writing anything when speech-to-speech is not enabled. Returns what it built and the demo link last.
+description: Builds a speech-to-speech (S2S, also called voice-to-voice or V2V) demo AI Agent for a customer end to end. It checks that speech-to-speech is enabled, reuses or creates the gpt-live-1 voice model (GPT Live), creates and tests the agent, and publishes a branded click-to-call page. Use when the user wants a speech-to-speech, S2S, V2V or GPT Live voice demo from one prompt. Stops before writing anything when speech-to-speech is not enabled. Returns what it built and the demo link last. When you relay its result, call it speech-to-speech, also when the user said V2V or voice-to-voice.
 skills:
   - s2s-demo
 ---
