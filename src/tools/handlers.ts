@@ -62,6 +62,11 @@ import {
   resolveLocaleReferenceId,
 } from "./agentsV2.js";
 import {
+  evaluateAgentChecks,
+  type AgentAuditContext,
+  type AgentVoiceCheck,
+} from "./agentVoiceChecklist.js";
+import {
   VOICE_SETTINGS_SLUG,
   findVoiceSettings,
   listSpeechProviders,
@@ -8165,6 +8170,12 @@ export class ToolHandlers {
   // =========================================================================
   async handleAuditVoiceAgent(args: any): Promise<any> {
     const data = schemas.auditVoiceAgentSchema.parse(args);
+    if (data.agentId)
+      return this.auditAgentVoice({
+        ...data,
+        agentId: data.agentId,
+        projectId: data.projectId!,
+      });
     const { aiAgentId, endpointId, projectId, apply, only } = data;
 
     // Resolve the flow to audit.
@@ -8176,7 +8187,7 @@ export class ToolHandlers {
           { error: "Could not resolve a flow for this agent." },
           {
             action:
-              "Provide flowId directly, or ensure the agent was created via create_ai_agent.",
+              "If it is an AI Agent (no legacy: true in list_resources { resourceType: 'agent', projectId }), audit it with audit_voice_agent { agentId, projectId }. Otherwise provide flowId directly.",
           },
         );
       }
@@ -8423,6 +8434,208 @@ export class ToolHandlers {
       _note:
         "Applied auto-fixable fixes and re-audited. Verify the flow in the UI — especially node ordering when a Set Session Config node was created. Advisory checks (warn) and manual items are not auto-fixed.",
     };
+  }
+
+  /**
+   * audit_voice_agent for an AI Agent: its voice settings, tools, LLMs and
+   * Voice Gateway endpoint against agentVoiceChecklist.ts. Fixes change only
+   * the agent's voice settings and attach voice-hangup.
+   */
+  private async auditAgentVoice(data: {
+    agentId: string;
+    projectId: string;
+    endpointId?: string;
+    apply?: boolean;
+    only?: string[];
+  }): Promise<any> {
+    const v1 = `${this.agentsV2BaseUrl}/v1`;
+    const { agentId, projectId } = data;
+    const params = { projectId };
+
+    const load = async (): Promise<AgentAuditContext> => {
+      const agent: any = await this.apiClient.get(`${v1}/agents/${agentId}`, {
+        params,
+      });
+      const [tools, providers, llms, endpoint] = await Promise.all([
+        this.apiClient
+          .get(`${v1}/tools`, {
+            params: {
+              projectId,
+              agentReferenceId: agent.referenceId,
+              includeHidden: true,
+              limit: 100,
+            },
+          })
+          .then((r: any) => (r?.items ?? []) as any[]),
+        listSpeechProviders(this.apiClient, projectId)
+          .then((r) => r.items)
+          .catch(() => []),
+        this.apiClient
+          .get("/v2.0/largelanguagemodels", {
+            params: { projectId, limit: 100 },
+          })
+          .then((r: any) => (r?.items ?? r ?? []) as any[]),
+        this.agentVoiceEndpoint(projectId, agent.referenceId, data.endpointId),
+      ]);
+      const instance = tools.find((t) => t?.type === VOICE_SETTINGS_SLUG);
+      const parameters =
+        instance?.parameters ??
+        (
+          (await this.apiClient.get(
+            `${v1}/builtin-tools/${VOICE_SETTINGS_SLUG}`,
+            { params },
+          )) as any
+        )?.defaultParameters;
+      let voicePromptWarnings: any[] | undefined;
+      if (agent.voiceLargeLanguageModelReferenceId) {
+        try {
+          const url = `${v1}/agents/${agentId}/voice-prompt`;
+          const vp: any = await this.apiClient.get(url, { params });
+          const pv: any = await this.apiClient.post(
+            `${url}/preview`,
+            { template: vp.template },
+            { params },
+          );
+          voicePromptWarnings = pv?.warnings ?? [];
+        } catch (e: any) {
+          voicePromptWarnings = [
+            {
+              message: `the voice prompt could not be read (${e?.status ?? e?.message})`,
+            },
+          ];
+        }
+      }
+      return {
+        agent,
+        settings: settingsMap(parameters),
+        toolTypes: tools.map((t) => t?.type),
+        providers,
+        llms,
+        endpoint,
+        voicePromptWarnings,
+      };
+    };
+
+    const format = (c: AgentVoiceCheck) => ({
+      id: c.id,
+      section: c.section,
+      title: c.title,
+      status: c.status,
+      detail: c.detail,
+      autoFixable: c.autoFixable,
+      ...(c.fix ? { proposedFix: c.fix } : {}),
+    });
+    const checks = evaluateAgentChecks(await load());
+    if (!data.apply) {
+      return {
+        agentId,
+        mode: "dry-run",
+        summary: summarize(checks),
+        checks: checks.map(format),
+        _note:
+          "Dry-run: no changes made. After the user has reviewed the report, re-run with apply: true to apply the auto-fixable fixes (the checks with a proposedFix). Use only: [ids] to apply a subset.",
+      };
+    }
+
+    const toApply = checks.filter(
+      (c) => c.fix && (!data.only || data.only.includes(c.id)),
+    );
+    const appliedFixes: any[] = [];
+    const settingsFixes = toApply.filter(
+      (c) => c.fix!.kind === "voiceSettings",
+    );
+    if (settingsFixes.length) {
+      const config = Object.assign(
+        {},
+        ...settingsFixes.map((c) => (c.fix as any).config),
+      );
+      const r: any = await this.voiceSettings({
+        operation: "update",
+        projectId,
+        agentId,
+        config,
+      }).catch((e: any) => ({ error: e?.message }));
+      for (const c of settingsFixes)
+        appliedFixes.push({
+          id: c.id,
+          applied: !r?.error,
+          ...(r?.error
+            ? { error: r.error }
+            : { fields: Object.keys((c.fix as any).config) }),
+        });
+    }
+    for (const c of toApply.filter((c) => c.fix!.kind === "addTool")) {
+      const slug = (c.fix as any).builtinSlug;
+      try {
+        // Attach a project tool of that kind when there is one, else create it.
+        const existing: any = await this.apiClient.get(`${v1}/tools`, {
+          params: { projectId, source: "builtin", limit: 100 },
+        });
+        const found = (existing?.items ?? []).find(
+          (t: any) => t?.type === slug,
+        );
+        if (found) {
+          await this.attachComponent(
+            { component: "tool", projectId },
+            agentId,
+            found.referenceId,
+            true,
+          );
+        } else {
+          const descriptor: any = await this.apiClient.get(
+            `${v1}/builtin-tools/${slug}`,
+            { params },
+          );
+          await this.handleManageAgentComponents({
+            operation: "create",
+            component: "tool",
+            projectId,
+            agentId,
+            config: {
+              builtinSlug: slug,
+              name: descriptor?.name ?? slug,
+              description: descriptor?.description ?? "",
+            },
+          });
+        }
+        appliedFixes.push({ id: c.id, applied: true, tool: slug });
+      } catch (e: any) {
+        appliedFixes.push({ id: c.id, applied: false, error: e?.message });
+      }
+    }
+    const post = evaluateAgentChecks(await load());
+    return {
+      agentId,
+      mode: "apply",
+      appliedFixes,
+      summary: summarize(post),
+      checks: post.map(format),
+      _note:
+        "Applied the auto-fixable fixes and re-audited. Advisory checks (warn) and manual items are not auto-fixed.",
+    };
+  }
+
+  /** The Voice Gateway endpoint that targets an AI Agent, read in full; null when none. */
+  private async agentVoiceEndpoint(
+    projectId: string,
+    agentReferenceId: string,
+    endpointId?: string,
+  ): Promise<any | null> {
+    let id = endpointId;
+    if (!id) {
+      // ponytail: only the first 100 endpoints of the project are searched.
+      const res: any = await this.apiClient.get("/v2.0/endpoints", {
+        params: { projectId, limit: 100 },
+      });
+      const hit = (res?.items ?? res ?? []).find(
+        (e: any) =>
+          e?.channel === "voiceGateway2" && e?.agentId === agentReferenceId,
+      );
+      id = hit?._id ?? hit?.id;
+    }
+    if (!id) return null;
+    const ep: any = await this.apiClient.get(`/v2.0/endpoints/${id}`);
+    return ep?.agentId === agentReferenceId ? ep : null;
   }
 
   // =========================================================================

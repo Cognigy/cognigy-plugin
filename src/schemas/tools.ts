@@ -961,15 +961,22 @@ export const manageSettingsSchema = z.union([
 export const auditVoiceAgentSchema = z
   .object({
     aiAgentId: agentIdSchema.optional(),
+    // An AI Agent (service-agents); needs projectId.
+    agentId: agentIdSchema.optional(),
     flowId: idSchema.optional(),
     endpointId: idSchema.optional(),
     projectId: idSchema.optional(),
     apply: z.boolean().optional(),
     only: z.array(z.string()).optional(),
   })
-  .refine((d) => d.aiAgentId || d.flowId, {
-    message: "Either aiAgentId or flowId must be provided",
+  .refine((d) => d.aiAgentId || d.flowId || d.agentId, {
+    message:
+      "Either agentId (with projectId), aiAgentId or flowId must be provided",
     path: ["aiAgentId"],
+  })
+  .refine((d) => !d.agentId || d.projectId, {
+    message: "agentId needs projectId",
+    path: ["projectId"],
   });
 
 // Tool 17: manage_snapshots

@@ -289,7 +289,7 @@ export const LEGACY_AGENT_NOTE =
   "If this is a legacy AI Agent (legacy: true in list_resources { resourceType: 'agent', projectId }), pass it as aiAgentId instead of agentId.";
 
 export const NEW_AGENT_NOTE =
-  "If this is an AI Agent without legacy: true in list_resources { resourceType: 'agent', projectId }, the legacy tools cannot edit it — change it with manage_agent and manage_agent_components, and test it with talk_to_agent { agentId, projectId }.";
+  "If this is an AI Agent without legacy: true in list_resources { resourceType: 'agent', projectId }, the legacy tools cannot edit it — change it with manage_agent and manage_agent_components, test it with talk_to_agent { agentId, projectId } and audit its voice with audit_voice_agent { agentId, projectId }.";
 
 /**
  * Agent ids look the same for both kinds, so a 404 on an agent record often

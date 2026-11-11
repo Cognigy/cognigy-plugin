@@ -1434,3 +1434,111 @@ describe("GPT live (V2V) for AI Agents", () => {
     expect(r).toMatchObject({ error: "v2v_not_enabled", changed: false });
   });
 });
+
+describe("audit_voice_agent for AI Agents", () => {
+  const TOOL = "60d5ec49f1a2c8b1a4e0f404";
+  const params = (keys: Record<string, any>) =>
+    Object.entries(keys).map(([key, value]) => ({
+      key,
+      name: key,
+      mode: "dynamic",
+      modeLocked: true,
+      type: typeof value,
+      value,
+    }));
+  const instance = {
+    id: TOOL,
+    referenceId: "voice-ref",
+    type: "voice-config-defaults",
+    parameters: params({
+      bargeInOnSpeech: true,
+      minWordsToInterrupt: 1,
+      bargeInOnDtmf: false,
+      promptOnSilence: true,
+      silenceTimeoutSeconds: 8,
+      silenceRetries: 2,
+      continuousAsr: false,
+      greetingMode: "agent",
+      thinkingSound: "typing_loop",
+    }),
+  };
+
+  function auditApi() {
+    let stored = instance;
+    return routedApi({
+      [`GET ${V1}/v1/agents/${ID.agent}`]: () => ({
+        ...agentRecord,
+        toolReferenceIds: ["voice-ref"],
+      }),
+      [`PATCH ${V1}/v1/agents/${ID.agent}`]: (body) => ({
+        ...agentRecord,
+        ...body,
+      }),
+      [`GET ${V1}/v1/tools`]: (_b, cfg) =>
+        cfg.params.agentReferenceId
+          ? { items: [stored] }
+          : { items: [{ referenceId: "hangup-ref", type: "voice-hangup" }] },
+      [`PATCH ${V1}/v1/tools/${TOOL}`]: (body) =>
+        (stored = { ...stored, ...body }),
+      "GET /v2.0/largelanguagemodels": () => ({
+        items: [
+          {
+            referenceId: "llm",
+            name: "GPT-4o",
+            modelType: "gpt-4o",
+            modelGroup: "chat",
+            connectionId: "c",
+            isDefault: true,
+          },
+        ],
+      }),
+      "GET /v2.0/endpoints": () => ({
+        items: [{ _id: "ep1", channel: "voiceGateway2", agentId: "agent-ref" }],
+      }),
+      "GET /v2.0/endpoints/ep1": () => ({
+        _id: "ep1",
+        name: "VG",
+        agentId: "agent-ref",
+      }),
+    });
+  }
+
+  it("reports without changing anything by default", async () => {
+    const api = auditApi();
+    const r: any = await handlers(api).handleToolCall("audit_voice_agent", {
+      agentId: ID.agent,
+      projectId: ID.project,
+    });
+    expect(r.mode).toBe("dry-run");
+    expect(r.summary.fixable).toBe(3);
+    expect(api.patch).not.toHaveBeenCalled();
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("applies the voice settings fixes in one update and attaches voice-hangup", async () => {
+    const api = auditApi();
+    const h = handlers(api);
+    await h.handleToolCall("manage_snapshots", {
+      operation: "decline",
+      projectId: ID.project,
+    });
+    const r: any = await h.handleToolCall("audit_voice_agent", {
+      agentId: ID.agent,
+      projectId: ID.project,
+      apply: true,
+    });
+    expect(r.appliedFixes.every((f: any) => f.applied)).toBe(true);
+    const toolPatches = api.patch.mock.calls.filter(
+      (c: any[]) => c[0] === `${V1}/v1/tools/${TOOL}`,
+    );
+    expect(toolPatches).toHaveLength(1);
+    expect(api.patch).toHaveBeenCalledWith(
+      `${V1}/v1/agents/${ID.agent}`,
+      { toolReferenceIds: ["voice-ref", "hangup-ref"] },
+      expect.anything(),
+    );
+    expect(r.checks.find((c: any) => c.id === "agent.silence").status).toBe(
+      "pass",
+    );
+  });
+});
