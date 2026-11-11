@@ -99,8 +99,8 @@ npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall   # remove from 
 
 Beyond the MCP tools, the plugin ships **skills** and **agents** that surface the workflows automatically:
 
-- **Skills** (`/skills`) — one per workflow (agent creation, knowledge/RAG, voice gateway, voice go-live checklist, webchat, flow nodes, packages, settings, LLM providers, tools, red-teaming, troubleshooting). Claude loads the matching skill automatically when your request fits. Red-teaming runs in your main session — not as a subagent — so it can agree the scope contract, get approval before applying fixes, and open the finished report for you.
-- **Agents** (`/agents`) — `cognigy-agent-builder` runs the full build-and-test loop for a new agent, and `cognigy-voice-go-live` audits a voice agent against the Go-Live Checklist and applies the safe fixes. Each runs in its own context and reports back a summary.
+- **Skills** (`/skills`) — one per workflow (agent creation, knowledge/RAG, voice gateway, GPT live voice demos, voice go-live checklist, webchat, flow nodes, packages, settings, LLM providers, tools, red-teaming, troubleshooting). Claude loads the matching skill automatically when your request fits. Red-teaming runs in your main session — not as a subagent — so it can agree the scope contract, get approval before applying fixes, and open the finished report for you.
+- **Agents** (`/agents`) — `cognigy-agent-builder` runs the full build-and-test loop for a new agent, `cognigy-voice-go-live` audits a voice agent against the Go-Live Checklist and applies the safe fixes, and `cognigy-v2v-demo-builder` builds a GPT live voice demo and returns its click-to-call link. Each runs in its own context and reports back a summary.
 
 ## Configuration
 
@@ -290,7 +290,8 @@ IDs before falling back to `setup_llm`.
 
 Cognigy has two kinds of agent. The plugin calls both "AI Agents" and says "legacy" only when it has
 to tell them apart. At the start of a conversation it calls `check_capabilities`, which reports
-whether this environment and organisation offer AI Agents and the custom system prompt. Where they
+whether this environment and organisation offer AI Agents, the custom system prompt, GPT live
+(voice-to-voice) and NiCE-provided speech. Where they
 do, it builds AI Agents with `manage_agent`; it uses `create_ai_agent` only when you ask for a legacy
 agent or the project has only legacy agents. Elsewhere it builds legacy agents without comment.
 
@@ -303,7 +304,12 @@ https://wttr.in/Berlin?format=j1, then ask it what the weather is.
   settings, knowledge, guardrails, a pre-turn hook Flow, a brand persona, and the custom system
   prompt where the environment offers it.
 - `manage_agent_components` manages skills, tools (from the builtin catalog), MCP servers and
-  brand personas, and attaches skills and tools to agents.
+  brand personas, and attaches skills and tools to agents. Its `voice_settings` component is an
+  agent's speech (TTS, STT, NiCE-provided or the project's own credential) and call behaviour
+  (greeting, barge-in, silence).
+- GPT live: `manage_agent` takes a `gpt-live-1` voice model, a voice and a voice prompt, and
+  `setup_llm` creates the voice model. `audit_voice_agent { agentId, projectId }` runs the Go-Live
+  Checklist for AI Agents.
 - `talk_to_agent { agentId, projectId, message }` tests an AI Agent; `manage_webchat` and
   `manage_voice_gateway` take `agentId` to deploy one; `delete_resource` marks one for deletion.
 - `list_resources { resourceType: 'agent', projectId }` lists both kinds. When a project has AI
@@ -314,9 +320,9 @@ https://wttr.in/Berlin?format=j1, then ask it what the weather is.
 
 | Tool                      | Type  | Description                                                                                                    |
 | ------------------------- | ----- | -------------------------------------------------------------------------------------------------------------- |
-| `check_capabilities`      | Read  | Report whether this environment offers AI Agents and the custom system prompt                                  |
-| `manage_agent`            | Write | Create and configure AI Agents: settings, LLM, knowledge, guardrails, custom system prompt                     |
-| `manage_agent_components` | Write | Skills, builtin tools, MCP servers and brand personas for AI Agents; attach and detach                         |
+| `check_capabilities`      | Read  | Report whether this environment offers AI Agents, the custom system prompt, GPT live and NiCE-provided speech  |
+| `manage_agent`            | Write | Create and configure AI Agents: settings, LLM, knowledge, guardrails, custom system prompt, GPT live voice     |
+| `manage_agent_components` | Write | Skills, builtin tools, MCP servers, brand personas and voice settings for AI Agents; attach and detach         |
 | `create_ai_agent`         | Write | Create a complete legacy AI Agent with auto-provisioned flow, job node, and REST endpoint                      |
 | `update_ai_agent`         | Write | Update a legacy agent's persona, guardrails, job config (role, procedures, LLM, temperature)                   |
 | `setup_llm`               | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation                     |
