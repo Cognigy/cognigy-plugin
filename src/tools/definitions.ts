@@ -2336,7 +2336,7 @@ export const tools: ToolDefinition[] = [
         personaReferenceId: {
           type: "string",
           description:
-            "referenceId of a brand persona (manage_agent_components component 'persona'). '' removes it on update.",
+            "referenceId of a brand persona (manage_agent_components component 'persona'). Required by the Cognigy UI, so it can be changed but not removed; create picks the project's first persona, or makes the UI's default one, when omitted.",
         },
         skillReferenceIds: {
           type: "array",

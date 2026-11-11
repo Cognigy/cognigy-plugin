@@ -1092,8 +1092,8 @@ const agentSettingsSchema = {
     .object({ preTurn: z.array(z.record(z.string(), z.any())) })
     .nullable()
     .optional(),
-  // "" removes the persona from the agent.
-  personaReferenceId: z.union([z.string().uuid(), z.literal("")]).optional(),
+  // No "": the UI marks the brand persona required and can't save an agent without one.
+  personaReferenceId: z.string().uuid().optional(),
 };
 
 const agentTargetSchema = { agentId: agentIdSchema, projectId: idSchema };

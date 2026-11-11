@@ -57,6 +57,7 @@ import {
   isAgentsV2Absent,
   listAgentsV2,
   probeCapabilities,
+  projectPersona,
   readAgentV2,
   resolveLocaleReferenceId,
 } from "./agentsV2.js";
@@ -3380,6 +3381,7 @@ export class ToolHandlers {
       this.resourcesCreatedThisSession.add(projectId);
     }
     let llm: ReturnType<typeof pickDefaultLlm>;
+    let persona: Awaited<ReturnType<typeof projectPersona>> | undefined;
     let agent: any;
     try {
       const localeReferenceId = await resolveLocaleReferenceId(
@@ -3398,6 +3400,15 @@ export class ToolHandlers {
       }
       for (let attempt = 1; ; attempt++) {
         try {
+          // Inside the retry: a new project's personas 403 like its agents.
+          if (!fields.personaReferenceId) {
+            persona = await projectPersona(
+              this.apiClient,
+              this.agentsV2BaseUrl,
+              projectId,
+            );
+            fields.personaReferenceId = persona.referenceId;
+          }
           agent = await this.apiClient.post(
             `${this.agentsV2BaseUrl}/v1/agents`,
             { projectId, localeReferenceId, ...fields },
@@ -3475,6 +3486,7 @@ export class ToolHandlers {
               },
             }
           : {}),
+        ...(persona ? { persona } : {}),
         endpointUrl,
         use: { agentId: agent.id },
       },
@@ -3644,17 +3656,18 @@ export class ToolHandlers {
         };
       }
       case "delete": {
-        // Deleting a tool detaches it everywhere; deleting a skill leaves it
-        // on the agents that use it, so take it off them first. A failure
-        // there stops before the delete, so a retry can finish the job.
-        const skill: any =
-          data.component === "skill"
+        // Deleting a tool detaches it everywhere. A skill or persona stays on
+        // the agents that use it: take a skill off them first, and refuse a
+        // persona in use, since the UI can't save an agent without one. A
+        // failure listing the agents stops before the delete, so a retry works.
+        const target: any =
+          data.component === "skill" || data.component === "persona"
             ? await this.apiClient.get(`${base}/${data.componentId}`, {
                 params,
               })
             : null;
         const detachedFrom: string[] = [];
-        if (skill?.referenceId) {
+        if (target?.referenceId) {
           // ponytail: only the first 100 agents of the project are checked.
           const agents = await listAgentsV2(
             this.apiClient,
@@ -3664,13 +3677,37 @@ export class ToolHandlers {
           );
           if (!agents.available) {
             throw new Error(
-              `Skill not deleted: the agents that use it could not be listed${agents.warning ? ` (${agents.warning})` : ""}. Retry the delete.`,
+              `${data.component === "skill" ? "Skill" : "Persona"} not deleted: the agents that use it could not be listed${agents.warning ? ` (${agents.warning})` : ""}. Retry the delete.`,
             );
           }
-          for (const a of agents.items) {
-            if (a?.skillReferenceIds?.includes(skill.referenceId)) {
-              await this.attachComponent(data, a.id, skill.referenceId, false);
-              detachedFrom.push(a.id);
+          if (data.component === "persona") {
+            const users = agents.items.filter(
+              (a: any) => a?.personaReferenceId === target.referenceId,
+            );
+            if (users.length) {
+              return withHints(
+                {
+                  error: "persona_in_use",
+                  changed: false,
+                  agents: users.map((a: any) => ({ id: a.id, name: a.name })),
+                },
+                {
+                  action:
+                    "Nothing was deleted. Move these agents to another persona with manage_agent update { personaReferenceId } first: an agent without one can't be saved in the Cognigy UI.",
+                },
+              );
+            }
+          } else {
+            for (const a of agents.items) {
+              if (a?.skillReferenceIds?.includes(target.referenceId)) {
+                await this.attachComponent(
+                  data,
+                  a.id,
+                  target.referenceId,
+                  false,
+                );
+                detachedFrom.push(a.id);
+              }
             }
           }
         }
