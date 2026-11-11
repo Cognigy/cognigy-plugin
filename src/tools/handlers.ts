@@ -3629,7 +3629,7 @@ export class ToolHandlers {
     if (voiceModel && !voiceDropped.length)
       hints.hint = `Calls run voice-to-voice on "${voiceModel.name}", the project's GPT live model. Say so in the build summary.`;
     else if (offerV2V)
-      hints.hint = `Unless the user asked for a particular speech setup or declined voice-to-voice, end the build summary with this line, once, and don't repeat it later: "${v2vOfferLine((await this.getNiceSpeech()) === "available")}"`;
+      hints.hint = `Unless the user asked for a particular speech setup or declined voice-to-voice, make this line the last paragraph of the build summary, word for word, with no label or bullet, and don't repeat it later: "${v2vOfferLine((await this.getNiceSpeech()) === "available")}"`;
     return withHints(
       {
         projectId,
