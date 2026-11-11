@@ -2357,12 +2357,12 @@ export const tools: ToolDefinition[] = [
             "referenceId of a gpt-live-1 llm_model: calls run on GPT live while the text LLM still reasons. '' turns it off.",
         },
         realtimeVoice: {
-          type: ["string", "null"],
+          type: "string",
           description:
             "GPT live voice, e.g. marin (default), cedar, coral; voice_prompt lists them. null resets it.",
         },
         voicePromptTemplate: {
-          type: ["string", "null"],
+          type: "string",
           description:
             "update only: the GPT live voice prompt, with {{group.key}} tokens from voice_prompt. null resets it to the default.",
         },
