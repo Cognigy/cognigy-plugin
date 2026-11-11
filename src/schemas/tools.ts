@@ -326,6 +326,7 @@ export const listResourcesSchema = z
       "function",
       "tool",
       "audit_event",
+      "speech_provider",
     ]),
     projectId: idSchema.optional(),
     aiAgentId: agentIdSchema.optional(),
@@ -908,6 +909,7 @@ const manageVoicePreviewSettingsSchema = z.object({
   projectId: idSchema,
   provider: speechProviderEnum,
   connectionId: z.string().optional(),
+  isNiceProvided: z.boolean().optional(),
 });
 
 const manageKnowledgeAiSettingsSchema = z
@@ -1152,7 +1154,16 @@ const componentSchema = z.enum(AGENT_COMPONENTS);
 const componentIdSchema = z.string().min(1);
 const componentConfigSchema = z.record(z.string(), z.any());
 
-export const manageAgentComponentsSchema = z.discriminatedUnion("operation", [
+// The agent's one voice-config-defaults tool, addressed by the agent.
+const voiceSettingsSchema = z.object({
+  operation: z.enum(["get", "create", "update", "delete"]),
+  component: z.literal("voice_settings"),
+  projectId: idSchema,
+  agentId: agentIdSchema,
+  config: componentConfigSchema.optional(),
+});
+
+const agentComponentOperationsSchema = z.discriminatedUnion("operation", [
   z.object({
     operation: z.literal("catalog"),
     component: z.enum(["skill", "tool"]),
@@ -1218,4 +1229,9 @@ export const manageAgentComponentsSchema = z.discriminatedUnion("operation", [
     import: z.array(z.string().min(1)).optional(),
     remove: z.array(z.string().min(1)).optional(),
   }),
+]);
+
+export const manageAgentComponentsSchema = z.union([
+  voiceSettingsSchema,
+  agentComponentOperationsSchema,
 ]);

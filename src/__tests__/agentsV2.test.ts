@@ -59,6 +59,11 @@ function routedApi(routes: Record<string, Route>) {
     [`GET ${V1}/v1/agents/capability-probe/system-prompt`]: () => {
       throw httpError(400);
     },
+    [`GET ${V1}/v1/agents/capability-probe/voice-prompt`]: () => {
+      throw httpError(400);
+    },
+    "GET /v2.0/projects": () => ({ items: [{ _id: ID.project }] }),
+    "GET /v2.0/voice/speechCredentials": () => ({ data: [] }),
     ...routes,
   };
   const call =
@@ -125,7 +130,10 @@ describe("check_capabilities", () => {
     expect(r.customSystemPrompt).toBe("unavailable");
     expect(r.detail[0]).toContain("not enabled for this organisation");
     expect(r._hints.action).toContain("create_ai_agent");
-    expect(api.get).toHaveBeenCalledTimes(1);
+    const agentProbes = api.get.mock.calls.filter(
+      (c: any[]) => c[0] === `${V1}/v1/agents`,
+    );
+    expect(agentProbes).toHaveLength(1);
   });
 
   it("tells a permission 403 apart from the whitelist and retries when unsure", async () => {
@@ -139,7 +147,23 @@ describe("check_capabilities", () => {
     await h.handleToolCall("check_capabilities", {});
 
     expect(r.aiAgents).toBe("unknown");
-    expect(api.get).toHaveBeenCalledTimes(2);
+    const agentProbes = api.get.mock.calls.filter(
+      (c: any[]) => c[0] === `${V1}/v1/agents`,
+    );
+    expect(agentProbes).toHaveLength(2);
+  });
+
+  it("reads v2v from the voice-prompt route and niceSpeech from the speech providers", async () => {
+    const api = routedApi({
+      [`GET ${V1}/v1/agents/capability-probe/voice-prompt`]: () => {
+        throw httpError(404);
+      },
+      "GET /v2.0/voice/speechCredentials": () => ({
+        data: [{ vendor: "microsoft", systemProvided: true }],
+      }),
+    });
+    const r: any = await handlers(api).handleToolCall("check_capabilities", {});
+    expect(r).toMatchObject({ v2v: "unavailable", niceSpeech: "available" });
   });
 
   it("reads the custom system prompt flag from the gated route", async () => {
@@ -970,5 +994,282 @@ describe("delete_resource and endpoints for AI Agents", () => {
         message: "hi",
       }),
     ).rejects.toThrow(/projectId/);
+  });
+});
+
+describe("voice settings for AI Agents", () => {
+  const TOOL = "60d5ec49f1a2c8b1a4e0f404";
+  const voiceDescriptor = {
+    slug: "voice-config-defaults",
+    name: "Voice defaults",
+    description: "The voice settings every call starts from.",
+    defaultParameters: [
+      "ttsVendor",
+      "ttsVoice",
+      "ttsLanguage",
+      "ttsLabel",
+      "ttsCredentialReferenceId",
+      "sttVendor",
+      "sttLanguage",
+      "sttLabel",
+      "sttCredentialReferenceId",
+    ]
+      .map((key) => ({
+        key,
+        name: key,
+        mode: "dynamic",
+        modeLocked: true,
+        type: "string",
+        value: "",
+      }))
+      .concat([
+        {
+          key: "minWordsToInterrupt",
+          name: "minWordsToInterrupt",
+          mode: "dynamic",
+          modeLocked: true,
+          type: "number",
+          value: 1,
+        } as any,
+      ]),
+  };
+  const nice = {
+    id: "ffffffff84fd62f53ccab16b",
+    referenceId: "nice-ms",
+    name: "Included Speech Provider",
+    vendor: "microsoft",
+    systemProvided: true,
+    useForTts: true,
+    useForStt: true,
+    isDefaultTts: true,
+    status: { state: "ok" },
+  };
+  const sttOnly = {
+    ...nice,
+    id: "x2",
+    referenceId: "nice-stt",
+    vendor: "nice",
+    useForTts: false,
+    isDefaultTts: false,
+  };
+
+  function voiceApi(instance: any = null, extra: Record<string, Route> = {}) {
+    let stored = instance;
+    let refs: string[] = instance ? [instance.referenceId] : [];
+    const api = routedApi({
+      [`GET ${V1}/v1/agents/${ID.agent}`]: () => ({
+        ...agentRecord,
+        toolReferenceIds: refs,
+      }),
+      [`PATCH ${V1}/v1/agents/${ID.agent}`]: (body) => {
+        refs = body.toolReferenceIds ?? refs;
+        return { ...agentRecord, ...body };
+      },
+      [`GET ${V1}/v1/tools`]: (_b, cfg) => {
+        expect(cfg.params).toMatchObject({
+          agentReferenceId: "agent-ref",
+          includeHidden: true,
+        });
+        return { items: stored ? [stored] : [] };
+      },
+      [`GET ${V1}/v1/builtin-tools/voice-config-defaults`]: () =>
+        voiceDescriptor,
+      [`POST ${V1}/v1/tools`]: (body) =>
+        (stored = {
+          id: TOOL,
+          referenceId: "voice-ref",
+          type: "voice-config-defaults",
+          ...body,
+        }),
+      [`PATCH ${V1}/v1/tools/${TOOL}`]: (body) =>
+        (stored = { ...stored, ...body }),
+      [`DELETE ${V1}/v1/tools/${TOOL}`]: () => (stored = null),
+      "GET /v2.0/voice/speechCredentials": () => ({ data: [nice, sttOnly] }),
+      [`GET /v2.0/voice/speechCredentials/${nice.id}/voices`]: () => ({
+        voices: [{ id: "en-US-AvaNeural" }, { id: "en-US-JennyNeural" }],
+      }),
+      ...extra,
+    });
+    return api;
+  }
+  const call = async (h: ToolHandlers, operation: string, config?: any) =>
+    (await h.handleToolCall("manage_agent_components", {
+      operation,
+      component: "voice_settings",
+      projectId: ID.project,
+      agentId: ID.agent,
+      ...(config ? { config } : {}),
+    })) as any;
+  async function declined(api: any) {
+    const h = handlers(api);
+    await h.handleToolCall("manage_snapshots", {
+      operation: "decline",
+      projectId: ID.project,
+    });
+    return h;
+  }
+
+  it("shows the defaults for an agent without voice settings", async () => {
+    const r = await call(handlers(voiceApi()), "get");
+    expect(r).toMatchObject({
+      toolId: null,
+      usingDefaults: true,
+      speech: { tts: "empty", stt: "empty" },
+    });
+    expect(r.settings.minWordsToInterrupt).toBe(1);
+  });
+
+  it("creates one instance, fills vendor and label from the credential and attaches it", async () => {
+    const api = voiceApi();
+    const h = await declined(api);
+    const r = await call(h, "update", {
+      ttsCredentialReferenceId: "nice-ms",
+      ttsLanguage: "en-US",
+      ttsVoice: "en-US-AvaNeural",
+      sttCredentialReferenceId: "nice-stt",
+      sttLanguage: "en-US",
+    });
+    expect(r.speech).toEqual({ tts: "complete", stt: "complete" });
+    expect(r.settings).toMatchObject({
+      ttsVendor: "microsoft",
+      ttsLabel: "Included Speech Provider",
+      sttVendor: "nice",
+    });
+    expect(api.post).toHaveBeenCalledTimes(1);
+    expect(api.post.mock.calls[0][1]).toMatchObject({
+      source: "builtin",
+      type: "voice-config-defaults",
+    });
+    expect(api.patch).toHaveBeenCalledWith(
+      `${V1}/v1/agents/${ID.agent}`,
+      { toolReferenceIds: ["voice-ref"] },
+      expect.anything(),
+    );
+
+    // A second create updates the same instance.
+    await call(h, "create", { minWordsToInterrupt: 3 });
+    expect(api.post).toHaveBeenCalledTimes(1);
+    expect(api.patch.mock.calls.at(-1)[0]).toBe(`${V1}/v1/tools/${TOOL}`);
+  });
+
+  it("refuses a credential or voice that does not exist, changing nothing", async () => {
+    const api = voiceApi();
+    const h = await declined(api);
+    const bad = await call(h, "update", {
+      ttsCredentialReferenceId: "made-up",
+    });
+    expect(bad).toMatchObject({
+      error: "unknown_speech_provider",
+      changed: false,
+    });
+    const stt = await call(h, "update", {
+      ttsCredentialReferenceId: "nice-stt",
+    });
+    expect(stt.error).toBe("unknown_speech_provider");
+    const voice = await call(h, "update", {
+      ttsCredentialReferenceId: "nice-ms",
+      ttsLanguage: "en-US",
+      ttsVoice: "en-US-Nope",
+    });
+    expect(voice).toMatchObject({
+      error: "unknown_voice",
+      voices: ["en-US-AvaNeural", "en-US-JennyNeural"],
+    });
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("warns about an incomplete TTS block and offers the voices", async () => {
+    const h = await declined(voiceApi());
+    const r = await call(h, "update", {
+      ttsCredentialReferenceId: "nice-ms",
+      ttsLanguage: "en-US",
+    });
+    expect(r.speech.tts).toBe("incomplete");
+    expect(r._hints.warning).toContain("TTS is incomplete");
+    expect(r.voices).toContain("en-US-JennyNeural");
+  });
+
+  it("resets to the defaults by deleting the instance", async () => {
+    const api = voiceApi({
+      id: TOOL,
+      referenceId: "voice-ref",
+      type: "voice-config-defaults",
+      parameters: [],
+    });
+    const h = await declined(api);
+    expect(await call(h, "delete")).toEqual({
+      reset: true,
+      agentId: ID.agent,
+      removed: true,
+    });
+    expect(api.delete).toHaveBeenCalledWith(
+      `${V1}/v1/tools/${TOOL}`,
+      expect.anything(),
+    );
+  });
+
+  it("sends the generic tool path for voice-config-defaults to voice_settings", async () => {
+    const api = voiceApi();
+    const r: any = await handlers(api).handleToolCall(
+      "manage_agent_components",
+      {
+        operation: "create",
+        component: "tool",
+        projectId: ID.project,
+        config: { builtinSlug: "voice-config-defaults", name: "x" },
+      },
+    );
+    expect(r).toMatchObject({ error: "use_voice_settings", changed: false });
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("lists speech providers with NiCE-provided rows marked", async () => {
+    const r: any = await handlers(voiceApi()).handleToolCall("list_resources", {
+      resourceType: "speech_provider",
+      projectId: ID.project,
+    });
+    expect(r.items[0]).toEqual({
+      id: nice.id,
+      referenceId: "nice-ms",
+      name: "Included Speech Provider",
+      vendor: "microsoft",
+      niceProvided: true,
+      stt: true,
+      tts: true,
+      defaultTts: true,
+      status: "ok",
+    });
+  });
+
+  it("sets NiCE-provided voice preview without a Connection, only for an entitled vendor", async () => {
+    const api = voiceApi(null, {
+      [`PATCH /new/v2.0/projects/${ID.project}/settings`]: () => ({}),
+    });
+    const h = await declined(api);
+    const no: any = await h.handleToolCall("manage_settings", {
+      operation: "set_voice_preview",
+      projectId: ID.project,
+      provider: "google",
+      isNiceProvided: true,
+    });
+    expect(no.niceProvidedVendors).toEqual(["microsoft", "nice"]);
+    const ok: any = await h.handleToolCall("manage_settings", {
+      operation: "set_voice_preview",
+      projectId: ID.project,
+      provider: "microsoft",
+      isNiceProvided: true,
+    });
+    expect(ok).toEqual({
+      updated: true,
+      provider: "microsoft",
+      isNiceProvided: true,
+    });
+    expect(api.patch.mock.calls.at(-1)[1]).toEqual({
+      audioPreviewSettings: {
+        provider: "microsoft",
+        isNiceProvided: true,
+        connections: { microsoft: { connectionId: null } },
+      },
+    });
   });
 });

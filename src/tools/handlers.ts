@@ -51,6 +51,7 @@ import {
   annotateAgentKindMismatch,
   ATTACH_FIELDS,
   builtinToolParameters,
+  type Availability,
   type Capabilities,
   COMPONENT_PATHS,
   findOrCreateAgentEndpoint,
@@ -60,6 +61,15 @@ import {
   readAgentV2,
   resolveLocaleReferenceId,
 } from "./agentsV2.js";
+import {
+  VOICE_SETTINGS_SLUG,
+  findVoiceSettings,
+  listSpeechProviders,
+  listVoices,
+  settingsMap,
+  speechBlocks,
+  summarizeSpeechProvider,
+} from "./agentVoice.js";
 import {
   chartToAscii,
   chartToMermaid,
@@ -3229,8 +3239,30 @@ export class ToolHandlers {
     );
   }
 
+  private niceSpeechPromise: Promise<Availability> | null = null;
+
+  /** NiCE-provided speech is entitled per organisation; any project shows it. */
+  private async probeNiceSpeech(): Promise<Availability> {
+    try {
+      const projects: any = await this.apiClient.get("/v2.0/projects", {
+        params: { limit: 1 },
+      });
+      const projectId = (projects?.items ?? projects)?.[0]?._id;
+      if (!projectId) return "unknown";
+      const { items } = await listSpeechProviders(this.apiClient, projectId);
+      return items.some((r) => r.systemProvided === true)
+        ? "available"
+        : "unavailable";
+    } catch {
+      this.niceSpeechPromise = null;
+      return "unknown";
+    }
+  }
+
   async handleCheckCapabilities(): Promise<any> {
     const caps = await this.getCapabilities();
+    this.niceSpeechPromise ??= this.probeNiceSpeech();
+    const niceSpeech = await this.niceSpeechPromise;
     const actions: Record<string, string> = {
       available:
         "Build AI Agents with manage_agent. Use create_ai_agent only when the user asks for a legacy AI Agent or the project has only legacy agents.",
@@ -3243,6 +3275,8 @@ export class ToolHandlers {
       {
         aiAgents: caps.aiAgents,
         customSystemPrompt: caps.customSystemPrompt,
+        v2v: caps.v2v,
+        niceSpeech,
         ...(caps.detail.length ? { detail: caps.detail } : {}),
       },
       { action: actions[caps.aiAgents] },
@@ -3536,6 +3570,7 @@ export class ToolHandlers {
 
   async handleManageAgentComponents(args: any): Promise<any> {
     const data = schemas.manageAgentComponentsSchema.parse(args);
+    if (data.component === "voice_settings") return this.voiceSettings(data);
     const v1 = `${this.agentsV2BaseUrl}/v1`;
     const base = `${v1}/${COMPONENT_PATHS[data.component]}`;
     const params = { projectId: data.projectId };
@@ -3566,6 +3601,15 @@ export class ToolHandlers {
         return this.apiClient.get(`${base}/${data.componentId}`, { params });
       case "create": {
         let body: any = { ...data.config, projectId: data.projectId };
+        if (body.builtinSlug === VOICE_SETTINGS_SLUG) {
+          return withHints(
+            { error: "use_voice_settings", changed: false },
+            {
+              action:
+                "An agent has one set of voice settings. Use manage_agent_components { component: 'voice_settings', operation: 'update', projectId, agentId, config }.",
+            },
+          );
+        }
         if (data.component === "tool" && body.builtinSlug) {
           const descriptor: any = await this.apiClient.get(
             `${v1}/builtin-tools/${body.builtinSlug}`,
@@ -3695,6 +3739,154 @@ export class ToolHandlers {
         );
       }
     }
+  }
+
+  /**
+   * An AI Agent's voice settings: its one voice-config-defaults tool. create
+   * and update both upsert it, get shows the stored values (or the defaults)
+   * and delete removes it, which resets the agent to the defaults.
+   */
+  private async voiceSettings(data: {
+    operation: "get" | "create" | "update" | "delete";
+    projectId: string;
+    agentId: string;
+    config?: Record<string, any>;
+  }): Promise<any> {
+    const v1 = `${this.agentsV2BaseUrl}/v1`;
+    const { projectId, agentId } = data;
+    const params = { projectId };
+    const agent: any = await this.apiClient.get(`${v1}/agents/${agentId}`, {
+      params,
+    });
+    const current = await findVoiceSettings(
+      this.apiClient,
+      v1,
+      projectId,
+      agent.referenceId,
+    );
+    if (data.operation === "delete") {
+      if (current)
+        await this.apiClient.delete(`${v1}/tools/${current.id}`, { params });
+      return { reset: true, agentId, removed: !!current };
+    }
+    const base: any =
+      current ??
+      (await this.apiClient.get(`${v1}/builtin-tools/${VOICE_SETTINGS_SLUG}`, {
+        params,
+      }));
+    let saved: any = current;
+    const providers = (await listSpeechProviders(this.apiClient, projectId))
+      .items;
+    // The TTS credential's voices for the settings' language, or null.
+    const voicesFor = async (s: Record<string, any>) => {
+      const row =
+        providers.find((p) => p.referenceId === s.ttsCredentialReferenceId) ??
+        providers.find(
+          (p) =>
+            p.useForTts &&
+            p.vendor === s.ttsVendor &&
+            (!s.ttsLabel || p.name === s.ttsLabel),
+        );
+      return row && s.ttsLanguage
+        ? listVoices(this.apiClient, projectId, row.id, s.ttsLanguage)
+        : null;
+    };
+
+    if (data.operation !== "get") {
+      const config: Record<string, any> = { ...(data.config ?? {}) };
+      for (const kind of ["tts", "stt"] as const) {
+        const ref = config[`${kind}CredentialReferenceId`];
+        if (!ref) continue;
+        const row = providers.find((p) => p.referenceId === ref);
+        if (!row?.[kind === "tts" ? "useForTts" : "useForStt"]) {
+          return withHints(
+            { error: "unknown_speech_provider", changed: false, [kind]: ref },
+            {
+              action: `Pass the referenceId of a ${kind.toUpperCase()} row from list_resources { resourceType: 'speech_provider', projectId: "${projectId}" }. Never invent one; ask the user when none fits.`,
+            },
+          );
+        }
+        // The gateway picks the credential by vendor + label (its name).
+        config[`${kind}Vendor`] ??= row.vendor;
+        config[`${kind}Label`] ??= row.name;
+      }
+      const next = {
+        ...settingsMap(base.parameters ?? base.defaultParameters),
+        ...config,
+      };
+      const voices = config.ttsVoice ? await voicesFor(next) : null;
+      if (voices?.length && !voices.includes(config.ttsVoice)) {
+        return withHints(
+          {
+            error: "unknown_voice",
+            changed: false,
+            ttsVoice: config.ttsVoice,
+            voices: voices.slice(0, 60),
+          },
+          { action: `Pick ttsVoice from voices and retry.` },
+        );
+      }
+      if (current) {
+        saved = await this.apiClient.patch(
+          `${v1}/tools/${current.id}`,
+          { parameters: builtinToolParameters(current, config) },
+          { params },
+        );
+      } else {
+        saved = await this.apiClient.post(`${v1}/tools`, {
+          projectId,
+          source: "builtin",
+          type: VOICE_SETTINGS_SLUG,
+          builtinSlug: VOICE_SETTINGS_SLUG,
+          name: base.name ?? "Voice defaults",
+          description: base.description ?? "",
+          parameters: builtinToolParameters(base, config),
+        });
+        await this.attachComponent(
+          { component: "tool", projectId },
+          agentId,
+          saved.referenceId,
+          true,
+        );
+      }
+    }
+
+    const settings = settingsMap(
+      (saved ?? base).parameters ?? base.defaultParameters,
+    );
+    const speech = speechBlocks(settings);
+    const needs = {
+      tts: "ttsVendor, ttsVoice and ttsLanguage",
+      stt: "sttVendor and sttLanguage",
+    };
+    const warnings = (["tts", "stt"] as const)
+      .filter((k) => speech[k] === "incomplete")
+      .map(
+        (k) =>
+          `${k.toUpperCase()} is incomplete (it needs ${needs[k]}), so calls ignore it and use the endpoint's speech, the project default, then NiCE-provided speech.`,
+      );
+    // A voice is the piece a caller cannot guess: offer the valid ones.
+    const voices =
+      speech.tts === "incomplete" && !settings.ttsVoice
+        ? await voicesFor(settings)
+        : null;
+    return withHints(
+      {
+        agentId,
+        toolId: saved?.id ?? null,
+        usingDefaults: !saved,
+        speech,
+        settings,
+        ...(voices?.length ? { voices: voices.slice(0, 60) } : {}),
+      },
+      warnings.length
+        ? {
+            warning: warnings.join(" "),
+            action:
+              "Complete the block with update, or clear its fields to fall back on purpose.",
+          }
+        : {},
+    );
   }
 
   /** Add or remove a skill/tool referenceId on an AI Agent. */
@@ -4211,6 +4403,16 @@ export class ToolHandlers {
         total = res.total;
         break;
       }
+      case "speech_provider": {
+        const res = await listSpeechProviders(
+          this.apiClient,
+          projectId!,
+          paging,
+        );
+        items = res.items.map(summarizeSpeechProvider);
+        total = res.total;
+        break;
+      }
       case "tool": {
         const resolved = await resolveToolFlow(
           this.apiClient,
@@ -4316,7 +4518,9 @@ export class ToolHandlers {
 
     if (!Array.isArray(items)) items = [];
     const filtered =
-      resourceType === "tool" ? items : filterList(resourceType, items);
+      resourceType === "tool" || resourceType === "speech_provider"
+        ? items
+        : filterList(resourceType, items);
 
     if (resourceType === "endpoint") {
       filtered.forEach((ep: any) => {
@@ -7449,7 +7653,10 @@ export class ToolHandlers {
           }),
           {
             warning: `Endpoint created but WebRTC client provisioning failed: ${error.message}`,
-            action: `Retry by calling manage_voice_gateway { endpointId: "${endpointId}" }`,
+            // Click-to-call needs the project's voice preview provider, for AI Agents too.
+            action: /voice preview/i.test(error.message)
+              ? `Set the project's voice preview first: manage_settings { operation: "set_voice_preview", projectId: "${data.projectId}", provider, isNiceProvided: true } with a niceProvided speech_provider vendor, else the provider's Connection. Then retry manage_voice_gateway { endpointId: "${endpointId}" }.`
+              : `Retry by calling manage_voice_gateway { endpointId: "${endpointId}" }`,
           },
         );
       }
@@ -7575,6 +7782,37 @@ export class ToolHandlers {
         const { projectId, provider } = data;
         let connectionRefId = data.connectionId;
 
+        if (data.isNiceProvided) {
+          const rows = (await listSpeechProviders(this.apiClient, projectId))
+            .items;
+          const nice = rows.filter((r) => r.systemProvided === true);
+          if (!nice.some((r) => r.vendor === provider)) {
+            return withHints(
+              {
+                error: `No NiCE-provided speech for "${provider}" in this organisation.`,
+                niceProvidedVendors: [...new Set(nice.map((r) => r.vendor))],
+              },
+              {
+                action:
+                  "Pick a provider from niceProvidedVendors, or use the provider's own Connection (connectionId) instead.",
+              },
+            );
+          }
+          // The UI's shape: no Connection, the shared credential is looked up
+          // by organisation and provider.
+          await this.apiClient.patch(
+            `/new/v2.0/projects/${projectId}/settings`,
+            {
+              audioPreviewSettings: {
+                provider,
+                isNiceProvided: true,
+                connections: { [provider]: { connectionId: null } },
+              },
+            },
+          );
+          return { updated: true, provider, isNiceProvided: true };
+        }
+
         // Auto-detect speech connection if not provided
         if (!connectionRefId) {
           const providerType =
@@ -7618,6 +7856,7 @@ export class ToolHandlers {
             {
               audioPreviewSettings: {
                 provider,
+                isNiceProvided: false,
                 connections: {
                   [provider]: { connectionId: connectionRefId },
                 },
@@ -7792,7 +8031,7 @@ export class ToolHandlers {
       "ALWAYS show webrtcDemoUrl to the user as a clickable link. This is the live demo page they can open in a browser to talk to the agent via voice. Only mention _integration details if the user asks about embedding.";
 
     result._speechProviderHint =
-      "Voice preview requires a speech provider. Ensure one is configured in Settings > Voice Preview Settings > Speech Provider, or use manage_settings { operation: 'set_voice_preview', projectId, provider } to set it via API.";
+      "Voice preview requires a speech provider. Ensure one is configured in Settings > Voice Preview Settings > Speech Provider, or use manage_settings { operation: 'set_voice_preview', projectId, provider } (isNiceProvided: true for NiCE-provided speech) to set it via API.";
 
     return result;
   }

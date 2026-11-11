@@ -21,6 +21,8 @@ export interface Capabilities {
   aiAgents: Availability;
   /** The custom system prompt editor (FEATURE_ENABLE_AGENTS_V2_CUSTOM_SYSTEM_PROMPT). */
   customSystemPrompt: Availability;
+  /** GPT live voice-to-voice for AI Agents (FEATURE_ENABLE_V2V). */
+  v2v: Availability;
   detail: string[];
 }
 
@@ -39,7 +41,9 @@ export function isAgentsV2Absent(error: any): boolean {
  * permission check (other 403s carry "access denied: …"), a cluster without
  * the service answers 404 or does not connect, and a feature-gated route
  * answers 404 "like an unregistered path" while its flag is off. With the flag
- * on, a malformed agent id reaches the ownership lookup and gets a 400.
+ * on, a malformed agent id reaches the ownership lookup and gets a 400. The
+ * voice-prompt routes are gated by FEATURE_ENABLE_V2V, which every service
+ * resolves the same way at cluster level.
  */
 export async function probeCapabilities(
   api: CognigyApiClient,
@@ -48,11 +52,13 @@ export async function probeCapabilities(
   const caps: Capabilities = {
     aiAgents: "unknown",
     customSystemPrompt: "unknown",
+    v2v: "unknown",
     detail: [],
   };
   if (!v1) {
     caps.aiAgents = "unavailable";
     caps.customSystemPrompt = "unavailable";
+    caps.v2v = "unavailable";
     caps.detail.push("No API base URL configured.");
     return caps;
   }
@@ -74,19 +80,27 @@ export async function probeCapabilities(
   }
   if (caps.aiAgents !== "available") {
     caps.customSystemPrompt = caps.aiAgents;
+    caps.v2v = caps.aiAgents;
     return caps;
   }
-  try {
-    await api.get(`${v1}/v1/agents/capability-probe/system-prompt`);
-    caps.customSystemPrompt = "available";
-  } catch (error: any) {
-    if (error?.status === 400) caps.customSystemPrompt = "available";
-    else if (error?.status === 404) caps.customSystemPrompt = "unavailable";
-    else
-      caps.detail.push(
-        `The custom system prompt could not be checked (${error?.status ?? error?.message}).`,
-      );
-  }
+  [caps.customSystemPrompt, caps.v2v] = await Promise.all(
+    [
+      ["system-prompt", "The custom system prompt"],
+      ["voice-prompt", "GPT live (V2V)"],
+    ].map(async ([route, what]): Promise<Availability> => {
+      try {
+        await api.get(`${v1}/v1/agents/capability-probe/${route}`);
+        return "available";
+      } catch (error: any) {
+        if (error?.status === 400) return "available";
+        if (error?.status === 404) return "unavailable";
+        caps.detail.push(
+          `${what} could not be checked (${error?.status ?? error?.message}).`,
+        );
+        return "unknown";
+      }
+    }),
+  );
   return caps;
 }
 

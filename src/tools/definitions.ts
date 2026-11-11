@@ -328,7 +328,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "list_resources",
     description:
-      "List Cognigy resources of one type, paginated, with optional server-side sort. Types: project (no projectId needed), tool (takes aiAgentId, or flowId for an LLM Prompt flow, instead of projectId), audit_event (organisation-wide, no projectId; answers \"who changed what\" via the actor and eventType filters, Cognigy 2026.17.0+), and the project-scoped agent, flow, endpoint, llm_model, knowledge_store, conversation, extension, function. Packages and snapshots are listed by manage_packages and manage_snapshots. Returns id, name and a few type-specific fields per item; use get_resource for full detail. For recency questions use sort (e.g. 'lastChanged:desc' with a small limit) instead of paging through everything. agent lists both kinds: where the project has AI Agents they are the items and legacy AI Agents move to legacyAgents; each agent's use is the id argument to pass on.",
+      "List Cognigy resources of one type, paginated, with optional server-side sort. Types: project (no projectId needed), tool (takes aiAgentId, or flowId for an LLM Prompt flow, instead of projectId), audit_event (organisation-wide, no projectId; answers \"who changed what\" via the actor and eventType filters, Cognigy 2026.17.0+), and the project-scoped agent, flow, endpoint, llm_model, knowledge_store, conversation, extension, function, speech_provider (STT/TTS credentials; niceProvided ones need no Connection). Packages and snapshots are listed by manage_packages and manage_snapshots. Returns id, name and a few type-specific fields per item; use get_resource for full detail. For recency questions use sort (e.g. 'lastChanged:desc' with a small limit) instead of paging through everything. agent lists both kinds: where the project has AI Agents they are the items and legacy AI Agents move to legacyAgents; each agent's use is the id argument to pass on.",
     annotations: {
       title: "List Resources",
       readOnlyHint: true,
@@ -353,6 +353,7 @@ export const tools: ToolDefinition[] = [
             "function",
             "tool",
             "audit_event",
+            "speech_provider",
           ],
           description: "Type of resource to list",
         },
@@ -1950,6 +1951,11 @@ export const tools: ToolDefinition[] = [
           description:
             "Connection referenceId to use. If omitted, auto-detects an existing speech connection for the provider.",
         },
+        isNiceProvided: {
+          type: "boolean",
+          description:
+            "set_voice_preview: use the NiCE-provided speech of provider (a niceProvided speech_provider row), no Connection.",
+        },
         knowledgeSearchModelId: {
           type: "string",
           description:
@@ -2184,7 +2190,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "check_capabilities",
     description:
-      "Report what this Cognigy environment and organisation support for building agents: aiAgents (whether AI Agents can be built with manage_agent) and customSystemPrompt (whether manage_agent can save a custom system prompt), each available, unavailable or unknown, with the evidence in detail. Read-only and cached for the session. Call it once before creating or changing agents in a new conversation. Never mention agent kinds or versions to the user.",
+      "Report what this Cognigy environment and organisation support for building agents: aiAgents (whether AI Agents can be built with manage_agent), customSystemPrompt (whether manage_agent can save a custom system prompt), v2v (GPT live voice-to-voice for AI Agents) and niceSpeech (NiCE-provided speech, no Connection needed), each available, unavailable or unknown, with the evidence in detail. Read-only and cached for the session. Call it once before creating or changing agents in a new conversation. Never mention agent kinds or versions to the user.",
     annotations: {
       title: "Check Capabilities",
       readOnlyHint: true,
@@ -2387,7 +2393,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "manage_agent_components",
     description:
-      "Manage the building blocks of AI Agents: skills, tools, MCP servers and brand personas. They live in the project, and agents point at the skills and tools by referenceId. catalog lists the skills or tools the platform ships, with their parameters; list, get, create, update and delete manage one component; attach and detach add or remove a skill or tool on an agent (create with agentId also attaches); discover_tools lists an MCP server's remote tools and sync_tools imports or removes them as tools. delete is permanent and detaches the component from every agent. Legacy AI Agents use create_tool / update_tool instead. Returns component summaries (id, referenceId, name), or the full record for get.",
+      "Manage the building blocks of AI Agents: skills, tools, MCP servers, brand personas and voice_settings. They live in the project, and agents point at the skills and tools by referenceId. catalog lists the skills or tools the platform ships, with their parameters; list, get, create, update and delete manage one component; attach and detach add or remove a skill or tool on an agent (create with agentId also attaches); discover_tools lists an MCP server's remote tools and sync_tools imports or removes them as tools. voice_settings is one agent's speech and call behaviour: get, create or update (both upsert) and delete (back to defaults) take agentId, not componentId. delete is permanent and detaches the component from every agent. Legacy AI Agents use create_tool / update_tool instead. Returns component summaries (id, referenceId, name), or the full record for get.",
     annotations: {
       title: "Manage AI Agent Components",
       readOnlyHint: false,
@@ -2415,7 +2421,7 @@ export const tools: ToolDefinition[] = [
         },
         component: {
           type: "string",
-          enum: ["skill", "tool", "mcp_server", "persona"],
+          enum: ["skill", "tool", "mcp_server", "persona", "voice_settings"],
           description:
             "catalog, attach and detach take skill or tool; discover_tools and sync_tools take mcp_server.",
         },
@@ -2423,17 +2429,17 @@ export const tools: ToolDefinition[] = [
         componentId: {
           type: "string",
           description:
-            "id of the component (attach/detach also accept its referenceId). Needed for every operation except catalog, list and create.",
+            "id of the component (attach/detach also accept its referenceId). Needed for every operation except catalog, list, create and voice_settings.",
         },
         agentId: {
           type: "string",
           description:
-            "24-char hex AI Agent id: required for attach/detach; on create it attaches the new skill or tool.",
+            "24-char hex AI Agent id: required for attach/detach and voice_settings; on create it attaches the new skill or tool.",
         },
         config: {
           type: "object",
           description:
-            "create/update body; shapes per component are in the agent-creation skill. A builtin tool is { builtinSlug, name, description, parameters: { <key>: value | { mode: 'dynamic' | 'aiFilled', value } } } with keys from catalog. An MCP server is { name, url, authType: none | oAuth2 | customHeader, headers?, authConnectionReferenceId? }; oAuth2 and customHeader need the Connection's authConnectionReferenceId.",
+            "create/update body; shapes per component are in the agent-creation skill. A builtin tool is { builtinSlug, name, description, parameters: { <key>: value | { mode: 'dynamic' | 'aiFilled', value } } } with keys from catalog. An MCP server is { name, url, authType: none | oAuth2 | customHeader, headers?, authConnectionReferenceId? }; oAuth2 and customHeader need the Connection's authConnectionReferenceId. voice_settings: the keys its get shows.",
         },
         import: {
           type: "array",

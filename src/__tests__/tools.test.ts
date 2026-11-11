@@ -5243,6 +5243,7 @@ describe("ToolHandlers v2", () => {
         {
           audioPreviewSettings: {
             provider: "microsoft",
+            isNiceProvided: false,
             connections: {
               microsoft: { connectionId: "conn-ref-123" },
             },
