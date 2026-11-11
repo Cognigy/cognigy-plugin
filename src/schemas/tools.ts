@@ -1096,6 +1096,11 @@ const agentSettingsSchema = {
     .optional(),
   // "" removes the persona from the agent.
   personaReferenceId: z.union([z.string().uuid(), z.literal("")]).optional(),
+  // GPT live (V2V): "" turns the voice model off; null resets the voice.
+  voiceLargeLanguageModelReferenceId: z
+    .union([z.string().uuid(), z.literal("")])
+    .optional(),
+  realtimeVoice: z.string().min(1).nullable().optional(),
 };
 
 const agentTargetSchema = { agentId: agentIdSchema, projectId: idSchema };
@@ -1116,6 +1121,14 @@ export const manageAgentSchema = z.discriminatedUnion("operation", [
     name: z.string().min(1).max(200).optional(),
     ...agentSettingsSchema,
     disabledToolReferenceIds: referenceIdsSchema.optional(),
+    // null resets the voice prompt to the product default.
+    voicePromptTemplate: z.string().min(1).nullable().optional(),
+  }),
+  z.object({ operation: z.literal("voice_prompt"), ...agentTargetSchema }),
+  z.object({
+    operation: z.literal("preview_voice_prompt"),
+    ...agentTargetSchema,
+    template: z.string().min(1),
   }),
   z.object({ operation: z.literal("get_system_prompt"), ...agentTargetSchema }),
   z.object({

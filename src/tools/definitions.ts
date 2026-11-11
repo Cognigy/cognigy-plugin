@@ -174,7 +174,7 @@ export const tools: ToolDefinition[] = [
         modelType: {
           type: "string",
           description:
-            "Model type string, e.g. chat 'gpt-4o', 'claude-sonnet-4-0', embedding 'text-embedding-3-small'. openAICompatible requires 'custom-model' (chat) or 'custom-embedding-model' (embedding), with the real name in customModel. awsBedrock takes a supported Bedrock model id (e.g. 'amazon.nova-pro-v1:0'; list in the llm-providers skill) or 'custom-model' + customModel.",
+            "Model type string, e.g. chat 'gpt-4o', 'claude-sonnet-4-0', embedding 'text-embedding-3-small', GPT live 'gpt-live-1' (openAI, an AI Agent's voice model, never default). openAICompatible requires 'custom-model' (chat) or 'custom-embedding-model' (embedding), with the real name in customModel. awsBedrock takes a supported Bedrock model id (e.g. 'amazon.nova-pro-v1:0'; list in the llm-providers skill) or 'custom-model' + customModel.",
         },
         name: {
           type: "string",
@@ -2203,7 +2203,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "manage_agent",
     description:
-      "Create and configure AI Agents, the kind to build wherever check_capabilities reports aiAgents available (legacy AI Agents use create_ai_agent / update_ai_agent). create makes an agent (in a new project when projectId is omitted), with role, description, instructions, LLM, knowledge, guardrails, pre-turn hook, persona, skills and tools, plus a REST endpoint for talk_to_agent. update changes only the settings passed, while manage_agent_components attaches and detaches the skills and tools. get_system_prompt, save_system_prompt, reset_system_prompt and preview_system_prompt read and edit the agent's custom system prompt where the environment offers one. create_flow makes the Flow for a pre-turn hook or an Execute Tool Flow tool, with its closing node in place. Read an agent with get_resource and mark it for deletion with delete_resource { resourceType: 'agent', id, projectId }. Returns the agent summary; create also returns endpointUrl and use.",
+      "Create and configure AI Agents, the kind to build wherever check_capabilities reports aiAgents available (legacy AI Agents use create_ai_agent / update_ai_agent). create makes an agent with its settings, skills and tools, plus a REST endpoint for talk_to_agent. update changes only the settings passed, while manage_agent_components attaches and detaches the skills and tools. A voice model makes calls run on GPT live (v2v); voice_prompt and preview_voice_prompt read and try its voice prompt. get_system_prompt, save_system_prompt, reset_system_prompt and preview_system_prompt read and edit the agent's custom system prompt where the environment offers one. create_flow makes the Flow for a pre-turn hook or an Execute Tool Flow tool, with its closing node in place. Read an agent with get_resource and mark it for deletion with delete_resource { resourceType: 'agent', id, projectId }. Returns the agent summary; create also returns endpointUrl and use.",
     annotations: {
       title: "Manage AI Agent",
       readOnlyHint: false,
@@ -2224,6 +2224,8 @@ export const tools: ToolDefinition[] = [
             "reset_system_prompt",
             "preview_system_prompt",
             "create_flow",
+            "voice_prompt",
+            "preview_voice_prompt",
           ],
         },
         projectId: {
@@ -2344,6 +2346,21 @@ export const tools: ToolDefinition[] = [
           description:
             "referenceId of a brand persona (manage_agent_components component 'persona'). '' removes it on update.",
         },
+        voiceLargeLanguageModelReferenceId: {
+          type: "string",
+          description:
+            "referenceId of a gpt-live-1 llm_model: calls run on GPT live while the text LLM still reasons. '' turns it off.",
+        },
+        realtimeVoice: {
+          type: ["string", "null"],
+          description:
+            "GPT live voice, e.g. marin (default), cedar, coral; voice_prompt lists them. null resets it.",
+        },
+        voicePromptTemplate: {
+          type: ["string", "null"],
+          description:
+            "update only: the GPT live voice prompt, with {{group.key}} tokens from voice_prompt. null resets it to the default.",
+        },
         skillReferenceIds: {
           type: "array",
           items: { type: "string" },
@@ -2368,7 +2385,7 @@ export const tools: ToolDefinition[] = [
         template: {
           type: "string",
           description:
-            "save/preview_system_prompt: the prompt text, with agent data tokens like [[agent.name]] and CognigyScript in double braces; up to 32 KiB. Start from get_system_prompt's template.",
+            "save/preview_system_prompt: the prompt text, with agent data tokens like [[agent.name]] and CognigyScript in double braces; up to 32 KiB. Start from get_system_prompt's template. preview_voice_prompt: the voice prompt to render.",
         },
         onBuildFailure: {
           type: "string",

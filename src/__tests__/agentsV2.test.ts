@@ -1273,3 +1273,164 @@ describe("voice settings for AI Agents", () => {
     });
   });
 });
+
+describe("GPT live (V2V) for AI Agents", () => {
+  const LIVE = "597e276b-0bd0-40e8-86df-d4d743ea311c";
+  const agentUrl = `${V1}/v1/agents/${ID.agent}`;
+
+  async function declined(api: any) {
+    const h = handlers(api);
+    await h.handleToolCall("manage_snapshots", {
+      operation: "decline",
+      projectId: ID.project,
+    });
+    return h;
+  }
+
+  it("keeps gpt-live-1 to openAI, never default, and rolls back on 'not enabled'", async () => {
+    const api = routedApi({
+      "POST /v2.0/connections": () => ({ _id: "conn1", referenceId: "c-ref" }),
+      "DELETE /v2.0/connections/conn1": () => ({}),
+      "POST /v2.0/largelanguagemodels": () => {
+        throw httpError(
+          400,
+          "You cannot create a LargeLanguageModel of type `gpt-live-1` as it is not enabled",
+        );
+      },
+    });
+    const h = handlers(api);
+    const wrong: any = await h.handleToolCall("setup_llm", {
+      projectId: ID.project,
+      provider: "anthropic",
+      modelType: "gpt-live-1",
+      apiKey: "k",
+    });
+    expect(wrong.changed).toBe(false);
+    const r: any = await h.handleToolCall("setup_llm", {
+      projectId: ID.project,
+      provider: "openAI",
+      modelType: "gpt-live-1",
+      apiKey: "k",
+    });
+    expect(r).toMatchObject({ error: "v2v_not_enabled", changed: false });
+    expect(api.post.mock.calls.at(-1)[1].isDefault).toBe(false);
+    expect(api.delete).toHaveBeenCalledWith("/v2.0/connections/conn1");
+  });
+
+  it("points a new gpt-live-1 model at an agent's voice model", async () => {
+    const api = routedApi({
+      "POST /v2.0/connections": () => ({ _id: "conn1", referenceId: "c-ref" }),
+      "POST /v2.0/largelanguagemodels": () => ({
+        _id: "llm1",
+        referenceId: LIVE,
+        modelType: "gpt-live-1",
+        isDefault: true,
+      }),
+      "POST /v2.0/largelanguagemodels/llm1/test": () => ({
+        isCredentialsValid: true,
+      }),
+    });
+    const r: any = await handlers(api).handleToolCall("setup_llm", {
+      projectId: ID.project,
+      provider: "openAI",
+      modelType: "gpt-live-1",
+      apiKey: "k",
+    });
+    expect(r._hints.action).toContain(
+      `voiceLargeLanguageModelReferenceId: "${LIVE}"`,
+    );
+    expect(r._hints.warning).toContain("project default");
+  });
+
+  it("reads the agent back and reports voice fields the platform dropped", async () => {
+    const api = routedApi({
+      [`PATCH ${agentUrl}`]: (body) => ({ ...agentRecord, ...body }),
+      [`GET ${agentUrl}`]: () => agentRecord,
+    });
+    const h = await declined(api);
+    const r: any = await h.handleToolCall("manage_agent", {
+      operation: "update",
+      agentId: ID.agent,
+      projectId: ID.project,
+      voiceLargeLanguageModelReferenceId: LIVE,
+      realtimeVoice: "cedar",
+      role: "Concierge",
+    });
+    expect(r).toMatchObject({
+      updated: true,
+      error: "v2v_not_enabled",
+      dropped: ["voiceLargeLanguageModelReferenceId", "realtimeVoice"],
+    });
+    expect(r._hints.action).toContain("FEATURE_ENABLE_V2V");
+  });
+
+  it("passes when the voice fields stuck", async () => {
+    const stored = {
+      ...agentRecord,
+      voiceLargeLanguageModelReferenceId: LIVE,
+      realtimeVoice: "cedar",
+    };
+    const api = routedApi({
+      [`PATCH ${agentUrl}`]: () => stored,
+      [`GET ${agentUrl}`]: () => stored,
+    });
+    const h = await declined(api);
+    const r: any = await h.handleToolCall("manage_agent", {
+      operation: "update",
+      agentId: ID.agent,
+      projectId: ID.project,
+      voiceLargeLanguageModelReferenceId: LIVE,
+      realtimeVoice: "cedar",
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.agent).toMatchObject({
+      voiceLargeLanguageModelReferenceId: LIVE,
+      realtimeVoice: "cedar",
+    });
+  });
+
+  it("reads and previews the voice prompt, and says when GPT live is off", async () => {
+    const api = routedApi({
+      [`GET ${agentUrl}/voice-prompt`]: () => ({
+        template: "T",
+        isDefault: true,
+        defaultTemplate: "T",
+        realtimeVoices: ["marin", "cedar"],
+      }),
+      [`POST ${agentUrl}/voice-prompt/preview`]: (body) => ({
+        prompt: body.template,
+        warnings: [],
+      }),
+    });
+    const h = handlers(api);
+    const vp: any = await h.handleToolCall("manage_agent", {
+      operation: "voice_prompt",
+      agentId: ID.agent,
+      projectId: ID.project,
+    });
+    expect(vp.defaultTemplate).toBeUndefined();
+    expect(vp.realtimeVoices).toEqual(["marin", "cedar"]);
+    const pv: any = await h.handleToolCall("manage_agent", {
+      operation: "preview_voice_prompt",
+      agentId: ID.agent,
+      projectId: ID.project,
+      template: "Hi {{agent.name}}",
+    });
+    expect(pv.prompt).toBe("Hi {{agent.name}}");
+
+    const off = routedApi({
+      [`GET ${V1}/v1/agents/capability-probe/voice-prompt`]: () => {
+        throw httpError(404);
+      },
+      [`GET ${agentUrl}/voice-prompt`]: () => {
+        throw httpError(404);
+      },
+    });
+    const r: any = await handlers(off).handleToolCall("manage_agent", {
+      operation: "voice_prompt",
+      agentId: ID.agent,
+      projectId: ID.project,
+    });
+    expect(r).toMatchObject({ error: "v2v_not_enabled", changed: false });
+  });
+});

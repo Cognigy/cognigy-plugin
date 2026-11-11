@@ -1303,6 +1303,8 @@ export class ToolHandlers {
     "discover_tools",
     "get_system_prompt",
     "preview_system_prompt",
+    "voice_prompt",
+    "preview_voice_prompt",
   ]);
 
   /**
@@ -2914,6 +2916,14 @@ export class ToolHandlers {
   // =========================================================================
   async handleSetupLlm(args: any): Promise<any> {
     const data = schemas.setupLlmSchema.parse(args);
+    // GPT live is an AI Agent's voice model only: never the project default.
+    const isV2V = data.modelType === "gpt-live-1";
+    if (isV2V && data.provider !== "openAI") {
+      return withHints(
+        { error: "gpt-live-1 is an openAI model.", changed: false },
+        { action: "Retry with provider 'openAI'." },
+      );
+    }
 
     const hasInlineCredentials =
       data.provider === "awsBedrock"
@@ -2935,6 +2945,8 @@ export class ToolHandlers {
     }
 
     let connectionRefId = data.connectionId;
+    // Removed again when the model cannot be created, so no orphan is left.
+    let autoConnectionId: string | undefined;
 
     if (connectionRefId) {
       try {
@@ -3029,6 +3041,7 @@ export class ToolHandlers {
         });
         connectionRefId =
           connection.referenceId || connection._id || connection.id;
+        autoConnectionId = connection._id || connection.id;
       } catch (connError: any) {
         return withHints(
           { error: `Failed to create connection: ${connError.message}` },
@@ -3074,11 +3087,20 @@ export class ToolHandlers {
         modelType: data.modelType,
         provider: data.provider,
         connectionId: connectionRefId,
-        isDefault: data.isDefault ?? true,
+        isDefault: isV2V ? false : (data.isDefault ?? true),
         ...(data.apiType ? { apiType: data.apiType } : {}),
         [data.provider]: providerMeta,
       });
     } catch (error: any) {
+      if (autoConnectionId)
+        await this.apiClient
+          .delete(`/v2.0/connections/${autoConnectionId}`)
+          .catch(() => undefined);
+      if (isV2V && error?.status === 400 && /not enabled/i.test(error.message))
+        return withHints(
+          { error: "v2v_not_enabled", changed: false },
+          { action: `Nothing was created. ${ToolHandlers.V2V_OFF_ACTION}` },
+        );
       return withHints(
         { error: error.message },
         {
@@ -3149,6 +3171,10 @@ export class ToolHandlers {
           }
           await this.apiClient.delete(`/v2.0/largelanguagemodels/${llmId}`);
           cleanedUp = true;
+          if (autoConnectionId)
+            await this.apiClient
+              .delete(`/v2.0/connections/${autoConnectionId}`)
+              .catch(() => undefined);
         } catch (cleanupError: any) {
           logger.warn(
             "Failed to clean up broken LLM model after failed connection test",
@@ -3177,13 +3203,24 @@ export class ToolHandlers {
       }
 
       const filtered = filterResponse("llm_model", result);
-      return {
+      const ok = {
         ...filtered,
         connectionTest: {
           isCredentialsValid: true,
           msg: testResponse.msg,
         },
       };
+      if (!isV2V) return ok;
+      return withHints(ok, {
+        action: `Make it an AI Agent's voice model: manage_agent { operation: "update", agentId, projectId: "${data.projectId}", voiceLargeLanguageModelReferenceId: "${result.referenceId}" }. Never bind it as a text LLM.`,
+        // service-resources makes a project's first LLM its default, whatever it is.
+        ...(result.isDefault
+          ? {
+              warning:
+                "It became the project default because it is the project's first LLM. Set up a text LLM with isDefault true before building agents.",
+            }
+          : {}),
+      });
     } catch (testError: any) {
       logger.warn(
         "Connection test request failed, but model was created successfully",
@@ -3352,12 +3389,41 @@ export class ToolHandlers {
       const updated: any = await this.apiClient.patch(agentUrl, patch, {
         params,
       });
-      return {
+      const result = {
         updated: true,
         agent: RESOURCE_FILTERS_GET.agent_v2(
           updated?.id ? updated : { id: agentId, projectId },
         ),
       };
+      return this.checkVoiceFieldsKept(result, patch, agentUrl, params);
+    }
+
+    if (
+      data.operation === "voice_prompt" ||
+      data.operation === "preview_voice_prompt"
+    ) {
+      try {
+        if (data.operation === "preview_voice_prompt")
+          return await this.apiClient.post(
+            `${agentUrl}/voice-prompt/preview`,
+            { template: data.template },
+            { params },
+          );
+        const res: any = await this.apiClient.get(`${agentUrl}/voice-prompt`, {
+          params,
+        });
+        if (res?.isDefault) delete res.defaultTemplate;
+        return res;
+      } catch (error: any) {
+        // The voice-prompt routes answer 404 like a missing path while V2V is off.
+        if (error?.status !== 404) throw error;
+        const caps = await this.getCapabilities();
+        if (caps.v2v !== "unavailable") throw error;
+        return withHints(
+          { error: "v2v_not_enabled", changed: false },
+          { action: ToolHandlers.V2V_OFF_ACTION },
+        );
+      }
     }
 
     // The system prompt routes answer 404 like a missing path while the
@@ -3388,6 +3454,45 @@ export class ToolHandlers {
         return this.apiClient.post(`${promptUrl}/preview`, body, { params });
       }
     }
+  }
+
+  static readonly V2V_OFF_ACTION =
+    "GPT live (V2V) is not enabled on this environment; an admin has to turn on FEATURE_ENABLE_V2V. Tell the user in one line and offer a cascaded voice agent (voice-gateway-setup skill) or a Webchat demo instead. Never switch silently.";
+
+  /**
+   * service-agents drops the V2V fields from a write, without an error, while
+   * V2V is off, so read the agent back and name the fields that did not stick.
+   */
+  private async voiceFieldsDropped(
+    sent: Record<string, any>,
+    agentUrl: string,
+    params: { projectId: string },
+  ): Promise<string[]> {
+    const keys = [
+      "voiceLargeLanguageModelReferenceId",
+      "realtimeVoice",
+      "voicePromptTemplate",
+    ].filter((k) => sent[k]);
+    if (!keys.length) return [];
+    const stored: any = await this.apiClient.get(agentUrl, { params });
+    return keys.filter((k) => stored?.[k] !== sent[k]);
+  }
+
+  private async checkVoiceFieldsKept(
+    result: any,
+    sent: Record<string, any>,
+    agentUrl: string,
+    params: { projectId: string },
+  ): Promise<any> {
+    const dropped = await this.voiceFieldsDropped(sent, agentUrl, params);
+    if (!dropped.length) return result;
+    return withHints(
+      { ...result, error: "v2v_not_enabled", dropped },
+      {
+        warning: `${dropped.join(", ")} did not stick: GPT live is off for AI Agents here. The other settings were saved.`,
+        action: ToolHandlers.V2V_OFF_ACTION,
+      },
+    );
   }
 
   private async createAgent(
@@ -3448,6 +3553,11 @@ export class ToolHandlers {
       if (key) this.resourcesCreatedThisSession.add(String(key));
     }
     this.rememberProjectOf(agent, projectId);
+    const voiceDropped = await this.voiceFieldsDropped(
+      fields,
+      `${this.agentsV2BaseUrl}/v1/agents/${agent.id}`,
+      { projectId },
+    );
 
     let endpointUrl: string | null = null;
     let endpointError: string | undefined;
@@ -3471,6 +3581,9 @@ export class ToolHandlers {
         : `The project has no text LLM for it. Set one up (llm-providers skill), then bind it with manage_agent { operation: "update", agentId: "${agent.id}", projectId: "${projectId}", largeLanguageModelReferenceId } before talk_to_agent.`,
     };
     const warnings = [
+      voiceDropped.length
+        ? `GPT live is off for AI Agents on this environment, so ${voiceDropped.join(", ")} did not stick; the agent was created without them. ${ToolHandlers.V2V_OFF_ACTION}`
+        : "",
       llm && !llm.connected
         ? `The agent was bound to LLM "${llm.refId}", which has no connection, so it cannot answer until that model gets one or another model is bound.`
         : "",
@@ -9497,5 +9610,9 @@ const RESOURCE_FILTERS_GET: Record<string, (raw: any) => any> = {
     personaReferenceId: r.personaReferenceId,
     knowledge: r.knowledge,
     guardrails: r.guardrails,
+    voiceLargeLanguageModelReferenceId:
+      r.voiceLargeLanguageModelReferenceId || undefined,
+    realtimeVoice: r.realtimeVoice || undefined,
+    customVoicePrompt: r.voicePromptTemplate ? true : undefined,
   }),
 };
