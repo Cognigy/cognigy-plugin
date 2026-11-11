@@ -45,7 +45,7 @@ const ctx = (over: Partial<AgentAuditContext> = {}): AgentAuditContext => ({
   toolTypes: [],
   providers: [niceMs],
   llms: [textLlm],
-  endpoint: { name: "VG", agentId: "ref" },
+  endpoint: { name: "VG", agentId: "ref", channel: "voiceGateway2" },
   ...over,
 });
 const byId = (checks: any[]) =>
@@ -98,6 +98,20 @@ describe("AI Agent voice go-live checks", () => {
     expect(
       checks.filter((c) => c.status !== "pass" && c.status !== "na"),
     ).toEqual([]);
+  });
+
+  it("fails an endpoint that targets the agent but is not Voice Gateway", () => {
+    const c = byId(
+      evaluateAgentChecks(
+        ctx({
+          endpoint: { name: "Bot REST", agentId: "ref", channel: "rest" },
+        }),
+      ),
+    );
+    expect(c["endpoint.agent-target"].status).toBe("fail");
+    expect(c["endpoint.agent-target"].detail).toContain(
+      "is a rest endpoint, not Voice Gateway",
+    );
   });
 
   it("resolves the credential a complete block points at", () => {

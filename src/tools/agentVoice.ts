@@ -107,16 +107,25 @@ export async function listSpeechProviders(
   projectId: string,
   page: { limit: number; skip: number } = { limit: 100, skip: 0 },
 ): Promise<{ items: any[]; total: number }> {
-  const res: any = await api.get("/v2.0/voice/speechCredentials", {
-    params: {
-      projectId,
-      type: "primary",
-      pageSize: page.limit,
-      page: Math.floor(page.skip / page.limit) + 1,
-    },
-  });
-  const items: any[] = Array.isArray(res?.data) ? res.data : [];
-  return { items, total: res?.total ?? items.length };
+  // The API pages by page number; a skip between pages needs the next page too.
+  const first = Math.floor(page.skip / page.limit) + 1;
+  const offset = page.skip % page.limit;
+  const fetchPage = async (n: number) => {
+    const res: any = await api.get("/v2.0/voice/speechCredentials", {
+      params: { projectId, type: "primary", pageSize: page.limit, page: n },
+    });
+    return {
+      rows: Array.isArray(res?.data) ? (res.data as any[]) : [],
+      total: res?.total as number | undefined,
+    };
+  };
+  const a = await fetchPage(first);
+  const b =
+    offset && a.rows.length === page.limit
+      ? await fetchPage(first + 1)
+      : { rows: [] as any[] };
+  const items = [...a.rows, ...b.rows].slice(offset, offset + page.limit);
+  return { items, total: a.total ?? page.skip + items.length };
 }
 
 /** The agent's voice-config-defaults instance, or null when it has none. */

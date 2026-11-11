@@ -2342,7 +2342,7 @@ export const tools: ToolDefinition[] = [
           },
         },
         hooks: {
-          type: "object",
+          type: ["object", "null"],
           description:
             "A pre-turn Flow run before every answer: { preTurn: [{ handler: { kind: 'conversationFlow', flowReferenceId } }] }, at most one; make the Flow with create_flow. null removes it on update.",
         },
@@ -2357,12 +2357,12 @@ export const tools: ToolDefinition[] = [
             "referenceId of a gpt-live-1 llm_model: calls run on GPT Live while the text LLM still reasons. Creating a voice agent picks the project's GPT Live model where s2s is available. '' keeps or turns it off.",
         },
         realtimeVoice: {
-          type: "string",
+          type: ["string", "null"],
           description:
             "GPT Live voice, e.g. marin (default), cedar, coral; voice_prompt lists them. null resets it.",
         },
         voicePromptTemplate: {
-          type: "string",
+          type: ["string", "null"],
           description:
             "update only: the GPT Live voice prompt, with {{group.key}} tokens from voice_prompt. null resets it to the default.",
         },

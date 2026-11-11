@@ -122,7 +122,11 @@ function resolveSpeech(
       text: `${label}: the agent's own (${row.vendor}, ${row.name}).`,
     };
   }
-  const endpointCredential = ctx.endpoint?.voiceSettings?.[kind]?.credentialId;
+  // Only a Voice Gateway endpoint's speech applies to calls.
+  const endpointCredential =
+    ctx.endpoint?.channel === "voiceGateway2"
+      ? ctx.endpoint.voiceSettings?.[kind]?.credentialId
+      : undefined;
   if (endpointCredential) {
     const row = ctx.providers.find((p) => p.id === endpointCredential);
     return (
@@ -329,12 +333,16 @@ export function evaluateAgentChecks(ctx: AgentAuditContext): AgentVoiceCheck[] {
       "endpoint.agent-target",
       "3.7 Deployment",
       "A Voice Gateway endpoint is active and targets the agent",
-      ctx.endpoint && ctx.endpoint.active !== false ? "pass" : "fail",
+      ctx.endpoint?.channel === "voiceGateway2" && ctx.endpoint.active !== false
+        ? "pass"
+        : "fail",
       !ctx.endpoint
         ? "No Voice Gateway endpoint targets this agent: create one with manage_voice_gateway { projectId, agentId }."
-        : ctx.endpoint.active === false
-          ? `Endpoint "${ctx.endpoint.name}" is inactive.`
-          : `Endpoint "${ctx.endpoint.name}".`,
+        : ctx.endpoint.channel !== "voiceGateway2"
+          ? `Endpoint "${ctx.endpoint.name}" is a ${ctx.endpoint.channel ?? "non-voice"} endpoint, not Voice Gateway: pass a Voice Gateway endpoint, or create one with manage_voice_gateway { projectId, agentId }.`
+          : ctx.endpoint.active === false
+            ? `Endpoint "${ctx.endpoint.name}" is inactive.`
+            : `Endpoint "${ctx.endpoint.name}".`,
     ),
   );
   return checks;

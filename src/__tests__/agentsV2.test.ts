@@ -1923,6 +1923,13 @@ describe("audit_voice_agent for AI Agents", () => {
         _id: "ep1",
         name: "VG",
         agentId: "agent-ref",
+        channel: "voiceGateway2",
+      }),
+      "GET /v2.0/endpoints/60d5ec49f1a2c8b1a4e0f9aa": () => ({
+        _id: "60d5ec49f1a2c8b1a4e0f9aa",
+        name: "Bot REST",
+        agentId: "agent-ref",
+        channel: "rest",
       }),
     });
   }
@@ -1958,6 +1965,20 @@ describe("audit_voice_agent for AI Agents", () => {
     expect(
       r.checks.find((c: any) => c.id === "endpoint.agent-target").status,
     ).toBe("pass");
+  });
+
+  it("fails an explicit endpointId that is the agent's REST endpoint", async () => {
+    const r: any = await handlers(auditApi()).handleToolCall(
+      "audit_voice_agent",
+      {
+        agentId: ID.agent,
+        projectId: ID.project,
+        endpointId: "60d5ec49f1a2c8b1a4e0f9aa",
+      },
+    );
+    const check = r.checks.find((c: any) => c.id === "endpoint.agent-target");
+    expect(check.status).toBe("fail");
+    expect(check.detail).toContain("is a rest endpoint, not Voice Gateway");
   });
 
   it("reports without changing anything by default", async () => {
@@ -2331,5 +2352,38 @@ describe("a new cascaded voice agent gets the preferred NiCE-provided speech", (
     );
     await create(live);
     expect(savedSettings(live)).toBeNull();
+  });
+});
+
+describe("list_resources speech_provider paging", () => {
+  it("keeps the offset when skip is not a multiple of limit", async () => {
+    const all = Array.from({ length: 80 }, (_, i) => ({
+      id: `c${i}`,
+      referenceId: `r${i}`,
+      name: `Cred ${i}`,
+      vendor: "deepgram",
+      useForTts: true,
+      useForStt: true,
+      status: { state: "ok" },
+    }));
+    const api = routedApi({
+      "GET /v2.0/voice/speechCredentials": (_b, cfg) => {
+        const { page, pageSize } = cfg.params;
+        return {
+          data: all.slice((page - 1) * pageSize, page * pageSize),
+          total: all.length,
+        };
+      },
+    });
+    const r: any = await handlers(api).handleToolCall("list_resources", {
+      resourceType: "speech_provider",
+      projectId: ID.project,
+      limit: 25,
+      skip: 30,
+    });
+    expect(r.items.map((i: any) => i.id)).toEqual(
+      all.slice(30, 55).map((c) => c.id),
+    );
+    expect(r.total).toBe(80);
   });
 });
