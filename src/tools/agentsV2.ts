@@ -290,6 +290,47 @@ export const COMPONENT_PATHS: Record<string, string> = {
   persona: "agentpersonas",
 };
 
+/** The brand persona the Cognigy UI creates when a project has none (read live on api-dev). */
+export const DEFAULT_PERSONA = {
+  name: "NiCE",
+  description: "you represent the brand",
+  speakingStyle: {
+    completeness: "balanced",
+    formality: "professional",
+    useCustomInstructions: false,
+    customInstructions: "",
+  },
+  voiceConfig: {
+    ttsVoice: "sarah_voice",
+    ttsLanguage: "English",
+    ttsVendor: "ElevenLabs",
+    ttsModel: "eleven_multilingual_v2",
+    ttsLabel: "ElevenLabs - English",
+    ttsDisableCache: false,
+  },
+};
+
+/**
+ * The brand persona a new AI Agent gets: the project's first one, else the
+ * default the UI makes. The API accepts an agent without one, but the UI
+ * marks the field required and won't save the agent until it has one.
+ */
+export async function projectPersona(
+  api: CognigyApiClient,
+  v1: string,
+  projectId: string,
+): Promise<{ referenceId: string; name: string; created: boolean }> {
+  const url = `${v1}/v1/${COMPONENT_PATHS.persona}`;
+  const res: any = await api.get(url, {
+    params: { projectId, limit: 1, skip: 0 },
+  });
+  const first = (res?.items ?? res ?? [])[0];
+  if (first?.referenceId)
+    return { referenceId: first.referenceId, name: first.name, created: false };
+  const made: any = await api.post(url, { ...DEFAULT_PERSONA, projectId });
+  return { referenceId: made.referenceId, name: made.name, created: true };
+}
+
 /** The agent array a component is attached through. */
 export const ATTACH_FIELDS: Record<string, string> = {
   skill: "skillReferenceIds",

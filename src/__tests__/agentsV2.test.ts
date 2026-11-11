@@ -64,6 +64,10 @@ function routedApi(routes: Record<string, Route>) {
     },
     "GET /v2.0/projects": () => ({ items: [{ _id: ID.project }] }),
     "GET /v2.0/voice/speechCredentials": () => ({ data: [] }),
+    [`GET ${V1}/v1/agentpersonas`]: () => ({
+      items: [{ referenceId: "persona-ref", name: "Brand" }],
+      total: 1,
+    }),
     ...routes,
   };
   const call =
@@ -211,6 +215,7 @@ describe("manage_agent", () => {
       largeLanguageModelReferenceId: LLM,
       llmConfig: { temperature: 0.2 },
       knowledge: { ragMode: "agent" },
+      personaReferenceId: "persona-ref",
     });
     expect(api.post.mock.calls[1][1]).toMatchObject({
       channel: "rest",
@@ -366,25 +371,84 @@ describe("manage_agent", () => {
     });
   });
 
-  it("removes the persona with an empty string", async () => {
-    const api = routedApi({
-      [`PATCH ${V1}/v1/agents/${ID.agent}`]: (body) => ({
-        ...agentRecord,
-        ...body,
+  it("refuses to remove the persona, which the UI requires", async () => {
+    const api = routedApi({});
+    await expect(
+      handlers(api).handleToolCall("manage_agent", {
+        operation: "update",
+        agentId: ID.agent,
+        projectId: ID.project,
+        personaReferenceId: "",
       }),
+    ).rejects.toThrow(/personaReferenceId/);
+    expect(api.patch).not.toHaveBeenCalled();
+  });
+
+  it("gives a new agent the project's first persona", async () => {
+    const api = routedApi({
+      "GET /v2.0/locales": () => ({ items: [{ referenceId: "loc-1" }] }),
+      [`POST ${V1}/v1/agents`]: () => agentRecord,
     });
-    const h = handlers(api);
-    await h.handleToolCall("manage_snapshots", {
-      operation: "decline",
+    const r: any = await handlers(api).handleToolCall("manage_agent", {
+      operation: "create",
       projectId: ID.project,
+      name: "Bot",
+      largeLanguageModelReferenceId: LLM,
+      createEndpoint: false,
     });
-    await h.handleToolCall("manage_agent", {
-      operation: "update",
-      agentId: ID.agent,
+    expect(api.post.mock.calls[0][1].personaReferenceId).toBe("persona-ref");
+    expect(r.persona).toEqual({
+      referenceId: "persona-ref",
+      name: "Brand",
+      created: false,
+    });
+  });
+
+  it("makes the UI's default persona when the project has none", async () => {
+    const api = routedApi({
+      "GET /v2.0/locales": () => ({ items: [{ referenceId: "loc-1" }] }),
+      [`GET ${V1}/v1/agentpersonas`]: () => ({ items: [], total: 0 }),
+      [`POST ${V1}/v1/agentpersonas`]: (body) => ({
+        ...body,
+        referenceId: "new-persona",
+      }),
+      [`POST ${V1}/v1/agents`]: () => agentRecord,
+    });
+    const r: any = await handlers(api).handleToolCall("manage_agent", {
+      operation: "create",
       projectId: ID.project,
-      personaReferenceId: "",
+      name: "Bot",
+      largeLanguageModelReferenceId: LLM,
+      createEndpoint: false,
     });
-    expect(api.patch.mock.calls[0][1]).toEqual({ personaReferenceId: "" });
+    const [personaCall, agentCall] = api.post.mock.calls;
+    expect(personaCall[1]).toMatchObject({
+      name: "NiCE",
+      projectId: ID.project,
+      voiceConfig: { ttsVendor: "ElevenLabs" },
+    });
+    expect(agentCall[1].personaReferenceId).toBe("new-persona");
+    expect(r.persona.created).toBe(true);
+  });
+
+  it("keeps a persona the caller names", async () => {
+    const api = routedApi({
+      "GET /v2.0/locales": () => ({ items: [{ referenceId: "loc-1" }] }),
+      [`POST ${V1}/v1/agents`]: () => agentRecord,
+    });
+    const named = "5a255e2f-94b9-46ab-bfb7-4e407e68ef70";
+    await handlers(api).handleToolCall("manage_agent", {
+      operation: "create",
+      projectId: ID.project,
+      name: "Bot",
+      largeLanguageModelReferenceId: LLM,
+      personaReferenceId: named,
+      createEndpoint: false,
+    });
+    expect(api.post.mock.calls[0][1].personaReferenceId).toBe(named);
+    expect(
+      api.get.mock.calls.some((c: any[]) => c[0] === `${V1}/v1/agentpersonas`),
+    ).toBe(false);
   });
 
   it("creates a pre-turn hook Flow with its closing node, without a backup hold", async () => {
@@ -871,6 +935,36 @@ describe("manage_agent_components", () => {
     expect(r.detachedFrom).toEqual([ID.agent]);
     expect(api.patch).toHaveBeenCalledTimes(1);
     expect(api.patch.mock.calls[0][1]).toEqual({ skillReferenceIds: ["keep"] });
+  });
+
+  it("deletes no persona that an agent still uses", async () => {
+    const api = routedApi({
+      [`GET ${V1}/v1/agentpersonas/p1`]: () => ({ referenceId: "p-ref" }),
+      [`GET ${V1}/v1/agents`]: () => ({
+        items: [
+          { id: ID.agent, name: "Bot", personaReferenceId: "p-ref" },
+          { id: "other", name: "Other", personaReferenceId: "x" },
+        ],
+        total: 2,
+      }),
+    });
+    const h = handlers(api);
+    await h.handleToolCall("manage_snapshots", {
+      operation: "decline",
+      projectId: ID.project,
+    });
+    const r: any = await h.handleToolCall("manage_agent_components", {
+      operation: "delete",
+      component: "persona",
+      projectId: ID.project,
+      componentId: "p1",
+    });
+    expect(r).toMatchObject({
+      error: "persona_in_use",
+      changed: false,
+      agents: [{ id: ID.agent, name: "Bot" }],
+    });
+    expect(api.delete).not.toHaveBeenCalled();
   });
 
   it("deletes no skill while the agents that use it cannot be listed", async () => {
