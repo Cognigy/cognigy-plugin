@@ -5,6 +5,8 @@ description: "Use when the user wants to red-team, adversarially test, jailbreak
 
 # Red-Teaming a Cognigy AI Agent
 
+> For an AI Agent built with `manage_agent`, read its configuration with `get_resource { resourceType: "agent", id, projectId }` (plus `manage_agent { operation: "get_system_prompt" }` where available) and send probes with `talk_to_agent { agentId, projectId }`. The flow-based steps below apply to legacy AI Agents.
+
 Adversarial testing of an LLM-backed AI Agent: read its real configuration, derive the policy it is
 _supposed_ to enforce, attack those specific boundaries, and report what broke with reproducible evidence.
 

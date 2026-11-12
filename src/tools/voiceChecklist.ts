@@ -723,7 +723,9 @@ function pushBoolean(checks: VoiceCheck[], spec: BooleanCheckSpec): void {
   });
 }
 
-export function summarize(checks: VoiceCheck[]): {
+export function summarize(
+  checks: Pick<VoiceCheck, "status" | "autoFixable">[],
+): {
   pass: number;
   fail: number;
   warn: number;

@@ -94,7 +94,7 @@ describe("manage_webchat", () => {
       projectId: ID.project,
     });
 
-    expect(result.error).toContain("flowId is required");
+    expect(result.error).toContain("flowId or agentId is required");
   });
 
   it("creates new endpoint even when existing webchat3 endpoints exist in project", async () => {
@@ -153,7 +153,7 @@ describe("manage_webchat", () => {
       projectId: ID.project,
     });
 
-    expect(result.error).toContain("flowId is required");
+    expect(result.error).toContain("flowId or agentId is required");
   });
 
   it("returns error when update fails", async () => {

@@ -1849,6 +1849,39 @@ describe("ToolHandlers v2", () => {
       expect(result._hints.warning).toMatch(/deactivated/i);
     });
 
+    it("pages endpoints with skip and deactivates a match on page 2", async () => {
+      // Like the real API: honours `skip`, ignores unknown params such as `offset`.
+      const endpoints = Array.from({ length: 150 }, (_, i) => ({
+        _id: `ep-${i}`,
+        flowId: i === 120 ? "flow-ref" : "other-flow",
+      }));
+      let listCalls = 0;
+      api.get.mockImplementation((url: string, opts?: any) => {
+        if (url === "/v2.0/endpoints") {
+          if (++listCalls > 5) throw new Error("runaway paging");
+          const { skip = 0, limit = 25 } = opts?.params ?? {};
+          return Promise.resolve({
+            items: endpoints.slice(skip, skip + limit),
+          });
+        }
+        return Promise.resolve({
+          _id: ID.flow,
+          name: "My Flow",
+          projectId: ID.project,
+          referenceId: "flow-ref",
+        });
+      });
+      api.patch.mockResolvedValue({});
+
+      const result = await h.handleToolCall("delete_resource", {
+        resourceType: "flow",
+        id: ID.flow,
+      });
+
+      expect(listCalls).toBe(2);
+      expect(result.cascade.deactivated).toEqual(["endpoint:ep-120"]);
+    });
+
     it("marks project for deletion by renaming instead of deleting", async () => {
       api.get.mockResolvedValueOnce({ _id: ID.project, name: "My Project" });
       api.patch.mockResolvedValue({});
@@ -2914,6 +2947,7 @@ describe("ToolHandlers v2", () => {
         "name",
         "projectId",
         "referenceId",
+        "use",
       ]);
       // Snapshots are project-scoped, so a caller holding only an agent id
       // needs the project id from somewhere; internals stay stripped.
@@ -3710,6 +3744,97 @@ describe("ToolHandlers v2", () => {
       expect(result.updated).toBe(true);
     });
 
+    it("keeps intentName on Trigger Intent quick replies (say and question)", async () => {
+      const replies = [
+        { title: "3", contentType: "trigger_intent", intentName: "Cancel" },
+        { title: "Yes", payload: "yes" },
+      ];
+      for (const [nodeType, extra] of [
+        ["say", {}],
+        ["question", { type: "text" }],
+      ] as const) {
+        api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
+        await h.handleToolCall("manage_flow_nodes", {
+          operation: "create",
+          flowId: ID.flow,
+          parentNodeId: ID.tool,
+          mode: "append",
+          nodeType,
+          label: "Pick",
+          config: { text: "Pick one", quickReplies: replies, ...extra },
+        });
+        const say = api.post.mock.calls.at(-1)![1].config.say;
+        const qrs = say._cognigy._default._quickReplies.quickReplies;
+        expect(qrs[0]).toMatchObject({
+          contentType: "trigger_intent",
+          intentName: "Cancel",
+        });
+        expect(qrs[1]).not.toHaveProperty("intentName");
+        expect(say._data._cognigy._default._quickReplies.quickReplies).toEqual(
+          qrs,
+        );
+      }
+    });
+
+    it("passes question result storage keys through unchanged", async () => {
+      api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
+      await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "question",
+        label: "Ask Member ID",
+        config: {
+          text: "What is your member ID?",
+          type: "text",
+          storeResultInContext: true,
+          contextKey: "temp.dataCapture.memberId",
+          storeInContactProfile: true,
+          profileKey: "memberId",
+        },
+      });
+      const config = api.post.mock.calls[0][1].config;
+      expect(config).toMatchObject({
+        type: "text",
+        storeResultInContext: true,
+        contextKey: "temp.dataCapture.memberId",
+        storeInContactProfile: true,
+        profileKey: "memberId",
+      });
+      expect(config).not.toHaveProperty("resultLocation");
+    });
+
+    it("accepts setSessionContext mode simple/array and rejects other values", async () => {
+      api.post.mockResolvedValueOnce({ _id: newNode, parentId: ID.tool });
+      await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "setSessionContext",
+        label: "Add item",
+        config: { key: "items", value: "item", mode: "array" },
+      });
+      expect(api.post.mock.calls[0][1].config).toEqual({
+        key: "items",
+        value: "item",
+        mode: "array",
+      });
+
+      const bad = await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: ID.tool,
+        mode: "append",
+        nodeType: "setSessionContext",
+        label: "Add item",
+        config: { key: "items", value: "item", mode: "Array" },
+      });
+      expect(bad.error).toMatch(/mode must be one of simple, array/);
+      expect(api.post).toHaveBeenCalledTimes(1);
+    });
+
     it("rejects an invalid cxOneSendCopilotStatus status on update", async () => {
       api.get.mockResolvedValueOnce({
         _id: newNode,
@@ -4064,6 +4189,46 @@ describe("ToolHandlers v2", () => {
       expect(result._hints).toBeUndefined();
     });
 
+    it("treats a NiCE-provided LLM as working without a connection", async () => {
+      api.post
+        .mockResolvedValueOnce({ _id: ID.agent, referenceId: "ref-uuid" })
+        .mockResolvedValueOnce({ _id: ID.flow, referenceId: "flow-uuid" })
+        .mockResolvedValueOnce({ _id: ID.node })
+        .mockResolvedValueOnce({ _id: ID.endpoint, URLToken: "abc123" });
+      api.get
+        .mockResolvedValueOnce({
+          items: [{ _id: ID.entry, isEntryPoint: true }],
+        })
+        .mockResolvedValueOnce({
+          items: [
+            // A project default without a connection loses to the NiCE model.
+            { _id: ID.llm, referenceId: "broken-ref", isDefault: true },
+            {
+              _id: ID.llm,
+              referenceId: "nice-ref",
+              isInPlatformLlm: true,
+              modelType: "gpt-5.6-luna",
+            },
+          ],
+        });
+      api.patch.mockResolvedValue({});
+
+      const result = await h.handleToolCall("create_ai_agent", {
+        projectId: ID.project,
+        name: "Test Agent",
+        description: "A test agent",
+      });
+
+      expect(result.llm).toEqual({
+        referenceId: "nice-ref",
+        isDefault: false,
+        connected: true,
+      });
+      expect(result.llmConnected).toBeUndefined();
+      expect(result._hints.warning).not.toContain("empty responses");
+      expect(result._hints.warning).toContain('"broken-ref" has no connection');
+    });
+
     it("refetches the unfiltered LLM list when the useCase filter is unsupported", async () => {
       const mockAgent = {
         _id: ID.agent,
@@ -4183,6 +4348,68 @@ describe("ToolHandlers v2", () => {
       expect(result.llm.referenceId).toBe("chat-ref");
       expect(result._hints).toBeUndefined();
     });
+
+    it.each([
+      { label: "only gpt-live-1", withText: false },
+      { label: "gpt-live-1 plus a text model", withText: true },
+    ])(
+      "never picks a speech-to-speech model as the default ($label)",
+      async ({ withText }) => {
+        api.post
+          .mockResolvedValueOnce({ _id: ID.agent, referenceId: "ref-uuid" })
+          .mockResolvedValueOnce({ _id: ID.flow, referenceId: "flow-uuid" })
+          .mockResolvedValueOnce({ _id: ID.node })
+          .mockResolvedValueOnce({
+            _id: ID.endpoint,
+            URLToken: "abc123",
+            channel: "rest",
+          });
+        api.get
+          .mockResolvedValueOnce({
+            items: [{ _id: ID.entry, isEntryPoint: true }],
+          })
+          .mockResolvedValueOnce({
+            items: [
+              {
+                _id: "a".repeat(24),
+                referenceId: "live-ref",
+                isDefault: true,
+                connectionId: "conn-1",
+                modelType: "gpt-live-1",
+                modelGroup: "voiceToVoice",
+              },
+              ...(withText
+                ? [
+                    {
+                      _id: "b".repeat(24),
+                      referenceId: "chat-ref",
+                      connectionId: "conn-2",
+                      modelType: "gpt-4o",
+                      modelGroup: "chat",
+                    },
+                  ]
+                : []),
+            ],
+          });
+        api.patch.mockResolvedValue({});
+
+        const result = await h.handleToolCall("create_ai_agent", {
+          projectId: ID.project,
+          name: "Test Agent",
+          description: "A test agent",
+        });
+
+        const llmPatch = api.patch.mock.calls.find(
+          (c: any[]) => c[1]?.config?.llmProviderReferenceId !== undefined,
+        );
+        if (withText) {
+          expect(llmPatch?.[1].config.llmProviderReferenceId).toBe("chat-ref");
+        } else {
+          expect(llmPatch).toBeUndefined();
+          expect(result.llmStatus).toBe("unknown");
+        }
+      },
+    );
 
     it("warns when the project default is skipped for having no connection", async () => {
       const mockAgent = {
@@ -4370,6 +4597,44 @@ describe("ToolHandlers v2", () => {
           },
         ],
       },
+    });
+
+    it("lists AI Agents and their skills and tools as exportable", async () => {
+      api.get.mockResolvedValueOnce({
+        [ID.project]: {
+          resources: [
+            {
+              _id: "a1",
+              type: "aiAgentV2",
+              name: "Weather Bot",
+              referenceId: "r1",
+            },
+            {
+              _id: "t1",
+              type: "aiAgentV2Tool",
+              name: "get_weather",
+              referenceId: "r2",
+            },
+            {
+              _id: "s1",
+              type: "aiAgentV2Skill",
+              name: "packing",
+              referenceId: "r3",
+            },
+          ],
+        },
+      });
+
+      const result = await h.handleToolCall("manage_packages", {
+        operation: "list_exportable",
+        projectId: ID.project,
+      });
+
+      expect(result.resources.map((r: any) => r.type).sort()).toEqual([
+        "aiAgentV2",
+        "aiAgentV2Skill",
+        "aiAgentV2Tool",
+      ]);
     });
 
     it("lists exportable resources and includes LLM models", async () => {
@@ -4820,7 +5085,7 @@ describe("ToolHandlers v2", () => {
       const result = await h.handleToolCall("manage_voice_gateway", {
         projectId: ID.project,
       });
-      expect(result.error).toContain("flowId is required");
+      expect(result.error).toContain("flowId or agentId is required");
     });
 
     it("updates existing endpoint with new widget config", async () => {
@@ -4892,6 +5157,35 @@ describe("ToolHandlers v2", () => {
         expect.objectContaining({
           createWebrtcClient: true,
           name: "Updated Name",
+        }),
+      );
+    });
+
+    it("sends the stored name and locale when provisioning WebRTC on a plain retry", async () => {
+      const existingEndpoint = {
+        _id: ID.endpoint,
+        URLToken: "vg-token-789",
+        channel: "voiceGateway2",
+        name: "Voice Agent",
+        localeId: "loc-ref",
+      };
+      api.get
+        .mockResolvedValueOnce(existingEndpoint)
+        .mockResolvedValueOnce({ ...existingEndpoint, webrtcClient: true });
+      api.patch.mockResolvedValueOnce({});
+
+      await h.handleToolCall("manage_voice_gateway", {
+        endpointId: ID.endpoint,
+      });
+
+      // service-api: "Mandatory fields missing" without name + localeId.
+      expect(api.patch).toHaveBeenCalledWith(
+        `/new/v2.0/endpoints/${ID.endpoint}`,
+        expect.objectContaining({
+          createWebrtcClient: true,
+          name: "Voice Agent",
+          localeId: "loc-ref",
+          URLToken: "vg-token-789",
         }),
       );
     });
@@ -4982,6 +5276,7 @@ describe("ToolHandlers v2", () => {
         {
           audioPreviewSettings: {
             provider: "microsoft",
+            isNiceProvided: false,
             connections: {
               microsoft: { connectionId: "conn-ref-123" },
             },

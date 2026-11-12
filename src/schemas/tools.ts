@@ -2,6 +2,23 @@ import { z } from "zod";
 
 const idSchema = z.string().regex(/^[a-f0-9]{24}$/, "Must be a 24-char hex ID");
 
+export const AGENT_REFERENCE_ID_MESSAGE =
+  "This looks like a referenceId (UUID), not an agent id. Find the agent's 24-char hex id with list_resources { resourceType: 'agent', projectId } — each item carries both id and referenceId.";
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** 24-hex agent id; a pasted referenceId gets a message that says how to map it. */
+const agentIdSchema = z.string().superRefine((v, ctx) => {
+  if (/^[a-f0-9]{24}$/.test(v)) return;
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: UUID_RE.test(v)
+      ? AGENT_REFERENCE_ID_MESSAGE
+      : "Must be a 24-char hex ID",
+  });
+});
+
 const NOT_BOTH_IDS_MESSAGE =
   "Pass either aiAgentId or flowId, not both. Use aiAgentId for a normal agent; use flowId only for a flow driven by an LLM Prompt node (which has no agent resource).";
 
@@ -19,6 +36,7 @@ export const createAiAgentSchema = z
     knowledgeStoreReferenceId: z.string().optional(),
     agentNodeType: z.enum(["aiAgent", "llmPrompt"]).optional(),
     systemPrompt: z.string().optional(),
+    legacy: z.boolean().optional(),
   })
   .refine(
     (d) => !(d.agentNodeType === "llmPrompt" && d.knowledgeStoreReferenceId),
@@ -46,7 +64,7 @@ export const createAiAgentSchema = z
 
 // Tool 2: update_ai_agent
 export const updateAiAgentSchema = z.object({
-  aiAgentId: idSchema,
+  aiAgentId: agentIdSchema,
   name: z.string().min(1).max(200).optional(),
   description: z.string().optional(),
   instructions: z.string().optional(),
@@ -117,7 +135,7 @@ export const setupLlmSchema = z
       (data.apiKey || data.accessKeyId || data.secretAccessKey || data.roleArn)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["connectionId"],
         message:
           "Provide either inline credentials (apiKey / accessKeyId + secretAccessKey / roleArn) OR connectionId, not both — inline credentials would be ignored.",
@@ -132,7 +150,7 @@ export const setupLlmSchema = z
         !(providers as readonly string[]).includes(data.provider)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: [field],
           message: `${field} is only supported for provider(s) ${providers
             .map((p) => `'${p}'`)
@@ -144,7 +162,7 @@ export const setupLlmSchema = z
     if (data.provider === "openAICompatible") {
       if (!data.baseCustomUrl) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["baseCustomUrl"],
           message:
             "Provider 'openAICompatible' requires baseCustomUrl — the provider's OpenAI-compatible API base URL (e.g. https://my-llm-host.example.com/v1).",
@@ -152,7 +170,7 @@ export const setupLlmSchema = z
       }
       if (!data.customModel) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["customModel"],
           message:
             "Provider 'openAICompatible' requires customModel — the model name as known by the provider (e.g. 'llama-3.3-70b-instruct').",
@@ -163,7 +181,7 @@ export const setupLlmSchema = z
         data.modelType !== "custom-embedding-model"
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["modelType"],
           message:
             "Provider 'openAICompatible' requires modelType 'custom-model' (chat) or 'custom-embedding-model' (embedding). Put the provider's model name in customModel instead.",
@@ -174,7 +192,7 @@ export const setupLlmSchema = z
         data.apiType !== undefined
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["apiType"],
           message:
             "apiType is only supported for chat models; omit it when modelType is 'custom-embedding-model'.",
@@ -185,7 +203,7 @@ export const setupLlmSchema = z
     if (data.provider === "awsBedrock") {
       if (!data.region) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["region"],
           message:
             "Provider 'awsBedrock' requires region — the AWS region of the Bedrock deployment (e.g. 'us-east-1').",
@@ -193,7 +211,7 @@ export const setupLlmSchema = z
       }
       if (data.apiKey) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["apiKey"],
           message:
             "Provider 'awsBedrock' does not use apiKey. Provide accessKeyId + secretAccessKey (access-key auth) or roleArn (IAM-role auth) instead.",
@@ -201,7 +219,7 @@ export const setupLlmSchema = z
       }
       if (data.roleArn && (data.accessKeyId || data.secretAccessKey)) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["roleArn"],
           message:
             "Provide either accessKeyId + secretAccessKey OR roleArn, not both.",
@@ -212,14 +230,14 @@ export const setupLlmSchema = z
         (!data.accessKeyId && data.secretAccessKey)
       ) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: [data.accessKeyId ? "secretAccessKey" : "accessKeyId"],
           message: "accessKeyId and secretAccessKey must be provided together.",
         });
       }
       if (data.customModel && data.modelType !== "custom-model") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["modelType"],
           message:
             "customModel requires modelType 'custom-model' for provider 'awsBedrock'. Use a named modelType (e.g. 'amazon.nova-pro-v1:0') without customModel, or modelType 'custom-model' with the Bedrock model id in customModel.",
@@ -227,7 +245,7 @@ export const setupLlmSchema = z
       }
       if (data.modelType === "custom-model" && !data.customModel) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["customModel"],
           message:
             "modelType 'custom-model' requires customModel — the Bedrock model id or inference profile id (e.g. 'eu.anthropic.claude-sonnet-4-6').",
@@ -235,7 +253,7 @@ export const setupLlmSchema = z
       }
       if (data.location === "geo" && !data.geo) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["geo"],
           message:
             "location 'geo' requires geo — the geographic boundary requests may be routed within (e.g. 'us', 'eu', 'apac').",
@@ -243,7 +261,7 @@ export const setupLlmSchema = z
       }
       if (data.geo && data.location !== "geo") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           path: ["geo"],
           message: "geo is only supported when location is 'geo'.",
         });
@@ -255,18 +273,23 @@ export const setupLlmSchema = z
 export const talkToAgentSchema = z
   .object({
     endpointUrl: z.string().url().optional(),
-    aiAgentId: idSchema.optional(),
+    aiAgentId: agentIdSchema.optional(),
+    agentId: agentIdSchema.optional(),
     projectId: idSchema.optional(),
     message: z.string().min(1),
     sessionId: z.string().optional(),
     userId: z.string().optional(),
-    data: z.record(z.any()).optional(),
+    data: z.record(z.string(), z.any()).optional(),
     verbose: z.boolean().optional(),
     testMode: z.boolean().optional(),
   })
-  .refine((d) => d.endpointUrl || d.aiAgentId, {
-    message: "Either endpointUrl or aiAgentId must be provided",
+  .refine((d) => d.endpointUrl || d.aiAgentId || d.agentId, {
+    message: "Either endpointUrl, agentId or aiAgentId must be provided",
     path: ["endpointUrl"],
+  })
+  .refine((d) => !d.agentId || d.projectId, {
+    message: "agentId requires projectId",
+    path: ["projectId"],
   });
 
 /** Actor values Cognigy records in `auditEvent.performedBy.actor`. */
@@ -303,9 +326,10 @@ export const listResourcesSchema = z
       "function",
       "tool",
       "audit_event",
+      "speech_provider",
     ]),
     projectId: idSchema.optional(),
-    aiAgentId: idSchema.optional(),
+    aiAgentId: agentIdSchema.optional(),
     flowId: idSchema.optional(),
     startDate: z.string().optional(),
     endDate: z.string().optional(),
@@ -368,7 +392,7 @@ export const deleteResourceSchema = z
     ]),
     id: idSchema,
     projectId: idSchema.optional(),
-    aiAgentId: idSchema.optional(),
+    aiAgentId: agentIdSchema.optional(),
     flowId: idSchema.optional(),
     cascade: z.boolean().optional(),
   })
@@ -421,7 +445,7 @@ const a2aToolConfigSchema = {
 
 export const createToolSchema = z
   .object({
-    aiAgentId: idSchema.optional(),
+    aiAgentId: agentIdSchema.optional(),
     flowId: idSchema.optional(),
     parentNodeId: idSchema.optional(),
     toolType: z.enum(["tool", "knowledge", "send_email", "mcp", "http", "a2a"]),
@@ -438,7 +462,7 @@ export const createToolSchema = z
       timeout: z.number().optional(),
       url: z.string().optional(),
       method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
-      headers: z.record(z.string()).optional(),
+      headers: z.record(z.string(), z.string()).optional(),
       body: z.string().optional(),
       preProcessCode: z.string().optional(),
       postProcessCode: z.string().optional(),
@@ -458,7 +482,7 @@ export const createToolSchema = z
 // Tool 10: update_tool
 export const updateToolSchema = z
   .object({
-    aiAgentId: idSchema.optional(),
+    aiAgentId: agentIdSchema.optional(),
     flowId: idSchema.optional(),
     toolNodeId: idSchema,
     name: z.string().min(1).max(200).optional(),
@@ -478,7 +502,7 @@ export const updateToolSchema = z
         timeout: z.number().optional(),
         url: z.string().optional(),
         method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).optional(),
-        headers: z.record(z.string()).optional(),
+        headers: z.record(z.string(), z.string()).optional(),
         body: z.string().optional(),
         preProcessCode: z.string().optional(),
         postProcessCode: z.string().optional(),
@@ -509,7 +533,7 @@ export const manageFlowNodesSchema = z.object({
   label: z.string().min(1).max(200).optional(),
   parentNodeId: idSchema.optional(),
   mode: z.enum(["append", "appendChild"]).optional(),
-  config: z.record(z.any()).optional(),
+  config: z.record(z.string(), z.any()).optional(),
   // render operation
   focus: z.union([idSchema, z.array(idSchema)]).optional(),
   format: z.enum(["ascii", "mermaid", "both"]).optional(),
@@ -808,6 +832,7 @@ export const manageWebchatSchema = z.object({
   endpointId: idSchema.optional(),
   projectId: idSchema.optional(),
   flowId: z.string().optional(),
+  agentId: agentIdSchema.optional(),
   name: z.string().min(1).max(200).optional(),
   stylePreset: z.enum(["classic", "modern", "slick"]).optional(),
   layout: webchatLayoutSchema,
@@ -863,6 +888,7 @@ export const manageVoiceGatewaySchema = z.object({
   endpointId: idSchema.optional(),
   projectId: idSchema.optional(),
   flowId: z.string().optional(),
+  agentId: agentIdSchema.optional(),
   name: z.string().min(1).max(200).optional(),
   webrtcWidgetConfig: webrtcWidgetConfigSchema,
 });
@@ -883,6 +909,7 @@ const manageVoicePreviewSettingsSchema = z.object({
   projectId: idSchema,
   provider: speechProviderEnum,
   connectionId: z.string().optional(),
+  isNiceProvided: z.boolean().optional(),
 });
 
 const manageKnowledgeAiSettingsSchema = z
@@ -933,16 +960,23 @@ export const manageSettingsSchema = z.union([
 // Tool 16: audit_voice_agent
 export const auditVoiceAgentSchema = z
   .object({
-    aiAgentId: idSchema.optional(),
+    aiAgentId: agentIdSchema.optional(),
+    // An AI Agent (service-agents); needs projectId.
+    agentId: agentIdSchema.optional(),
     flowId: idSchema.optional(),
     endpointId: idSchema.optional(),
     projectId: idSchema.optional(),
     apply: z.boolean().optional(),
     only: z.array(z.string()).optional(),
   })
-  .refine((d) => d.aiAgentId || d.flowId, {
-    message: "Either aiAgentId or flowId must be provided",
+  .refine((d) => d.aiAgentId || d.flowId || d.agentId, {
+    message:
+      "Either agentId (with projectId), aiAgentId or flowId must be provided",
     path: ["aiAgentId"],
+  })
+  .refine((d) => !d.agentId || d.projectId, {
+    message: "agentId needs projectId",
+    path: ["projectId"],
   });
 
 // Tool 17: manage_snapshots
@@ -1018,3 +1052,215 @@ export const manageA2AServerSchema = z.object({
   enableStreaming: z.boolean().optional(),
   authenticationType: z.enum(["none", "apiKey"]).optional(),
 });
+
+// AI Agents (service-agents). The plugin calls the flow-based kind "legacy".
+const referenceIdsSchema = z.array(z.string().min(1));
+
+const agentSettingsSchema = {
+  role: z.string().max(100).optional(),
+  description: z.string().optional(),
+  instructions: z.string().optional(),
+  image: z.string().optional(),
+  agentType: z.enum(["text", "voice"]).optional(),
+  largeLanguageModelReferenceId: z.string().uuid().optional(),
+  llmConfig: z
+    .object({
+      temperature: z.number().min(0).max(2).optional(),
+      maxOutputTokens: z.number().int().positive().optional(),
+      reasoningEffort: z
+        .enum(["none", "minimal", "low", "medium", "high", "xhigh"])
+        .optional(),
+    })
+    .optional(),
+  knowledge: z.record(z.string(), z.any()).optional(),
+  guardrails: z
+    .object({
+      safetySettings: z
+        .object({
+          avoidHarmfulContent: z.boolean(),
+          avoidUngroundedContent: z.boolean(),
+          avoidCopyrightInfringements: z.boolean(),
+          preventJailbreakAndManipulation: z.boolean(),
+        })
+        .partial()
+        .optional(),
+      dataPrivacy: z
+        .object({
+          contactProfilesOption: z.enum([
+            "none",
+            "completeProfile",
+            "profileMemoriesOnly",
+            "selectedProfileFields",
+          ]),
+          selectedProfileFields: z.array(z.string()).optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+  hooks: z
+    .object({ preTurn: z.array(z.record(z.string(), z.any())) })
+    .nullable()
+    .optional(),
+  // No "": the UI marks the brand persona required and can't save an agent without one.
+  personaReferenceId: z.string().uuid().optional(),
+  // GPT Live (S2S): "" turns the voice model off; null resets the voice.
+  voiceLargeLanguageModelReferenceId: z
+    .union([z.string().uuid(), z.literal("")])
+    .optional(),
+  realtimeVoice: z.string().min(1).nullable().optional(),
+};
+
+const agentTargetSchema = { agentId: agentIdSchema, projectId: idSchema };
+
+export const manageAgentSchema = z.discriminatedUnion("operation", [
+  z.object({
+    operation: z.literal("create"),
+    projectId: idSchema.optional(),
+    name: z.string().min(1).max(200),
+    ...agentSettingsSchema,
+    skillReferenceIds: referenceIdsSchema.optional(),
+    toolReferenceIds: referenceIdsSchema.optional(),
+    createEndpoint: z.boolean().optional(),
+  }),
+  z.object({
+    operation: z.literal("update"),
+    ...agentTargetSchema,
+    name: z.string().min(1).max(200).optional(),
+    ...agentSettingsSchema,
+    disabledToolReferenceIds: referenceIdsSchema.optional(),
+    // null resets the voice prompt to the product default.
+    voicePromptTemplate: z.string().min(1).nullable().optional(),
+  }),
+  z.object({ operation: z.literal("voice_prompt"), ...agentTargetSchema }),
+  z.object({
+    operation: z.literal("preview_voice_prompt"),
+    ...agentTargetSchema,
+    template: z.string().min(1),
+  }),
+  z.object({ operation: z.literal("get_system_prompt"), ...agentTargetSchema }),
+  z.object({
+    operation: z.literal("save_system_prompt"),
+    ...agentTargetSchema,
+    template: z.string().min(1),
+    onBuildFailure: z.enum(["defaultPrompt", "noAnswer"]).optional(),
+    acknowledgeRisk: z.boolean().optional(),
+  }),
+  z.object({
+    operation: z.literal("reset_system_prompt"),
+    ...agentTargetSchema,
+  }),
+  z.object({
+    operation: z.literal("preview_system_prompt"),
+    ...agentTargetSchema,
+    template: z.string().min(1),
+    scriptPlaceholders: z.boolean().optional(),
+  }),
+  z.object({
+    operation: z.literal("create_flow"),
+    projectId: idSchema,
+    flowType: z.enum(["preTurn", "tool"]),
+    name: z.string().min(1).max(200),
+    answer: z.string().min(1).optional(),
+  }),
+]);
+
+export const AGENT_COMPONENTS = [
+  "skill",
+  "tool",
+  "mcp_server",
+  "persona",
+] as const;
+const componentSchema = z.enum(AGENT_COMPONENTS);
+const componentIdSchema = z.string().min(1);
+const componentConfigSchema = z.record(z.string(), z.any());
+
+// The agent's one voice-config-defaults tool, addressed by the agent.
+const voiceSettingsSchema = z.object({
+  operation: z.enum(["get", "create", "update", "delete"]),
+  component: z.literal("voice_settings"),
+  projectId: idSchema,
+  agentId: agentIdSchema,
+  config: componentConfigSchema.optional(),
+});
+
+const agentComponentOperationsSchema = z.discriminatedUnion("operation", [
+  z.object({
+    operation: z.literal("catalog"),
+    component: z.enum(["skill", "tool"]),
+    projectId: idSchema,
+  }),
+  z.object({
+    operation: z.literal("list"),
+    component: componentSchema,
+    projectId: idSchema,
+    ...paginationSchema,
+  }),
+  z.object({
+    operation: z.literal("get"),
+    component: componentSchema,
+    projectId: idSchema,
+    componentId: componentIdSchema,
+  }),
+  z
+    .object({
+      operation: z.literal("create"),
+      component: componentSchema,
+      projectId: idSchema,
+      config: componentConfigSchema,
+      agentId: agentIdSchema.optional(),
+    })
+    .refine(
+      (d) => !d.agentId || d.component === "skill" || d.component === "tool",
+      {
+        path: ["agentId"],
+        message:
+          "agentId on create attaches skills and tools only. Set a persona with manage_agent update { personaReferenceId }; for an MCP server, sync_tools and attach the imported tools.",
+      },
+    ),
+  z.object({
+    operation: z.literal("update"),
+    component: componentSchema,
+    projectId: idSchema,
+    componentId: componentIdSchema,
+    config: componentConfigSchema,
+  }),
+  z.object({
+    operation: z.literal("delete"),
+    component: componentSchema,
+    projectId: idSchema,
+    componentId: componentIdSchema,
+  }),
+  z.object({
+    operation: z.literal("attach"),
+    component: z.enum(["skill", "tool"]),
+    projectId: idSchema,
+    componentId: componentIdSchema,
+    agentId: agentIdSchema,
+  }),
+  z.object({
+    operation: z.literal("detach"),
+    component: z.enum(["skill", "tool"]),
+    projectId: idSchema,
+    componentId: componentIdSchema,
+    agentId: agentIdSchema,
+  }),
+  z.object({
+    operation: z.literal("discover_tools"),
+    component: z.literal("mcp_server"),
+    projectId: idSchema,
+    componentId: componentIdSchema,
+  }),
+  z.object({
+    operation: z.literal("sync_tools"),
+    component: z.literal("mcp_server"),
+    projectId: idSchema,
+    componentId: componentIdSchema,
+    import: z.array(z.string().min(1)).optional(),
+    remove: z.array(z.string().min(1)).optional(),
+  }),
+]);
+
+export const manageAgentComponentsSchema = z.union([
+  voiceSettingsSchema,
+  agentComponentOperationsSchema,
+]);

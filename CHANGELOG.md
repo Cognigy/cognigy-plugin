@@ -1,3 +1,40 @@
+## [1.23.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.8...v1.23.0) (2026-11-11)
+
+### Features
+
+* **agents:** build AI Agents by default, with skills, tools and settings ([#52](https://github.com/Cognigy/cognigy-plugin/issues/52)) [skip ci] ([bb77894](https://github.com/Cognigy/cognigy-plugin/commit/bb7789401aa0267f14e315c108c8d3cff1877908))
+* **voice:** speech settings, speech-to-speech (S2S) first and the go-live audit for AI Agents ([#75](https://github.com/Cognigy/cognigy-plugin/issues/75)) ([8c947af](https://github.com/Cognigy/cognigy-plugin/commit/8c947afed3478b0a4d9bfc9b31b528b99d30bde1)), closes [#52](https://github.com/Cognigy/cognigy-plugin/issues/52)
+
+### Bug Fixes
+
+* **delete:** page endpoints with skip when deactivating a deleted flow's endpoints ([#76](https://github.com/Cognigy/cognigy-plugin/issues/76)) [skip ci] ([c31ffab](https://github.com/Cognigy/cognigy-plugin/commit/c31ffaba2b4815f1d3b53fbfcf2fc2f54da64905))
+* **deps:** bump axios to 1.21.1 for follow-redirects advisory (GHSA-mrwp-f3q8-3g9p) ([#73](https://github.com/Cognigy/cognigy-plugin/issues/73)) [skip ci] ([65eda18](https://github.com/Cognigy/cognigy-plugin/commit/65eda1892131b8826036da1c3c6f9ccf1b4bde8f)), closes [#71](https://github.com/Cognigy/cognigy-plugin/issues/71)
+
+## [1.22.8](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.7...v1.22.8) (2026-11-11)
+
+### Bug Fixes
+
+* **skills:** load the voice go-live checklist before audit_voice_agent ([#74](https://github.com/Cognigy/cognigy-plugin/issues/74)) ([243c04a](https://github.com/Cognigy/cognigy-plugin/commit/243c04a4dc95ceb8929526b2d8f75424efef8d62))
+
+## [1.22.7](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.6...v1.22.7) (2026-11-10)
+
+### Bug Fixes
+
+* **llm:** never pick a voice-to-voice model as an agent's default LLM ([#69](https://github.com/Cognigy/cognigy-plugin/issues/69)) ([81efb0f](https://github.com/Cognigy/cognigy-plugin/commit/81efb0f189d70c8e38d88aeb9df9d71d369bf638))
+
+## [1.22.6](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.5...v1.22.6) (2026-11-06)
+
+### Bug Fixes
+
+* **deps:** upgrade zod to v4 (GHSA-mrhx-c7xc-m3w5) and refresh outdated dependencies ([#67](https://github.com/Cognigy/cognigy-plugin/issues/67)) ([47cb678](https://github.com/Cognigy/cognigy-plugin/commit/47cb67849dccb28fc40e868efadf88239167f2cf))
+* **flow-nodes:** store question answers and keep trigger intent quick replies ([#58](https://github.com/Cognigy/cognigy-plugin/issues/58)) [skip ci] ([c2e43c6](https://github.com/Cognigy/cognigy-plugin/commit/c2e43c61e65d667fc0bc63370209c879251ed152))
+
+## [1.22.5](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.4...v1.22.5) (2026-10-30)
+
+### Bug Fixes
+
+* **deps:** update vulnerable dependencies ([#64](https://github.com/Cognigy/cognigy-plugin/issues/64)) ([9353ef8](https://github.com/Cognigy/cognigy-plugin/commit/9353ef8fb6e8d0a8b2694134f1164fd87f47459c))
+
 ## [1.22.4](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.3...v1.22.4) (2026-10-27)
 
 ### Bug Fixes

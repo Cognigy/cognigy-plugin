@@ -10,6 +10,7 @@ import {
 import { loadConfig } from "./config.js";
 import { CognigyApiClient } from "./api/client.js";
 import { ToolHandlers } from "./tools/handlers.js";
+import { agentsV2BaseUrl } from "./tools/agentsV2.js";
 import { tools } from "./tools/definitions.js";
 import { SERVER_INSTRUCTIONS } from "./instructions.js";
 import { logger } from "./utils/logger.js";
@@ -37,6 +38,7 @@ async function main() {
       config.endpointBaseUrl,
       config.webchatBaseUrl,
       config.staticFilesBaseUrl,
+      agentsV2BaseUrl(config.apiBaseUrl),
     );
     const rateLimiter = new RateLimiter(config.rateLimit);
 
@@ -44,7 +46,10 @@ async function main() {
       { name: config.serverName, version: config.serverVersion },
       {
         capabilities: { tools: {} },
-        instructions: SERVER_INSTRUCTIONS,
+        // COGNIGY_DEV_NOTICE is set only by scripts/dev-engine.mjs (local dev).
+        instructions: process.env.COGNIGY_DEV_NOTICE
+          ? `${process.env.COGNIGY_DEV_NOTICE}\n\n${SERVER_INSTRUCTIONS}`
+          : SERVER_INSTRUCTIONS,
       },
     );
 

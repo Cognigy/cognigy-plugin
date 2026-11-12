@@ -31,6 +31,17 @@ export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
     projectId: r.projectReference ?? r.projectId,
     createdAt: r.createdAt,
   }),
+  // AI Agent (service-agents) list item. The full config is in get_resource.
+  agent_v2: (r) => ({
+    id: rid(r),
+    referenceId: r.referenceId,
+    name: r.name,
+    role: r.role,
+    description: r.description,
+    agentType: r.agentType,
+    projectId: r.projectId,
+    createdAt: r.createdAt,
+  }),
   flow: (r) => ({
     id: rid(r),
     referenceId: r.referenceId,
@@ -74,7 +85,9 @@ export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
     name: r.name,
     provider: r.provider,
     modelType: r.modelType,
+    modelGroup: r.modelGroup,
     connectionId: r.connectionId,
+    isInPlatformLlm: r.isInPlatformLlm,
     isDefault: r.isDefault,
     apiType: r.apiType,
     openAICompatible: r.openAICompatible,

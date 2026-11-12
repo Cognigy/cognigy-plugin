@@ -1,6 +1,6 @@
 ---
 name: cognigy-voice-go-live
-description: Runs the Voice Go-Live Checklist audit on a Cognigy voice AI agent in an isolated context and returns a short report — what fails, what is auto-fixable, and what stays manual. Use when the user wants a voice agent production-ready, a go-live audit, or voice settings validated or fixed. Read-only unless your prompt says the user approved applying fixes, and their backup choice. Pass the aiAgentId if you have it.
+description: Runs the Voice Go-Live Checklist audit on a Cognigy voice AI agent in an isolated context and returns a short report — what fails, what is auto-fixable, and what stays manual. Use when the user wants a voice agent production-ready, a go-live audit, or voice settings validated or fixed. Read-only unless your prompt says the user approved applying fixes, and their backup choice. Pass the agent's id (agentId and projectId for an AI Agent, aiAgentId for a legacy one) if you have it.
 skills:
   - voice-go-live-checklist
 ---
@@ -11,9 +11,9 @@ You cannot talk to the user. Anything you need that your prompt does not give yo
 
 ## Workflow
 
-1. **Identify the agent.** Use the `aiAgentId` you were given. Otherwise find it with `list_resources`; if more than one agent could match, return the candidates to the caller.
+1. **Identify the agent.** Use the id you were given. Otherwise find it with `list_resources { resourceType: "agent", projectId }`; if more than one agent could match, return the candidates to the caller. An AI Agent (its `use` is `{ agentId }`) is audited with `audit_voice_agent { agentId, projectId }`, a legacy one (`legacy: true`) with `{ aiAgentId }`.
 2. **Dry-run first**, always — even when fixes are approved.
-3. **Apply only if your prompt says the user approved it**, and only the audit's own `autoFixable` fixes (or the subset the prompt names). Never hand-craft node configs.
+3. **Apply only if your prompt says the user approved it**, and only the audit's own `autoFixable` fixes (or the subset the prompt names). Never hand-craft node configs or voice settings.
 4. **Backup gate.** The first `apply: true` returns `error: "backup_not_offered"` and changes nothing. If your prompt carries the user's backup choice, call `manage_snapshots` `create` (label `pre-voice-fixes`) or `decline` accordingly and retry. If it does not, stop and return the question to the caller. Never report fixes as applied after that error.
 
 ## Report

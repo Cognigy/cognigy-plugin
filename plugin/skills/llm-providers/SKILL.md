@@ -14,6 +14,8 @@ description: "Use when configuring or choosing an LLM for a Cognigy agent — va
 3. Where another project has a reusable LLM with a non-empty `connectionId`, you attempted to transfer it together with its connection via `manage_packages` (see the package-management skill).
 4. You are proceeding only because reuse is unavailable, the transfer failed, or the user explicitly asked for a brand-new LLM.
 
+A NiCE-provided model in the target project (`isInPlatformLlm: true`, shown as "Included by NiCE Cognigy") works without a connection, so it needs no setup_llm and no transfer.
+
 If any step is missing, stop and do it first. To list existing LLMs use `list_resources { resourceType: "llm_model", projectId }`; to delete one use `delete_resource { resourceType: "llm_model", id }`.
 
 ## setup_llm parameters
@@ -36,6 +38,8 @@ If any step is missing, stop and do it first. To list existing LLMs use `list_re
   Examples: `gpt-4o`, `gpt-4o-mini`, `gpt-4.1`, `claude-sonnet-4-0`, `gemini-2.0-flash`, `mistral-small-2503`.
 - Embedding models: used for knowledge-store vector indexing.
   Examples: `text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-ada-002`, `luminous-embedding-128`, `amazon.titan-embed-text-v2:0`, `Pharia-1-Embedding-4608`, `gemini-embedding-001`, `custom-embedding-model`.
+
+- Speech-to-speech (S2S, also called voice-to-voice or V2V; the model is GPT Live): `gpt-live-1`, provider `openAI` only, `modelGroup: "voiceToVoice"`. It is only ever an AI Agent's voice model (`manage_agent` `voiceLargeLanguageModelReferenceId`), never a text LLM and never the project default; `setup_llm` creates it with `isDefault: false`. On an environment without speech-to-speech, `setup_llm` returns `error: "s2s_not_enabled"` and creates nothing. Full recipe: s2s-demo skill.
 
 Chat/completion models are not embedding models. `gpt-4o-mini` is a chat model, not a valid embedding-model choice for knowledge-store indexing.
 
