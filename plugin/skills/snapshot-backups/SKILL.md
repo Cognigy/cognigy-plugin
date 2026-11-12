@@ -5,6 +5,8 @@ description: "Use when backing up a Cognigy project before changing an existing 
 
 # Snapshot Backups and Rollback
 
+> Snapshots cover AI Agents and their skills, tools, MCP servers and personas as well as legacy agents, so `manage_agent` and `manage_agent_components` changes to an existing agent are held for the backup offer too.
+
 Use `manage_snapshots` to take a restorable backup of a Cognigy project and to roll
 it back. A Snapshot is an immutable copy of a **whole project**.
 

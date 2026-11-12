@@ -10,6 +10,8 @@ The tools are designed to be used together with the plugin's skills, which load 
 
 Tool results carry _hints with warnings and the next step; follow them.
 
+AGENTS: call check_capabilities once before creating or changing agents. Where aiAgents is available, build AI Agents with manage_agent; use create_ai_agent (legacy: true) only when the user asks for a legacy AI Agent or the project has only legacy agents. Call every agent an "AI Agent" and say "legacy" only to tell the two apart; never say V1, V2 or "Agents V2" to the user.
+
 HARD RULES:
 - NEVER guess or invent API keys, URLs or credentials. Ask the user (apiKey for most providers; accessKeyId + secretAccessKey or roleArn for awsBedrock).
 - The FIRST change to an existing agent in a project is HELD: the tool changes nothing and returns error backup_not_offered. Follow its hint (offer a backup, then manage_snapshots create or decline), then retry the same call. Never claim the change happened.

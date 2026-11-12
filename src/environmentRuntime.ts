@@ -26,6 +26,7 @@ import {
   type EnvironmentsFile,
   type EnvironmentsFileState,
 } from "./environmentsFile.js";
+import { agentsV2BaseUrl } from "./tools/agentsV2.js";
 import { ToolHandlers } from "./tools/handlers.js";
 import { logProxyConfiguration } from "./utils/proxy.js";
 
@@ -75,6 +76,7 @@ function buildRuntime(config: Config, environment: string | null): Runtime {
       config.endpointBaseUrl,
       config.webchatBaseUrl,
       config.staticFilesBaseUrl,
+      agentsV2BaseUrl(config.apiBaseUrl),
     ),
     environment,
   };

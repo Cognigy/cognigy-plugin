@@ -34,6 +34,21 @@ This auto-detects an existing speech connection for the provider. If none is fou
 }
 ```
 
+### NiCE-provided speech
+
+Where `check_capabilities` reports `niceSpeech: "available"`, the organisation can use NiCE-provided speech with no Connection. `list_resources { resourceType: "speech_provider", projectId }` shows those rows with `niceProvided: true`; use one of their vendors:
+
+```json
+{
+  "operation": "set_voice_preview",
+  "projectId": "<24-char hex>",
+  "provider": "microsoft",
+  "isNiceProvided": true
+}
+```
+
+A vendor without a NiCE-provided row is refused with the list of vendors that have one.
+
 ### Supported Providers
 
 | Provider     | Connection Type          |

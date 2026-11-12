@@ -284,13 +284,7 @@ function mmShape(type: string | undefined, id: string, label: string): string {
 // drives the drawn SVG in the HTML legend; `shape`/`meaning` are the text form
 // used in the returned `legend` rows and for terminal/inline display.
 export type LegendKind =
-  | "start"
-  | "agent"
-  | "branch"
-  | "step"
-  | "end"
-  | "seq"
-  | "contains";
+  "start" | "agent" | "branch" | "step" | "end" | "seq" | "contains";
 export interface LegendRow {
   kind: LegendKind;
   shape: string;
@@ -483,6 +477,19 @@ function esc(s: string): string {
 }
 
 /**
+ * Renderer config shared by the inlined and CDN loaders. mermaid 12 switched
+ * the default layout to ELK and the default look to `neo`; pin dagre + classic
+ * so branches keep the left→right placement `chartToMermaid` is tuned for.
+ * Keep the CDN major in `chartToHtml` in step with the bundled devDependency.
+ */
+const MERMAID_CONFIG = JSON.stringify({
+  startOnLoad: false,
+  theme: "neutral",
+  layout: "dagre",
+  look: "classic",
+});
+
+/**
  * Build a self-contained HTML page rendering the flow as a mermaid graph, with
  * the ASCII tree as an offline fallback. Deterministic: same chart in, same
  * page out. Intended to be written to a tmp file and opened in a browser —
@@ -517,7 +524,7 @@ export function chartToHtml(
     ? `<script>${opts.mermaidJs.replace(/<\/script/gi, "<\\/script")}</script>
 <script>
   try {
-    mermaid.initialize({ startOnLoad: false, theme: "neutral" });
+    mermaid.initialize(${MERMAID_CONFIG});
     mermaid.run();
   } catch (e) {
     document.querySelector(".diagram").innerHTML =
@@ -526,10 +533,10 @@ export function chartToHtml(
 </script>`
     : `<script type="module">
   try {
-    const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
+    const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@12/dist/mermaid.esm.min.mjs");
     // Import is async and may resolve after load, so drive rendering
     // explicitly instead of relying on startOnLoad.
-    mermaid.initialize({ startOnLoad: false, theme: "neutral" });
+    mermaid.initialize(${MERMAID_CONFIG});
     await mermaid.run();
   } catch (e) {
     document.querySelector(".diagram").innerHTML =

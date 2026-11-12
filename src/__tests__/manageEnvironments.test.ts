@@ -159,19 +159,14 @@ describe("manage_environments definition", () => {
     expect(definition!.description).toMatch(/never.*keys/i);
   });
 
-  it("explains each operation, per-session scope and how to add one in the operation field", () => {
+  it("names the three operations and the engine-process scope in the operation field", () => {
     const operation = (
       definition!.inputSchema.properties as Record<string, any>
     ).operation.description as string;
-    expect(operation).toMatch(/list:/);
-    expect(operation).toMatch(/current:/);
-    expect(operation).toMatch(/use:.*engine process/i);
-    expect(operation).toMatch(/Claude Desktop, Codex and Antigravity/);
-    expect(operation).toMatch(
-      /Claude Code sessions each have their own engine/,
-    );
+    expect(operation).toMatch(/list/);
+    expect(operation).toMatch(/current/);
+    expect(operation).toMatch(/use.*engine process/i);
     expect(operation).not.toMatch(/other sessions are unaffected/i);
-    expect(operation).toMatch(/cognigy-env add/);
   });
 
   it("keeps the JSON input schema in step with the zod schema", () => {

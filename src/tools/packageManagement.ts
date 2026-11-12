@@ -35,6 +35,13 @@ const EXPORTABLE_PACKAGE_TYPES = new Set([
   "playbook",
   "agentAssistConfig",
   "aiAgent",
+  // AI Agents (service-agents) and their components; service-resources
+  // packages them (externalModels/aiAgentV2*Model.ts).
+  "aiAgentV2",
+  "aiAgentV2Tool",
+  "aiAgentV2Skill",
+  "aiAgentV2McpServer",
+  "aiAgentV2Persona",
   "handoverProvider",
   "simulation",
 ]);

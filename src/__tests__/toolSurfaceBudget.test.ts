@@ -10,10 +10,14 @@ import { tools } from "../tools/definitions.js";
 import { SERVER_INSTRUCTIONS } from "../instructions.js";
 
 const MAX_DESCRIPTION_CHARS = 1000;
-const MAX_TOTAL_DESCRIPTION_CHARS = 12_000;
+// Raised from 12k for AI Agents (check_capabilities, manage_agent,
+// manage_agent_components): three tools for a second agent kind, agreed with
+// the plugin owner. Workflow prose still belongs in the skills.
+const MAX_TOTAL_DESCRIPTION_CHARS = 15_000;
 // Raised from 60k when manage_a2a_server, the a2a tool config and the Bedrock
-// fields landed: that growth is schema structure, not prose.
-const MAX_TOTAL_DEFINITION_CHARS = 70_000;
+// fields landed, and from 70k for the AI Agent tools' settings schemas: that
+// growth is schema structure, not prose.
+const MAX_TOTAL_DEFINITION_CHARS = 80_000;
 const MAX_FIELD_DESCRIPTION_CHARS = 450;
 const MAX_INSTRUCTIONS_CHARS = 2_000;
 

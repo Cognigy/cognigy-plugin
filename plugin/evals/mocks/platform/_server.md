@@ -20,6 +20,9 @@ tools:
     audit_voice_agent,
     manage_snapshots,
     manage_a2a_server,
+    check_capabilities,
+    manage_agent,
+    manage_agent_components,
     manage_environments,
   ]
 abort_when: Never abort the run.
@@ -41,6 +44,17 @@ The tenant contains exactly this, and stays consistent with earlier calls in the
   Gateway endpoint "ep-voice"; its voice settings use defaults (no barge-in, no
   silence timeout, no fallback handover).
 - No knowledge stores, no Webchat endpoints, no snapshots, no packages.
+- check_capabilities returns { aiAgents: "available", customSystemPrompt: "available" }.
+  The two agents above are legacy AI Agents: list_resources { resourceType: "agent" }
+  returns them with legacy: true and use { aiAgentId }, plus _hints.action "This
+  project has only legacy AI Agents: build a new agent here with create_ai_agent
+  { legacy: true }, unless the user asked for one built with manage_agent." Agents created with manage_agent
+  get ids like "60d5ec49f1a2c8b1a4e0f101" and are returned with use { agentId }.
+- manage_agent create without projectId makes a new project named after the agent,
+  id "proj-new-1", and returns projectId "proj-new-1" with createdProject: true.
+  Every new agent gets a brand persona, returned as persona { referenceId, name,
+  created }: the project's first one, or a new default "NiCE" (created: true) in a
+  project without one, such as a new project.
 - manage_environments: the defined environments are exactly "trial"
   (https://api-trial.cognigy.ai), "app" (https://api-app.cognigy.ai) and "tenant-n"
   (https://api-tenant-n.cognigy.ai). The session starts on "app". `list` returns

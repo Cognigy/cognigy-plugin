@@ -70,7 +70,10 @@ export const NODE_REGISTRY: Record<string, NodeRegistryEntry> = {
       "buttons",
       "gallery",
       "list",
-      "validation",
+      "storeResultInContext",
+      "contextKey",
+      "storeInContactProfile",
+      "profileKey",
       "resultLocation",
       "data",
     ],
@@ -104,8 +107,9 @@ export const NODE_REGISTRY: Record<string, NodeRegistryEntry> = {
     category: "data",
     summary: "Store a key-value pair in the session context object",
     placement: "flow",
-    configKeys: ["key", "value", "contextEntries"],
+    configKeys: ["key", "value", "mode", "contextEntries"],
     requiredConfigKeys: ["key", "value"],
+    allowedConfigValues: { mode: ["simple", "array"] },
   },
 
   code: {
@@ -309,6 +313,36 @@ export const NODE_REGISTRY: Record<string, NodeRegistryEntry> = {
       "errorMessage",
     ],
     requiredConfigKeys: ["prompt"],
+  },
+
+  continueToAgent: {
+    type: "agentV2ContinueToAgent",
+    extension: "@cognigy/basic-nodes",
+    category: "service",
+    summary:
+      "Continue to AI Agent — the last node of an AI Agent's pre-turn hook Flow: hands the message (text, default {{input.text}}), its data and optional turnContext (label → value pairs the agent sees with the message) back to the agent. Without it the agent gives no answer.",
+    placement: "flow",
+    configKeys: ["text", "dataMode", "customData", "turnContext"],
+    requiredConfigKeys: [],
+    allowedConfigValues: { dataMode: ["forward", "custom"] },
+  },
+
+  toolResult: {
+    type: "agentV2ResolveToolAction",
+    extension: "@cognigy/basic-nodes",
+    category: "service",
+    summary:
+      "Tool Result — ends a Flow run by an AI Agent's Execute Tool Flow tool: its answer (CognigyScript, required) is what the agent's tool call returns. The call's arguments arrive in the Flow as input.data.toolArgs. Only in a Flow made with manage_agent create_flow { flowType: 'tool' }; nothing after it runs.",
+    placement: "flow",
+    configKeys: ["answer", "shareConversationHistory"],
+    requiredConfigKeys: ["answer"],
+    allowedConfigValues: {
+      shareConversationHistory: [
+        "lastExchangeOnly",
+        "fullConversation",
+        "none",
+      ],
+    },
   },
 
   wait: {
