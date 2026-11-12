@@ -3288,7 +3288,26 @@ describe("ToolHandlers v2", () => {
       expect(result.nodeId).toBe(codeNodeId);
       expect(api.post).toHaveBeenCalledTimes(1);
       expect(result._hints?.warning).toContain("fetch()/XMLHttpRequest");
-      expect(result._hints?.action).toContain("manage_flow_nodes update");
+      expect(result._hints?.action).toBe(
+        "The node was created. If the flagged call is real, replace it with manage_flow_nodes update.",
+      );
+    });
+
+    it("create asks to reformat code that only breaks readability", async () => {
+      api.post.mockResolvedValueOnce({ _id: codeNodeId, parentId: toolNodeId });
+      const result = await h.handleToolCall("manage_flow_nodes", {
+        operation: "create",
+        flowId: ID.flow,
+        parentNodeId: toolNodeId,
+        mode: "appendChild",
+        nodeType: "code",
+        label: "Lookup",
+        config: { code: "input.a = 1; input.b = 2; input.c = 3;" },
+      });
+      expect(result._hints?.warning).toContain("one statement per line");
+      expect(result._hints?.action).toBe(
+        "The node was created. Reformat the code one statement per line, or split it into smaller nodes with manage_flow_nodes update.",
+      );
     });
 
     it("create stays quiet for code the runtime supports", async () => {

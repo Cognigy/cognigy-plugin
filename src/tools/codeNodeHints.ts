@@ -43,13 +43,15 @@ const CAVEAT =
 
 /**
  * Blanks comments, string/template literal contents and regex literals so text
- * is not read as code. A regex literal is a `/…/` that follows an operator or
- * opening bracket (so `a / b / c` stays division).
+ * is not read as code. Blanking keeps every newline and the line lengths, so
+ * the per-line readability checks see the original line structure. A regex
+ * literal is a `/…/` that follows an operator, an opening bracket or a keyword
+ * such as `return` (so `a / b / c` and `{ … } / 2` stay division).
  */
 const executableOnly = (code: string): string =>
   code.replace(
-    /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`|(?<=[=(,:[!&|?{};]\s*)\/(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n[])+\/[a-z]*/g,
-    " ",
+    /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`|(?<=(?:[=(,:[!&|?{;+\-*%<>~^]|(?<![\w$.])(?:return|typeof|instanceof|in|of|new|delete|void|throw|case|do|else|yield|await))\s*)\/(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n[])+\/[a-z]*/g,
+    (m) => m.replace(/[^\n]/g, " "),
   );
 
 // Readability ceilings (github issue #62). Humans review and maintain the
@@ -57,55 +59,77 @@ const executableOnly = (code: string): string =>
 const MAX_LINES = 60;
 const MAX_LINE_CHARS = 160;
 
+/**
+ * Statements on one line of executable text: the non-empty `;`-separated
+ * segments once brace-free `(…)` groups (`for (…; …; …)` headers, call
+ * arguments) and type literals (`{ name: string; price: number }` after `:`,
+ * `<`, `type X =` or `interface X`) are dropped. Executable blocks such as
+ * `if (x) { a(); b(); c(); }` keep their statements.
+ */
+function statementCount(line: string): number {
+  let out = line;
+  for (let prev = ""; prev !== out;) {
+    prev = out;
+    out = out
+      .replace(/\([^(){}]*\)/g, " ")
+      .replace(
+        /(?:[:<]|\btype\s+[\w$]+(?:<[^<>]*>)?\s*=|\binterface\s+[\w$]+[^{]*)\s*\{[^{}]*\}/g,
+        " ",
+      );
+  }
+  return out.split(";").filter((s) => /[^\s{}]/.test(s)).length;
+}
+
 /** Sentences about code that is too long or crammed onto too few lines. */
 function readabilityWarnings(code: string): string[] {
   const hints: string[] = [];
-  const lines = code.split("\n");
-  const nonBlank = lines.filter((l) => l.trim().length > 0).length;
+  const nonBlank = code.split("\n").filter((l) => l.trim().length > 0).length;
   if (nonBlank > MAX_LINES) {
     hints.push(
       `This Code node is ${nonBlank} lines — split it into smaller, separately labelled nodes (aim for under ${MAX_LINES}) so reviewers can follow it.`,
     );
   }
-  // Semicolons are counted on the executable text with single-line brace
-  // groups removed, so string and regex contents and type-member separators
-  // (`{ name: string; price: number }`) don't count; a line with three or
-  // more then chains several statements.
-  const withoutInlineBraces = (line: string): string => {
-    let out = line;
-    for (let prev = ""; prev !== out; ) {
-      prev = out;
-      out = out.replace(/\{[^{}]*\}/g, " ");
-    }
-    return out;
-  };
   const crammed = executableOnly(code)
     .split("\n")
-    .some(
-      (l) =>
-        l.length > MAX_LINE_CHARS ||
-        (withoutInlineBraces(l).match(/;/g) ?? []).length >= 3,
-    );
+    .some((l) => l.length > MAX_LINE_CHARS || statementCount(l) >= 3);
   if (crammed) {
     hints.push(
-      "The code has lines that chain several statements or run past 160 characters — format it like a source file: one statement per line, 2-space indentation, blank lines between steps.",
+      `The code has lines that chain several statements or run past ${MAX_LINE_CHARS} characters — format it like a source file: one statement per line, 2-space indentation, blank lines between steps.`,
     );
   }
   return hints;
 }
 
+function analyze(code: string) {
+  const executable = executableOnly(code);
+  return {
+    runtime: RULES.filter((r) => r.pattern.test(executable)).map((r) => r.hint),
+    readability: readabilityWarnings(code),
+  };
+}
+
 /**
- * Sentences for `_hints.warning` about runtime APIs the code uses but the
- * Code Node runtime does not have, plus readability ceilings it exceeds;
- * empty when nothing was found.
+ * Sentences for `_hints.warning`: readability ceilings the code exceeds, then
+ * runtime APIs it uses but the Code Node runtime does not have, followed by
+ * the caveat that applies only to those; empty when nothing was found.
  */
 export function codeNodeWarnings(code: string): string[] {
-  const executable = executableOnly(code);
-  const hints = RULES.filter((r) => r.pattern.test(executable)).map(
-    (r) => r.hint,
-  );
-  return [
-    ...(hints.length > 0 ? [...hints, CAVEAT] : []),
-    ...readabilityWarnings(code),
-  ];
+  const { runtime, readability } = analyze(code);
+  return [...readability, ...(runtime.length > 0 ? [...runtime, CAVEAT] : [])];
+}
+
+/**
+ * The fix for the warnings above, as a clause the caller finishes with the
+ * tool to use ("… with another update."); empty when nothing was found.
+ */
+export function codeNodeFix(code: string): string {
+  const { runtime, readability } = analyze(code);
+  if (runtime.length > 0 && readability.length > 0) {
+    return "If the flagged call is real, replace it, and reformat or split the code";
+  }
+  if (runtime.length > 0) return "If the flagged call is real, replace it";
+  if (readability.length > 0) {
+    return "Reformat the code one statement per line, or split it into smaller nodes";
+  }
+  return "";
 }

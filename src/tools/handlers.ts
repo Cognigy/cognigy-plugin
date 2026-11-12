@@ -37,7 +37,7 @@ import {
   invalidConfigValues,
   supportedNodeTypes,
 } from "./nodeRegistry.js";
-import { codeNodeWarnings } from "./codeNodeHints.js";
+import { codeNodeFix, codeNodeWarnings } from "./codeNodeHints.js";
 import {
   evaluateChecks,
   summarize,
@@ -6382,9 +6382,13 @@ export class ToolHandlers {
         },
       };
       // Hints about runtime APIs the pre/post-process code uses but the Code
-      // Node runtime does not have (the code was written regardless).
-      for (const code of [cfg.preProcessCode, cfg.postProcessCode]) {
-        if (code) parameterWarnings.push(...codeNodeWarnings(code));
+      // Node runtime does not have, and readability ceilings it exceeds (the
+      // code was written regardless). Prefixed with the field to fix.
+      for (const field of ["preProcessCode", "postProcessCode"] as const) {
+        const warnings = cfg[field] ? codeNodeWarnings(cfg[field]) : [];
+        if (warnings.length > 0) {
+          parameterWarnings.push(`${field}: ${warnings.join(" ")}`);
+        }
       }
       return parameterWarnings.length > 0
         ? withHints(createdHttp, { warning: parameterWarnings.join(" ") })
@@ -6746,11 +6750,15 @@ export class ToolHandlers {
     };
 
     // Hints about runtime APIs the written pre/post-process code uses but
-    // the Code Node runtime does not have.
+    // the Code Node runtime does not have, and readability ceilings it
+    // exceeds. Prefixed with the field to fix.
     for (const field of ["preProcessCode", "postProcessCode"] as const) {
       const code = cfg?.[field];
       if (typeof code === "string" && updatedFields.includes(field)) {
-        parameterWarnings.push(...codeNodeWarnings(code));
+        const warnings = codeNodeWarnings(code);
+        if (warnings.length > 0) {
+          parameterWarnings.push(`${field}: ${warnings.join(" ")}`);
+        }
       }
     }
 
@@ -7040,8 +7048,7 @@ export class ToolHandlers {
           return withRenderSuggestion(
             withHints(result, {
               warning: codeWarnings.join(" "),
-              action:
-                "The node was created. If the flagged call is real, replace it with manage_flow_nodes update.",
+              action: `The node was created. ${codeNodeFix(data.config?.code ?? "")} with manage_flow_nodes update.`,
             }),
             flowId,
             nodeId,
@@ -7233,8 +7240,7 @@ export class ToolHandlers {
           return withRenderSuggestion(
             withHints(result, {
               warning: codeWarnings.join(" "),
-              action:
-                "The node was updated. If the flagged call is real, replace it with another update.",
+              action: `The node was updated. ${codeNodeFix(data.config?.code ?? "")} with another update.`,
             }),
             flowId,
             data.nodeId,

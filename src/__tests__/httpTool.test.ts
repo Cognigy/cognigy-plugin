@@ -88,6 +88,25 @@ describe("create_tool – HTTP tool path", () => {
     expect(result._hints?.warning).toContain("fetch()/XMLHttpRequest");
   });
 
+  it("names the field for each pre/post-process readability warning", async () => {
+    mockFlowWithJobNode();
+    mockPostSequence(
+      MOCK_IDS.toolNode,
+      MOCK_IDS.resolveNode,
+      MOCK_IDS.preNode,
+      MOCK_IDS.httpNode,
+      MOCK_IDS.postNode,
+    );
+    const crammed = "input.a = 1; input.b = 2; input.c = 3;";
+    const result = await h.handleToolCall(
+      "create_tool",
+      baseArgs({ preProcessCode: crammed, postProcessCode: crammed }),
+    );
+    const warning: string = result._hints?.warning ?? "";
+    expect(warning).toContain("preProcessCode: The code has lines");
+    expect(warning).toContain("postProcessCode: The code has lines");
+  });
+
   it("creates HTTP tool with basic GET request (url only)", async () => {
     mockFlowWithJobNode();
     mockPostSequence(
