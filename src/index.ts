@@ -8,15 +8,36 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 
 import { loadConfig } from "./config.js";
-import { CognigyApiClient } from "./api/client.js";
-import { ToolHandlers } from "./tools/handlers.js";
-import { agentsV2BaseUrl } from "./tools/agentsV2.js";
+import {
+  buildRuntime,
+  Environments,
+  tagWithEnvironment,
+  withEnvironmentField,
+  type ResolvedEnvironment,
+} from "./environments.js";
 import { tools } from "./tools/definitions.js";
 import { SERVER_INSTRUCTIONS } from "./instructions.js";
 import { logger } from "./utils/logger.js";
 import { RateLimiter } from "./utils/rateLimiter.js";
 import { getSessionId, getTaskId, runWithTask } from "./utils/actorContext.js";
-import { logProxyConfiguration } from "./utils/proxy.js";
+
+function errorResult(error: any, environment?: string) {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify({
+          ...(environment ? { _environment: environment } : {}),
+          error: error.message,
+          status: error.status,
+          code: error.code,
+          traceId: error.traceId,
+        }),
+      },
+    ],
+    isError: true,
+  };
+}
 
 async function main() {
   try {
@@ -26,20 +47,16 @@ async function main() {
       name: config.serverName,
       version: config.serverVersion,
     });
-    logProxyConfiguration(config.apiBaseUrl);
 
-    const apiClient = new CognigyApiClient({
-      baseUrl: config.apiBaseUrl,
-      apiKey: config.apiKey,
-      auditAttribution: config.auditAttribution,
-    });
-    const toolHandlers = new ToolHandlers(
-      apiClient,
-      config.endpointBaseUrl,
-      config.webchatBaseUrl,
-      config.staticFilesBaseUrl,
-      agentsV2BaseUrl(config.apiBaseUrl),
-    );
+    // The plugin's own credentials are the `default` environment; extra ones
+    // come from ~/.cognigy-plugin/environments.json (see environments.ts).
+    const environments = new Environments(buildRuntime(config));
+    const extra = environments.names();
+    if (extra.length > 0) {
+      logger.info("Extra Cognigy environments configured", {
+        environments: extra,
+      });
+    }
     const rateLimiter = new RateLimiter(config.rateLimit);
 
     const server = new Server(
@@ -53,12 +70,29 @@ async function main() {
       },
     );
 
-    server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
+    server.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools: withEnvironmentField(tools, environments.names()),
+    }));
 
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
+      // `environment` is ours, not the tool's: take it off before dispatch.
+      const { environment, ...toolArgs } = (args ?? {}) as Record<
+        string,
+        unknown
+      >;
+      let target: ResolvedEnvironment;
+      try {
+        target = environments.resolve(environment);
+      } catch (error: any) {
+        logger.warn(`Tool call without a usable environment: ${name}`, {
+          error: error.message,
+        });
+        return errorResult(error);
+      }
+      const tag = target.multiple ? target.name : undefined;
 
-      const rateLimitKey = config.apiKey.substring(0, 10);
+      const rateLimitKey = target.runtime.config.apiKey.substring(0, 10);
       if (!rateLimiter.check(rateLimitKey)) {
         // Logged with the tool name: a rejected call never reaches the
         // `Tool call received` line below, so without this a throttling
@@ -81,31 +115,23 @@ async function main() {
         logger.info(`Tool call received: ${name}`, {
           taskId: getTaskId(),
           sessionId: getSessionId(),
+          ...(tag ? { environment: tag } : {}),
         });
         try {
-          const result = await toolHandlers.handleToolCall(name, args || {});
+          const result = await target.runtime.toolHandlers.handleToolCall(
+            name,
+            toolArgs,
+          );
+          const tagged = tag ? tagWithEnvironment(result, tag) : result;
           return {
-            content: [{ type: "text" as const, text: JSON.stringify(result) }],
+            content: [{ type: "text" as const, text: JSON.stringify(tagged) }],
           };
         } catch (error: any) {
           logger.error("Tool execution error", {
             tool: name,
             error: error.message,
           });
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
-                  error: error.message,
-                  status: error.status,
-                  code: error.code,
-                  traceId: error.traceId,
-                }),
-              },
-            ],
-            isError: true,
-          };
+          return errorResult(error, tag);
         }
       });
     });

@@ -6,6 +6,7 @@
   "type": "module",
   "bin": {
     "cognigy-setup": "dist/setup.js",
+    "cognigy-envs": "dist/envs.js",
     "cognigy-mcp": "dist/index.js"
   },
   "repository": {
