@@ -1,5 +1,5 @@
 import { describe, it, expect } from "@jest/globals";
-import { codeNodeFix, codeNodeWarnings } from "../tools/codeNodeHints.js";
+import { codeNodeHints, codeNodeWarnings } from "../tools/codeNodeHints.js";
 
 describe("codeNodeWarnings", () => {
   it.each([
@@ -108,6 +108,8 @@ describe("codeNodeWarnings", () => {
         "an arrow function body",
         "const f = () => { input.a = 1; input.b = 2; input.c = 3; };",
       ],
+      ["a case block", "case 1: { a(); b(); c(); break; }"],
+      ["a default block", "default: { a(); b(); c(); }"],
       [
         "statements without a trailing semicolon",
         "input.a = 1; input.b = 2; input.c = 3",
@@ -144,11 +146,15 @@ describe("codeNodeWarnings", () => {
       expect(codeNodeWarnings(code)).toEqual([]);
     });
 
-    it("keeps division after a closing brace, so fetch() is still found", () => {
-      const hints = codeNodeWarnings(
+    it.each([
+      [
+        "a closing brace",
         "const result = { value: 1 } / fetch(input.url) / 2;",
-      );
-      expect(hints[0]).toContain("fetch()/XMLHttpRequest");
+      ],
+      ["postfix ++", "const r = n++ / fetch(u) / 2;"],
+      ["postfix --", "const r = n-- / fetch(u) / 2;"],
+    ])("keeps division after %s, so fetch() is still found", (_name, code) => {
+      expect(codeNodeWarnings(code)[0]).toContain("fetch()/XMLHttpRequest");
     });
 
     it("flags a line past 160 characters, not at 160", () => {
@@ -171,7 +177,7 @@ describe("codeNodeWarnings", () => {
     });
   });
 
-  describe("codeNodeFix", () => {
+  describe("codeNodeHints fix", () => {
     it.each([
       ["nothing", "input.a = 1;", ""],
       [
@@ -190,7 +196,7 @@ describe("codeNodeWarnings", () => {
         "and reformat or split",
       ],
     ])("names the fix for %s", (_name, code, expected) => {
-      const fix = codeNodeFix(code);
+      const { fix } = codeNodeHints(code);
       if (expected) expect(fix).toContain(expected);
       else expect(fix).toBe("");
     });

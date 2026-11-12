@@ -46,11 +46,11 @@ const CAVEAT =
  * is not read as code. Blanking keeps every newline and the line lengths, so
  * the per-line readability checks see the original line structure. A regex
  * literal is a `/…/` that follows an operator, an opening bracket or a keyword
- * such as `return` (so `a / b / c` and `{ … } / 2` stay division).
+ * such as `return` (so `a / b / c`, `{ … } / 2` and `n++ / 2` stay division).
  */
 const executableOnly = (code: string): string =>
   code.replace(
-    /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`|(?<=(?:[=(,:[!&|?{;+\-*%<>~^]|(?<![\w$.])(?:return|typeof|instanceof|in|of|new|delete|void|throw|case|do|else|yield|await))\s*)\/(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n[])+\/[a-z]*/g,
+    /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`|(?<=(?:[=(,:[!&|?{;*%<>~^]|(?<![+-])[+-]|(?<![\w$.])(?:return|typeof|instanceof|in|of|new|delete|void|throw|case|do|else|yield|await))\s*)\/(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n[])+\/[a-z]*/g,
     (m) => m.replace(/[^\n]/g, " "),
   );
 
@@ -62,8 +62,9 @@ const MAX_LINE_CHARS = 160;
 /**
  * Statements on one line of executable text: the non-empty `;`-separated
  * segments once brace-free `(…)` groups (`for (…; …; …)` headers, call
- * arguments) and type literals (`{ name: string; price: number }` after `:`,
- * `<`, `type X =` or `interface X`) are dropped. Executable blocks such as
+ * arguments) and type literals (`{ name: string; price: number }` after `:`
+ * that is not a `case`/`default` label, `<`, `type X =` or `interface X`) are
+ * dropped. Executable blocks such as
  * `if (x) { a(); b(); c(); }` keep their statements.
  */
 function statementCount(line: string): number {
@@ -73,7 +74,7 @@ function statementCount(line: string): number {
     out = out
       .replace(/\([^(){}]*\)/g, " ")
       .replace(
-        /(?:[:<]|\btype\s+[\w$]+(?:<[^<>]*>)?\s*=|\binterface\s+[\w$]+[^{]*)\s*\{[^{}]*\}/g,
+        /(?:(?<!\b(?:case\b[^:]*|default\s*)):|<|\btype\s+[\w$]+(?:<[^<>]*>)?\s*=|\binterface\s+[\w$]+[^{]*)\s*\{[^{}]*\}/g,
         " ",
       );
   }
@@ -100,36 +101,41 @@ function readabilityWarnings(code: string): string[] {
   return hints;
 }
 
-function analyze(code: string) {
+/**
+ * One pass over the code. `warnings` are the sentences for `_hints.warning`:
+ * readability ceilings the code exceeds, then runtime APIs it uses but the
+ * Code Node runtime does not have, followed by the caveat that applies only to
+ * those. `fix` names the matching next step as a clause the caller finishes
+ * with the tool to use ("… with another update."). Both empty when nothing
+ * was found.
+ */
+export function codeNodeHints(code: string): {
+  warnings: string[];
+  fix: string;
+} {
   const executable = executableOnly(code);
+  const runtime = RULES.filter((r) => r.pattern.test(executable)).map(
+    (r) => r.hint,
+  );
+  const readability = readabilityWarnings(code);
+  const replace = "If the flagged call is real, replace it";
+  const fix =
+    runtime.length > 0 && readability.length > 0
+      ? `${replace}, and reformat or split the code`
+      : runtime.length > 0
+        ? replace
+        : readability.length > 0
+          ? "Reformat the code one statement per line, or split it into smaller nodes"
+          : "";
   return {
-    runtime: RULES.filter((r) => r.pattern.test(executable)).map((r) => r.hint),
-    readability: readabilityWarnings(code),
+    warnings: [
+      ...readability,
+      ...(runtime.length > 0 ? [...runtime, CAVEAT] : []),
+    ],
+    fix,
   };
 }
 
-/**
- * Sentences for `_hints.warning`: readability ceilings the code exceeds, then
- * runtime APIs it uses but the Code Node runtime does not have, followed by
- * the caveat that applies only to those; empty when nothing was found.
- */
-export function codeNodeWarnings(code: string): string[] {
-  const { runtime, readability } = analyze(code);
-  return [...readability, ...(runtime.length > 0 ? [...runtime, CAVEAT] : [])];
-}
-
-/**
- * The fix for the warnings above, as a clause the caller finishes with the
- * tool to use ("… with another update."); empty when nothing was found.
- */
-export function codeNodeFix(code: string): string {
-  const { runtime, readability } = analyze(code);
-  if (runtime.length > 0 && readability.length > 0) {
-    return "If the flagged call is real, replace it, and reformat or split the code";
-  }
-  if (runtime.length > 0) return "If the flagged call is real, replace it";
-  if (readability.length > 0) {
-    return "Reformat the code one statement per line, or split it into smaller nodes";
-  }
-  return "";
-}
+/** The `warnings` of {@link codeNodeHints}. */
+export const codeNodeWarnings = (code: string): string[] =>
+  codeNodeHints(code).warnings;

@@ -37,7 +37,7 @@ import {
   invalidConfigValues,
   supportedNodeTypes,
 } from "./nodeRegistry.js";
-import { codeNodeFix, codeNodeWarnings } from "./codeNodeHints.js";
+import { codeNodeHints, codeNodeWarnings } from "./codeNodeHints.js";
 import {
   evaluateChecks,
   summarize,
@@ -7040,15 +7040,15 @@ export class ToolHandlers {
 
         // Hints about runtime APIs the code uses but the Code Node runtime
         // does not have; the node was created regardless.
-        const codeWarnings =
+        const { warnings: codeWarnings, fix: codeFix } =
           entry.type === "code" && typeof data.config?.code === "string"
-            ? codeNodeWarnings(data.config.code)
-            : [];
+            ? codeNodeHints(data.config.code)
+            : { warnings: [], fix: "" };
         if (codeWarnings.length > 0) {
           return withRenderSuggestion(
             withHints(result, {
               warning: codeWarnings.join(" "),
-              action: `The node was created. ${codeNodeFix(data.config?.code ?? "")} with manage_flow_nodes update.`,
+              action: `The node was created. ${codeFix} with manage_flow_nodes update.`,
             }),
             flowId,
             nodeId,
@@ -7206,10 +7206,10 @@ export class ToolHandlers {
 
         // Hints about runtime APIs the code uses but the Code Node runtime
         // does not have; the node was updated regardless.
-        const codeWarnings =
+        const { warnings: codeWarnings, fix: codeFix } =
           nodeType === "code" && typeof data.config?.code === "string"
-            ? codeNodeWarnings(data.config.code)
-            : [];
+            ? codeNodeHints(data.config.code)
+            : { warnings: [], fix: "" };
 
         // The PATCH response echoes the input config without the server-computed
         // `hasError` (transpilation runs after the write). When code was edited,
@@ -7240,7 +7240,7 @@ export class ToolHandlers {
           return withRenderSuggestion(
             withHints(result, {
               warning: codeWarnings.join(" "),
-              action: `The node was updated. ${codeNodeFix(data.config?.code ?? "")} with another update.`,
+              action: `The node was updated. ${codeFix} with another update.`,
             }),
             flowId,
             data.nodeId,
