@@ -1,5 +1,6 @@
 ---
-type: llm
+type: regex
+target: last_message
+pattern: '^(?=[\s\S]*\b(?:British|en-GB)\b)(?=[\s\S]*\b(?:two|2)\b[^.\n]{0,40}\bwords?\b)'
+flags: i
 ---
-
-PASS if the final message to the user says the agent now uses a British (en-GB) female voice from NiCE-provided speech and that an interruption needs at least 2 words, without claiming the endpoint or the persona was changed. FAIL otherwise.
