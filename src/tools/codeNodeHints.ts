@@ -41,21 +41,101 @@ const RULES: { pattern: RegExp; hint: string }[] = [
 const CAVEAT =
   "If the flagged name is a local helper rather than the runtime API, ignore this.";
 
-/** Blanks comments and string/template literal contents so text is not read as code. */
+/**
+ * Blanks comments, string/template literal contents and regex literals so text
+ * is not read as code. Blanking keeps every newline and the line lengths, so
+ * the per-line readability checks see the original line structure. A regex
+ * literal is a `/…/` that follows an operator, an opening bracket or a keyword
+ * such as `return` (so `a / b / c`, `{ … } / 2` and `n++ / 2` stay division).
+ */
 const executableOnly = (code: string): string =>
   code.replace(
-    /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`/g,
-    " ",
+    /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`|(?<=(?:[=(,:[!&|?{;*%<>~^]|(?<![+-])[+-]|(?<![\w$.])(?:return|typeof|instanceof|in|of|new|delete|void|throw|case|do|else|yield|await))\s*)\/(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n[])+\/[a-z]*/g,
+    (m) => m.replace(/[^\n]/g, " "),
   );
 
+// Readability ceilings (github issue #62). Humans review and maintain the
+// generated flow; a Code node past these is hard to read in the Designer.
+const MAX_LINES = 60;
+const MAX_LINE_CHARS = 160;
+
 /**
- * Sentences for `_hints.warning` about runtime APIs the code uses but the
- * Code Node runtime does not have; empty when nothing was found.
+ * Statements on one line of executable text: the non-empty `;`-separated
+ * segments once brace-free `(…)` groups (`for (…; …; …)` headers, call
+ * arguments) and type literals (`{ name: string; price: number }` after `:`
+ * that is not a `case`/`default` label, `<`, `type X =` or `interface X`) are
+ * dropped. Executable blocks such as
+ * `if (x) { a(); b(); c(); }` keep their statements.
  */
-export function codeNodeWarnings(code: string): string[] {
+function statementCount(line: string): number {
+  let out = line;
+  for (let prev = ""; prev !== out;) {
+    prev = out;
+    out = out
+      .replace(/\([^(){}]*\)/g, " ")
+      .replace(
+        /(?:(?<!\b(?:case\b[^:]*|default\s*)):|<|\btype\s+[\w$]+(?:<[^<>]*>)?\s*=|\binterface\s+[\w$]+[^{]*)\s*\{[^{}]*\}/g,
+        " ",
+      );
+  }
+  return out.split(";").filter((s) => /[^\s{}]/.test(s)).length;
+}
+
+/** Sentences about code that is too long or crammed onto too few lines. */
+function readabilityWarnings(code: string): string[] {
+  const hints: string[] = [];
+  const nonBlank = code.split("\n").filter((l) => l.trim().length > 0).length;
+  if (nonBlank > MAX_LINES) {
+    hints.push(
+      `This Code node is ${nonBlank} lines — split it into smaller, separately labelled nodes (aim for under ${MAX_LINES}) so reviewers can follow it.`,
+    );
+  }
+  const crammed = executableOnly(code)
+    .split("\n")
+    .some((l) => l.length > MAX_LINE_CHARS || statementCount(l) >= 3);
+  if (crammed) {
+    hints.push(
+      `The code has lines that chain several statements or run past ${MAX_LINE_CHARS} characters — format it like a source file: one statement per line, 2-space indentation, blank lines between steps.`,
+    );
+  }
+  return hints;
+}
+
+/**
+ * One pass over the code. `warnings` are the sentences for `_hints.warning`:
+ * readability ceilings the code exceeds, then runtime APIs it uses but the
+ * Code Node runtime does not have, followed by the caveat that applies only to
+ * those. `fix` names the matching next step as a clause the caller finishes
+ * with the tool to use ("… with another update."). Both empty when nothing
+ * was found.
+ */
+export function codeNodeHints(code: string): {
+  warnings: string[];
+  fix: string;
+} {
   const executable = executableOnly(code);
-  const hints = RULES.filter((r) => r.pattern.test(executable)).map(
+  const runtime = RULES.filter((r) => r.pattern.test(executable)).map(
     (r) => r.hint,
   );
-  return hints.length > 0 ? [...hints, CAVEAT] : [];
+  const readability = readabilityWarnings(code);
+  const replace = "If the flagged call is real, replace it";
+  const fix =
+    runtime.length > 0 && readability.length > 0
+      ? `${replace}, and reformat or split the code`
+      : runtime.length > 0
+        ? replace
+        : readability.length > 0
+          ? "Reformat the code one statement per line, or split it into smaller nodes"
+          : "";
+  return {
+    warnings: [
+      ...readability,
+      ...(runtime.length > 0 ? [...runtime, CAVEAT] : []),
+    ],
+    fix,
+  };
 }
+
+/** The `warnings` of {@link codeNodeHints}. */
+export const codeNodeWarnings = (code: string): string[] =>
+  codeNodeHints(code).warnings;
