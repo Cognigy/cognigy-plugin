@@ -1,0 +1,11 @@
+{
+  "input": {
+    "aiAgentId": "agent-new-1",
+    "projectId": "proj-demo",
+    "message": "When will I get my refund after returning an item?"
+  },
+  "output": "{\"aiAgentId\":\"agent-new-1\",\"projectId\":\"proj-demo\",\"reply\":\"Refunds go to your original payment method within 5-7 business days after we receive your return. Please note the refund timing starts when we receive the item, not when you ship it. Is there anything else I can help you with?\",\"status\":\"replied\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:25:05.279Z",
+  "model": "claude-haiku-5-5"
+}

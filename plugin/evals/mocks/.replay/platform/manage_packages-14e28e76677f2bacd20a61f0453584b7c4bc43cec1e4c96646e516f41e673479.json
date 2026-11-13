@@ -1,0 +1,10 @@
+{
+  "input": {
+    "operation": "list_exportable",
+    "projectId": "proj-demo"
+  },
+  "output": "{\"operation\":\"list_exportable\",\"projectId\":\"proj-demo\",\"items\":[],\"total\":0}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:42:07.574Z",
+  "model": "claude-haiku-5-5"
+}

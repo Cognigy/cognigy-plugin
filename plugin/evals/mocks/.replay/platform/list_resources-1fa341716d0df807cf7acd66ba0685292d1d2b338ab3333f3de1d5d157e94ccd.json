@@ -1,0 +1,10 @@
+{
+  "input": {
+    "resourceType": "llm_model",
+    "projectId": "proj-demo"
+  },
+  "output": "{\"items\":[{\"id\":\"llm-gpt4o\",\"name\":\"GPT-4o\",\"provider\":\"openAI\",\"model\":\"gpt-4o\",\"projectId\":\"proj-demo\",\"isDefault\":true,\"connection\":{\"status\":\"working\"}}],\"total\":1}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:42:44.669Z",
+  "model": "claude-haiku-5-5"
+}

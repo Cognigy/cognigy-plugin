@@ -1,0 +1,11 @@
+{
+  "input": {
+    "projectId": "proj-demo",
+    "message": "Hi, what time can I check in?",
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"projectId\":\"proj-demo\",\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"agentName\":\"Harbour Hotel Front Desk\",\"reply\":\"Good question! Standard check-in starts at 3:00 PM. If you'd like to arrive earlier, you can ask at the front desk and we'll let you know what's available.\",\"_meta\":{\"channel\":\"text\",\"turn\":1}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:33:13.182Z",
+  "model": "claude-haiku-5-5"
+}

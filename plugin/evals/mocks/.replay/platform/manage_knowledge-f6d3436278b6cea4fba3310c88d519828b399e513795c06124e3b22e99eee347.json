@@ -1,0 +1,12 @@
+{
+  "input": {
+    "operation": "list_chunks",
+    "knowledgeStoreId": "ks-new-1",
+    "sourceId": "src-new-1",
+    "limit": 5
+  },
+  "output": "{\"items\":[],\"total\":0,\"knowledgeStoreId\":\"ks-new-1\",\"sourceId\":\"src-new-1\",\"sourceStatus\":\"queued\",\"limit\":5}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:21:33.091Z",
+  "model": "claude-haiku-5-5"
+}
