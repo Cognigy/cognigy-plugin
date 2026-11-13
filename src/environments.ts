@@ -94,6 +94,21 @@ export class Environments {
   }
 
   /**
+   * For the server instructions: which URL each name points to, so the model
+   * can map "dev" or "the customer's tenant" to a name before its first call.
+   * Undefined when there is nothing to choose between.
+   */
+  overview(): string | undefined {
+    const state = this.readFile();
+    if (state.state !== "ok" || reservedNameIn(state.file)) return undefined;
+    if (Object.keys(state.file).length === 0) return undefined;
+    return (
+      `COGNIGY ENVIRONMENTS: ${this.describe(state.file)}. ` +
+      `"${DEFAULT_ENVIRONMENT}" is the plugin's own login. Map what the user calls a tenant (e.g. "dev") to a name by its URL; ask when it is unclear.`
+    );
+  }
+
+  /**
    * The environment a call runs on. The file is read on every call (it is
    * tiny), so an environment added or a key rotated in `cognigy-envs` applies
    * to the next call without a restart.

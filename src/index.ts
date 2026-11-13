@@ -64,9 +64,15 @@ async function main() {
       {
         capabilities: { tools: {} },
         // COGNIGY_DEV_NOTICE is set only by scripts/dev-engine.mjs (local dev).
-        instructions: process.env.COGNIGY_DEV_NOTICE
-          ? `${process.env.COGNIGY_DEV_NOTICE}\n\n${SERVER_INSTRUCTIONS}`
-          : SERVER_INSTRUCTIONS,
+        // The environment overview is read once here: a client lists the tools
+        // once too, so both pick up a new environment on the next restart.
+        instructions: [
+          process.env.COGNIGY_DEV_NOTICE,
+          SERVER_INSTRUCTIONS,
+          environments.overview(),
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
       },
     );
 

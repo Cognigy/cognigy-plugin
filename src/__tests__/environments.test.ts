@@ -95,6 +95,25 @@ describe("Environments.resolve with extra environments", () => {
   });
 });
 
+describe("Environments.overview", () => {
+  it("names each environment's URL for the model, never a key", () => {
+    const overview = envs(withTrial).overview() ?? "";
+    expect(overview).toContain("default (https://api-app.cognigy.ai)");
+    expect(overview).toContain("trial (https://api-trial.cognigy.ai)");
+    expect(overview).not.toMatch(/FAKE-/);
+  });
+
+  it("says nothing when there is nothing to choose between", () => {
+    expect(envs(absent).overview()).toBeUndefined();
+    expect(
+      envs(() => ({ state: "invalid", reason: "broken" })).overview(),
+    ).toBeUndefined();
+    expect(
+      envs(() => ({ state: "ok", file: { Default: TRIAL } })).overview(),
+    ).toBeUndefined();
+  });
+});
+
 describe("Environments with an unusable file", () => {
   const invalid = () =>
     ({

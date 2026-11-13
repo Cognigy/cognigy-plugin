@@ -133,7 +133,7 @@ async function startServer(home: string) {
       send({ jsonrpc: "2.0", id, method, params });
     });
 
-  await request("initialize", {
+  const init = await request("initialize", {
     protocolVersion: "2025-03-26",
     capabilities: {},
     clientInfo: { name: "environments-e2e", version: "0.0.0" },
@@ -141,6 +141,7 @@ async function startServer(home: string) {
   send({ jsonrpc: "2.0", method: "notifications/initialized" });
 
   return {
+    instructions: init.result.instructions as string,
     listTools: async () => (await request("tools/list")).result.tools,
     /** tools/call: the parsed JSON text plus the isError flag. */
     call: async (args: Record<string, unknown>) => {
@@ -167,6 +168,7 @@ describe("one environment (no environments.json)", () => {
     "lists the tools unchanged and runs every call on the plugin's own login",
     async () => {
       const server = await startServer(freshHome());
+      expect(server.instructions).not.toContain("COGNIGY ENVIRONMENTS");
       const tools = await server.listTools();
       expect(tools.some((t: any) => t.inputSchema.properties.environment)).toBe(
         false,
@@ -195,6 +197,12 @@ describe("extra environments", () => {
       ),
     );
   }, TIMEOUT_MS * 2);
+
+  it("tells the model which URL each environment points to, never a key", () => {
+    expect(server.instructions).toContain(`default (${defaultApi.url})`);
+    expect(server.instructions).toContain(`trial (${trialApi.url})`);
+    expect(server.instructions).not.toMatch(/FAKE-/);
+  });
 
   it("offers a required environment field on every tool", async () => {
     const tools = await server.listTools();
