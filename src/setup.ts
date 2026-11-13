@@ -531,14 +531,14 @@ function npmLatestVersion(): string | null {
 
 /**
  * Put `cognigy-envs` (the menu for extra Cognigy environments) on the PATH with
- * a global npm install of this package, pinned to this version. Never fatal:
+ * a global npm install of this package, this version unless told otherwise. Never fatal:
  * the npx form below works without it (a global install can need admin rights).
  */
-function installEnvsCommand(): void {
+function installEnvsCommand(version: string = PACKAGE_VERSION): void {
   process.stdout.write(
     dim("\nAdding the cognigy-envs command to your terminal…\n"),
   );
-  const res = runNpm(["install", "-g", `${PKG}@${PACKAGE_VERSION}`], {
+  const res = runNpm(["install", "-g", `${PKG}@${version}`], {
     capture: true,
     timeout: 180_000,
   });
@@ -641,7 +641,9 @@ function runUpdate(): void {
     capture: true,
     timeout: 30_000,
   });
-  if (installed.status === 0) installEnvsCommand();
+  // "latest": the global install also adds cognigy-setup, and running that old
+  // copy's update must not just reinstall its own version.
+  if (installed.status === 0) installEnvsCommand("latest");
   process.stdout.write(
     dim(
       "• Claude Desktop chat connector auto-updates its engine on every restart — nothing to do.\n",

@@ -157,7 +157,10 @@ export class Environments {
       };
     }
 
-    const found = findEnvironmentName(file, wanted);
+    // A hand-edited name can have spaces around it: match it as given first.
+    const found =
+      findEnvironmentName(file, String(requested)) ??
+      findEnvironmentName(file, wanted);
     if (found === undefined) {
       throw new EnvironmentError(
         multiple
@@ -223,6 +226,7 @@ export function withEnvironmentField(
 /** Tags a result with the environment it ran on, so the user can always tell. */
 export function tagWithEnvironment(result: unknown, name: string): unknown {
   return result && typeof result === "object" && !Array.isArray(result)
-    ? { _environment: name, ...result }
+    ? // First for readability, and it wins over a result field of that name.
+      Object.assign({ _environment: name }, result, { _environment: name })
     : result;
 }

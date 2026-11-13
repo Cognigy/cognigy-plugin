@@ -79,6 +79,24 @@ describe("Environments.resolve with extra environments", () => {
     expect(after.config.apiKey).toBe("FAKE-NEW");
   });
 
+  it("matches a hand-edited name with spaces exactly as stored", () => {
+    const padded = {
+      apiBaseUrl: "https://api-acme.cognigy.ai",
+      apiKey: "FAKE-ACME",
+    };
+    const both = envs(() => ({
+      state: "ok",
+      file: { trial: TRIAL, " trial ": padded },
+    }));
+    expect(both.resolve(" trial ").name).toBe(" trial ");
+    expect(both.resolve("trial").name).toBe("trial");
+    const onlyPadded = envs(() => ({
+      state: "ok",
+      file: { " trial ": padded },
+    }));
+    expect(onlyPadded.resolve(" trial ").name).toBe(" trial ");
+  });
+
   it("keeps the default reachable by name", () => {
     expect(envs(withTrial).resolve("default")).toEqual({
       name: "default",
@@ -185,6 +203,12 @@ describe("withEnvironmentField", () => {
 });
 
 describe("tagWithEnvironment", () => {
+  it("cannot be overridden by a field of the same name in the result", () => {
+    const tagged = tagWithEnvironment({ _environment: "acme", ok: 1 }, "trial");
+    expect(tagged).toEqual({ _environment: "trial", ok: 1 });
+    expect(Object.keys(tagged as object)[0]).toBe("_environment");
+  });
+
   it("names the environment on object results only", () => {
     expect(tagWithEnvironment({ ok: true }, "trial")).toEqual({
       _environment: "trial",
