@@ -402,6 +402,22 @@ describe("loadConfigForEnvironment", () => {
     expect(config.apiKey).toBe("FAKE-KEY-123");
   });
 
+  it("warns without pointing at variables it ignores when no host can be derived", () => {
+    const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      loadConfigForEnvironment({
+        ...trial,
+        apiBaseUrl: "https://cognigy.example.com",
+      });
+      const warning = String(spy.mock.calls[0]?.[0]);
+      expect(warning).toContain("Could not derive the endpoint host");
+      expect(warning).toContain("cannot set other hosts yet");
+      expect(warning).not.toContain("COGNIGY_ENDPOINT_BASE_URL");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("derives endpoint, webchat and static hosts from the API host", () => {
     const config = loadConfigForEnvironment(trial);
     expect(config.endpointBaseUrl).toBe("https://endpoint-trial.cognigy.ai");

@@ -257,7 +257,12 @@ export function loadConfig(): Config {
  * level and rate-limit settings are not per-environment and still apply.
  */
 export function loadConfigForEnvironment(entry: EnvironmentEntry): Config {
-  return buildConfig(entry.apiBaseUrl, entry.apiKey, {});
+  return buildConfig(
+    entry.apiBaseUrl,
+    entry.apiKey,
+    {},
+    "Environments from environments.json cannot set other hosts yet.",
+  );
 }
 
 interface HostOverrides {
@@ -271,6 +276,9 @@ function buildConfig(
   apiBaseUrl: string,
   apiKey: string,
   hostOverrides: HostOverrides,
+  /** The last sentence of the "could not derive" warning: how to fix it. */
+  overrideAdvice = "Set COGNIGY_ENDPOINT_BASE_URL (and COGNIGY_WEBCHAT_BASE_URL, " +
+    "COGNIGY_STATIC_FILES_BASE_URL) if your deployment uses other hosts.",
 ): Config {
   const normalizedApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
 
@@ -295,8 +303,7 @@ function buildConfig(
     console.error(
       `[config] Could not derive the endpoint host from ${normalizedApiBaseUrl} ` +
         `(no "api" segment in the hostname); endpoint requests will go to the ` +
-        `API host. Set COGNIGY_ENDPOINT_BASE_URL (and COGNIGY_WEBCHAT_BASE_URL, ` +
-        `COGNIGY_STATIC_FILES_BASE_URL) if your deployment uses other hosts.`,
+        `API host. ${overrideAdvice}`,
     );
   }
 

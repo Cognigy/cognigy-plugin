@@ -636,7 +636,12 @@ function runUpdate(): void {
   // exists, so this never creates a launcher on a machine using neither client.
   if (existsSync(DESKTOP_LAUNCHER_FILE)) writeDesktopLauncher();
   // Refresh the global cognigy-envs only where setup put one; never add it here.
-  if (detectOnPath("cognigy-envs")) installEnvsCommand();
+  // Ask npm, not PATH: under npx the package's own bins are on PATH for the run.
+  const installed = runNpm(["ls", "-g", "--depth=0", PKG], {
+    capture: true,
+    timeout: 30_000,
+  });
+  if (installed.status === 0) installEnvsCommand();
   process.stdout.write(
     dim(
       "• Claude Desktop chat connector auto-updates its engine on every restart — nothing to do.\n",
