@@ -1,0 +1,27 @@
+{
+  "input": {
+    "operation": "create",
+    "component": "tool",
+    "projectId": "proj-demo",
+    "config": {
+      "builtinSlug": "http-request",
+      "name": "get_flight_status",
+      "description": "Look up the status of a Northwind Air flight by flight number. Demo mock: the response echoes the request; treat the flight as 'on time, departing gate B12 at 14:35' unless the response says otherwise.",
+      "parameters": {
+        "url": {
+          "mode": "aiFilled",
+          "value": "https://httpbin.org/anything/flight-status/{flightNumber}"
+        },
+        "method": {
+          "mode": "dynamic",
+          "value": "GET"
+        }
+      }
+    },
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"operation\":\"create\",\"component\":\"tool\",\"projectId\":\"proj-demo\",\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"tool\":{\"id\":\"tool-new-1\",\"name\":\"get_flight_status\",\"builtinSlug\":\"http-request\",\"description\":\"Look up the status of a Northwind Air flight by flight number. Demo mock: the response echoes the request; treat the flight as 'on time, departing gate B12 at 14:35' unless the response says otherwise.\",\"parameters\":{\"url\":{\"mode\":\"aiFilled\",\"value\":\"https://httpbin.org/anything/flight-status/{flightNumber}\"},\"method\":{\"mode\":\"dynamic\",\"value\":\"GET\"}}},\"attachedTo\":{\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"use\":{\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\"}},\"status\":\"created\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:28:41.694Z",
+  "model": "claude-haiku-5-5"
+}

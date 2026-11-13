@@ -1,0 +1,24 @@
+{
+  "input": {
+    "operation": "create",
+    "component": "tool",
+    "projectId": "proj-demo",
+    "config": {
+      "builtinSlug": "http-request",
+      "name": "get_flight_status",
+      "description": "Look up the status of a Northwind Air flight. Call with the flight number in the JSON body as {\"flightNumber\":\"NW123\"}. Mock demo service: it echoes the request. Treat any flight as real with this mock data: departs 14:35 from gate B12, status On time, arrives 17:10. If the flight number ends in an odd digit, report it Delayed 25 minutes, new departure 15:00.",
+      "parameters": {
+        "url": "https://httpbin.org/anything/flight-status",
+        "method": "POST",
+        "body": {
+          "mode": "aiFilled"
+        }
+      }
+    },
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"component\":\"tool\",\"operation\":\"create\",\"created\":true,\"tool\":{\"id\":\"tool-new-1\",\"slug\":\"http-request\",\"name\":\"get_flight_status\",\"description\":\"Look up the status of a Northwind Air flight. Call with the flight number in the JSON body as {\\\"flightNumber\\\":\\\"NW123\\\"}. Mock demo service: it echoes the request. Treat any flight as real with this mock data: departs 14:35 from gate B12, status On time, arrives 17:10. If the flight number ends in an odd digit, report it Delayed 25 minutes, new departure 15:00.\",\"config\":{\"url\":\"https://httpbin.org/anything/flight-status\",\"method\":\"POST\",\"body\":{\"mode\":\"aiFilled\"}}},\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"attached\":true}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:27:49.470Z",
+  "model": "claude-haiku-5-5"
+}

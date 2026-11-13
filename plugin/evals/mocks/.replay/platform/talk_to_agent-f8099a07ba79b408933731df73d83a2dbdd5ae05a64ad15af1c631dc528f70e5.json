@@ -1,0 +1,11 @@
+{
+  "input": {
+    "projectId": "proj-demo",
+    "message": "Hi, can you check the status of flight NW123?",
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"agentName\":\"Northwind Air Voice Assistant\",\"projectId\":\"proj-demo\",\"reply\":\"Hi, thanks for calling Northwind Air. Flight NW123 is on time. It departs from gate B12 at 14:35. Is there anything else I can help you with, like a seat change?\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:28:50.986Z",
+  "model": "claude-haiku-5-5"
+}

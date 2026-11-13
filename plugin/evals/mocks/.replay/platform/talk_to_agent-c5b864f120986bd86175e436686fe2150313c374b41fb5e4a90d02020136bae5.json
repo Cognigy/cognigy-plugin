@@ -1,0 +1,11 @@
+{
+  "input": {
+    "projectId": "proj-demo",
+    "message": "What's the status of flight NW124?",
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"agentName\":\"Northwind Air Voice Assistant\",\"projectId\":\"proj-demo\",\"reply\":\"Flight NW124 is on time. It departs at 14:35 from gate B12 and arrives at 17:10.\",\"toolCalls\":[{\"name\":\"get_flight_status\",\"arguments\":{\"flightNumber\":\"NW124\"},\"status\":\"success\"}]}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:28:00.037Z",
+  "model": "claude-haiku-5-5"
+}

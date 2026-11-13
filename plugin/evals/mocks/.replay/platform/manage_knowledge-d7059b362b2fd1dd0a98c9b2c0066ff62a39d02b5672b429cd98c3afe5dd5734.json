@@ -1,0 +1,11 @@
+{
+  "input": {
+    "operation": "list_chunks",
+    "knowledgeStoreId": "ks-new-1",
+    "limit": 5
+  },
+  "output": "{\"items\":[{\"id\":\"chunk-new-1\",\"knowledgeStoreId\":\"ks-new-1\",\"sourceId\":\"src-new-1\",\"index\":0,\"text\":\"Pricing FAQ: Our plans are billed monthly or annually. Annual plans include a 15% discount.\",\"status\":\"indexed\"},{\"id\":\"chunk-new-2\",\"knowledgeStoreId\":\"ks-new-1\",\"sourceId\":\"src-new-1\",\"index\":1,\"text\":\"Can I change my plan? Yes. Upgrades take effect immediately, and downgrades apply at the start of the next billing cycle.\",\"status\":\"indexed\"},{\"id\":\"chunk-new-3\",\"knowledgeStoreId\":\"ks-new-1\",\"sourceId\":\"src-new-1\",\"index\":2,\"text\":\"Refunds: Monthly plans can be cancelled at any time. Prorated refunds are issued for unused full months on annual plans.\",\"status\":\"indexed\"},{\"id\":\"chunk-new-4\",\"knowledgeStoreId\":\"ks-new-1\",\"sourceId\":\"src-new-1\",\"index\":3,\"text\":\"Payment methods: We accept major credit cards, SEPA direct debit, and invoice payment for Enterprise customers.\",\"status\":\"indexed\"},{\"id\":\"chunk-new-5\",\"knowledgeStoreId\":\"ks-new-1\",\"sourceId\":\"src-new-1\",\"index\":4,\"text\":\"Taxes: Prices shown exclude VAT and sales tax, which are added at checkout based on the billing address.\",\"status\":\"indexed\"}],\"total\":12,\"limit\":5,\"offset\":0,\"knowledgeStoreId\":\"ks-new-1\",\"sourceStatus\":\"indexed\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:22:31.564Z",
+  "model": "claude-haiku-5-5"
+}

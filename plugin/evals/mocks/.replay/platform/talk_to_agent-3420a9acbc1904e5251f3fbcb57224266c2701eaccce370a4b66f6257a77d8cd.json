@@ -1,0 +1,11 @@
+{
+  "input": {
+    "aiAgentId": "agent-new-1",
+    "projectId": "proj-demo",
+    "message": "What's your return window?"
+  },
+  "output": "{\"aiAgentId\":\"agent-new-1\",\"projectId\":\"proj-demo\",\"reply\":\"Our return window is 30 days from delivery. Items must be unused, in their original packaging, with proof of purchase. Free return labels are provided for defective or wrong items; otherwise, $5.95 return shipping is deducted from your refund. Refunds go to your original payment method within 5-7 business days after we receive the return. Final-sale items and gift cards can't be returned, but exchanges are available. Is there anything else I can help you with?\",\"status\":\"replied\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:25:03.937Z",
+  "model": "claude-haiku-5-5"
+}

@@ -1,0 +1,16 @@
+{
+  "input": {
+    "operation": "create",
+    "projectId": "proj-demo",
+    "agentType": "voice",
+    "name": "Harbour Hotel Front Desk",
+    "role": "Front desk voice assistant for Harbour Hotel",
+    "description": "You are a warm, calm and professional front desk receptionist at Harbour Hotel. You speak in short, natural sentences suited to a phone call.",
+    "instructions": "You answer callers' questions about rooms and check-in/check-out times. Greet the caller, ask how you can help, and keep replies brief (one to three sentences). Only state hotel facts you have been given; do not invent room types, rates, availability or policies. Standard times, if the caller asks and nothing else is configured: check-in from 3 PM, check-out by 11 AM. If asked for exact rates, live availability, bookings or anything you cannot confirm, say you can't confirm that on this call and offer to have a team member follow up. Never ask for payment card details. End the call politely when the caller is done.",
+    "largeLanguageModelReferenceId": "5a255e2f-94b9-46ab-bfb7-4e407e68ef69"
+  },
+  "output": "{\"projectId\":\"proj-demo\",\"agent\":{\"operation\":\"create\",\"projectId\":\"proj-demo\",\"agentType\":\"voice\",\"name\":\"Harbour Hotel Front Desk\",\"role\":\"Front desk voice assistant for Harbour Hotel\",\"description\":\"You are a warm, calm and professional front desk receptionist at Harbour Hotel. You speak in short, natural sentences suited to a phone call.\",\"instructions\":\"You answer callers' questions about rooms and check-in/check-out times. Greet the caller, ask how you can help, and keep replies brief (one to three sentences). Only state hotel facts you have been given; do not invent room types, rates, availability or policies. Standard times, if the caller asks and nothing else is configured: check-in from 3 PM, check-out by 11 AM. If asked for exact rates, live availability, bookings or anything you cannot confirm, say you can't confirm that on this call and offer to have a team member follow up. Never ask for payment card details. End the call politely when the caller is done.\",\"largeLanguageModelReferenceId\":\"5a255e2f-94b9-46ab-bfb7-4e407e68ef69\",\"id\":\"60d5ec49f1a2c8b1a4e0f101\",\"referenceId\":\"3dafcf92-9157-4070-8ce2-09b0794ac874\",\"voiceLargeLanguageModelReferenceId\":\"597e276b-0bd0-40e8-86df-d4d743ea311c\"},\"endpointUrl\":\"https://endpoint-demo.cognigy.ai/abc123\",\"use\":{\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\"},\"_hints\":{\"action\":\"Test it with talk_to_agent { agentId: \\\"60d5ec49f1a2c8b1a4e0f101\\\", projectId: \\\"proj-demo\\\", message }.\",\"hint\":\"Calls run speech-to-speech (S2S) on \\\"GPT Live\\\", the project's GPT Live model. Say so in the build summary, in speech-to-speech terms.\"}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:08:02.159Z",
+  "model": "claude-haiku-5-5"
+}

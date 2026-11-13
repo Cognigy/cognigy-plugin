@@ -1,5 +1,5 @@
 import { describe, it, expect } from "@jest/globals";
-import { readFileSync } from "fs";
+import { readFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { tools } from "../tools/definitions.js";
 
@@ -15,9 +15,16 @@ describe("plugin eval mocks", () => {
     expect(saved).toEqual(JSON.parse(JSON.stringify({ tools })));
   });
 
-  it("_server.md answers every tool", () => {
+  it("every tool is answered by _server.md or its own <tool>.md", () => {
     const server = readFileSync(join(mocksDir, "_server.md"), "utf8");
-    const listed = server.match(/tools:\s*\[([^\]]*)\]/)![1].match(/[\w]+/g);
-    expect(listed!.sort()).toEqual(tools.map((t) => t.name).sort());
+    const listed = server.match(/tools:\s*\[([^\]]*)\]/)![1].match(/[\w]+/g)!;
+    const fixed = readdirSync(mocksDir)
+      .filter((f) => f.endsWith(".md") && f !== "_server.md")
+      .map((f) => f.slice(0, -3));
+    // A <tool>.md overrides _server.md, so listing it in both hides a dead entry.
+    expect(listed.filter((t) => fixed.includes(t))).toEqual([]);
+    expect([...listed, ...fixed].sort()).toEqual(
+      tools.map((t) => t.name).sort(),
+    );
   });
 });

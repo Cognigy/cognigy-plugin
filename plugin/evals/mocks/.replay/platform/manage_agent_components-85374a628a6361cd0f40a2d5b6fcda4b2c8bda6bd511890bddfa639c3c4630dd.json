@@ -1,0 +1,31 @@
+{
+  "input": {
+    "operation": "create",
+    "component": "tool",
+    "projectId": "proj-demo",
+    "config": {
+      "builtinSlug": "http-request",
+      "name": "change_seat",
+      "description": "Change the seat on a booking. Needs booking reference and new seat. Returns mock confirmation.",
+      "parameters": {
+        "url": {
+          "mode": "dynamic",
+          "value": "https://httpbin.org/anything/change-seat"
+        },
+        "method": "POST",
+        "body": {
+          "mode": "aiFilled",
+          "value": {
+            "bookingReference": "",
+            "seat": ""
+          }
+        }
+      }
+    },
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"component\":{\"slug\":\"http-request\",\"name\":\"change_seat\",\"description\":\"Change the seat on a booking. Needs booking reference and new seat. Returns mock confirmation.\",\"parameters\":{\"url\":{\"mode\":\"dynamic\",\"value\":\"https://httpbin.org/anything/change-seat\"},\"method\":\"POST\",\"body\":{\"mode\":\"aiFilled\",\"value\":{\"bookingReference\":\"\",\"seat\":\"\"}}},\"id\":\"tool-new-2\",\"referenceId\":\"b71e9d04-6c2a-4f38-8e15-2a9d7c3b1f60\"},\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"attached\":true,\"projectId\":\"proj-demo\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:29:35.206Z",
+  "model": "claude-haiku-5-5"
+}

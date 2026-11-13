@@ -31,7 +31,8 @@
     "prepare": "husky",
     "evals": "claude plugin eval plugin --ablation none --model claude-sonnet-5-5 --judge-model claude-haiku-5-5 --no-publish",
     "evals:tools": "tsx scripts/gen-eval-tools.ts",
-    "evals:compare": "node scripts/eval-compare.mjs"
+    "evals:compare": "node scripts/eval-compare.mjs",
+    "evals:adopt": "node scripts/eval-adopt.mjs"
   },
   "keywords": [
     "mcp",

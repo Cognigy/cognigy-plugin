@@ -1,5 +1,6 @@
 ---
-type: llm
+type: regex
+target: last_message
+pattern: '^(?![\s\S]*(?<!(?:\bno|\bnot|n''t|\bwithout|\bnever)\b[^.\n]{0,30})(?:\byour\b|\b(?:share|provide|send|paste|enter|give)\b)[^.\n]{0,30}\bAPI key\b)(?=[\s\S]*\bspeech-to-speech\b)(?=[\s\S]*\bGPT Live\b)'
+flags: i
 ---
-
-PASS if the final message to the user says the agent's calls run speech-to-speech on a GPT Live model that was already in the project. FAIL if it does not say that, or if it asks the user for an API key.

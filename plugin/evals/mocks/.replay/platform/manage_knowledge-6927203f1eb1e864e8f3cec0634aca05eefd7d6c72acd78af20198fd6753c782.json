@@ -1,0 +1,13 @@
+{
+  "input": {
+    "operation": "create_source",
+    "knowledgeStoreId": "ks-new-1",
+    "type": "url",
+    "url": "https://example.com/pricing-faq",
+    "name": "Pricing FAQ page"
+  },
+  "output": "{\"id\":\"src-new-1\",\"knowledgeStoreId\":\"ks-new-1\",\"name\":\"Pricing FAQ page\",\"type\":\"url\",\"url\":\"https://example.com/pricing-faq\",\"status\":\"queued\",\"documents\":0,\"projectId\":\"proj-demo\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:21:28.025Z",
+  "model": "claude-haiku-5-5"
+}

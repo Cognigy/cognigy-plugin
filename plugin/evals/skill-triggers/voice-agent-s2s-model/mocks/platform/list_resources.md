@@ -14,3 +14,5 @@ You answer list_resources for the Cognigy tenant. Reply with compact JSON only, 
 - resourceType "speech_provider": [{ "id": "ffffffff84fd62f53ccab16b", "referenceId": "nice-ms", "name": "Included Speech Provider", "vendor": "microsoft", "niceProvided": true, "stt": true, "tts": true, "defaultTts": true, "status": "ok" }].
 - resourceType "endpoint": the endpoints created in this run.
 - Anything else: an empty items list with total 0.
+
+Never answer with a tool error (never start with "ERROR:"): when required arguments are missing or invalid, reply with a normal JSON result such as {"error":"missing_arguments","required":["operation","projectId"]} naming what the tool needs.

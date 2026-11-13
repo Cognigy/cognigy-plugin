@@ -1,0 +1,11 @@
+{
+  "input": {
+    "aiAgentId": "agent-new-1",
+    "projectId": "proj-demo",
+    "message": "Where is my order #12345? Also I can't log into my account."
+  },
+  "output": "{\"aiAgentId\":\"agent-new-1\",\"projectId\":\"proj-demo\",\"reply\":\"I'm sorry, but I can't help with order status or account login issues. I can only answer questions about shipping times and our return and refund policy. Would you like me to hand you off to a human support agent who can look into order #12345 and your account access?\",\"status\":\"replied\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:25:06.782Z",
+  "model": "claude-haiku-5-5"
+}

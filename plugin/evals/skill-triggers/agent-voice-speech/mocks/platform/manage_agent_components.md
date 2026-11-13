@@ -15,3 +15,5 @@ For component "voice_settings" the agent starts with no settings. The settings o
   - Return { agentId, toolId: "60d5ec49f1a2c8b1a4e0f404", usingDefaults: false, speech, settings }.
 - delete: { reset: true, agentId, removed: true }; later gets show the defaults again.
 - Other components: plausible results for an empty project.
+
+Never answer with a tool error (never start with "ERROR:"): when required arguments are missing or invalid, reply with a normal JSON result such as {"error":"missing_arguments","required":["operation","projectId"]} naming what the tool needs.
