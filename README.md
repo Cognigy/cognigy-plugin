@@ -175,6 +175,8 @@ Run `cognigy-envs` in a terminal. The installer adds the command; without it, ru
 }
 ```
 
+![The cognigy-envs menu: the default login above a dotted line, then trial and "+ Add an environment"](docs/cognigy-envs.png)
+
 The login you gave the installer stays the `default` environment and is changed with `cognigy-setup`, as before. Once the file has an entry, Claude asks which environment to use at the start of a conversation and keeps it. You can name another one for a single step ("copy this agent to acme") or switch for the rest of the conversation ("from now on use trial"). Every tool result says which environment it ran on. Claude only ever sees names and URLs, never keys. An environment you add works by name right away and shows up in Claude's list of choices after the session restarts.
 
 ## Usage Examples
