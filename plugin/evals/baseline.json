@@ -1,11 +1,11 @@
 {
-  "takenAt": "2026-11-11T15:58:25.575Z",
-  "commit": "695a7ec",
-  "claudeVersion": "2.1.319",
-  "pluginVersion": "1.22.8",
+  "takenAt": "2026-11-13T10:59:49.757Z",
+  "commit": "e9debb1",
+  "claudeVersion": "2.1.323",
+  "pluginVersion": "1.23.0",
   "cases": {
     "add-knowledge": {
-      "fingerprint": "a5148e3f508b",
+      "fingerprint": "f5f348e6624d",
       "score": 1,
       "graders": {
         "calls-manage_knowledge": "3/3",
@@ -13,7 +13,7 @@
       }
     },
     "agent-voice-speech": {
-      "fingerprint": "7fdd8e207c85",
+      "fingerprint": "b5168e08ec4b",
       "score": 1,
       "graders": {
         "lists-speech-providers": "3/3",
@@ -25,7 +25,7 @@
       }
     },
     "build-agent": {
-      "fingerprint": "1a092272b11c",
+      "fingerprint": "c07694ce037f",
       "score": 1,
       "graders": {
         "calls-create_ai_agent": "3/3",
@@ -33,41 +33,36 @@
       }
     },
     "deploy-webchat": {
-      "fingerprint": "8d73c082bac2",
+      "fingerprint": "a7dd82785448",
       "score": 1,
       "graders": {
         "calls-manage_webchat": "3/3",
         "skill-fired": "3/3"
       }
     },
-    "unrelated-request": {
-      "fingerprint": "b07deabd7f45",
+    "s2s-demo-reuse": {
+      "fingerprint": "fb5169a1faf6",
       "score": 1,
       "graders": {
-        "no-cognigy-skill": "3/3"
-      }
-    },
-    "v2v-demo-reuse": {
-      "fingerprint": "cbf09997b4c3",
-      "score": 1,
-      "graders": {
+        "answers-in-s2s-terms": "3/3",
         "binds-existing-voice-model": "3/3",
         "click-to-call-on-agent": "3/3",
-        "hands-back-link": "3/3",
+        "link-in-answer": "3/3",
         "no-new-voice-model": "3/3",
+        "no-version-talk": "3/3",
         "skill-or-subagent": "3/3"
       }
     },
-    "v2v-no-key": {
-      "fingerprint": "7ef6895940bb",
+    "s2s-no-key": {
+      "fingerprint": "49cd19160dbc",
       "score": 1,
       "graders": {
         "asks-for-key": "3/3",
         "no-invented-key": "3/3"
       }
     },
-    "v2v-off": {
-      "fingerprint": "8f504047f242",
+    "s2s-off": {
+      "fingerprint": "9b9910de2e7e",
       "score": 1,
       "graders": {
         "no-agent-create": "3/3",
@@ -77,27 +72,34 @@
         "says-why-and-offers": "3/3"
       }
     },
-    "voice-agent-speech-offer": {
-      "fingerprint": "a950e54f8a8b",
+    "unrelated-request": {
+      "fingerprint": "286c6fb936ce",
+      "score": 1,
+      "graders": {
+        "no-cognigy-skill": "3/3"
+      }
+    },
+    "voice-agent-s2s-model": {
+      "fingerprint": "0cca79b5a072",
       "score": 1,
       "graders": {
         "creates-voice-agent": "3/3",
-        "no-downgrade-elsewhere": "3/3",
+        "no-new-model": "3/3",
+        "reports-speech-to-speech": "3/3"
+      }
+    },
+    "voice-agent-speech-offer": {
+      "fingerprint": "8d3a64527038",
+      "score": 0.92,
+      "graders": {
+        "creates-voice-agent": "3/3",
+        "no-downgrade-elsewhere": "2/3",
         "no-new-model": "3/3",
         "offer-line": "3/3"
       }
     },
-    "voice-agent-v2v-model": {
-      "fingerprint": "745830cf6675",
-      "score": 1,
-      "graders": {
-        "creates-voice-agent": "3/3",
-        "no-new-model": "3/3",
-        "reports-voice-to-voice": "3/3"
-      }
-    },
     "voice-apply-fixes": {
-      "fingerprint": "2067fe9afaa7",
+      "fingerprint": "4e71bdcaa1cd",
       "score": 1,
       "graders": {
         "checklist-loaded": "3/3",
@@ -108,7 +110,7 @@
       }
     },
     "voice-apply-fixes-agent": {
-      "fingerprint": "e2a06ddcc768",
+      "fingerprint": "86eb6ca1f4b3",
       "score": 1,
       "graders": {
         "checklist-loaded": "3/3",
@@ -119,7 +121,7 @@
       }
     },
     "voice-go-live": {
-      "fingerprint": "cc20a7f69b60",
+      "fingerprint": "9ddf8f7e28a7",
       "score": 1,
       "graders": {
         "calls-audit_voice_agent": "3/3",
@@ -127,7 +129,7 @@
       }
     },
     "voice-go-live-agent": {
-      "fingerprint": "f6b2e4de1b1c",
+      "fingerprint": "d58bfaec7c28",
       "score": 1,
       "graders": {
         "audits-by-agentId": "3/3",
@@ -137,7 +139,7 @@
       }
     },
     "backup-gate": {
-      "fingerprint": "068e335b3706",
+      "fingerprint": "199338de26b5",
       "score": 1,
       "graders": {
         "asks-about-backup": "3/3",
@@ -145,7 +147,7 @@
       }
     },
     "general-tool-type": {
-      "fingerprint": "c609a86c9b3d",
+      "fingerprint": "3d55f170774e",
       "score": 1,
       "graders": {
         "calls-create_tool": "3/3",
@@ -153,7 +155,7 @@
       }
     },
     "list-projects": {
-      "fingerprint": "60b412e843d3",
+      "fingerprint": "4ae5e646f55f",
       "score": 1,
       "graders": {
         "calls-list_resources": "3/3",
@@ -161,7 +163,7 @@
       }
     },
     "new-agent-default": {
-      "fingerprint": "ba02752d95b1",
+      "fingerprint": "5fd2dbb5d6c7",
       "score": 1,
       "graders": {
         "calls-manage_agent": "3/3",
