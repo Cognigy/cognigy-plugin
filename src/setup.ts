@@ -59,24 +59,21 @@ import { homedir } from "os";
 import { dirname, join } from "path";
 import { runNpm } from "./install/npmRunner.js";
 import { PACKAGE_VERSION } from "./config.js";
-import { ask, askHidden, isMainModule } from "./utils/cli.js";
+import {
+  ask,
+  askHidden,
+  bold,
+  cyan,
+  dim,
+  green,
+  isMainModule,
+  yellow,
+} from "./utils/cli.js";
 
 const PKG = "@cognigy/plugin-engine";
 
 const DEFAULT_BASE_URL = "https://api-trial.cognigy.ai";
 
-// ANSI styling — auto-disabled when stdout is not a TTY or NO_COLOR is set, so
-// piped/CI output stays plain text.
-const useColor = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
-const wrap =
-  (open: string, close: string) =>
-  (t: string): string =>
-    useColor ? `\x1b[${open}m${t}\x1b[${close}m` : t;
-const bold = wrap("1", "22");
-const dim = wrap("2", "22");
-const green = wrap("32", "39");
-const cyan = wrap("36", "39");
-const yellow = wrap("33", "39");
 const RULE = "═".repeat(60);
 
 type Client =

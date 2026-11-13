@@ -1,11 +1,24 @@
 /**
  * Small helpers shared by the command-line tools (`cognigy-setup`,
- * `cognigy-envs`): prompts, masked input, single key presses, and the
- * "am I the entrypoint" check. Moved here unchanged from `setup.ts`.
+ * `cognigy-envs`): prompts, masked input, single key presses, colors and
+ * the "am I the entrypoint" check. Moved here unchanged from `setup.ts`.
  */
 import { createInterface } from "readline";
 import { realpathSync } from "fs";
 import { pathToFileURL } from "url";
+
+// ANSI styling — auto-disabled when stdout is not a TTY or NO_COLOR is set, so
+// piped/CI output stays plain text.
+const useColor = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
+const wrap =
+  (open: string, close: string) =>
+  (t: string): string =>
+    useColor ? `\x1b[${open}m${t}\x1b[${close}m` : t;
+export const bold = wrap("1", "22");
+export const dim = wrap("2", "22");
+export const green = wrap("32", "39");
+export const cyan = wrap("36", "39");
+export const yellow = wrap("33", "39");
 
 // Control codes handled during masked input.
 const CTRL_C = 3;

@@ -18,7 +18,16 @@ import {
   type EnvironmentsFile,
 } from "./environmentsFile.js";
 import { readUserConfigFile, USER_CONFIG_DIR } from "./userConfigFile.js";
-import { ask, askHidden, isMainModule, readKey } from "./utils/cli.js";
+import {
+  ask,
+  askHidden,
+  bold,
+  cyan,
+  dim,
+  green,
+  isMainModule,
+  readKey,
+} from "./utils/cli.js";
 
 export interface EnvsIo {
   write(text: string): void;
@@ -39,6 +48,13 @@ const QUIT = new Set(["q", "\x1b", "\x03"]);
 // Clear the screen and home the cursor: each frame redraws from the top, so
 // long lines that wrap can never leave a stale frame behind.
 const CLEAR = "\x1b[H\x1b[2J";
+
+const LOGO = [
+  "┌─┐┌─┐┌─┐┌┐┌┬┌─┐┬ ┬  ┌─┐┌┐┌┬  ┬┌─┐",
+  "│  │ ││ ┬│││││ ┬└┬┘  ├┤ │││└┐┌┘└─┐",
+  "└─┘└─┘└─┘┘└┘┴└─┘ ┴   └─┘┘└┘ └┘ └─┘",
+];
+const DEFAULT_NOTE = "the plugin's own login, set with cognigy-setup";
 
 /** First 4 and last 4 characters of a long key; never the whole key. */
 function mask(key: string): string {
@@ -66,22 +82,54 @@ export function parseBaseUrl(raw: string): string | undefined {
   return undefined;
 }
 
-function rows(file: EnvironmentsFile, dir: string, cursor?: number): string[] {
-  const names = Object.keys(file);
-  const width = Math.max(
+const nameWidth = (file: EnvironmentsFile) =>
+  Math.max(
     DEFAULT_ENVIRONMENT.length,
-    ...names.map((n) => n.length),
+    ...Object.keys(file).map((n) => n.length),
   );
-  const pointer = (i: number) =>
-    cursor === undefined ? "" : i === cursor ? "> " : "  ";
-  const defaultUrl =
-    readUserConfigFile(join(dir, "config.json")).COGNIGY_API_BASE_URL ?? "";
+
+const defaultUrl = (dir: string) =>
+  readUserConfigFile(join(dir, "config.json")).COGNIGY_API_BASE_URL ||
+  "(your AI client's plugin settings)";
+
+/** The plain list, printed outside a terminal. */
+function list(file: EnvironmentsFile, dir: string): string {
+  const width = nameWidth(file);
   return [
-    `${cursor === undefined ? "" : "  "}${DEFAULT_ENVIRONMENT.padEnd(width)}  ${defaultUrl || "(your AI client's plugin settings)"}  — the plugin's own login, set with cognigy-setup`,
-    ...names.map(
-      (n, i) => `${pointer(i)}${n.padEnd(width)}  ${file[n].apiBaseUrl}`,
+    `${DEFAULT_ENVIRONMENT.padEnd(width)}  ${defaultUrl(dir)}  — ${DEFAULT_NOTE}`,
+    ...Object.keys(file).map(
+      (n) => `${n.padEnd(width)}  ${file[n].apiBaseUrl}`,
     ),
-  ];
+  ].join("\n");
+}
+
+/** One screen of the menu: logo, the default login, the environments, help. */
+function frame(
+  file: EnvironmentsFile,
+  dir: string,
+  cursor: number,
+  status: string,
+): string {
+  const names = Object.keys(file);
+  const width = nameWidth(file);
+  const item = (i: number, text: string) =>
+    i === cursor ? `  ${cyan("❯")} ${bold(text)}` : `    ${text}`;
+  return [
+    "",
+    ...LOGO.map((line) => `  ${cyan(line)}`),
+    "",
+    `  ${green("●")} ${bold(DEFAULT_ENVIRONMENT.padEnd(width))}  ${defaultUrl(dir)}`,
+    `    ${" ".repeat(width)}  ${dim(DEFAULT_NOTE)}`,
+    // Dotted divider from the dot to the end of the note: default above, the rest below.
+    `  ${dim("·".repeat(width + DEFAULT_NOTE.length + 4))}`,
+    ...names.map((n, i) =>
+      item(i, `${n.padEnd(width)}  ${file[n].apiBaseUrl}`),
+    ),
+    item(names.length, "+ Add an environment"),
+    "",
+    `  ${dim("↑/↓ move · Enter add or change · d delete · q quit")}`,
+    status ? `  ${status.startsWith("✔") ? green(status) : status}` : "",
+  ].join("\n");
 }
 
 function load(path: string): EnvironmentsFile {
@@ -94,17 +142,17 @@ const exists = (file: EnvironmentsFile, name: string) =>
   Object.keys(file).some((n) => n.toLowerCase() === name.toLowerCase());
 
 async function addEnvironment(io: EnvsIo, path: string): Promise<string> {
-  const name = (await io.ask("Name (e.g. trial, acme): ")).trim();
+  const name = (await io.ask("  Name (e.g. trial, acme): ")).trim();
   if (!name) return "Nothing added.";
   const nameError = validateEnvironmentName(name);
   if (nameError) return nameError;
   if (exists(load(path), name))
     return `"${name}" already exists. Select it to change it.`;
   const url = parseBaseUrl(
-    await io.ask("API base URL (e.g. https://api-trial.cognigy.ai): "),
+    await io.ask("  API base URL (e.g. https://api-trial.cognigy.ai): "),
   );
   if (!url) return "That is not an http(s) URL. Nothing added.";
-  const apiKey = (await io.askHidden("API key (hidden): ")).trim();
+  const apiKey = (await io.askHidden("  API key (hidden): ")).trim();
   if (!apiKey) return "No key entered. Nothing added.";
   updateEnvironmentsFile((file) => {
     // Re-checked on the fresh file: another terminal may have added it meanwhile.
@@ -122,13 +170,13 @@ async function changeEnvironment(
 ): Promise<string> {
   const entry = load(path)[name];
   if (!entry) return `"${name}" no longer exists.`;
-  const urlAnswer = await io.ask(`API base URL [${entry.apiBaseUrl}]: `);
+  const urlAnswer = await io.ask(`  API base URL [${entry.apiBaseUrl}]: `);
   const url = urlAnswer.trim() ? parseBaseUrl(urlAnswer) : entry.apiBaseUrl;
   if (!url) return "That is not an http(s) URL. Nothing changed.";
   const apiKey =
     (
       await io.askHidden(
-        `API key [${mask(entry.apiKey)}] (hidden, Enter keeps it): `,
+        `  API key [${mask(entry.apiKey)}] (hidden, Enter keeps it): `,
       )
     ).trim() || entry.apiKey;
   if (url === entry.apiBaseUrl && apiKey === entry.apiKey)
@@ -147,7 +195,9 @@ async function deleteEnvironment(
   path: string,
   name: string,
 ): Promise<string> {
-  const answer = (await io.ask(`Delete ${name}? [y/N] `)).trim().toLowerCase();
+  const answer = (await io.ask(`  Delete ${name}? [y/N] `))
+    .trim()
+    .toLowerCase();
   if (answer !== "y" && answer !== "yes") return "Nothing deleted.";
   updateEnvironmentsFile((file) => {
     delete file[name];
@@ -191,7 +241,7 @@ export async function runEnvs(io: EnvsIo): Promise<number> {
   }
 
   if (!io.isTTY) {
-    io.write(`${rows(file, io.dir).join("\n")}\n`);
+    io.write(`${list(file, io.dir)}\n`);
     return 0;
   }
 
@@ -201,19 +251,7 @@ export async function runEnvs(io: EnvsIo): Promise<number> {
     const names = Object.keys(file);
     const items = names.length + 1; // the environments, then "+ Add"
     cursor = Math.min(cursor, items - 1);
-    io.write(
-      CLEAR +
-        [
-          "Cognigy environments",
-          "",
-          ...rows(file, io.dir, cursor),
-          `${cursor === names.length ? "> " : "  "}+ Add an environment`,
-          "",
-          "↑/↓ move · Enter add or change · d delete · q quit",
-          status,
-        ].join("\n") +
-        "\n",
-    );
+    io.write(`${CLEAR}${frame(file, io.dir, cursor, status)}\n`);
 
     const key = await io.readKey();
     status = "";

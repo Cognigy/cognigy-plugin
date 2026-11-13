@@ -47,7 +47,11 @@ function scripted(
     isTTY,
     dir,
   };
-  return { io, output: () => output };
+  return {
+    io,
+    // eslint-disable-next-line no-control-regex -- colors are on when the tests run in a terminal; assert on the text
+    output: () => output.replace(/\x1b\[[0-9;]*m/g, ""),
+  };
 }
 
 const saved = (dir: string) =>
