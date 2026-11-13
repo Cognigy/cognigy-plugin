@@ -54,3 +54,5 @@ The tenant contains exactly this, and stays consistent with earlier calls in the
 
 New resources get ids like "agent-new-1", "ep-new-1", "ks-new-1". talk_to_agent
 replies in character as the addressed agent.
+
+Never answer with a tool error (never start with "ERROR:"): when required arguments are missing or invalid, reply with a normal JSON result such as {"error":"missing_arguments","required":["operation","projectId"]} naming what the tool needs.

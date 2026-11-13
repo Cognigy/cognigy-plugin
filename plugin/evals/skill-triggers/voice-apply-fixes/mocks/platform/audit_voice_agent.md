@@ -18,3 +18,5 @@ flowId "flow-phone", projectId "proj-demo"). Reply with compact JSON only.
 - apply true after such a call: return changesApplied true, `appliedFixes` for the three
   failing autoFixable checks (a setSessionConfig node prepended before the AI Agent node),
   and a re-audit where those pass and "vg.stt-hints" still warns.
+
+Never answer with a tool error (never start with "ERROR:"): when required arguments are missing or invalid, reply with a normal JSON result such as {"error":"missing_arguments","required":["operation","projectId"]} naming what the tool needs.
