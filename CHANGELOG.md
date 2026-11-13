@@ -1,3 +1,9 @@
+## [1.23.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.23.0...v1.23.1) (2026-11-13)
+
+### Bug Fixes
+
+* **skills:** steer generated flows and code toward human-readable output ([#63](https://github.com/Cognigy/cognigy-plugin/issues/63)) ([db2a68a](https://github.com/Cognigy/cognigy-plugin/commit/db2a68a4406b7cd8ea190c283e75a6362b1fad13)), closes [#62](https://github.com/Cognigy/cognigy-plugin/issues/62)
+
 ## [1.23.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.22.8...v1.23.0) (2026-11-11)
 
 ### Features

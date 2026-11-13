@@ -1,7 +1,7 @@
 {
-  "takenAt": "2026-11-12T15:18:30.287Z",
-  "commit": "8ba42cb",
-  "claudeVersion": "2.1.322",
+  "takenAt": "2026-11-13T10:59:49.757Z",
+  "commit": "e9debb1",
+  "claudeVersion": "2.1.323",
   "pluginVersion": "1.23.0",
   "cases": {
     "add-environment": {
@@ -23,12 +23,12 @@
     },
     "agent-voice-speech": {
       "fingerprint": "b5168e08ec4b",
-      "score": 0.94,
+      "score": 1,
       "graders": {
         "lists-speech-providers": "3/3",
         "nice-tts-credential": "3/3",
         "offered-british-female-voice": "3/3",
-        "reports-outcome": "2/3",
+        "reports-outcome": "3/3",
         "two-words-to-interrupt": "3/3",
         "uses-voice-settings": "3/3"
       }
@@ -99,10 +99,10 @@
     },
     "voice-agent-speech-offer": {
       "fingerprint": "8d3a64527038",
-      "score": 1,
+      "score": 0.92,
       "graders": {
         "creates-voice-agent": "3/3",
-        "no-downgrade-elsewhere": "3/3",
+        "no-downgrade-elsewhere": "2/3",
         "no-new-model": "3/3",
         "offer-line": "3/3"
       }
