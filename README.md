@@ -162,6 +162,23 @@ The engine talks to more than one Cognigy host: the API for everything, the endp
 
 A cluster that serves a self-signed certificate is rejected with `DEPTH_ZERO_SELF_SIGNED_CERT`, because Node does not consult the operating-system trust store. Point `NODE_EXTRA_CA_CERTS` at the certificate (or the local CA that issued it), exactly as for a TLS-inspecting proxy above.
 
+### Several Cognigy environments
+
+Most users work in one Cognigy environment and need nothing here. If you work in several (a trial, a customer tenant, a staging cluster), add them once and Claude can use any of them in the same conversation, for example to compare two deployments or copy an agent from one to another.
+
+Run `cognigy-envs` in a terminal. The installer adds the command; without it, run `npx -y -p @cognigy/plugin-engine cognigy-envs`. It opens a small menu (↑/↓, Enter, `d`, `q`) that lists your environments and lets you add, change and delete them. Each one has a name you pick, its API base URL and its API key, which you type hidden. They are stored in `~/.cognigy-plugin/environments.json`, readable only by you:
+
+```json
+{
+  "trial": { "apiBaseUrl": "https://api-trial.cognigy.ai", "apiKey": "…" },
+  "acme": { "apiBaseUrl": "https://api-acme.cognigy.ai", "apiKey": "…" }
+}
+```
+
+![The cognigy-envs menu: the default login above a dotted line, then trial and "+ Add an environment"](docs/cognigy-envs.png)
+
+The login you gave the installer stays the `default` environment and is changed with `cognigy-setup`, as before. Once the file has an entry, Claude asks which environment to use at the start of a conversation and keeps it. You can name another one for a single step ("copy this agent to acme") or switch for the rest of the conversation ("from now on use trial"). Every tool result says which environment it ran on. Claude only ever sees names and URLs, never keys. An environment you add works by name right away and shows up in Claude's list of choices after the session restarts.
+
 ## Usage Examples
 
 ### 1. Create a customer support agent

@@ -4,6 +4,7 @@
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
+import type { EnvironmentEntry } from "./environmentsFile.js";
 import { readUserConfigFile, USER_CONFIG_FILE } from "./userConfigFile.js";
 
 export interface Config {
@@ -40,14 +41,14 @@ function getPackageVersion(): string {
   }
 }
 
-const PACKAGE_VERSION = getPackageVersion();
+export const PACKAGE_VERSION = getPackageVersion();
 
 /**
  * Normalise the API base URL so it always points to the API host.
  * Users may supply the bare UI URL (e.g. https://dev.cognigy.ai) instead of the
  * API URL (https://api-dev.cognigy.ai).  We detect this and prepend "api-".
  */
-function normalizeApiBaseUrl(raw: string): string {
+export function normalizeApiBaseUrl(raw: string): string {
   try {
     const url = new URL(raw);
     if (
@@ -228,25 +229,68 @@ export function loadConfig(): Config {
     );
   }
 
-  const normalizedApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
-
   // The sibling hosts (endpoint, webchat, static) are normally derived from the
   // API host. Explicit overrides win, from the environment or — for hosts whose
   // credentials already come from the setup file, i.e. GUI clients — from that
   // same file, so a self-hosted layout can be described in one place.
+  return buildConfig(apiBaseUrl, apiKey, {
+    endpointBaseUrl:
+      usableEnv(process.env.COGNIGY_ENDPOINT_BASE_URL) ||
+      fileConfig.COGNIGY_ENDPOINT_BASE_URL,
+    webchatBaseUrl:
+      usableEnv(process.env.COGNIGY_WEBCHAT_BASE_URL) ||
+      fileConfig.COGNIGY_WEBCHAT_BASE_URL,
+    staticFilesBaseUrl:
+      usableEnv(process.env.COGNIGY_STATIC_FILES_BASE_URL) ||
+      fileConfig.COGNIGY_STATIC_FILES_BASE_URL,
+  });
+}
+
+/**
+ * Load configuration for one environment from the environments file.
+ *
+ * Unlike `loadConfig`, nothing about the connection comes from the process
+ * environment: the credentials are the entry's own and the sibling hosts are
+ * derived from its API URL. The `COGNIGY_*_BASE_URL` variables describe
+ * whichever environment the keychain was set up for, so letting them leak in
+ * would point `talk_to_agent` at the wrong tenant's endpoint host. Proxy, log
+ * level and rate-limit settings are not per-environment and still apply.
+ */
+export function loadConfigForEnvironment(entry: EnvironmentEntry): Config {
+  return buildConfig(
+    entry.apiBaseUrl,
+    entry.apiKey,
+    {},
+    "Environments from environments.json cannot set other hosts yet.",
+  );
+}
+
+interface HostOverrides {
+  endpointBaseUrl?: string;
+  webchatBaseUrl?: string;
+  staticFilesBaseUrl?: string;
+}
+
+/** Everything `loadConfig` and `loadConfigForEnvironment` have in common. */
+function buildConfig(
+  apiBaseUrl: string,
+  apiKey: string,
+  hostOverrides: HostOverrides,
+  /** The last sentence of the "could not derive" warning: how to fix it. */
+  overrideAdvice = "Set COGNIGY_ENDPOINT_BASE_URL (and COGNIGY_WEBCHAT_BASE_URL, " +
+    "COGNIGY_STATIC_FILES_BASE_URL) if your deployment uses other hosts.",
+): Config {
+  const normalizedApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
+
   const endpointBaseUrl =
-    usableEnv(process.env.COGNIGY_ENDPOINT_BASE_URL) ||
-    fileConfig.COGNIGY_ENDPOINT_BASE_URL ||
+    hostOverrides.endpointBaseUrl ||
     deriveEndpointBaseUrl(normalizedApiBaseUrl);
 
   const webchatBaseUrl =
-    usableEnv(process.env.COGNIGY_WEBCHAT_BASE_URL) ||
-    fileConfig.COGNIGY_WEBCHAT_BASE_URL ||
-    deriveWebchatBaseUrl(normalizedApiBaseUrl);
+    hostOverrides.webchatBaseUrl || deriveWebchatBaseUrl(normalizedApiBaseUrl);
 
   const staticFilesBaseUrl =
-    usableEnv(process.env.COGNIGY_STATIC_FILES_BASE_URL) ||
-    fileConfig.COGNIGY_STATIC_FILES_BASE_URL ||
+    hostOverrides.staticFilesBaseUrl ||
     deriveStaticFilesBaseUrl(normalizedApiBaseUrl);
 
   // Without a recognisable "api" segment every derived URL silently equals
@@ -259,8 +303,7 @@ export function loadConfig(): Config {
     console.error(
       `[config] Could not derive the endpoint host from ${normalizedApiBaseUrl} ` +
         `(no "api" segment in the hostname); endpoint requests will go to the ` +
-        `API host. Set COGNIGY_ENDPOINT_BASE_URL (and COGNIGY_WEBCHAT_BASE_URL, ` +
-        `COGNIGY_STATIC_FILES_BASE_URL) if your deployment uses other hosts.`,
+        `API host. ${overrideAdvice}`,
     );
   }
 
