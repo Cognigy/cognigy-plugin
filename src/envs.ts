@@ -19,18 +19,19 @@ import {
 } from "./environmentsFile.js";
 import { readUserConfigFile, USER_CONFIG_DIR } from "./userConfigFile.js";
 import {
-  ask,
-  askHidden,
+  askOrEscape,
   bold,
   cyan,
   dim,
   green,
   isMainModule,
+  PromptEscaped,
   readKey,
 } from "./utils/cli.js";
 
 export interface EnvsIo {
   write(text: string): void;
+  /** Both prompts reject with PromptEscaped when the user presses Esc. */
   ask(question: string): Promise<string>;
   askHidden(question: string): Promise<string>;
   /** One key press in raw mode, e.g. "\x1b[A" for the up arrow. */
@@ -281,14 +282,19 @@ export async function runEnvs(io: EnvsIo): Promise<number> {
 if (isMainModule(import.meta.url, process.argv[1])) {
   runEnvs({
     write: (text) => process.stdout.write(text),
-    ask,
-    askHidden,
+    ask: (question) => askOrEscape(question),
+    askHidden: (question) => askOrEscape(question, true),
     readKey,
     isTTY: Boolean(process.stdin.isTTY && process.stdout.isTTY),
     dir: USER_CONFIG_DIR,
   }).then(
     (code) => process.exit(code),
     (error: unknown) => {
+      // Esc at the rename prompt shown before the menu.
+      if (error instanceof PromptEscaped) {
+        process.stdout.write(`${error.message}\n`);
+        process.exit(1);
+      }
       const message = error instanceof Error ? error.message : String(error);
       if (message === "cancelled") process.exit(130);
       process.stderr.write(`cognigy-envs failed: ${message}\n`);

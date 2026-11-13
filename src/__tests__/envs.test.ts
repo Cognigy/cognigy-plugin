@@ -3,10 +3,13 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { parseBaseUrl, runEnvs, type EnvsIo } from "../envs.js";
+import { PromptEscaped } from "../utils/cli.js";
 
 const UP = "\x1b[A";
 const DOWN = "\x1b[B";
 const ENTER = "\r";
+/** As an answer: the user pressed Esc at that prompt. */
+const ESC = "\x1b";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -27,6 +30,11 @@ function freshDir(environments?: object | string): string {
   return dir;
 }
 
+function answerOrEscape(answer: string): string {
+  if (answer === ESC) throw new PromptEscaped();
+  return answer;
+}
+
 /** Scripted terminal: key presses, typed answers and hidden answers, in order. */
 function scripted(
   dir: string,
@@ -41,8 +49,8 @@ function scripted(
     write: (text) => {
       output += text;
     },
-    ask: async () => answers.shift() ?? "",
-    askHidden: async () => hidden.shift() ?? "",
+    ask: async () => answerOrEscape(answers.shift() ?? ""),
+    askHidden: async () => answerOrEscape(hidden.shift() ?? ""),
     readKey: async () => keys.shift() ?? "q",
     isTTY,
     dir,
@@ -114,6 +122,19 @@ describe("cognigy-envs menu", () => {
     });
     expect(t.output()).not.toContain("FAKE-ROTATED-KEY-0002");
     expect(t.output()).not.toContain(TRIAL.apiKey);
+  });
+
+  it("goes back to the menu on Esc at any prompt, changing nothing", async () => {
+    const dir = freshDir({ trial: TRIAL });
+    const t = scripted(dir, {
+      // Esc at the URL of a new one, at the key of trial, at the delete question.
+      keys: [DOWN, ENTER, UP, ENTER, "d"],
+      answers: ["acme", ESC, "", ESC],
+      hidden: [ESC],
+    });
+    expect(await runEnvs(t.io)).toBe(0);
+    expect(saved(dir)).toEqual({ trial: TRIAL });
+    expect(t.output().match(/Nothing changed\./g)).toHaveLength(3);
   });
 
   it("deletes only after a yes", async () => {

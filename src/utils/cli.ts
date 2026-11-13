@@ -36,8 +36,27 @@ export function ask(question: string): Promise<string> {
   });
 }
 
+/** How an escapable prompt rejects when Esc is pressed: back out, change nothing. */
+export class PromptEscaped extends Error {
+  constructor() {
+    super("Nothing changed.");
+    this.name = "PromptEscaped";
+  }
+}
+
 /** Read a line without echoing it (masked with asterisks). */
-export function askHidden(question: string): Promise<string> {
+export const askHidden = (question: string) => readLine(question, true, false);
+
+/** A prompt that Esc backs out of (rejects with PromptEscaped), for menus. */
+export const askOrEscape = (question: string, hidden = false) =>
+  readLine(question, hidden, true);
+
+/** Read a line in raw mode, echoing each character or an asterisk. */
+function readLine(
+  question: string,
+  hidden: boolean,
+  escapable: boolean,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const stdin = process.stdin;
     process.stdout.write(question);
@@ -55,6 +74,12 @@ export function askHidden(question: string): Promise<string> {
     };
 
     const onData = (chunk: string) => {
+      // Esc arrives alone; arrow keys and the like arrive as one "\x1b…" chunk.
+      if (escapable && chunk === "\x1b") {
+        finish(() => reject(new PromptEscaped()));
+        return;
+      }
+      if (chunk.startsWith("\x1b")) return;
       for (const ch of chunk) {
         const code = ch.charCodeAt(0);
         if (ch === "\n" || ch === "\r" || code === CTRL_D) {
@@ -73,7 +98,7 @@ export function askHidden(question: string): Promise<string> {
           continue;
         }
         value += ch;
-        process.stdout.write("*");
+        process.stdout.write(hidden ? "*" : ch);
       }
     };
 
