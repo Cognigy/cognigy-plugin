@@ -1,0 +1,21 @@
+{
+  "input": {
+    "operation": "create",
+    "component": "tool",
+    "projectId": "proj-demo",
+    "config": {
+      "builtinSlug": "http_request",
+      "name": "change_seat",
+      "description": "Change a passenger's seat on a Northwind Air booking. Mock data.",
+      "parameters": {
+        "url": "https://httpbin.org/anything/change-seat",
+        "method": "POST"
+      }
+    },
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"operation\":\"create\",\"component\":\"tool\",\"projectId\":\"proj-demo\",\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"tool\":{\"id\":\"tool-new-2\",\"type\":\"tool\",\"name\":\"change_seat\",\"builtinSlug\":\"http_request\",\"description\":\"Change a passenger's seat on a Northwind Air booking. Mock data.\",\"parameters\":{\"url\":\"https://httpbin.org/anything/change-seat\",\"method\":\"POST\"},\"status\":\"created\"},\"attachedTo\":{\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"relation\":\"tool\"}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:07:06.455Z",
+  "model": "claude-haiku-5-5"
+}

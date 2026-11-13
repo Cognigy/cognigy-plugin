@@ -1,0 +1,11 @@
+{
+  "input": {
+    "aiAgentId": "agent-new-1",
+    "projectId": "proj-demo",
+    "message": "How long does standard shipping take?"
+  },
+  "output": "{\"aiAgentId\":\"agent-new-1\",\"projectId\":\"proj-demo\",\"message\":\"How long does standard shipping take?\",\"reply\":\"Hi there! Standard shipping usually takes 3-5 business days. Orders ship within 1 business day, and orders over $50 qualify for free standard shipping. Is there anything else you'd like to know about shipping or returns?\",\"status\":\"ok\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:49:06.485Z",
+  "model": "claude-haiku-5-5"
+}

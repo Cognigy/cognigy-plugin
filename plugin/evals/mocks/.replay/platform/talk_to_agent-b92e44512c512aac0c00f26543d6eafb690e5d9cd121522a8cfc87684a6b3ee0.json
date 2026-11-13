@@ -1,0 +1,11 @@
+{
+  "input": {
+    "projectId": "proj-demo",
+    "message": "Hi, what time can I check in, and what kinds of rooms do you have?",
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"projectId\":\"proj-demo\",\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"agentName\":\"Harbour Hotel Front Desk\",\"reply\":\"Hello, thank you for calling Harbour Hotel. Check-in starts at 3 PM. We have Standard Rooms with a queen bed for two, Deluxe Harbour View rooms with a king bed and a harbour view for two, and Family Suites with two queen beds and a sitting area for up to four. For availability or rates, I can have our reservations team follow up, or you can check with the front desk.\",\"channel\":\"text\",\"endOfTurn\":true}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:03:27.464Z",
+  "model": "claude-haiku-5-5"
+}

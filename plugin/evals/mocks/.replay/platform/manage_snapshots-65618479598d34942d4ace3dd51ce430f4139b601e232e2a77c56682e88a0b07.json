@@ -1,0 +1,10 @@
+{
+  "input": {
+    "operation": "decline",
+    "projectId": "proj-demo"
+  },
+  "output": "{\"operation\":\"decline\",\"projectId\":\"proj-demo\",\"status\":\"declined\",\"snapshotCreated\":false,\"snapshots\":[],\"message\":\"No backup will be created for project proj-demo. Subsequent changes to existing resources in this session will proceed without a snapshot.\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:39:40.779Z",
+  "model": "claude-haiku-5-5"
+}

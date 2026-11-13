@@ -1,0 +1,20 @@
+{
+  "input": {
+    "toolType": "http",
+    "name": "Get Flight Status",
+    "config": {
+      "toolId": "get_flight_status",
+      "description": "Look up the current status of a Northwind Air flight by flight number.",
+      "url": "https://httpbin.org/get",
+      "method": "GET",
+      "parameters": "{\"type\":\"object\",\"properties\":{\"flight_number\":{\"type\":\"string\",\"description\":\"Flight number, e.g. NW123\"}},\"required\":[\"flight_number\"]}",
+      "postProcessCode": "const f = String(input.aiAgent.toolArgs.flight_number || '').toUpperCase(); const st = [{status:'On time',gate:'B12',departure:'10:45'},{status:'Delayed by 25 minutes',gate:'C4',departure:'11:20'},{status:'Boarding',gate:'A7',departure:'09:55'}]; const n = f.split('').reduce((a,c)=>a+c.charCodeAt(0),0)%3; context.flightStatus = Object.assign({flight:f, origin:'Berlin', destination:'London'}, st[n]);",
+      "toolResponseValue": "{{JSON.stringify(context.flightStatus)}}"
+    },
+    "aiAgentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"created\":true,\"tool\":{\"id\":\"tool-new-1\",\"referenceId\":\"8e41b7c2-3f0a-4d59-9b1e-6a2c5d7f9e10\",\"name\":\"Get Flight Status\",\"toolType\":\"http\",\"toolId\":\"get_flight_status\",\"projectId\":\"proj-demo\",\"aiAgentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"method\":\"GET\",\"url\":\"https://httpbin.org/get\",\"parameters\":{\"type\":\"object\",\"properties\":{\"flight_number\":{\"type\":\"string\",\"description\":\"Flight number, e.g. NW123\"}},\"required\":[\"flight_number\"]},\"postProcessCode\":\"const f = String(input.aiAgent.toolArgs.flight_number || '').toUpperCase(); const st = [{status:'On time',gate:'B12',departure:'10:45'},{status:'Delayed by 25 minutes',gate:'C4',departure:'11:20'},{status:'Boarding',gate:'A7',departure:'09:55'}]; const n = f.split('').reduce((a,c)=>a+c.charCodeAt(0),0)%3; context.flightStatus = Object.assign({flight:f, origin:'Berlin', destination:'London'}, st[n]);\",\"toolResponseValue\":\"{{JSON.stringify(context.flightStatus)}}\",\"status\":\"active\",\"createdAt\":\"2025-06-02T10:14:37Z\"}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:49:50.644Z",
+  "model": "claude-haiku-5-5"
+}

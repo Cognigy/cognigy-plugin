@@ -1,0 +1,24 @@
+{
+  "input": {
+    "operation": "create",
+    "component": "tool",
+    "projectId": "proj-demo",
+    "config": {
+      "builtinSlug": "http_request",
+      "name": "get_flight_status",
+      "description": "Look up the status of a Northwind Air flight by flight number (mock data).",
+      "parameters": {
+        "url": {
+          "mode": "dynamic",
+          "value": "https://httpbin.org/anything/flight-status"
+        },
+        "method": "GET"
+      }
+    },
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"operation\":\"create\",\"component\":\"tool\",\"projectId\":\"proj-demo\",\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"tool\":{\"id\":\"tool-new-1\",\"name\":\"get_flight_status\",\"builtinSlug\":\"http_request\",\"description\":\"Look up the status of a Northwind Air flight by flight number (mock data).\",\"parameters\":{\"url\":{\"mode\":\"dynamic\",\"value\":\"https://httpbin.org/anything/flight-status\"},\"method\":\"GET\"}},\"attachedTo\":{\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"agentName\":\"Northwind Air Voice Assistant\"},\"status\":\"created\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:37:21.621Z",
+  "model": "claude-haiku-5-5"
+}

@@ -1,0 +1,11 @@
+{
+  "input": {
+    "projectId": "proj-demo",
+    "message": "Hi, what time can I check in?",
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"projectId\":\"proj-demo\",\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"agentName\":\"Harbour Hotel Front Desk\",\"message\":\"Hi, what time can I check in?\",\"reply\":\"Hello, thank you for calling Harbour Hotel. Standard check-in starts at 3:00 PM, and I can note an early check-in request if you need one. Is your booking under your name?\",\"conversationId\":\"conv-7f3a9c21\",\"status\":\"ok\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:39:14.159Z",
+  "model": "claude-haiku-5-5"
+}

@@ -1,0 +1,11 @@
+{
+  "input": {
+    "message": "Hi, what's the status of flight NW123?",
+    "projectId": "proj-demo",
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"agentName\":\"Northwind Air Voice Assistant\",\"reply\":\"Hello, thanks for calling Northwind Air. Flight NW123 is on time. It departs Berlin for London at 10:45 from gate B12. Is there anything else I can help you with?\",\"toolCalls\":[{\"tool\":\"get_flight_status\",\"arguments\":{\"flight_number\":\"NW123\"},\"result\":{\"flight\":\"NW123\",\"origin\":\"Berlin\",\"destination\":\"London\",\"status\":\"On time\",\"gate\":\"B12\",\"departure\":\"10:45\"}}]}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:49:58.160Z",
+  "model": "claude-haiku-5-5"
+}

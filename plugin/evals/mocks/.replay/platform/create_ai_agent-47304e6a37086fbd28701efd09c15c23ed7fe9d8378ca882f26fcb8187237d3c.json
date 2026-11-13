@@ -1,0 +1,12 @@
+{
+  "input": {
+    "name": "Shipping & Returns Support",
+    "projectId": "proj-demo",
+    "legacy": true,
+    "description": "You are a friendly, concise customer support agent. You help customers with questions about shipping times and the return policy. You are warm, clear and professional, and you keep answers short."
+  },
+  "output": "{\"id\":\"agent-new-1\",\"name\":\"Shipping & Returns Support\",\"type\":\"AI Agent\",\"legacy\":true,\"projectId\":\"proj-demo\",\"flowId\":\"flow-new-1\",\"description\":\"You are a friendly, concise customer support agent. You help customers with questions about shipping times and the return policy. You are warm, clear and professional, and you keep answers short.\",\"llmId\":\"llm-gpt4o\",\"tools\":[],\"knowledge\":[],\"use\":{\"aiAgentId\":\"agent-new-1\"},\"status\":\"created\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:06:07.671Z",
+  "model": "claude-haiku-5-5"
+}

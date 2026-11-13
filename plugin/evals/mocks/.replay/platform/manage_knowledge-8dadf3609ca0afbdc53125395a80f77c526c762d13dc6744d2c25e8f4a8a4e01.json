@@ -1,0 +1,12 @@
+{
+  "input": {
+    "operation": "create_store",
+    "projectId": "proj-demo",
+    "name": "Pricing FAQ",
+    "description": "Pricing FAQ from https://example.com/pricing-faq for the Billing Bot"
+  },
+  "output": "{\"operation\":\"create_store\",\"status\":\"created\",\"knowledgeStore\":{\"id\":\"ks-new-1\",\"name\":\"Pricing FAQ\",\"description\":\"Pricing FAQ from https://example.com/pricing-faq for the Billing Bot\",\"projectId\":\"proj-demo\",\"status\":\"empty\",\"sourceCount\":0,\"embeddingLLM\":{\"id\":\"llm-gpt4o\",\"name\":\"GPT-4o\",\"provider\":\"openAI\",\"model\":\"gpt-4o\"}},\"_hints\":{\"next\":\"Add content to the store before attaching it to an agent. The description URL is not fetched automatically.\"}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:00:25.574Z",
+  "model": "claude-haiku-5-5"
+}

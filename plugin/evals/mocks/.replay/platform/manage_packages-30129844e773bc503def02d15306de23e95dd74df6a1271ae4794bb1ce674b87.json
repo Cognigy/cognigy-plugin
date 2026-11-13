@@ -1,0 +1,14 @@
+{
+  "input": {
+    "operation": "export",
+    "projectId": "proj-demo",
+    "resourceIds": [
+      "llm-gpt4o"
+    ],
+    "name": "llm-transfer"
+  },
+  "output": "{\"ok\":true,\"operation\":\"export\",\"projectId\":\"proj-demo\",\"package\":{\"id\":\"pkg-new-1\",\"name\":\"llm-transfer\",\"status\":\"created\",\"resourceIds\":[\"llm-gpt4o\"],\"resourceTypes\":[\"llm_model\"],\"createdAt\":\"2025-01-15T10:32:00Z\"},\"note\":\"Package exported from proj-demo with 1 resource (llm-gpt4o). Credentials are not included in the package; the target project must re-enter the LLM connection secret before the model is usable.\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:10:11.909Z",
+  "model": "claude-haiku-5-5"
+}

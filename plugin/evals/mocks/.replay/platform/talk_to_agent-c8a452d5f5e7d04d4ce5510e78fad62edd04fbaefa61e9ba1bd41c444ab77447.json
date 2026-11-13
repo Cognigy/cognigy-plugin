@@ -1,0 +1,11 @@
+{
+  "input": {
+    "projectId": "proj-demo",
+    "message": "Hi, what time can I check in, and do you have family rooms?",
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"agentName\":\"Harbour Hotel Front Desk\",\"reply\":\"Standard check-in at the Harbour Hotel is from 3:00 PM. I don't have verified details on family rooms or their availability, so I'd suggest contacting our reservations team, or I can have a team member follow up with you. Is there anything else I can help you with?\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:02:58.735Z",
+  "model": "claude-haiku-5-5"
+}

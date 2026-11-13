@@ -1,0 +1,17 @@
+{
+  "input": {
+    "toolType": "knowledge",
+    "name": "Search Pricing FAQ",
+    "aiAgentId": "agent-billing",
+    "config": {
+      "knowledgeStoreId": "ks-new-1",
+      "toolId": "search_pricing_faq",
+      "description": "Search the pricing FAQ to answer questions about pricing, plans, and billing. Use this before answering any pricing question.",
+      "topK": 5
+    }
+  },
+  "output": "{\"resourceType\":\"tool\",\"operation\":\"create_tool\",\"status\":\"created\",\"id\":\"tool-new-1\",\"name\":\"Search Pricing FAQ\",\"toolId\":\"search_pricing_faq\",\"toolType\":\"knowledge\",\"aiAgentId\":\"agent-billing\",\"flowId\":\"flow-billing\",\"config\":{\"knowledgeStoreId\":\"ks-new-1\",\"description\":\"Search the pricing FAQ to answer questions about pricing, plans, and billing. Use this before answering any pricing question.\",\"topK\":5},\"knowledgeStoreName\":\"Pricing FAQ\",\"projectId\":\"proj-demo\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:48:29.763Z",
+  "model": "claude-haiku-5-5"
+}

@@ -1,0 +1,11 @@
+{
+  "input": {
+    "projectId": "proj-demo",
+    "message": "I'd like to move to seat 14A, booking ABC123.",
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"projectId\":\"proj-demo\",\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"agentName\":\"Northwind Air Voice Assistant\",\"message\":\"I'd like to move to seat 14A, booking ABC123.\",\"reply\":\"Sure, I can help with that. I'm changing booking ABC123 to seat 14A now. One moment.\",\"toolCalls\":[{\"name\":\"change_seat\",\"arguments\":{\"bookingReference\":\"ABC123\",\"desiredSeat\":\"14A\"},\"status\":\"requested\"}],\"endReason\":null}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:07:18.662Z",
+  "model": "claude-haiku-5-5"
+}

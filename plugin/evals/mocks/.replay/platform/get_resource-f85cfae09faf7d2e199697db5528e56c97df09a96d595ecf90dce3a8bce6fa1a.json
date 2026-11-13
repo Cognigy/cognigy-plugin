@@ -1,0 +1,11 @@
+{
+  "input": {
+    "resourceType": "agent",
+    "id": "agent-billing",
+    "projectId": "proj-demo"
+  },
+  "output": "{\"resourceType\":\"agent\",\"id\":\"agent-billing\",\"projectId\":\"proj-demo\",\"name\":\"Billing Bot\",\"type\":\"AI Agent\",\"legacy\":true,\"persona\":\"Friendly assistant for billing questions\",\"flowId\":\"flow-billing\",\"tools\":[],\"knowledge\":[],\"llmId\":\"llm-gpt4o\",\"use\":{\"aiAgentId\":\"agent-billing\"}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:40:21.624Z",
+  "model": "claude-haiku-5-5"
+}

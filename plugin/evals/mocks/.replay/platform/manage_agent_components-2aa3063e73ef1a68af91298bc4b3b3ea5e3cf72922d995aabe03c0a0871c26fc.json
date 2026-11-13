@@ -1,0 +1,21 @@
+{
+  "input": {
+    "operation": "create",
+    "component": "tool",
+    "projectId": "proj-demo",
+    "config": {
+      "builtinSlug": "http-request",
+      "name": "flight_status",
+      "description": "Look up the status of a flight. Call with the flight number the caller gave.",
+      "parameters": {
+        "url": "https://httpbin.org/anything/flight-status",
+        "method": "GET"
+      }
+    },
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"operation\":\"create\",\"component\":\"tool\",\"projectId\":\"proj-demo\",\"created\":true,\"tool\":{\"id\":\"tool-new-1\",\"type\":\"httpRequest\",\"name\":\"flight_status\",\"description\":\"Look up the status of a flight. Call with the flight number the caller gave.\",\"parameters\":{\"url\":\"https://httpbin.org/anything/flight-status\",\"method\":\"GET\"}},\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"attachedToAgent\":true}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:49:55.095Z",
+  "model": "claude-haiku-5-5"
+}

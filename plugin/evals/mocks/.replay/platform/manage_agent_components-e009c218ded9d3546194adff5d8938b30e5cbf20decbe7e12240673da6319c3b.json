@@ -1,0 +1,11 @@
+{
+  "input": {
+    "operation": "catalog",
+    "component": "tool",
+    "projectId": "proj-demo"
+  },
+  "output": "{\"operation\":\"catalog\",\"component\":\"tool\",\"projectId\":\"proj-demo\",\"items\":[{\"type\":\"tool\",\"name\":\"http_request\",\"description\":\"Calls an external HTTP endpoint and returns the response.\",\"parameters\":[{\"name\":\"url\",\"type\":\"string\",\"required\":true},{\"name\":\"method\",\"type\":\"string\",\"required\":false,\"default\":\"GET\"},{\"name\":\"headers\",\"type\":\"object\",\"required\":false},{\"name\":\"body\",\"type\":\"object\",\"required\":false}]},{\"type\":\"tool\",\"name\":\"knowledge_search\",\"description\":\"Searches a knowledge store and returns matching passages.\",\"parameters\":[{\"name\":\"knowledgeStoreId\",\"type\":\"string\",\"required\":true},{\"name\":\"query\",\"type\":\"string\",\"required\":true},{\"name\":\"topK\",\"type\":\"integer\",\"required\":false,\"default\":5}]},{\"type\":\"tool\",\"name\":\"transfer_to_agent\",\"description\":\"Hands the conversation over to another agent in the project.\",\"parameters\":[{\"name\":\"targetAgentId\",\"type\":\"string\",\"required\":true},{\"name\":\"reason\",\"type\":\"string\",\"required\":false}]},{\"type\":\"tool\",\"name\":\"end_conversation\",\"description\":\"Ends the current conversation session.\",\"parameters\":[{\"name\":\"reason\",\"type\":\"string\",\"required\":false}]}],\"total\":4}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:06:58.532Z",
+  "model": "claude-haiku-5-5"
+}

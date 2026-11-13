@@ -1,0 +1,11 @@
+{
+  "input": {
+    "projectId": "proj-demo",
+    "message": "Hi, what's the status of flight NW123 today?",
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"agentName\":\"Northwind Air Voice Assistant\",\"projectId\":\"proj-demo\",\"reply\":\"Happy to check that for you. Flight NW123 is on today's date, so let me look up its current status now. One moment, please.\",\"toolCalls\":[{\"tool\":\"flight_status\",\"arguments\":{\"flightNumber\":\"NW123\",\"date\":\"today\"},\"status\":\"requested\"}],\"finishReason\":\"tool_call\",\"usage\":{\"promptTokens\":225,\"completionTokens\":41}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:50:03.703Z",
+  "model": "claude-haiku-5-5"
+}

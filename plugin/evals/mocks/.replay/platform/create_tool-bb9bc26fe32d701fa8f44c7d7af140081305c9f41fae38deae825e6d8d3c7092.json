@@ -1,0 +1,17 @@
+{
+  "input": {
+    "aiAgentId": "agent-billing",
+    "toolType": "tool",
+    "name": "Unlock Customer Account",
+    "config": {
+      "toolId": "unlock_customer_account",
+      "description": "Unlocks a customer's account using their customer ID.",
+      "parameters": "{\"type\":\"object\",\"properties\":{\"customerId\":{\"type\":\"string\",\"description\":\"The customer ID of the account to unlock.\"}},\"required\":[\"customerId\"]}",
+      "toolResponseValue": "{{JSON.stringify(input.result)}}"
+    }
+  },
+  "output": "{\"resourceType\":\"tool\",\"created\":true,\"id\":\"tool-new-1\",\"name\":\"Unlock Customer Account\",\"toolType\":\"tool\",\"aiAgentId\":\"agent-billing\",\"config\":{\"toolId\":\"unlock_customer_account\",\"description\":\"Unlocks a customer's account using their customer ID.\",\"parameters\":\"{\\\"type\\\":\\\"object\\\",\\\"properties\\\":{\\\"customerId\\\":{\\\"type\\\":\\\"string\\\",\\\"description\\\":\\\"The customer ID of the account to unlock.\\\"}},\\\"required\\\":[\\\"customerId\\\"]}\",\"toolResponseValue\":\"{{JSON.stringify(input.result)}}\"},\"status\":\"active\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:04:41.257Z",
+  "model": "claude-haiku-5-5"
+}

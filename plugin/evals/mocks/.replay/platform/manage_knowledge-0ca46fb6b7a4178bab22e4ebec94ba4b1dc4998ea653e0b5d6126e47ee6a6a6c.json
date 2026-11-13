@@ -1,0 +1,12 @@
+{
+  "input": {
+    "operation": "create_store",
+    "projectId": "proj-demo",
+    "name": "Pricing FAQ",
+    "description": "Pricing FAQ from https://example.com/pricing-faq"
+  },
+  "output": "{\"operation\":\"create_store\",\"projectId\":\"proj-demo\",\"knowledgeStore\":{\"id\":\"ks-new-1\",\"name\":\"Pricing FAQ\",\"description\":\"Pricing FAQ from https://example.com/pricing-faq\",\"projectId\":\"proj-demo\",\"sources\":[],\"documents\":0,\"status\":\"created\"}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:00:28.125Z",
+  "model": "claude-haiku-5-5"
+}

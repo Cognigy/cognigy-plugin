@@ -1,0 +1,11 @@
+{
+  "input": {
+    "aiAgentId": "agent-new-1",
+    "projectId": "proj-demo",
+    "message": "How long does standard shipping take?"
+  },
+  "output": "{\"aiAgentId\":\"agent-new-1\",\"projectId\":\"proj-demo\",\"persona\":{\"referenceId\":\"persona-demo-1\",\"name\":\"Friendly Assistant\"},\"message\":\"How long does standard shipping take?\",\"reply\":\"Standard shipping usually takes 3-5 business days. If you need it sooner, expedited shipping arrives in 2 business days and overnight in 1 business day. Is there anything else about shipping or returns I can help with?\",\"status\":\"ok\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:06:21.596Z",
+  "model": "claude-haiku-5-5"
+}

@@ -1,0 +1,11 @@
+{
+  "input": {
+    "aiAgentId": "agent-new-1",
+    "projectId": "proj-demo",
+    "message": "How long does standard shipping take?"
+  },
+  "output": "{\"agentId\":\"agent-new-1\",\"agentName\":\"Customer Support Agent\",\"projectId\":\"proj-demo\",\"message\":\"How long does standard shipping take?\",\"reply\":\"Standard shipping takes 3-5 business days. Orders are processed within 1 business day before they ship. Is there anything else I can help you with about shipping or returns?\",\"flowId\":\"flow-new-1\",\"llmId\":\"llm-gpt4o\",\"status\":\"completed\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:49:12.526Z",
+  "model": "claude-haiku-5-5"
+}

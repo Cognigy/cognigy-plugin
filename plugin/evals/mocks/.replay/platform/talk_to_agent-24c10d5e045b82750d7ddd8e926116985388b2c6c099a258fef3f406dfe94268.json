@@ -1,0 +1,11 @@
+{
+  "input": {
+    "aiAgentId": "agent-new-1",
+    "projectId": "proj-demo",
+    "message": "What's your return window, and who pays return shipping?"
+  },
+  "output": "{\"agentId\":\"agent-new-1\",\"agentName\":\"Customer Support Agent\",\"projectId\":\"proj-demo\",\"message\":\"What's your return window, and who pays return shipping?\",\"reply\":\"You can return unused items in their original packaging within 30 days of delivery. The customer pays return shipping unless the item is defective. Is there anything else I can help you with about shipping or returns?\",\"flowId\":\"flow-new-1\",\"llmId\":\"llm-gpt4o\",\"status\":\"completed\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:49:15.127Z",
+  "model": "claude-haiku-5-5"
+}

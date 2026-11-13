@@ -1,0 +1,17 @@
+{
+  "input": {
+    "aiAgentId": "agent-new-1",
+    "instructions": "Only discuss shipping times and the return policy. Politely decline anything else (order status, payments, account issues) and suggest contacting a human agent. Never invent policy details beyond those given in your job instructions.",
+    "jobConfig": {
+      "jobName": "Shipping & Returns Support Specialist",
+      "jobDescription": "Answer customer questions about shipping times and the return policy only. Out of scope: order status lookups, payments, billing, account issues; offer a human handoff suggestion for those.",
+      "jobInstructions": "PLACEHOLDER POLICY (to be replaced with real policy by the business):\n- Orders are processed within 1 business day.\n- Standard shipping: 3-5 business days. Express: 1-2 business days. International: 7-14 business days.\n- Returns accepted within 30 days of delivery for unused items in original packaging.\n- Defective items: free return label.\n- Refunds issued within 5-7 business days of receiving the return.\nRules: Keep answers short and friendly. Use only the facts above. If asked something not covered (even within shipping/returns), say you don't have that detail and suggest contacting a human agent. Do not look up orders.",
+      "temperature": 0.3,
+      "maxTokens": 1000
+    }
+  },
+  "output": "{\"id\":\"agent-new-1\",\"name\":\"Shipping & Returns Support Agent\",\"type\":\"AI Agent\",\"legacy\":true,\"projectId\":\"proj-demo\",\"flowId\":\"flow-new-1\",\"instructions\":\"Only discuss shipping times and the return policy. Politely decline anything else (order status, payments, account issues) and suggest contacting a human agent. Never invent policy details beyond those given in your job instructions.\",\"jobConfig\":{\"jobName\":\"Shipping & Returns Support Specialist\",\"jobDescription\":\"Answer customer questions about shipping times and the return policy only. Out of scope: order status lookups, payments, billing, account issues; offer a human handoff suggestion for those.\",\"jobInstructions\":\"PLACEHOLDER POLICY (to be replaced with real policy by the business):\\n- Orders are processed within 1 business day.\\n- Standard shipping: 3-5 business days. Express: 1-2 business days. International: 7-14 business days.\\n- Returns accepted within 30 days of delivery for unused items in original packaging.\\n- Defective items: free return label.\\n- Refunds issued within 5-7 business days of receiving the return.\\nRules: Keep answers short and friendly. Use only the facts above. If asked something not covered (even within shipping/returns), say you don't have that detail and suggest contacting a human agent. Do not look up orders.\",\"temperature\":0.3,\"maxTokens\":1000},\"persona\":{\"referenceId\":\"persona-proj-demo-1\",\"name\":\"NiCE\",\"created\":false},\"tools\":[],\"knowledgeStores\":[],\"llm\":{\"id\":\"llm-gpt4o\",\"name\":\"GPT-4o\"},\"use\":{\"aiAgentId\":\"agent-new-1\"},\"status\":\"updated\",\"updatedAt\":\"2025-01-15T10:32:00Z\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:06:27.779Z",
+  "model": "claude-haiku-5-5"
+}

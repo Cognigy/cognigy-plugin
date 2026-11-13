@@ -1,0 +1,10 @@
+{
+  "input": {
+    "resourceType": "llm_model",
+    "projectId": "proj-new-1"
+  },
+  "output": "{\"resourceType\":\"llm_model\",\"projectId\":\"proj-new-1\",\"count\":0,\"items\":[],\"_hints\":{\"action\":\"No LLM models are configured in project proj-new-1. The project default LLM 'GPT-4o' (llm-gpt4o) exists only in proj-demo.\"}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:04:56.517Z",
+  "model": "claude-haiku-5-5"
+}

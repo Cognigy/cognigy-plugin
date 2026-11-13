@@ -1,0 +1,12 @@
+{
+  "input": {
+    "resourceType": "endpoint",
+    "id": "ep-new-1",
+    "projectId": "proj-demo",
+    "raw": true
+  },
+  "output": "{\"resourceType\":\"endpoint\",\"id\":\"ep-new-1\",\"projectId\":\"proj-demo\",\"name\":\"Billing Bot Webchat\",\"type\":\"webchat\",\"linkedFlowId\":\"flow-billing\",\"status\":\"active\",\"raw\":{\"_id\":\"ep-new-1\",\"name\":\"Billing Bot Webchat\",\"type\":\"webchat\",\"projectId\":\"proj-demo\",\"linkedFlowId\":\"flow-billing\",\"status\":\"active\",\"config\":{\"stylePreset\":\"modern\",\"layout\":{\"title\":\"Billing Support\"},\"behavior\":{\"enableTypingIndicator\":true},\"homeScreen\":{\"enabled\":true,\"welcomeText\":\"Hi! How can I help with your billing questions?\"}}}}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:06:21.108Z",
+  "model": "claude-haiku-5-5"
+}

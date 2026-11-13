@@ -1,0 +1,11 @@
+{
+  "input": {
+    "aiAgentId": "agent-new-1",
+    "projectId": "proj-demo",
+    "message": "How long does standard shipping take, and can I return something after 45 days?"
+  },
+  "output": "{\"id\":\"agent-new-1\",\"name\":\"Shipping & Returns Support\",\"type\":\"AI Agent\",\"legacy\":true,\"projectId\":\"proj-demo\",\"reply\":\"Hi! Standard shipping takes 3-5 business days, and it's free on orders over $50 (otherwise it's $4.99). For returns, our policy window is 30 days from delivery, so I'm sorry, but I can't accept a return after 45 days. Items must be unused and in their original packaging. Is there anything else I can help you with?\",\"status\":\"ok\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:06:17.646Z",
+  "model": "claude-haiku-5-5"
+}

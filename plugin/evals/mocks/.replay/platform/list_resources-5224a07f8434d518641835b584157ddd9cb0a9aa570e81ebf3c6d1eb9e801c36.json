@@ -1,0 +1,10 @@
+{
+  "input": {
+    "resourceType": "project",
+    "limit": 100
+  },
+  "output": "{\"resourceType\":\"project\",\"total\":1,\"limit\":100,\"items\":[{\"id\":\"proj-demo\",\"name\":\"Demo Project\",\"primaryLocale\":\"en\"}]}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:36:19.400Z",
+  "model": "claude-haiku-5-5"
+}

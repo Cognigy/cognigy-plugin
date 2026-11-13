@@ -1,0 +1,12 @@
+{
+  "input": {
+    "resourceType": "endpoint",
+    "id": "ep-new-1",
+    "projectId": "proj-demo",
+    "raw": true
+  },
+  "output": "{\"resourceType\":\"endpoint\",\"id\":\"ep-new-1\",\"projectId\":\"proj-demo\",\"raw\":true,\"data\":{\"id\":\"ep-new-1\",\"name\":\"Billing Bot Webchat\",\"type\":\"webchat\",\"projectId\":\"proj-demo\",\"flowId\":\"flow-billing\",\"stylePreset\":\"classic\",\"layout\":{\"title\":\"Billing Bot\"},\"behavior\":{\"enableTypingIndicator\":true},\"status\":\"active\"}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:49:08.092Z",
+  "model": "claude-haiku-5-5"
+}

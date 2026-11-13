@@ -1,0 +1,11 @@
+{
+  "input": {
+    "projectId": "proj-demo",
+    "message": "Hi, what time can I check in?",
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"projectId\":\"proj-demo\",\"agentType\":\"voice\",\"reply\":\"Hello, thank you for calling Harbour Hotel's front desk. I don't have the check-in time to hand, but I can have a team member follow up with you, or you can call the front desk directly. Would you like me to arrange a follow-up?\",\"endpointUrl\":\"https://endpoint-demo.cognigy.ai/abc123\",\"largeLanguageModel\":\"GPT Live\",\"mode\":\"speech-to-speech\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:50:48.472Z",
+  "model": "claude-haiku-5-5"
+}

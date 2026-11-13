@@ -1,0 +1,11 @@
+{
+  "input": {
+    "aiAgentId": "agent-new-1",
+    "projectId": "proj-demo",
+    "message": "What's your return window, and do I get a refund?"
+  },
+  "output": "{\"aiAgentId\":\"agent-new-1\",\"projectId\":\"proj-demo\",\"message\":\"What's your return window, and do I get a refund?\",\"reply\":\"Returns are accepted within 30 days of delivery. The item must be unused and in its original packaging. If your return is approved, the refund goes back to your original payment method within 5-7 business days of us receiving the item. Defective or wrong items get a free return label. Final-sale items can't be returned. Is there anything else I can help you with about shipping or returns?\",\"status\":\"ok\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:01:10.651Z",
+  "model": "claude-haiku-5-5"
+}

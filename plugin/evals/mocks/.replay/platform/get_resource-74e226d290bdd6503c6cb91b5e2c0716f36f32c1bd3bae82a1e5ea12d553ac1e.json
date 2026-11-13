@@ -1,0 +1,12 @@
+{
+  "input": {
+    "resourceType": "agent",
+    "id": "agent-billing",
+    "projectId": "proj-demo",
+    "raw": true
+  },
+  "output": "{\"resourceType\":\"agent\",\"id\":\"agent-billing\",\"projectId\":\"proj-demo\",\"name\":\"Billing Bot\",\"type\":\"AI Agent\",\"legacy\":true,\"persona\":\"Friendly assistant for billing questions\",\"flowId\":\"flow-billing\",\"tools\":[],\"knowledge\":[],\"use\":{\"aiAgentId\":\"agent-billing\"},\"raw\":{\"id\":\"agent-billing\",\"name\":\"Billing Bot\",\"projectId\":\"proj-demo\",\"type\":\"aiAgent\",\"persona\":\"Friendly assistant for billing questions\",\"flowId\":\"flow-billing\",\"llmId\":\"llm-gpt4o\",\"tools\":[],\"knowledgeStores\":[],\"status\":\"active\"}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:52:23.355Z",
+  "model": "claude-haiku-5-5"
+}

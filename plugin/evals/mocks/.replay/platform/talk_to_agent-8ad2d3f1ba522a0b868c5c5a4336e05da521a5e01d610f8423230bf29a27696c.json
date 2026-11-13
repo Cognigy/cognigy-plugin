@@ -1,0 +1,11 @@
+{
+  "input": {
+    "projectId": "proj-new-1",
+    "message": "Can you help me change my flight date?",
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"projectId\":\"proj-new-1\",\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"agentName\":\"Baggage Rules Assistant\",\"reply\":\"Hello! I can only help with baggage rules, so I'm not able to change your flight date. For rebooking or flight changes, please contact your airline's customer service or check their official website. If you have any questions about bag size, weight, fees, or restricted items, I'm happy to help with those.\",\"persona\":{\"referenceId\":\"persona-nice-1\",\"name\":\"NiCE\"},\"status\":\"completed\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:05:09.330Z",
+  "model": "claude-haiku-5-5"
+}

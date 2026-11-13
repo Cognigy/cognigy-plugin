@@ -1,0 +1,11 @@
+{
+  "input": {
+    "projectId": "proj-demo",
+    "message": "Hi, what time can I check in, and what kinds of rooms do you have?",
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"projectId\":\"proj-demo\",\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"agentName\":\"Harbour Hotel Front Desk\",\"reply\":\"Hello, thanks for calling Harbour Hotel. Standard check-in starts at 3:00 PM. If you need to arrive earlier, I can note that as an early check-in request, though it depends on availability and our front desk team will confirm it. As for rooms, I can tell you about the general room types, but I don't have the details on current availability or prices, so for those I can have our front desk team follow up. Are you planning a stay with us soon?\",\"endpointUrl\":\"https://endpoint-demo.cognigy.ai/abc123\",\"_hints\":{\"action\":\"Send another message with talk_to_agent to continue the conversation, or use manage_agent to update the agent's instructions.\"}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:08:02.065Z",
+  "model": "claude-haiku-5-5"
+}

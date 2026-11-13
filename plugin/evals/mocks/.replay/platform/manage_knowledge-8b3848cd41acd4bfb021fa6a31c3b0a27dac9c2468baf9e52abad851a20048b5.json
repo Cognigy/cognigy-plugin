@@ -1,0 +1,12 @@
+{
+  "input": {
+    "operation": "list_chunks",
+    "knowledgeStoreId": "ks-new-1",
+    "sourceId": "ksrc-new-1",
+    "limit": 5
+  },
+  "output": "{\"resourceType\":\"knowledge_chunk\",\"operation\":\"list_chunks\",\"knowledgeStoreId\":\"ks-new-1\",\"sourceId\":\"ksrc-new-1\",\"sourceName\":\"Pricing FAQ page\",\"processingStatus\":\"completed\",\"count\":3,\"limit\":5,\"items\":[{\"id\":\"chunk-new-1\",\"index\":0,\"text\":\"Pricing FAQ: Our Basic plan costs $10 per month and includes up to 1,000 conversations.\",\"tokens\":21},{\"id\":\"chunk-new-2\",\"index\":1,\"text\":\"The Pro plan costs $49 per month and includes unlimited conversations, priority support, and API access.\",\"tokens\":24},{\"id\":\"chunk-new-3\",\"index\":2,\"text\":\"Billing occurs monthly on the day you first subscribed. Annual plans are billed once per year at a 20% discount.\",\"tokens\":22}],\"documentCount\":3}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:48:33.894Z",
+  "model": "claude-haiku-5-5"
+}

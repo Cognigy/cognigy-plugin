@@ -1,0 +1,10 @@
+{
+  "input": {
+    "resourceType": "llm_model",
+    "projectId": "proj-demo"
+  },
+  "output": "{\"items\":[{\"id\":\"llm-gpt4o\",\"referenceId\":\"5a255e2f-94b9-46ab-bfb7-4e407e68ef69\",\"name\":\"GPT-4o\",\"provider\":\"openAI\",\"modelType\":\"gpt-4o\",\"modelGroup\":\"chat\",\"connectionId\":\"c-openai\",\"isDefault\":true},{\"id\":\"llm-live\",\"referenceId\":\"597e276b-0bd0-40e8-86df-d4d743ea311c\",\"name\":\"GPT Live\",\"provider\":\"openAI\",\"modelType\":\"gpt-live-1\",\"modelGroup\":\"voiceToVoice\",\"connectionId\":\"c-openai\",\"isDefault\":false}],\"total\":2}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:38:22.144Z",
+  "model": "claude-haiku-5-5"
+}

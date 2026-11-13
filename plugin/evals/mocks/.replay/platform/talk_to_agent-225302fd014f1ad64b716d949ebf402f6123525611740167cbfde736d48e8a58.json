@@ -1,0 +1,11 @@
+{
+  "input": {
+    "projectId": "proj-demo",
+    "message": "What's the status of flight NW456?",
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"agentName\":\"Northwind Air Voice Assistant\",\"message\":\"What's the status of flight NW456?\",\"reply\":\"Flight NW456, Denver to Chicago, is delayed 40 minutes. It now departs at 17:10 from gate C4. Is there anything else I can help you with?\",\"toolCalls\":[{\"name\":\"flight_status\",\"input\":{\"flightNumber\":\"NW456\"},\"status\":\"success\"}],\"turn\":1}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:02:16.717Z",
+  "model": "claude-haiku-5-5"
+}

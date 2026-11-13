@@ -1,0 +1,11 @@
+{
+  "input": {
+    "aiAgentId": "agent-phone",
+    "endpointId": "ep-voice",
+    "projectId": "proj-demo"
+  },
+  "output": "{\"tool\":\"audit_voice_agent\",\"projectId\":\"proj-demo\",\"aiAgentId\":\"agent-phone\",\"endpointId\":\"ep-voice\",\"flowId\":\"flow-phone\",\"status\":\"warnings\",\"score\":62,\"checks\":[{\"id\":\"endpoint_attached\",\"status\":\"pass\",\"detail\":\"Voice Gateway endpoint ep-voice is attached to agent-phone.\"},{\"id\":\"barge_in\",\"status\":\"warn\",\"detail\":\"Barge-in is disabled. Callers cannot interrupt the agent while it is speaking.\"},{\"id\":\"silence_timeout\",\"status\":\"warn\",\"detail\":\"No silence timeout is configured. Calls with no caller input may stay open indefinitely.\"},{\"id\":\"fallback_handover\",\"status\":\"warn\",\"detail\":\"No fallback handover is configured. No live-agent transfer exists if the bot fails or the caller requests a human.\"},{\"id\":\"default_llm\",\"status\":\"pass\",\"detail\":\"Project default LLM llm-gpt4o (GPT-4o) is set and its connection is working.\"},{\"id\":\"flow_present\",\"status\":\"pass\",\"detail\":\"flow-phone exists and has a start node.\"}],\"recommendations\":[\"Enable barge-in so callers can interrupt long prompts.\",\"Set a silence timeout (for example 10 to 15 seconds) to end idle calls.\",\"Configure a fallback handover to a live-agent queue or phone number.\"],\"_hints\":{\"action\":\"Review the warnings. Voice settings can be updated with manage_agent or the Cognigy.AI UI.\"}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:39:59.428Z",
+  "model": "claude-haiku-5-5"
+}

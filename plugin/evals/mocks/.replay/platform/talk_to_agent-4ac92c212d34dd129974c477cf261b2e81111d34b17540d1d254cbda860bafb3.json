@@ -1,0 +1,11 @@
+{
+  "input": {
+    "aiAgentId": "agent-new-1",
+    "projectId": "proj-demo",
+    "message": "What's your return window, and how fast do I get a refund?"
+  },
+  "output": "{\"aiAgentId\":\"agent-new-1\",\"projectId\":\"proj-demo\",\"message\":\"What's your return window, and how fast do I get a refund?\",\"reply\":\"Hi! You can return unused items in their original packaging within 30 days of delivery. Refunds are issued 5-7 business days after we receive your return. Is there anything else you'd like to know about shipping or returns?\",\"status\":\"ok\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:49:09.342Z",
+  "model": "claude-haiku-5-5"
+}

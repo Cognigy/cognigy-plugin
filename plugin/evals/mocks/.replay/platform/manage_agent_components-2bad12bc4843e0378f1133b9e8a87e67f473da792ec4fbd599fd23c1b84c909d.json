@@ -1,0 +1,11 @@
+{
+  "input": {
+    "operation": "catalog",
+    "component": "tool",
+    "projectId": "proj-demo"
+  },
+  "output": "{\"operation\":\"catalog\",\"component\":\"tool\",\"projectId\":\"proj-demo\",\"items\":[{\"type\":\"flightStatusLookup\",\"name\":\"Flight Status Lookup\",\"description\":\"Looks up the current status of a flight by flight number and date.\",\"requiredInputs\":[\"flightNumber\"],\"optionalInputs\":[\"date\"]},{\"type\":\"seatChange\",\"name\":\"Seat Change\",\"description\":\"Changes the seat assignment on a booking.\",\"requiredInputs\":[\"bookingReference\",\"seat\"],\"optionalInputs\":[]},{\"type\":\"httpRequest\",\"name\":\"HTTP Request\",\"description\":\"Calls an external REST endpoint and returns the response.\",\"requiredInputs\":[\"url\",\"method\"],\"optionalInputs\":[\"headers\",\"body\"]}],\"total\":3}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:49:45.327Z",
+  "model": "claude-haiku-5-5"
+}

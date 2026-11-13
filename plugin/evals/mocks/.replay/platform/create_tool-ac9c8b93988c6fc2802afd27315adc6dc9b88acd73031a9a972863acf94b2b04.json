@@ -1,0 +1,20 @@
+{
+  "input": {
+    "toolType": "http",
+    "name": "Get Flight Status",
+    "aiAgentId": "60d5ec49f1a2c8b1a4e0f101",
+    "config": {
+      "toolId": "get_flight_status",
+      "description": "Look up the status of a Northwind Air flight by flight number (mock data).",
+      "url": "https://httpbin.org/get",
+      "method": "GET",
+      "parameters": "{\"type\":\"object\",\"properties\":{\"flightNumber\":{\"type\":\"string\",\"description\":\"Flight number, e.g. NW123\"}},\"required\":[\"flightNumber\"]}",
+      "postProcessCode": "const f = String(input.aiAgent.toolArgs.flightNumber || '').toUpperCase(); const n = (f.replace(/\\D/g,'') | 0) % 3; const s = [{status:'On time',gate:'B12',departure:'10:45'},{status:'Delayed 25 minutes',gate:'C4',departure:'11:20'},{status:'Boarding',gate:'A7',departure:'09:55'}][n]; context.flightResult = JSON.stringify(Object.assign({flight:f,origin:'Seattle',destination:'Denver'}, s));",
+      "toolResponseValue": "{{context.flightResult}}"
+    }
+  },
+  "output": "{\"tool\":{\"id\":\"tool-new-1\",\"toolType\":\"http\",\"name\":\"Get Flight Status\",\"aiAgentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"config\":{\"toolId\":\"get_flight_status\",\"description\":\"Look up the status of a Northwind Air flight by flight number (mock data).\",\"url\":\"https://httpbin.org/get\",\"method\":\"GET\",\"parameters\":\"{\\\"type\\\":\\\"object\\\",\\\"properties\\\":{\\\"flightNumber\\\":{\\\"type\\\":\\\"string\\\",\\\"description\\\":\\\"Flight number, e.g. NW123\\\"}},\\\"required\\\":[\\\"flightNumber\\\"]}\",\"postProcessCode\":\"const f = String(input.aiAgent.toolArgs.flightNumber || '').toUpperCase(); const n = (f.replace(/\\\\D/g,'') | 0) % 3; const s = [{status:'On time',gate:'B12',departure:'10:45'},{status:'Delayed 25 minutes',gate:'C4',departure:'11:20'},{status:'Boarding',gate:'A7',departure:'09:55'}][n]; context.flightResult = JSON.stringify(Object.assign({flight:f,origin:'Seattle',destination:'Denver'}, s));\",\"toolResponseValue\":\"{{context.flightResult}}\"}},\"use\":{\"toolId\":\"tool-new-1\"}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:07:11.087Z",
+  "model": "claude-haiku-5-5"
+}

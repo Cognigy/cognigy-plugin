@@ -1,0 +1,11 @@
+{
+  "input": {
+    "projectId": "proj-new-1",
+    "message": "What's the fee for a bag on a Lisbon to Tokyo business class ticket with Gold status?",
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"projectId\":\"proj-new-1\",\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"agentName\":\"Baggage Rules Assistant\",\"reply\":\"Hello! I'm not sure about the exact fee for a Lisbon to Tokyo business class ticket with Gold status. Fees and allowances can vary by fare, route, airline and loyalty status, and I don't want to give you a wrong figure. Please check the airline's official website or contact their customer service to confirm. I can also help with general baggage rules like size, weight, or restricted items if you have questions.\",\"persona\":{\"referenceId\":\"persona-nice-1\",\"name\":\"NiCE\"},\"status\":\"completed\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:05:07.774Z",
+  "model": "claude-haiku-5-5"
+}
