@@ -115,6 +115,23 @@ describe("Environments with an unusable file", () => {
   });
 });
 
+describe("Environments with a stored environment named default", () => {
+  const clash = () =>
+    ({ state: "ok", file: { default: TRIAL, trial: TRIAL } }) as const;
+
+  it("refuses every call and says how to fix it", () => {
+    for (const requested of [undefined, "default", "trial"]) {
+      expect(() => envs(clash).resolve(requested)).toThrow(
+        /named "default".*Rename it with cognigy-envs/,
+      );
+    }
+  });
+
+  it("offers no environment field", () => {
+    expect(envs(clash).names()).toEqual([]);
+  });
+});
+
 describe("withEnvironmentField", () => {
   it("returns the tools unchanged without extra environments", () => {
     expect(withEnvironmentField(tools, [])).toBe(tools);

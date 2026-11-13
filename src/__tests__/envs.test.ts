@@ -124,6 +124,29 @@ describe("cognigy-envs menu", () => {
     expect(t.output()).toContain("✔ Deleted trial.");
   });
 
+  it("renames a stored environment called default before opening", async () => {
+    const dir = freshDir({ Default: TRIAL });
+    const t = scripted(dir, { answers: ["main"] });
+    expect(await runEnvs(t.io)).toBe(0);
+    expect(saved(dir)).toEqual({ main: TRIAL });
+    expect(t.output()).toContain("reserved for the plugin's own login");
+  });
+
+  it("keeps a stored default when the new name is not usable", async () => {
+    const dir = freshDir({ default: TRIAL, trial: TRIAL });
+    const t = scripted(dir, { answers: ["TRIAL"] });
+    expect(await runEnvs(t.io)).toBe(1);
+    expect(saved(dir)).toEqual({ default: TRIAL, trial: TRIAL });
+    expect(t.output()).toContain('"TRIAL" already exists. Nothing changed.');
+  });
+
+  it("explains a stored default outside a terminal and changes nothing", async () => {
+    const dir = freshDir({ default: TRIAL });
+    const t = scripted(dir, {}, false);
+    expect(await runEnvs(t.io)).toBe(1);
+    expect(saved(dir)).toEqual({ default: TRIAL });
+  });
+
   it("stops on a broken file without quoting it", async () => {
     const dir = freshDir('{"trial": FAKE-BROKEN');
     const t = scripted(dir, {});

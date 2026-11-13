@@ -13,6 +13,7 @@ import { join } from "path";
 import {
   findEnvironmentName,
   readEnvironmentsFile,
+  reservedNameIn,
   updateEnvironmentsFile,
   validateEnvironmentName,
   writeEnvironmentsFile,
@@ -214,6 +215,18 @@ describe("reserved names", () => {
       expect(state.reason).toMatch(/__proto__/);
       expect(state.reason).not.toContain(FAKE_KEY);
     }
+  });
+
+  it("refuses default as a new name but still reads a file that has one", () => {
+    expect(validateEnvironmentName("Default")).toMatch(/reserved/);
+    const path = rawFile({
+      Default: { apiBaseUrl: "https://api-x.cognigy.ai", apiKey: FAKE_KEY },
+    });
+    const state = readEnvironmentsFile(path);
+    expect(state.state).toBe("ok");
+    if (state.state === "ok")
+      expect(reservedNameIn(state.file)).toBe("Default");
+    expect(reservedNameIn({})).toBeUndefined();
   });
 
   it("still accepts names that only look similar", () => {

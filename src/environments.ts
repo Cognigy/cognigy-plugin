@@ -20,6 +20,7 @@ import {
   DEFAULT_ENVIRONMENT,
   findEnvironmentName,
   readEnvironmentsFile,
+  reservedNameIn,
   type EnvironmentEntry,
   type EnvironmentsFile,
   type EnvironmentsFileState,
@@ -87,7 +88,9 @@ export class Environments {
   /** The extra environments' names; [] when the file is absent or unusable. */
   names(): string[] {
     const state = this.readFile();
-    return state.state === "ok" ? Object.keys(state.file) : [];
+    return state.state === "ok" && !reservedNameIn(state.file)
+      ? Object.keys(state.file)
+      : [];
   }
 
   /**
@@ -105,6 +108,13 @@ export class Environments {
       );
     }
     const file = state.state === "ok" ? state.file : {};
+    const clash = reservedNameIn(file);
+    if (clash) {
+      // Which one would "default" mean? Refuse rather than guess the tenant.
+      throw new EnvironmentError(
+        `environments.json has an environment named "${clash}", but "${DEFAULT_ENVIRONMENT}" is reserved for the plugin's own login. Rename it with cognigy-envs in a terminal.`,
+      );
+    }
     const multiple = Object.keys(file).length > 0;
     const wanted = typeof requested === "string" ? requested.trim() : "";
 

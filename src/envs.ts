@@ -12,6 +12,7 @@ import { join } from "path";
 import {
   DEFAULT_ENVIRONMENT,
   readEnvironmentsFile,
+  reservedNameIn,
   updateEnvironmentsFile,
   validateEnvironmentName,
   type EnvironmentsFile,
@@ -165,6 +166,28 @@ export async function runEnvs(io: EnvsIo): Promise<number> {
       `${error.message}\nFix or delete that file, then run cognigy-envs again.\n`,
     );
     return 1;
+  }
+
+  // A file from the cognigy-env.py script may use the now-reserved name.
+  const clash = reservedNameIn(file);
+  if (clash) {
+    io.write(
+      `Your environment "${clash}" uses a name reserved for the plugin's own login. Rename it to keep using it; until then the plugin refuses every call.\n`,
+    );
+    if (!io.isTTY) return 1;
+    const renamed = (await io.ask(`New name for "${clash}": `)).trim();
+    const problem =
+      validateEnvironmentName(renamed) ??
+      (exists(file, renamed) ? `"${renamed}" already exists.` : undefined);
+    if (problem) {
+      io.write(`${problem} Nothing changed.\n`);
+      return 1;
+    }
+    updateEnvironmentsFile((fresh) => {
+      fresh[renamed] = fresh[clash];
+      delete fresh[clash];
+    }, path);
+    file = load(path);
   }
 
   if (!io.isTTY) {

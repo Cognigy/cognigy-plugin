@@ -41,18 +41,37 @@ export type EnvironmentsFileState =
   | { state: "ok"; file: EnvironmentsFile }
   | { state: "invalid"; reason: string };
 
-/** An error message when `name` cannot be an environment name, else undefined. */
-export function validateEnvironmentName(name: string): string | undefined {
+/** Why `name` cannot be stored at all, else undefined. */
+function storageProblem(name: string): string | undefined {
   if (name.trim().length === 0) return "An environment name cannot be empty.";
-  if (name.trim().toLowerCase() === DEFAULT_ENVIRONMENT) {
-    return `"${DEFAULT_ENVIRONMENT}" is reserved for the plugin's own credentials.`;
-  }
   // Names become property keys on a plain object; assigning "__proto__" would
   // change the object's prototype instead of adding an entry.
   if (name === "__proto__") {
     return 'An environment name cannot be "__proto__" (reserved).';
   }
   return undefined;
+}
+
+const isReserved = (name: string) =>
+  name.trim().toLowerCase() === DEFAULT_ENVIRONMENT;
+
+/** An error message when `name` cannot be used for an environment, else undefined. */
+export function validateEnvironmentName(name: string): string | undefined {
+  return (
+    storageProblem(name) ??
+    (isReserved(name)
+      ? `"${DEFAULT_ENVIRONMENT}" is reserved for the plugin's own credentials.`
+      : undefined)
+  );
+}
+
+/**
+ * A stored name that clashes with `default`, if any. The reader still accepts
+ * one (a file from the cognigy-env.py script can have it), so `cognigy-envs`
+ * can open the file and rename it; the engine refuses calls until then.
+ */
+export function reservedNameIn(file: EnvironmentsFile): string | undefined {
+  return Object.keys(file).find(isReserved);
 }
 
 /**
@@ -127,7 +146,7 @@ export function readEnvironmentsFile(
 
   const file: EnvironmentsFile = {};
   for (const [name, raw] of Object.entries(parsed)) {
-    const nameError = validateEnvironmentName(name);
+    const nameError = storageProblem(name);
     if (nameError) {
       return { state: "invalid", reason: `${path}: "${name}": ${nameError}` };
     }
