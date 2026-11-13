@@ -55,4 +55,13 @@ The tenant contains exactly this, and stays consistent with earlier calls in the
 New resources get ids like "agent-new-1", "ep-new-1", "ks-new-1". talk_to_agent
 replies in character as the addressed agent.
 
+manage_agent_components catalog returns { items, total }. Each item is { slug, name,
+description, available: true, parameters: [{ key, type, mode, description }] }
+(component "skill" has bundledToolSlugs instead of parameters). The tool catalog
+holds "http-request" (parameters url, method, headers, body), "execute-tool-flow"
+(parameter flowReferenceId) and "voice-hangup" (no parameters).
+
+manage_snapshots decline touches nothing and always succeeds: { operation: "decline",
+projectId, acknowledged: true, note: "No backup will be taken for this project." }.
+
 Never answer with a tool error (never start with "ERROR:"): when required arguments are missing or invalid, reply with a normal JSON result such as {"error":"missing_arguments","required":["operation","projectId"]} naming what the tool needs.
