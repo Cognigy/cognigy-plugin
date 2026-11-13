@@ -224,6 +224,39 @@ export function withEnvironmentField(
 }
 
 /** Tags a result with the environment it ran on, so the user can always tell. */
+/**
+ * Why an explicit `talk_to_agent` endpoint URL is not on the selected
+ * environment's endpoint host, else undefined. Endpoint URLs carry no key, so
+ * this guards the tenant the message reaches and the `_environment` label, not
+ * credentials. Nothing to compare when the environment's endpoint host could
+ * not be derived from its API URL (an explicit URL is then the workaround).
+ * ponytail: host only; two environments on one host are not told apart, that
+ * would need an API lookup of the URL token.
+ */
+export function foreignEndpointError(
+  endpointUrl: unknown,
+  target: ResolvedEnvironment,
+): string | undefined {
+  const { apiBaseUrl, endpointBaseUrl } = target.runtime.config;
+  if (typeof endpointUrl !== "string" || endpointBaseUrl === apiBaseUrl) {
+    return undefined;
+  }
+  const host = (url: string) => {
+    try {
+      return new URL(url.trim()).host;
+    } catch {
+      return undefined;
+    }
+  };
+  const given = host(endpointUrl);
+  const expected = host(endpointBaseUrl);
+  if (!given || !expected || given === expected) return undefined;
+  return (
+    `Nothing was sent: endpointUrl is on ${given}, but the "${target.name}" environment's endpoints are on ${expected}. ` +
+    `Pass the environment the endpoint belongs to, or pass agentId/aiAgentId to use this environment's endpoint.`
+  );
+}
+
 export function tagWithEnvironment(result: unknown, name: string): unknown {
   return result && typeof result === "object" && !Array.isArray(result)
     ? // First for readability, and it wins over a result field of that name.

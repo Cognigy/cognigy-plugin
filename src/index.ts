@@ -11,6 +11,7 @@ import { loadConfig } from "./config.js";
 import {
   buildRuntime,
   Environments,
+  foreignEndpointError,
   tagWithEnvironment,
   withEnvironmentField,
   type ResolvedEnvironment,
@@ -97,6 +98,12 @@ async function main() {
         return errorResult(error);
       }
       const tag = target.multiple ? target.name : undefined;
+      // With several environments, an explicit endpoint URL from another one
+      // would reach that tenant while the result claims this one.
+      if (target.multiple && name === "talk_to_agent") {
+        const foreign = foreignEndpointError(toolArgs.endpointUrl, target);
+        if (foreign) return errorResult(new Error(foreign), tag);
+      }
 
       const rateLimitKey = target.runtime.config.apiKey.substring(0, 10);
       if (!rateLimiter.check(rateLimitKey)) {

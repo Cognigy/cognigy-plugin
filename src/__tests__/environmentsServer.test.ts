@@ -143,19 +143,21 @@ async function startServer(home: string) {
   return {
     instructions: init.result.instructions as string,
     listTools: async () => (await request("tools/list")).result.tools,
-    /** tools/call: the parsed JSON text plus the isError flag. */
-    call: async (args: Record<string, unknown>) => {
-      const response = await request("tools/call", {
-        name: "list_resources",
-        arguments: { resourceType: "project", ...args },
-      });
-      return {
-        isError: Boolean(response.result.isError),
-        text: response.result.content[0].text as string,
-        body: JSON.parse(response.result.content[0].text),
-      };
-    },
+    /** tools/call of list_resources: the parsed JSON text plus isError. */
+    call: (args: Record<string, unknown>) =>
+      callTool("list_resources", { resourceType: "project", ...args }),
+    callTool,
   };
+
+  /** tools/call: the parsed JSON text plus the isError flag. */
+  async function callTool(name: string, args: Record<string, unknown>) {
+    const response = await request("tools/call", { name, arguments: args });
+    return {
+      isError: Boolean(response.result.isError),
+      text: response.result.content[0].text as string,
+      body: JSON.parse(response.result.content[0].text),
+    };
+  }
 }
 
 function resetCounts() {
@@ -238,6 +240,37 @@ describe("extra environments", () => {
     expect(defaultApi.keys.every((k) => k === "FAKE-DEFAULT")).toBe(true);
     expect(trialApi.keys).toEqual([]);
   });
+});
+
+describe("talk_to_agent with an endpoint of another environment", () => {
+  it(
+    "is refused before anything is sent",
+    async () => {
+      // A cloud-style URL, so its endpoint host can be derived; the guard
+      // fires before any request, so nothing needs to listen there.
+      const server = await startServer(
+        freshHome(
+          JSON.stringify({
+            trial: {
+              apiBaseUrl: "https://api-trial.cognigy.ai",
+              apiKey: "FAKE-TRIAL",
+            },
+          }),
+        ),
+      );
+      resetCounts();
+      const result = await server.callTool("talk_to_agent", {
+        environment: "trial",
+        endpointUrl: "https://endpoint-app.cognigy.ai/abc123",
+        message: "hi",
+      });
+      expect(result.isError).toBe(true);
+      expect(result.body._environment).toBe("trial");
+      expect(result.body.error).toContain("Nothing was sent");
+      expect([...defaultApi.keys, ...trialApi.keys]).toEqual([]);
+    },
+    TIMEOUT_MS * 2,
+  );
 });
 
 describe("an unusable environments.json", () => {

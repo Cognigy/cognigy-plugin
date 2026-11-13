@@ -2,8 +2,10 @@ import { describe, expect, it } from "@jest/globals";
 import {
   Environments,
   ENVIRONMENT_FIELD_DESCRIPTION,
+  foreignEndpointError,
   tagWithEnvironment,
   withEnvironmentField,
+  type ResolvedEnvironment,
   type Runtime,
 } from "../environments.js";
 import type { EnvironmentsFileState } from "../environmentsFile.js";
@@ -199,6 +201,51 @@ describe("withEnvironmentField", () => {
       JSON.stringify(withEnvironmentField(tools, names)).length -
       JSON.stringify(tools).length;
     expect(extra / tools.length).toBeLessThanOrEqual(250);
+  });
+});
+
+describe("foreignEndpointError", () => {
+  const trial = {
+    name: "trial",
+    multiple: true,
+    runtime: {
+      config: {
+        apiBaseUrl: "https://api-trial.cognigy.ai",
+        endpointBaseUrl: "https://endpoint-trial.cognigy.ai",
+      },
+    },
+  } as unknown as ResolvedEnvironment;
+
+  it("refuses an endpoint on another environment's host", () => {
+    const error = foreignEndpointError(
+      "https://endpoint-app.cognigy.ai/abc123",
+      trial,
+    );
+    expect(error).toContain("Nothing was sent");
+    expect(error).toContain("endpoint-app.cognigy.ai");
+    expect(error).toContain('"trial"');
+  });
+
+  it("allows this environment's endpoints and calls without a URL", () => {
+    expect(
+      foreignEndpointError("https://ENDPOINT-trial.cognigy.ai/abc123", trial),
+    ).toBeUndefined();
+    expect(foreignEndpointError(undefined, trial)).toBeUndefined();
+  });
+
+  it("does not guess when the endpoint host could not be derived", () => {
+    const selfHosted = {
+      ...trial,
+      runtime: {
+        config: {
+          apiBaseUrl: "https://cognigy.example.com",
+          endpointBaseUrl: "https://cognigy.example.com",
+        },
+      },
+    } as unknown as ResolvedEnvironment;
+    expect(
+      foreignEndpointError("https://bots.example.com/abc123", selfHosted),
+    ).toBeUndefined();
   });
 });
 
