@@ -97,6 +97,36 @@ describe("cognigy-envs menu", () => {
     expect(t.output()).toContain("+ Add an environment");
   });
 
+  it("shows the default URL Claude Code keeps when there is no config.json", async () => {
+    const dir = freshDir({ trial: TRIAL });
+    const settings = join(dir, "settings.json");
+    writeFileSync(
+      settings,
+      JSON.stringify({
+        pluginConfigs: {
+          "cognigy@cognigy-dev": {
+            options: { cognigy_api_base_url: "https://api-dev.cognigy.ai" },
+          },
+          "cognigy@cognigy-plugin": {
+            options: { cognigy_api_base_url: "https://api-app.cognigy.ai" },
+          },
+        },
+      }),
+    );
+    const t = scripted(dir, {});
+    t.io.claudeSettings = settings;
+    await runEnvs(t.io);
+    // The published install wins over a dev one.
+    expect(t.output()).toMatch(/default\s+https:\/\/api-app\.cognigy\.ai/);
+
+    // An unreadable settings file falls back to the hint.
+    writeFileSync(settings, "{ not json");
+    const broken = scripted(dir, {});
+    broken.io.claudeSettings = settings;
+    await runEnvs(broken.io);
+    expect(broken.output()).toContain("(your AI client's plugin settings)");
+  });
+
   it("refuses the reserved name and a duplicate in any case", async () => {
     const dir = freshDir({ trial: TRIAL });
     const t = scripted(dir, {

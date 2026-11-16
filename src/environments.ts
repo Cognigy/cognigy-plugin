@@ -104,7 +104,8 @@ export class Environments {
     if (Object.keys(state.file).length === 0) return undefined;
     return (
       `COGNIGY ENVIRONMENTS: ${this.describe(state.file)}. ` +
-      `"${DEFAULT_ENVIRONMENT}" is the plugin's own login. Map what the user calls a tenant (e.g. "dev") to a name by its URL; ask when it is unclear.`
+      `"${DEFAULT_ENVIRONMENT}" is the plugin's own login. Map what the user calls a tenant (e.g. "dev") to a name by its URL; ask when it is unclear. ` +
+      `Name the environment in the prompt of any subagent you delegate to; it cannot ask the user.`
     );
   }
 

@@ -19,6 +19,8 @@ field there is one environment and nothing here applies, except "Adding environm
    changes the conversation's environment.
 4. Every result names the environment it ran on (`_environment`). When you report a change, say
    which environment it was made in.
+5. When you hand work to a Cognigy subagent (cognigy-agent-builder, cognigy-s2s-demo-builder,
+   cognigy-voice-go-live), name the environment in its prompt. It cannot ask the user.
 
 ## IDs belong to one environment
 

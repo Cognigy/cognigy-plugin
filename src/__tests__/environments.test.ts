@@ -121,6 +121,8 @@ describe("Environments.overview", () => {
     expect(overview).toContain("default (https://api-app.cognigy.ai)");
     expect(overview).toContain("trial (https://api-trial.cognigy.ai)");
     expect(overview).not.toMatch(/FAKE-/);
+    // Subagents cannot ask the user, so the choice must travel in their prompt.
+    expect(overview).toContain("subagent");
   });
 
   it("says nothing when there is nothing to choose between", () => {

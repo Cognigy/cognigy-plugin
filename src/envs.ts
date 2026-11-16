@@ -8,7 +8,10 @@
  * cognigy-setup; it is shown for reference and never edited here. Keys are
  * typed hidden and never printed in full. Outside a terminal it prints the list.
  */
+import { readFileSync } from "fs";
+import { homedir } from "os";
 import { join } from "path";
+import { PLUGIN_ID } from "./install/claudeCode.js";
 import {
   DEFAULT_ENVIRONMENT,
   readEnvironmentsFile,
@@ -39,6 +42,8 @@ export interface EnvsIo {
   isTTY: boolean;
   /** The directory holding environments.json and config.json. */
   dir: string;
+  /** Claude Code's settings.json, read only for the default row's URL. */
+  claudeSettings?: string;
 }
 
 const UP = new Set(["\x1b[A", "\x1bOA", "k"]);
@@ -89,15 +94,36 @@ const nameWidth = (file: EnvironmentsFile) =>
     ...Object.keys(file).map((n) => n.length),
   );
 
-const defaultUrl = (dir: string) =>
-  readUserConfigFile(join(dir, "config.json")).COGNIGY_API_BASE_URL ||
+/**
+ * The URL Claude Code keeps for the plugin (its key is in the keychain), if
+ * any. Claude Code's own settings layout, not a documented contract: if it
+ * changes, the default row shows the hint again.
+ */
+function claudeCodeUrl(settingsPath: string | undefined): string | undefined {
+  if (!settingsPath) return undefined;
+  try {
+    const configs =
+      JSON.parse(readFileSync(settingsPath, "utf-8")).pluginConfigs ?? {};
+    const ids = Object.keys(configs).filter((id) => id.startsWith("cognigy@"));
+    // The published install wins over a dev one.
+    const id = ids.includes(PLUGIN_ID) ? PLUGIN_ID : ids[0];
+    const url = id ? configs[id]?.options?.cognigy_api_base_url : undefined;
+    return typeof url === "string" && url.trim() ? url.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const defaultUrl = (io: EnvsIo) =>
+  readUserConfigFile(join(io.dir, "config.json")).COGNIGY_API_BASE_URL ||
+  claudeCodeUrl(io.claudeSettings) ||
   "(your AI client's plugin settings)";
 
 /** The plain list, printed outside a terminal. */
-function list(file: EnvironmentsFile, dir: string): string {
+function list(file: EnvironmentsFile, io: EnvsIo): string {
   const width = nameWidth(file);
   return [
-    `${DEFAULT_ENVIRONMENT.padEnd(width)}  ${defaultUrl(dir)}  — ${DEFAULT_NOTE}`,
+    `${DEFAULT_ENVIRONMENT.padEnd(width)}  ${defaultUrl(io)}  — ${DEFAULT_NOTE}`,
     ...Object.keys(file).map(
       (n) => `${n.padEnd(width)}  ${file[n].apiBaseUrl}`,
     ),
@@ -107,7 +133,7 @@ function list(file: EnvironmentsFile, dir: string): string {
 /** One screen of the menu: logo, the default login, the environments, help. */
 function frame(
   file: EnvironmentsFile,
-  dir: string,
+  io: EnvsIo,
   cursor: number,
   status: string,
 ): string {
@@ -119,7 +145,7 @@ function frame(
     "",
     ...LOGO.map((line) => `  ${cyan(line)}`),
     "",
-    `  ${green("●")} ${bold(DEFAULT_ENVIRONMENT.padEnd(width))}  ${defaultUrl(dir)}`,
+    `  ${green("●")} ${bold(DEFAULT_ENVIRONMENT.padEnd(width))}  ${defaultUrl(io)}`,
     `    ${" ".repeat(width)}  ${dim(DEFAULT_NOTE)}`,
     // Dotted divider from the dot to the end of the note: default above, the rest below.
     `  ${dim("·".repeat(width + DEFAULT_NOTE.length + 4))}`,
@@ -242,7 +268,7 @@ export async function runEnvs(io: EnvsIo): Promise<number> {
   }
 
   if (!io.isTTY) {
-    io.write(`${list(file, io.dir)}\n`);
+    io.write(`${list(file, io)}\n`);
     return 0;
   }
 
@@ -252,7 +278,7 @@ export async function runEnvs(io: EnvsIo): Promise<number> {
     const names = Object.keys(file);
     const items = names.length + 1; // the environments, then "+ Add"
     cursor = Math.min(cursor, items - 1);
-    io.write(`${CLEAR}${frame(file, io.dir, cursor, status)}\n`);
+    io.write(`${CLEAR}${frame(file, io, cursor, status)}\n`);
 
     const key = await io.readKey();
     status = "";
@@ -287,6 +313,10 @@ if (isMainModule(import.meta.url, process.argv[1])) {
     readKey,
     isTTY: Boolean(process.stdin.isTTY && process.stdout.isTTY),
     dir: USER_CONFIG_DIR,
+    claudeSettings: join(
+      process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"),
+      "settings.json",
+    ),
   }).then(
     (code) => process.exit(code),
     (error: unknown) => {
