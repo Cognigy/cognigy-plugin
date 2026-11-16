@@ -1,5 +1,12 @@
 import { afterAll, describe, expect, it } from "@jest/globals";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { parseBaseUrl, runEnvs, type EnvsIo } from "../envs.js";
@@ -82,6 +89,8 @@ describe("cognigy-envs menu", () => {
     expect(saved(dir)).toEqual({ trial: TRIAL });
     expect(t.output()).toContain("✔ Added trial.");
     expect(t.output()).not.toContain("FAKE-TRIAL-KEY-0001");
+    // Open conversations keep the names they started with.
+    expect(t.output()).toContain("Restart your AI client");
   });
 
   it("shows the default login and every environment", async () => {
@@ -127,6 +136,17 @@ describe("cognigy-envs menu", () => {
     expect(broken.output()).toContain("(your AI client's plugin settings)");
   });
 
+  // Windows has no owner-only file mode to check.
+  (process.platform === "win32" ? it.skip : it)(
+    "tightens a file other users can read to owner-only",
+    async () => {
+      const dir = freshDir({ trial: TRIAL });
+      chmodSync(join(dir, "environments.json"), 0o644);
+      await runEnvs(scripted(dir, {}, false).io);
+      expect(statSync(join(dir, "environments.json")).mode & 0o777).toBe(0o600);
+    },
+  );
+
   it("refuses the reserved name and a duplicate in any case", async () => {
     const dir = freshDir({ trial: TRIAL });
     const t = scripted(dir, {
@@ -152,6 +172,8 @@ describe("cognigy-envs menu", () => {
     });
     expect(t.output()).not.toContain("FAKE-ROTATED-KEY-0002");
     expect(t.output()).not.toContain(TRIAL.apiKey);
+    // A new key applies on the next call: no restart needed.
+    expect(t.output()).not.toContain("Restart your AI client");
   });
 
   it("goes back to the menu on Esc at any prompt, changing nothing", async () => {

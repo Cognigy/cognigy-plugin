@@ -79,40 +79,42 @@ export class Environments {
     { entry: EnvironmentEntry; runtime: Runtime }
   >();
 
+  /** The extra environments the tools offer, fixed by start(). */
+  private offered: string[] = [];
+
   constructor(
     private readonly defaultRuntime: Runtime,
     private readonly readFile: () => EnvironmentsFileState = () =>
       readEnvironmentsFile(),
   ) {}
 
-  /** The extra environments' names; [] when the file is absent or unusable. */
-  names(): string[] {
-    const state = this.readFile();
-    return state.state === "ok" && !reservedNameIn(state.file)
-      ? Object.keys(state.file)
-      : [];
-  }
-
   /**
-   * For the server instructions: which URL each name points to, so the model
-   * can map "dev" or "the customer's tenant" to a name before its first call.
-   * Undefined when there is nothing to choose between.
+   * Read once when the server starts. The tools' `environment` field and the
+   * instructions line come from this one read, so they always match: the
+   * instructions cannot change after the client connects. A changed set of
+   * environments applies after a restart. `overview` tells the model which URL
+   * each name points to, so it can map "dev" to a name before its first call;
+   * undefined when there is nothing to choose between.
    */
-  overview(): string | undefined {
+  start(): { names: string[]; overview?: string } {
     const state = this.readFile();
-    if (state.state !== "ok" || reservedNameIn(state.file)) return undefined;
-    if (Object.keys(state.file).length === 0) return undefined;
-    return (
-      `COGNIGY ENVIRONMENTS: ${this.describe(state.file)}. ` +
-      `"${DEFAULT_ENVIRONMENT}" is the plugin's own login. Map what the user calls a tenant (e.g. "dev") to a name by its URL; ask when it is unclear. ` +
-      `Name the environment in the prompt of any subagent you delegate to; it cannot ask the user.`
-    );
+    const file =
+      state.state === "ok" && !reservedNameIn(state.file) ? state.file : {};
+    this.offered = Object.keys(file);
+    if (this.offered.length === 0) return { names: [] };
+    return {
+      names: this.offered,
+      overview:
+        `COGNIGY ENVIRONMENTS: ${this.describe(file)}. ` +
+        `"${DEFAULT_ENVIRONMENT}" is the plugin's own login. Map what the user calls a tenant (e.g. "dev") to a name by its URL; ask when it is unclear. ` +
+        `Name the environment in the prompt of any subagent you delegate to; it cannot ask the user.`,
+    };
   }
 
   /**
    * The environment a call runs on. The file is read on every call (it is
-   * tiny), so an environment added or a key rotated in `cognigy-envs` applies
-   * to the next call without a restart.
+   * tiny), so a rotated key or a changed URL applies to the next call without
+   * a restart, and a deleted environment stops working at once.
    */
   resolve(requested: unknown): ResolvedEnvironment {
     const state = this.readFile();
@@ -138,6 +140,14 @@ export class Environments {
       throw new EnvironmentError('"environment" must be a string.');
     }
     if (wanted === "") {
+      if (multiple && this.offered.length === 0) {
+        // The tools were listed without the field, so asking for it would be
+        // a dead end. Never fall back to the default either.
+        throw new EnvironmentError(
+          `Nothing was sent: Cognigy environments were added after this conversation's tools were loaded (${this.describe(file)}). ` +
+            `Ask the user to restart their AI client (in Claude Code, a new session is enough), so the tools offer the choice.`,
+        );
+      }
       if (multiple) {
         throw new EnvironmentError(
           `Several Cognigy environments are configured: ${this.describe(file)}. ` +
@@ -224,15 +234,14 @@ export function withEnvironmentField(
   }));
 }
 
-/** Tags a result with the environment it ran on, so the user can always tell. */
 /**
  * Why an explicit `talk_to_agent` endpoint URL is not on the selected
  * environment's endpoint host, else undefined. Endpoint URLs carry no key, so
  * this guards the tenant the message reaches and the `_environment` label, not
  * credentials. Nothing to compare when the environment's endpoint host could
  * not be derived from its API URL (an explicit URL is then the workaround).
- * ponytail: host only; two environments on one host are not told apart, that
- * would need an API lookup of the URL token.
+ * Limit: it compares hosts only, so two environments on one host are not told
+ * apart; that would need an API lookup of the URL token.
  */
 export function foreignEndpointError(
   endpointUrl: unknown,
@@ -258,6 +267,7 @@ export function foreignEndpointError(
   );
 }
 
+/** Tags a result with the environment it ran on, so the user can always tell. */
 export function tagWithEnvironment(result: unknown, name: string): unknown {
   return result && typeof result === "object" && !Array.isArray(result)
     ? // First for readability, and it wins over a result field of that name.

@@ -8,7 +8,7 @@
  * cognigy-setup; it is shown for reference and never edited here. Keys are
  * typed hidden and never printed in full. Outside a terminal it prints the list.
  */
-import { readFileSync } from "fs";
+import { chmodSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { PLUGIN_ID } from "./install/claudeCode.js";
@@ -61,6 +61,8 @@ const LOGO = [
   "└─┘└─┘└─┘┘└┘┴└─┘ ┴   └─┘┘└┘ └┘ └─┘",
 ];
 const DEFAULT_NOTE = "the plugin's own login, set with cognigy-setup";
+const RESTART_NOTE =
+  "Restart your AI client (in Claude Code, a new session is enough) so open conversations see the change.";
 
 /** First 4 and last 4 characters of a long key; never the whole key. */
 function mask(key: string): string {
@@ -235,6 +237,13 @@ async function deleteEnvironment(
 /** Run the menu; resolves to the process exit code. */
 export async function runEnvs(io: EnvsIo): Promise<number> {
   const path = join(io.dir, "environments.json");
+  // It holds API keys, and files from the cognigy-env.py script may be readable
+  // by other users. Every write here is 0600 already.
+  try {
+    chmodSync(path, 0o600);
+  } catch {
+    // Absent, or not ours to change: reading it still works.
+  }
   let file: EnvironmentsFile;
   try {
     file = load(path);
@@ -244,6 +253,9 @@ export async function runEnvs(io: EnvsIo): Promise<number> {
     );
     return 1;
   }
+
+  // Running conversations keep the names they started with (a rename below counts).
+  const namesAtStart = Object.keys(file).join("\n");
 
   // A file from the cognigy-env.py script may use the now-reserved name.
   const clash = reservedNameIn(file);
@@ -301,6 +313,10 @@ export async function runEnvs(io: EnvsIo): Promise<number> {
     }
   }
   io.write("\n");
+  // A changed key or URL applies on the next call; a changed set of names does not.
+  if (Object.keys(file).join("\n") !== namesAtStart) {
+    io.write(`  ${RESTART_NOTE}\n`);
+  }
   return 0;
 }
 

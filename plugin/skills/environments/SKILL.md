@@ -42,8 +42,8 @@ ID across environments: look the resource up by name in the target environment.
 
 You cannot add, change or remove environments. Tell the user to run `cognigy-envs` in a terminal
 (or `npx -y -p @cognigy/plugin-engine cognigy-envs`), an arrow-key menu that asks for a name, the
-API base URL and the key. A new environment works by name right away; it shows up in the field's
-choices after the session restarts.
+API base URL and the key. Open conversations keep the environments they started with: a new
+environment shows up after the user restarts the AI client (in Claude Code, a new session).
 
 Never ask for, repeat or read an API key, and never open `~/.cognigy-plugin/environments.json` or
 `config.json`. Keys never pass through the chat.
@@ -51,4 +51,6 @@ Never ask for, repeat or read an API key, and never open `~/.cognigy-plugin/envi
 ## Errors
 
 - "Several Cognigy environments are configured…": ask the user which one, then retry with it.
+- "…added after this conversation's tools were loaded…": nothing was sent. Tell the user to restart
+  the AI client (in Claude Code, a new session), then continue there.
 - A problem with `environments.json`: relay the message as is; the user fixes it in `cognigy-envs`.

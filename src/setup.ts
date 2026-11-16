@@ -552,6 +552,35 @@ function installEnvsCommand(version: string = PACKAGE_VERSION): void {
   }
 }
 
+/**
+ * Whether an earlier setup put this package in the global npm prefix. Ask npm,
+ * not PATH: under npx the package's own bins are on PATH for the run.
+ */
+function envsCommandInstalled(): boolean {
+  return (
+    runNpm(["ls", "-g", "--depth=0", PKG], { capture: true, timeout: 30_000 })
+      .status === 0
+  );
+}
+
+/**
+ * Offer the global install of cognigy-envs (Enter means yes). Where an earlier
+ * run added it, refresh it without asking. A no is not remembered, so the next
+ * setup run asks again.
+ */
+async function offerEnvsCommand(): Promise<void> {
+  if (envsCommandInstalled()) return installEnvsCommand();
+  const answer = (
+    await ask(
+      "\nAdd the cognigy-envs command to your terminal, to work with several Cognigy environments? [Y/n] ",
+    )
+  )
+    .trim()
+    .toLowerCase();
+  if (answer === "" || answer === "y" || answer === "yes") installEnvsCommand();
+  else process.stdout.write(envsTip());
+}
+
 function envsTip(reason?: string): string {
   return (
     yellow("• cognigy-envs") +
@@ -636,14 +665,9 @@ function runUpdate(): void {
   // exists, so this never creates a launcher on a machine using neither client.
   if (existsSync(DESKTOP_LAUNCHER_FILE)) writeDesktopLauncher();
   // Refresh the global cognigy-envs only where setup put one; never add it here.
-  // Ask npm, not PATH: under npx the package's own bins are on PATH for the run.
-  const installed = runNpm(["ls", "-g", "--depth=0", PKG], {
-    capture: true,
-    timeout: 30_000,
-  });
   // "latest": the global install also adds cognigy-setup, and running that old
   // copy's update must not just reinstall its own version.
-  if (installed.status === 0) installEnvsCommand("latest");
+  if (envsCommandInstalled()) installEnvsCommand("latest");
   process.stdout.write(
     dim(
       "• Claude Desktop chat connector auto-updates its engine on every restart — nothing to do.\n",
@@ -972,7 +996,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  if (interactive) installEnvsCommand();
+  if (interactive) await offerEnvsCommand();
   else process.stdout.write("\n" + envsTip());
 
   process.stdout.write(green(bold("\n✓ Done.\n")));

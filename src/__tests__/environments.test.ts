@@ -20,8 +20,11 @@ const TRIAL = {
   apiKey: "FAKE-TRIAL",
 };
 
+/** Started like the server does: the tools offer what the file held then. */
 function envs(state: () => EnvironmentsFileState) {
-  return new Environments(defaultRuntime, state);
+  const environments = new Environments(defaultRuntime, state);
+  environments.start();
+  return environments;
 }
 const absent = () => ({ state: "absent" }) as const;
 const withTrial = () => ({ state: "ok", file: { trial: TRIAL } }) as const;
@@ -115,9 +118,29 @@ describe("Environments.resolve with extra environments", () => {
   });
 });
 
-describe("Environments.overview", () => {
+describe("environments added after start", () => {
+  // The server started without extra environments, so the conversation's tools
+  // have no field; then the user adds one in cognigy-envs.
+  let state: EnvironmentsFileState = { state: "absent" };
+  const environments = new Environments(defaultRuntime, () => state);
+  environments.start();
+  state = { state: "ok", file: { trial: TRIAL } };
+
+  it("asks for a restart instead of a field the tools lack, never the default", () => {
+    expect(() => environments.resolve(undefined)).toThrow(
+      /Nothing was sent.*added after.*restart/,
+    );
+  });
+
+  it("still runs a call that names its environment", () => {
+    expect(environments.resolve("trial").name).toBe("trial");
+    expect(environments.resolve("default").name).toBe("default");
+  });
+});
+
+describe("Environments.start", () => {
   it("names each environment's URL for the model, never a key", () => {
-    const overview = envs(withTrial).overview() ?? "";
+    const overview = envs(withTrial).start().overview ?? "";
     expect(overview).toContain("default (https://api-app.cognigy.ai)");
     expect(overview).toContain("trial (https://api-trial.cognigy.ai)");
     expect(overview).not.toMatch(/FAKE-/);
@@ -126,12 +149,12 @@ describe("Environments.overview", () => {
   });
 
   it("says nothing when there is nothing to choose between", () => {
-    expect(envs(absent).overview()).toBeUndefined();
+    expect(envs(absent).start().overview).toBeUndefined();
     expect(
-      envs(() => ({ state: "invalid", reason: "broken" })).overview(),
+      envs(() => ({ state: "invalid", reason: "broken" })).start().overview,
     ).toBeUndefined();
     expect(
-      envs(() => ({ state: "ok", file: { Default: TRIAL } })).overview(),
+      envs(() => ({ state: "ok", file: { Default: TRIAL } })).start().overview,
     ).toBeUndefined();
   });
 });
@@ -152,7 +175,7 @@ describe("Environments with an unusable file", () => {
   });
 
   it("offers no environment field", () => {
-    expect(envs(invalid).names()).toEqual([]);
+    expect(envs(invalid).start().names).toEqual([]);
   });
 });
 
@@ -169,7 +192,7 @@ describe("Environments with a stored environment named default", () => {
   });
 
   it("offers no environment field", () => {
-    expect(envs(clash).names()).toEqual([]);
+    expect(envs(clash).start().names).toEqual([]);
   });
 });
 

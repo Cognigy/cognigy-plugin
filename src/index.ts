@@ -52,7 +52,7 @@ async function main() {
     // The plugin's own credentials are the `default` environment; extra ones
     // come from ~/.cognigy-plugin/environments.json (see environments.ts).
     const environments = new Environments(buildRuntime(config));
-    const extra = environments.names();
+    const { names: extra, overview } = environments.start();
     if (extra.length > 0) {
       logger.info("Extra Cognigy environments configured", {
         environments: extra,
@@ -65,12 +65,12 @@ async function main() {
       {
         capabilities: { tools: {} },
         // COGNIGY_DEV_NOTICE is set only by scripts/dev-engine.mjs (local dev).
-        // The environment overview is read once here: a client lists the tools
-        // once too, so both pick up a new environment on the next restart.
+        // The environment line and the tools' field come from one read at
+        // start (environments.start()), so a new environment needs a restart.
         instructions: [
           process.env.COGNIGY_DEV_NOTICE,
           SERVER_INSTRUCTIONS,
-          environments.overview(),
+          overview,
         ]
           .filter(Boolean)
           .join("\n\n"),
@@ -78,7 +78,7 @@ async function main() {
     );
 
     server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: withEnvironmentField(tools, environments.names()),
+      tools: withEnvironmentField(tools, extra),
     }));
 
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
