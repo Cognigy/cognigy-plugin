@@ -144,7 +144,7 @@ export class Environments {
         // The tools were listed without the field, so asking for it would be
         // a dead end. Never fall back to the default either.
         throw new EnvironmentError(
-          `Nothing was sent: Cognigy environments were added after this conversation's tools were loaded (${this.describe(file)}). ` +
+          `Nothing was sent: Cognigy environments changed after this conversation's tools were loaded (${this.describe(file)}). ` +
             `Ask the user to restart their AI client (in Claude Code, a new session is enough), so the tools offer the choice.`,
         );
       }
@@ -274,5 +274,6 @@ export function tagWithEnvironment(result: unknown, name: string): unknown {
   return result && typeof result === "object" && !Array.isArray(result)
     ? // First for readability, and it wins over a result field of that name.
       Object.assign({ _environment: name }, result, { _environment: name })
-    : result;
+    : // An array or a plain value cannot carry the field: wrap it.
+      { _environment: name, result };
 }

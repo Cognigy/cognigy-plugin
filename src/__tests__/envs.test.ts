@@ -9,7 +9,8 @@ import {
 } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { parseBaseUrl, runEnvs, type EnvsIo } from "../envs.js";
+import { parseBaseUrl } from "../environmentsFile.js";
+import { runEnvs, type EnvsIo } from "../envs.js";
 import { PromptEscaped } from "../utils/cli.js";
 
 const UP = "\x1b[A";

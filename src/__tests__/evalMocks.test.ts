@@ -1,5 +1,5 @@
 import { describe, it, expect } from "@jest/globals";
-import { readFileSync } from "fs";
+import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import { withEnvironmentField } from "../environments.js";
 import { tools } from "../tools/definitions.js";
@@ -24,16 +24,19 @@ describe("plugin eval mocks", () => {
 });
 
 describe("multi-environment eval cases", () => {
-  // Cases listed in MULTI_ENVIRONMENT_CASES (scripts/gen-eval-tools.ts) carry
-  // the tools a user with extra environments "trial" and "acme" sees.
-  const caseFiles = ["which-environment", "compare-environments"].map((c) =>
-    join(
-      process.cwd(),
-      "plugin/evals/tool-choice",
-      c,
-      "mocks/platform/_tools.json",
-    ),
-  );
+  // Every case with its own tool list (MULTI_ENVIRONMENT_CASES in
+  // scripts/gen-eval-tools.ts) carries the tools a user with extra environments
+  // "trial" and "acme" sees. Found on disk, not listed: importing the script
+  // would run it.
+  const evalsDir = join(process.cwd(), "plugin/evals");
+  const caseFiles = readdirSync(evalsDir, { withFileTypes: true })
+    .filter((suite) => suite.isDirectory())
+    .flatMap((suite) =>
+      readdirSync(join(evalsDir, suite.name)).map((c) =>
+        join(evalsDir, suite.name, c, "mocks/platform/_tools.json"),
+      ),
+    )
+    .filter((file) => existsSync(file));
 
   it.each(caseFiles)(
     "%s matches the tool definitions (run `npm run evals:tools`)",

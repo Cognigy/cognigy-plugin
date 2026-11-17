@@ -91,6 +91,27 @@ describe("readEnvironmentsFile", () => {
     ).toEqual({ state: "ok", file: { trial } });
   });
 
+  it("adds https:// to an apiBaseUrl without a scheme, as cognigy-envs does", () => {
+    expect(
+      readEnvironmentsFile(
+        rawFile({ trial: { ...trial, apiBaseUrl: "api-trial.cognigy.ai/" } }),
+      ),
+    ).toEqual({ state: "ok", file: { trial } });
+  });
+
+  it("is invalid when an apiBaseUrl is unusable", () => {
+    for (const apiBaseUrl of ["ftp://example.com", "not a url"]) {
+      const state = readEnvironmentsFile(
+        rawFile({ trial: { ...trial, apiBaseUrl } }),
+      );
+      expect(state.state).toBe("invalid");
+      if (state.state === "invalid") {
+        expect(state.reason).toContain('"trial"');
+        expect(state.reason).toContain("apiBaseUrl");
+      }
+    }
+  });
+
   it("ignores unknown fields", () => {
     expect(
       readEnvironmentsFile(

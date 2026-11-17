@@ -95,6 +95,27 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
+/** A base URL, scheme optional ("api-trial.cognigy.ai" works); undefined if unusable. */
+export function parseBaseUrl(raw: string): string | undefined {
+  const text = raw.trim();
+  if (!text) return undefined;
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(text)
+    ? text
+    : `https://${text}`;
+  try {
+    const url = new URL(withScheme);
+    if (
+      (url.protocol === "https:" || url.protocol === "http:") &&
+      url.hostname
+    ) {
+      return withScheme.replace(/\/+$/, "");
+    }
+  } catch {
+    // fall through
+  }
+  return undefined;
+}
+
 function parseEntry(
   name: string,
   raw: unknown,
@@ -111,6 +132,11 @@ function parseEntry(
     }
     entry[field] = value.trim();
   }
+  // Hand-edited files may lack https://; an unusable URL would fail every call
+  // with a bare "Invalid URL" and turn off the talk_to_agent endpoint check.
+  const url = parseBaseUrl(entry.apiBaseUrl);
+  if (!url) return `${where} has an unusable "apiBaseUrl" (use https://…).`;
+  entry.apiBaseUrl = url;
   return entry;
 }
 

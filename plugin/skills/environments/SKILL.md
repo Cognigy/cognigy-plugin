@@ -51,6 +51,6 @@ Never ask for, repeat or read an API key, and never open `~/.cognigy-plugin/envi
 ## Errors
 
 - "Several Cognigy environments are configured…": ask the user which one, then retry with it.
-- "…added after this conversation's tools were loaded…": nothing was sent. Tell the user to restart
+- "…changed after this conversation's tools were loaded…": nothing was sent. Tell the user to restart
   the AI client (in Claude Code, a new session), then continue there.
 - A problem with `environments.json`: relay the message as is; the user fixes it in `cognigy-envs`.

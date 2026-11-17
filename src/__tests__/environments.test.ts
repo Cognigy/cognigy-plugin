@@ -129,13 +129,23 @@ describe("environments added after start", () => {
 
   it("asks for a restart instead of a field the tools lack, never the default", () => {
     expect(() => environments.resolve(undefined)).toThrow(
-      /Nothing was sent.*added after.*restart/,
+      /Nothing was sent.*changed after.*restart/,
     );
   });
 
   it("still runs a call that names its environment", () => {
     expect(environments.resolve("trial").name).toBe("trial");
     expect(environments.resolve("default").name).toBe("default");
+  });
+
+  it("gives the same advice when the file was broken at start and fixed since", () => {
+    let fixedLater: EnvironmentsFileState = { state: "invalid", reason: "x" };
+    const fixed = new Environments(defaultRuntime, () => fixedLater);
+    fixed.start();
+    fixedLater = { state: "ok", file: { trial: TRIAL } };
+    expect(() => fixed.resolve(undefined)).toThrow(
+      /Nothing was sent.*changed after.*restart/,
+    );
   });
 });
 
@@ -302,12 +312,18 @@ describe("tagWithEnvironment", () => {
     expect(Object.keys(tagged as object)[0]).toBe("_environment");
   });
 
-  it("names the environment on object results only", () => {
+  it("names the environment on every result, wrapping what cannot carry it", () => {
     expect(tagWithEnvironment({ ok: true }, "trial")).toEqual({
       _environment: "trial",
       ok: true,
     });
-    expect(tagWithEnvironment([1], "trial")).toEqual([1]);
-    expect(tagWithEnvironment("text", "trial")).toBe("text");
+    expect(tagWithEnvironment([1], "trial")).toEqual({
+      _environment: "trial",
+      result: [1],
+    });
+    expect(tagWithEnvironment("text", "trial")).toEqual({
+      _environment: "trial",
+      result: "text",
+    });
   });
 });

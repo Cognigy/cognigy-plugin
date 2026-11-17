@@ -14,6 +14,7 @@ import { join } from "path";
 import { PLUGIN_ID } from "./install/claudeCode.js";
 import {
   DEFAULT_ENVIRONMENT,
+  parseBaseUrl,
   readEnvironmentsFile,
   reservedNameIn,
   updateEnvironmentsFile,
@@ -67,27 +68,6 @@ const RESTART_NOTE =
 /** First 4 and last 4 characters of a long key; never the whole key. */
 function mask(key: string): string {
   return key.length > 12 ? `${key.slice(0, 4)}…${key.slice(-4)}` : "…";
-}
-
-/** A typed base URL, scheme optional ("api-trial.cognigy.ai" works); undefined if unusable. */
-export function parseBaseUrl(raw: string): string | undefined {
-  const text = raw.trim();
-  if (!text) return undefined;
-  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(text)
-    ? text
-    : `https://${text}`;
-  try {
-    const url = new URL(withScheme);
-    if (
-      (url.protocol === "https:" || url.protocol === "http:") &&
-      url.hostname
-    ) {
-      return withScheme.replace(/\/+$/, "");
-    }
-  } catch {
-    // fall through
-  }
-  return undefined;
 }
 
 const nameWidth = (file: EnvironmentsFile) =>
