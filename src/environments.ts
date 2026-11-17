@@ -247,10 +247,9 @@ export function foreignEndpointError(
   endpointUrl: unknown,
   target: ResolvedEnvironment,
 ): string | undefined {
-  const { apiBaseUrl, endpointBaseUrl } = target.runtime.config;
-  if (typeof endpointUrl !== "string" || endpointBaseUrl === apiBaseUrl) {
-    return undefined;
-  }
+  if (typeof endpointUrl !== "string") return undefined;
+  // `host` is lowercase and drops a default port, so compare hosts, not raw
+  // URLs: derivation cleans up an API URL it cannot derive from.
   const host = (url: string) => {
     try {
       return new URL(url.trim()).host;
@@ -258,9 +257,12 @@ export function foreignEndpointError(
       return undefined;
     }
   };
-  const given = host(endpointUrl);
+  const { apiBaseUrl, endpointBaseUrl } = target.runtime.config;
   const expected = host(endpointBaseUrl);
-  if (!given || !expected || given === expected) return undefined;
+  // On the API's own host: no endpoint host was derived, nothing to compare.
+  if (!expected || expected === host(apiBaseUrl)) return undefined;
+  const given = host(endpointUrl);
+  if (!given || given === expected) return undefined;
   return (
     `Nothing was sent: endpointUrl is on ${given}, but the "${target.name}" environment's endpoints are on ${expected}. ` +
     `Pass the environment the endpoint belongs to, or pass agentId/aiAgentId to use this environment's endpoint.`

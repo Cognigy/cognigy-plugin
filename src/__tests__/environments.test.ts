@@ -9,6 +9,7 @@ import {
   type Runtime,
 } from "../environments.js";
 import type { EnvironmentsFileState } from "../environmentsFile.js";
+import { loadConfigForEnvironment } from "../config.js";
 import { tools } from "../tools/definitions.js";
 
 const defaultRuntime = {
@@ -271,6 +272,26 @@ describe("foreignEndpointError", () => {
     expect(
       foreignEndpointError("https://bots.example.com/abc123", selfHosted),
     ).toBeUndefined();
+  });
+
+  it("does not guess for an API URL that derivation only cleans up", () => {
+    // Built by the real config code: derivation drops the default port, the
+    // case and the path, so the URLs differ although nothing was derived.
+    for (const apiBaseUrl of [
+      "https://cognigy.example.com:443",
+      "https://Cognigy.Example.com",
+      "https://cognigy.example.com/api",
+    ]) {
+      const target = {
+        ...trial,
+        runtime: {
+          config: loadConfigForEnvironment({ apiBaseUrl, apiKey: "FAKE" }),
+        },
+      } as unknown as ResolvedEnvironment;
+      expect(
+        foreignEndpointError("https://bots.example.com/abc123", target),
+      ).toBeUndefined();
+    }
   });
 });
 
