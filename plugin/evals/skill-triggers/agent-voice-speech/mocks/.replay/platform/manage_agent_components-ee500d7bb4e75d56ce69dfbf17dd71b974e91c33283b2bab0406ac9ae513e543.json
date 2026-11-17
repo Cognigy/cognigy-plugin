@@ -1,0 +1,19 @@
+{
+  "input": {
+    "operation": "update",
+    "component": "voice_settings",
+    "projectId": "proj-demo",
+    "config": {
+      "ttsCredentialReferenceId": "nice-ms",
+      "ttsLanguage": "en-GB",
+      "sttCredentialReferenceId": "nice-stt",
+      "sttLanguage": "en-GB",
+      "minWordsToInterrupt": 2
+    },
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"toolId\":\"60d5ec49f1a2c8b1a4e0f404\",\"usingDefaults\":false,\"speech\":{\"tts\":\"incomplete\",\"stt\":\"complete\"},\"settings\":{\"ttsVendor\":\"microsoft\",\"ttsVoice\":\"\",\"ttsLanguage\":\"en-GB\",\"ttsLabel\":\"Included Speech Provider\",\"ttsCredentialReferenceId\":\"nice-ms\",\"maxUtteranceChars\":240,\"sttVendor\":\"nice\",\"sttLanguage\":\"en-GB\",\"sttLabel\":\"Included Speech Provider\",\"sttCredentialReferenceId\":\"nice-stt\",\"greetingMode\":\"agent\",\"greetingText\":\"\",\"bargeInOnSpeech\":true,\"minWordsToInterrupt\":2,\"bargeInOnDtmf\":false,\"promptOnSilence\":true,\"silenceTimeoutSeconds\":8,\"silenceRetries\":2,\"captureDtmf\":false,\"continuousAsr\":false,\"backgroundSound\":\"none\",\"thinkingSound\":\"typing_loop\",\"sessionParameters\":{}},\"voices\":[\"en-GB-SoniaNeural\",\"en-GB-LibbyNeural\",\"en-GB-RyanNeural\",\"en-GB-ThomasNeural\"],\"_hints\":{\"warning\":\"TTS is incomplete (it needs ttsVendor, ttsVoice and ttsLanguage), so calls ignore it and use the endpoint's speech, the project default, then NiCE-provided speech.\"}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:00:34.622Z",
+  "model": "claude-haiku-5-5"
+}

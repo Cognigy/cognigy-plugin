@@ -1,0 +1,11 @@
+{
+  "input": {
+    "projectId": "proj-demo",
+    "apply": true,
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"error\":\"backup_not_offered\",\"tool\":\"audit_voice_agent\",\"changed\":false,\"projectId\":\"proj-demo\",\"_hints\":{\"warning\":\"NOTHING WAS CHANGED. This is the first change to an existing agent in this session, and no backup exists yet.\",\"action\":\"Ask the user whether they want a restorable backup first. If yes: manage_snapshots { operation: \\\"create\\\", projectId, label }. If no: manage_snapshots { operation: \\\"decline\\\", projectId }. Then retry this exact call.\"}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:39:35.772Z",
+  "model": "claude-haiku-5-5"
+}

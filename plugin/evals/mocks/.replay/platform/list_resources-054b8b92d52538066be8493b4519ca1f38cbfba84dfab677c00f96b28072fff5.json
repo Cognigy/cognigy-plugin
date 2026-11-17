@@ -1,0 +1,10 @@
+{
+  "input": {
+    "resourceType": "endpoint",
+    "projectId": "proj-new-1"
+  },
+  "output": "{\"items\":[],\"total\":0,\"projectId\":\"proj-new-1\",\"resourceType\":\"endpoint\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:42:49.373Z",
+  "model": "claude-haiku-5-5"
+}

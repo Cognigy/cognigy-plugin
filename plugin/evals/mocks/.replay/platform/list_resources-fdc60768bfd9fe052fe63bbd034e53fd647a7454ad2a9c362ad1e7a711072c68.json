@@ -1,0 +1,10 @@
+{
+  "input": {
+    "resourceType": "knowledge_store",
+    "projectId": "proj-demo"
+  },
+  "output": "{\"items\":[],\"total\":0}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:21:16.918Z",
+  "model": "claude-haiku-5-5"
+}

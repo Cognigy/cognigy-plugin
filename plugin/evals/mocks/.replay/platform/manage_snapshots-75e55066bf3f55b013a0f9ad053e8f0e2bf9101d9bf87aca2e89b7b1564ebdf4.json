@@ -1,0 +1,10 @@
+{
+  "input": {
+    "operation": "decline",
+    "projectId": "proj-demo"
+  },
+  "output": "{\"operation\":\"decline\",\"projectId\":\"proj-demo\",\"acknowledged\":true,\"note\":\"No backup will be taken for this project.\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:36:46.004Z",
+  "model": "claude-haiku-5-5"
+}

@@ -1,0 +1,10 @@
+{
+  "input": {
+    "resourceType": "speech_provider",
+    "projectId": "proj-demo"
+  },
+  "output": "{\"items\":[{\"id\":\"ffffffff84fd62f53ccab16b\",\"referenceId\":\"nice-ms\",\"name\":\"Included Speech Provider\",\"vendor\":\"microsoft\",\"niceProvided\":true,\"stt\":true,\"tts\":true,\"defaultTts\":true,\"status\":\"ok\"}],\"total\":1}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:33:09.919Z",
+  "model": "claude-haiku-5-5"
+}

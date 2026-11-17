@@ -1,0 +1,12 @@
+{
+  "input": {
+    "operation": "create_store",
+    "projectId": "proj-demo",
+    "name": "Pricing FAQ",
+    "description": "Pricing FAQ from https://example.com/pricing-faq"
+  },
+  "output": "{\"id\":\"ks-new-1\",\"name\":\"Pricing FAQ\",\"description\":\"Pricing FAQ from https://example.com/pricing-faq\",\"projectId\":\"proj-demo\",\"sources\":[],\"documents\":0,\"status\":\"created\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:21:25.263Z",
+  "model": "claude-haiku-5-5"
+}

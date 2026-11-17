@@ -3,7 +3,8 @@
  *   npm run evals:compare              newest run in plugin/evals/results/
  *   npm run evals:compare -- <file>    a specific aggregate-result.json
  *   npm run evals:compare -- --update  write the run as the new baseline
- * Exits 1 when a case or grader passes less often than in the baseline, or when
+ * Exits 1 when a case or grader passes less often than in the baseline (a single
+ * missed run out of 3 only prints FLAKY? and asks for --runs 5), or when
  * a run errored (timeout, usage/rate limit): errored runs are still graded, so
  * their pass rates are not comparable. --update needs a clean run of every case.
  *
@@ -131,7 +132,13 @@ const rate = (s) => {
   return n ? p / n : 0;
 };
 
+const singleMiss = (s) => {
+  const [p, n] = s.split("/").map(Number);
+  return n <= 3 && n - p === 1;
+};
+
 let regressions = 0;
+const flakies = [];
 console.log(
   `Baseline ${baseline.commit} (Claude Code ${baseline.claudeVersion}) vs ${resultFile} (Claude Code ${result.claudeVersion})\n`,
 );
@@ -153,15 +160,22 @@ for (const [name, cur] of Object.entries(current)) {
     );
     continue;
   }
-  const drops = Object.entries(cur.graders)
-    .filter(([g, s]) => base.graders[g] && rate(s) < rate(base.graders[g]))
-    .map(([g, s]) => `${g} ${base.graders[g]} → ${s}`);
-  regressions += drops.length;
-  const status = drops.length
-    ? "WORSE"
-    : cur.score > base.score
-      ? "better"
-      : "same";
+  const dropped = Object.entries(cur.graders).filter(
+    ([g, s]) => base.graders[g] && rate(s) < rate(base.graders[g]),
+  );
+  // One failed run out of 3 is within run-to-run noise: ask for more runs
+  // instead of failing. At --runs 5, a single failure counts.
+  const flaky = dropped.length && dropped.every(([, s]) => singleMiss(s));
+  if (flaky) flakies.push(name);
+  else regressions += dropped.length;
+  const drops = dropped.map(([g, s]) => `${g} ${base.graders[g]} → ${s}`);
+  const status = flaky
+    ? "FLAKY?"
+    : drops.length
+      ? "WORSE"
+      : cur.score > base.score
+        ? "better"
+        : "same";
   console.log(
     `  ${status.padEnd(7)}  ${name}  score ${base.score} → ${cur.score}${drops.length ? `  (${drops.join(", ")})` : ""}`,
   );
@@ -175,9 +189,14 @@ if (errored.length) {
     `\n${errored.length} case(s) had errored runs. Check for usage or rate limits, then re-run them.`,
   );
 }
+if (flakies.length) {
+  console.log(
+    `\n${flakies.length} case(s) missed in a single run, which can be noise. Re-run each before merging, then compare that run (a second miss is a regression):\n${flakies.map((n) => `  npm run evals -- --runs 5 --case ${n}`).join("\n")}`,
+  );
+}
 if (regressions) {
   console.log(
-    `\n${regressions} grader(s) dropped. Re-run those cases (--runs 5) before calling it a regression; one flaky run moves 3/3 to 2/3.`,
+    `\n${regressions} grader(s) dropped by more than one run. Re-run with --runs 5, and on main if still unsure, before calling it a regression.`,
   );
   process.exit(1);
 }

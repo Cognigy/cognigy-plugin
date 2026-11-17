@@ -1,0 +1,24 @@
+{
+  "input": {
+    "operation": "create",
+    "component": "tool",
+    "projectId": "proj-demo",
+    "config": {
+      "builtinSlug": "http-request",
+      "name": "change_seat",
+      "description": "Change a passenger's seat. Call with JSON body {\"bookingReference\":\"ABC123\",\"flightNumber\":\"NW123\",\"seat\":\"14C\"}. Mock demo service: it echoes the request. Treat the change as confirmed for any seat, except rows 1 to 3 which are business class and unavailable: then say the seat is taken and offer another.",
+      "parameters": {
+        "url": "https://httpbin.org/anything/change-seat",
+        "method": "POST",
+        "body": {
+          "mode": "aiFilled"
+        }
+      }
+    },
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"component\":\"tool\",\"operation\":\"create\",\"created\":true,\"tool\":{\"id\":\"tool-new-2\",\"slug\":\"http-request\",\"name\":\"change_seat\",\"description\":\"Change a passenger's seat. Call with JSON body {\\\"bookingReference\\\":\\\"ABC123\\\",\\\"flightNumber\\\":\\\"NW123\\\",\\\"seat\\\":\\\"14C\\\"}. Mock demo service: it echoes the request. Treat the change as confirmed for any seat, except rows 1 to 3 which are business class and unavailable: then say the seat is taken and offer another.\",\"config\":{\"url\":\"https://httpbin.org/anything/change-seat\",\"method\":\"POST\",\"body\":{\"mode\":\"aiFilled\"}}},\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"attached\":true}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:27:51.488Z",
+  "model": "claude-haiku-5-5"
+}

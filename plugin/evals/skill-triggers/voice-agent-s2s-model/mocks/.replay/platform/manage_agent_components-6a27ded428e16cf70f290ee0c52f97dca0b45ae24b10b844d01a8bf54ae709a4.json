@@ -1,0 +1,17 @@
+{
+  "input": {
+    "operation": "create",
+    "component": "tool",
+    "projectId": "proj-demo",
+    "config": {
+      "builtinSlug": "voice-hangup",
+      "name": "End call",
+      "description": "End the call once the caller says they have no more questions and has been given a goodbye."
+    },
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"component\":\"tool\",\"operation\":\"create\",\"changed\":true,\"tool\":{\"id\":\"60d5ec49f1a2c8b1a4e0f501\",\"builtinSlug\":\"voice-hangup\",\"name\":\"End call\",\"description\":\"End the call once the caller says they have no more questions and has been given a goodbye.\"}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:08:06.698Z",
+  "model": "claude-haiku-5-5"
+}

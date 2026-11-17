@@ -1,0 +1,11 @@
+{
+  "input": {
+    "operation": "catalog",
+    "component": "tool",
+    "projectId": "proj-demo"
+  },
+  "output": "{\"items\":[{\"slug\":\"http-request\",\"name\":\"HTTP Request\",\"description\":\"Make an HTTP request to an external endpoint.\",\"available\":true,\"parameters\":[{\"key\":\"url\",\"type\":\"string\",\"mode\":\"input\",\"description\":\"The URL to call.\"},{\"key\":\"method\",\"type\":\"string\",\"mode\":\"input\",\"description\":\"HTTP method, such as GET, POST, PUT or DELETE.\"},{\"key\":\"headers\",\"type\":\"object\",\"mode\":\"input\",\"description\":\"Request headers.\"},{\"key\":\"body\",\"type\":\"object\",\"mode\":\"input\",\"description\":\"Request body.\"}]},{\"slug\":\"execute-tool-flow\",\"name\":\"Execute Tool Flow\",\"description\":\"Run another flow as a tool.\",\"available\":true,\"parameters\":[{\"key\":\"flowReferenceId\",\"type\":\"string\",\"mode\":\"input\",\"description\":\"Reference ID of the flow to execute.\"}]},{\"slug\":\"voice-hangup\",\"name\":\"Voice Hangup\",\"description\":\"End the current voice call.\",\"available\":true,\"parameters\":[]}],\"total\":3}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:29:26.459Z",
+  "model": "claude-haiku-5-5"
+}

@@ -1,0 +1,18 @@
+{
+  "input": {
+    "operation": "create",
+    "projectId": "proj-demo",
+    "agentType": "voice",
+    "name": "Northwind Air Voice Assistant",
+    "role": "Northwind Air customer service voice assistant",
+    "description": "A friendly, upbeat and concise English-speaking assistant for Northwind Air, an airline.",
+    "instructions": "Help callers with two things: checking a flight's status and changing their seat. For flight status, ask for the flight number and use the flight status tool. For a seat change, ask for the booking reference and the desired seat, then use the seat change tool. Confirm details back to the caller. Keep replies short and spoken-friendly. If asked about anything else, politely say you can only help with flight status and seat changes.",
+    "largeLanguageModelReferenceId": "5a255e2f-94b9-46ab-bfb7-4e407e68ef69",
+    "voiceLargeLanguageModelReferenceId": "597e276b-0bd0-40e8-86df-d4d743ea311c",
+    "realtimeVoice": "marin"
+  },
+  "output": "{\"created\":true,\"agent\":{\"id\":\"60d5ec49f1a2c8b1a4e0f101\",\"referenceId\":\"3dafcf92-9157-4070-8ce2-09b0794ac874\",\"projectId\":\"proj-demo\",\"agentType\":\"voice\",\"name\":\"Northwind Air Voice Assistant\",\"role\":\"Northwind Air customer service voice assistant\",\"description\":\"A friendly, upbeat and concise English-speaking assistant for Northwind Air, an airline.\",\"instructions\":\"Help callers with two things: checking a flight's status and changing their seat. For flight status, ask for the flight number and use the flight status tool. For a seat change, ask for the booking reference and the desired seat, then use the seat change tool. Confirm details back to the caller. Keep replies short and spoken-friendly. If asked about anything else, politely say you can only help with flight status and seat changes.\",\"largeLanguageModelReferenceId\":\"5a255e2f-94b9-46ab-bfb7-4e407e68ef69\",\"voiceLargeLanguageModelReferenceId\":\"597e276b-0bd0-40e8-86df-d4d743ea311c\",\"realtimeVoice\":\"marin\"},\"endpointUrl\":\"https://endpoint-demo.cognigy.ai/abc123\",\"use\":{\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\"}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T16:01:47.559Z",
+  "model": "claude-haiku-5-5"
+}

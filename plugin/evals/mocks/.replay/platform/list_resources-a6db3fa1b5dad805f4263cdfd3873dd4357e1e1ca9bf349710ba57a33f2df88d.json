@@ -1,0 +1,10 @@
+{
+  "input": {
+    "resourceType": "agent",
+    "projectId": "proj-demo"
+  },
+  "output": "{\"items\":[{\"id\":\"agent-billing\",\"name\":\"Billing Bot\",\"projectId\":\"proj-demo\",\"flowId\":\"flow-billing\",\"persona\":\"Friendly assistant for billing questions\",\"tools\":[],\"knowledge\":[],\"legacy\":true,\"use\":{\"aiAgentId\":\"agent-billing\"}},{\"id\":\"agent-phone\",\"name\":\"Phone Support\",\"projectId\":\"proj-demo\",\"flowId\":\"flow-phone\",\"endpoint\":\"ep-voice\",\"channel\":\"voice\",\"legacy\":true,\"use\":{\"aiAgentId\":\"agent-phone\"}}],\"total\":2,\"_hints\":{\"action\":\"This project has only legacy AI Agents: build a new agent here with create_ai_agent { legacy: true }, unless the user asked for one built with manage_agent.\"}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:30:30.193Z",
+  "model": "claude-haiku-5-5"
+}

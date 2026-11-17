@@ -1,0 +1,31 @@
+{
+  "input": {
+    "operation": "create",
+    "component": "tool",
+    "projectId": "proj-demo",
+    "config": {
+      "builtinSlug": "http-request",
+      "name": "change_seat",
+      "description": "Change a passenger's seat on a Northwind Air booking. Demo mock: the request body holds bookingReference, flightNumber and seat; any successful response means the seat change is confirmed.",
+      "parameters": {
+        "url": {
+          "mode": "dynamic",
+          "value": "https://httpbin.org/anything/change-seat"
+        },
+        "method": {
+          "mode": "dynamic",
+          "value": "POST"
+        },
+        "body": {
+          "mode": "aiFilled",
+          "value": "{\"bookingReference\":\"\",\"flightNumber\":\"\",\"seat\":\"\"}"
+        }
+      }
+    },
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"operation\":\"create\",\"component\":\"tool\",\"projectId\":\"proj-demo\",\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"tool\":{\"id\":\"tool-new-2\",\"name\":\"change_seat\",\"builtinSlug\":\"http-request\",\"description\":\"Change a passenger's seat on a Northwind Air booking. Demo mock: the request body holds bookingReference, flightNumber and seat; any successful response means the seat change is confirmed.\",\"parameters\":{\"url\":{\"mode\":\"dynamic\",\"value\":\"https://httpbin.org/anything/change-seat\"},\"method\":{\"mode\":\"dynamic\",\"value\":\"POST\"},\"body\":{\"mode\":\"aiFilled\",\"value\":\"{\\\"bookingReference\\\":\\\"\\\",\\\"flightNumber\\\":\\\"\\\",\\\"seat\\\":\\\"\\\"}\"}}},\"attachedTo\":{\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"use\":{\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\"}},\"status\":\"created\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:28:43.572Z",
+  "model": "claude-haiku-5-5"
+}

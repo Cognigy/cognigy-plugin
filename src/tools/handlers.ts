@@ -3748,7 +3748,7 @@ export class ToolHandlers {
     if (voiceModel && !voiceDropped.length)
       hints.hint = `Calls run speech-to-speech (S2S) on "${voiceModel.name}", the project's GPT Live model. Say so in the build summary, in speech-to-speech terms.`;
     else if (offerS2S)
-      hints.hint = `Unless the user asked for a particular speech setup or declined speech-to-speech, make this line the last paragraph of the build summary, word for word, with no label or bullet, and don't repeat it later: "${s2sOfferLine((await this.getNiceSpeech()) === "available")}"`;
+      hints.hint = `Unless the user asked for a particular speech setup or declined speech-to-speech, make this line the last paragraph of the build summary, whole and word for word, with no label or bullet. It already says which speech the agent uses, so don't describe the speech anywhere else in the summary: "${s2sOfferLine((await this.getNiceSpeech()) === "available")}"`;
     return withHints(
       {
         projectId,

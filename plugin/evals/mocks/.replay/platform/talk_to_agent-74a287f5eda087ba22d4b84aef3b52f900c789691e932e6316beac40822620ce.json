@@ -1,0 +1,11 @@
+{
+  "input": {
+    "projectId": "proj-demo",
+    "message": "Hi, what time can I check in?",
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"projectId\":\"proj-demo\",\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"agentName\":\"Harbour Hotel Front Desk\",\"reply\":\"Standard check-in starts at 3:00 PM. If you need to arrive earlier, early check-in depends on availability, so please ask at the front desk when you arrive. Is there anything else I can help you with?\",\"_hints\":{\"action\":\"Reply is from the agent's configured persona. Send another message with talk_to_agent to continue the conversation.\"}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:32:40.518Z",
+  "model": "claude-haiku-5-5"
+}

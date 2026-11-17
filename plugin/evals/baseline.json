@@ -1,23 +1,25 @@
 {
-  "takenAt": "2026-11-13T10:59:49.757Z",
-  "commit": "e9debb1",
+  "takenAt": "2026-11-13T17:21:06.797Z",
+  "commit": "226e09b",
   "claudeVersion": "2.1.323",
-  "pluginVersion": "1.23.0",
+  "pluginVersion": "1.23.1",
   "cases": {
     "add-knowledge": {
-      "fingerprint": "f5f348e6624d",
+      "fingerprint": "389ad8c0463d",
       "score": 1,
       "graders": {
         "calls-manage_knowledge": "3/3",
+        "reports-knowledge": "3/3",
         "skill-fired": "3/3"
       }
     },
     "agent-voice-speech": {
-      "fingerprint": "b5168e08ec4b",
+      "fingerprint": "5f6e9b547612",
       "score": 1,
       "graders": {
         "lists-speech-providers": "3/3",
         "nice-tts-credential": "3/3",
+        "no-unasked-changes": "3/3",
         "offered-british-female-voice": "3/3",
         "reports-outcome": "3/3",
         "two-words-to-interrupt": "3/3",
@@ -25,23 +27,25 @@
       }
     },
     "build-agent": {
-      "fingerprint": "c07694ce037f",
+      "fingerprint": "aa35f63e4120",
       "score": 1,
       "graders": {
         "calls-create_ai_agent": "3/3",
-        "creation-guide-loaded": "3/3"
+        "creation-guide-loaded": "3/3",
+        "reports-agent": "3/3"
       }
     },
     "deploy-webchat": {
-      "fingerprint": "a7dd82785448",
+      "fingerprint": "5cb9602060b4",
       "score": 1,
       "graders": {
         "calls-manage_webchat": "3/3",
+        "gives-snippet": "3/3",
         "skill-fired": "3/3"
       }
     },
     "s2s-demo-reuse": {
-      "fingerprint": "fb5169a1faf6",
+      "fingerprint": "d9b59194cfa7",
       "score": 1,
       "graders": {
         "answers-in-s2s-terms": "3/3",
@@ -54,7 +58,7 @@
       }
     },
     "s2s-no-key": {
-      "fingerprint": "49cd19160dbc",
+      "fingerprint": "21c68d74a5c8",
       "score": 1,
       "graders": {
         "asks-for-key": "3/3",
@@ -62,7 +66,7 @@
       }
     },
     "s2s-off": {
-      "fingerprint": "9b9910de2e7e",
+      "fingerprint": "8c59c143db17",
       "score": 1,
       "graders": {
         "no-agent-create": "3/3",
@@ -73,14 +77,15 @@
       }
     },
     "unrelated-request": {
-      "fingerprint": "286c6fb936ce",
+      "fingerprint": "5856a35c0ec4",
       "score": 1,
       "graders": {
+        "answers-question": "3/3",
         "no-cognigy-skill": "3/3"
       }
     },
     "voice-agent-s2s-model": {
-      "fingerprint": "0cca79b5a072",
+      "fingerprint": "0940270ff518",
       "score": 1,
       "graders": {
         "creates-voice-agent": "3/3",
@@ -89,47 +94,50 @@
       }
     },
     "voice-agent-speech-offer": {
-      "fingerprint": "8d3a64527038",
-      "score": 0.92,
+      "fingerprint": "6db1ad69ff10",
+      "score": 1,
       "graders": {
         "creates-voice-agent": "3/3",
-        "no-downgrade-elsewhere": "2/3",
+        "no-downgrade-elsewhere": "3/3",
         "no-new-model": "3/3",
         "offer-line": "3/3"
       }
     },
     "voice-apply-fixes": {
-      "fingerprint": "4e71bdcaa1cd",
+      "fingerprint": "6fadc63d868c",
       "score": 1,
       "graders": {
         "checklist-loaded": "3/3",
         "declines-backup": "3/3",
         "dry-run-first": "3/3",
         "fixes-applied": "3/3",
-        "no-unwanted-snapshot": "3/3"
+        "no-unwanted-snapshot": "3/3",
+        "reports-fixes": "3/3"
       }
     },
     "voice-apply-fixes-agent": {
-      "fingerprint": "86eb6ca1f4b3",
+      "fingerprint": "d287883036f7",
       "score": 1,
       "graders": {
         "checklist-loaded": "3/3",
         "declines-backup": "3/3",
         "dry-run-first": "3/3",
         "fixes-applied": "3/3",
-        "no-unwanted-snapshot": "3/3"
+        "no-unwanted-snapshot": "3/3",
+        "reports-fixes": "3/3"
       }
     },
     "voice-go-live": {
-      "fingerprint": "9ddf8f7e28a7",
+      "fingerprint": "c3d08931084e",
       "score": 1,
       "graders": {
         "calls-audit_voice_agent": "3/3",
-        "checklist-loaded": "3/3"
+        "checklist-loaded": "3/3",
+        "names-gaps": "3/3"
       }
     },
     "voice-go-live-agent": {
-      "fingerprint": "d58bfaec7c28",
+      "fingerprint": "ddbd852335d1",
       "score": 1,
       "graders": {
         "audits-by-agentId": "3/3",
@@ -139,7 +147,7 @@
       }
     },
     "backup-gate": {
-      "fingerprint": "199338de26b5",
+      "fingerprint": "766f74d522d2",
       "score": 1,
       "graders": {
         "asks-about-backup": "3/3",
@@ -147,15 +155,16 @@
       }
     },
     "general-tool-type": {
-      "fingerprint": "3d55f170774e",
+      "fingerprint": "9f1e3fef2196",
       "score": 1,
       "graders": {
         "calls-create_tool": "3/3",
-        "not-mcp-or-http": "3/3"
+        "not-mcp-or-http": "3/3",
+        "reports-tool": "3/3"
       }
     },
     "list-projects": {
-      "fingerprint": "4ae5e646f55f",
+      "fingerprint": "f8e0ca702722",
       "score": 1,
       "graders": {
         "calls-list_resources": "3/3",
@@ -163,7 +172,7 @@
       }
     },
     "new-agent-default": {
-      "fingerprint": "5fd2dbb5d6c7",
+      "fingerprint": "e52b066b8477",
       "score": 1,
       "graders": {
         "calls-manage_agent": "3/3",

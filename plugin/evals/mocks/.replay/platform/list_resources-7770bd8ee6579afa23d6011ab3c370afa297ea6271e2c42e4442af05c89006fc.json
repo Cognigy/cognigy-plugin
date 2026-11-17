@@ -1,0 +1,10 @@
+{
+  "input": {
+    "resourceType": "llm_model",
+    "projectId": "proj-new-1"
+  },
+  "output": "{\"items\":[],\"total\":0}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:42:43.355Z",
+  "model": "claude-haiku-5-5"
+}

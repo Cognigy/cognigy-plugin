@@ -1,0 +1,10 @@
+{
+  "input": {
+    "resourceType": "agent",
+    "projectId": "proj-demo"
+  },
+  "output": "{\"items\":[{\"name\":\"Billing Bot\",\"legacy\":true},{\"name\":\"Phone Support\",\"legacy\":true}],\"total\":2}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T15:37:07.117Z",
+  "model": "claude-haiku-5-5"
+}

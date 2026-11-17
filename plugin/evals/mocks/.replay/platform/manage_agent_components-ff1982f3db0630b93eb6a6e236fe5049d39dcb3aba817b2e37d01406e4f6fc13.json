@@ -1,0 +1,24 @@
+{
+  "input": {
+    "operation": "create",
+    "component": "tool",
+    "projectId": "proj-demo",
+    "config": {
+      "builtinSlug": "http-request",
+      "name": "get_flight_status",
+      "description": "Look up the status of a Northwind Air flight by flight number. Returns mock data.",
+      "parameters": {
+        "url": {
+          "mode": "dynamic",
+          "value": "https://httpbin.org/anything/flight-status"
+        },
+        "method": "GET"
+      }
+    },
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"component\":{\"slug\":\"http-request\",\"name\":\"get_flight_status\",\"description\":\"Look up the status of a Northwind Air flight by flight number. Returns mock data.\",\"parameters\":{\"url\":{\"mode\":\"dynamic\",\"value\":\"https://httpbin.org/anything/flight-status\"},\"method\":\"GET\"},\"id\":\"tool-new-1\",\"referenceId\":\"8f2c4a1e-3b7d-4e9a-9c61-5d0e2b7f8a34\"},\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"attached\":true,\"projectId\":\"proj-demo\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:29:33.376Z",
+  "model": "claude-haiku-5-5"
+}

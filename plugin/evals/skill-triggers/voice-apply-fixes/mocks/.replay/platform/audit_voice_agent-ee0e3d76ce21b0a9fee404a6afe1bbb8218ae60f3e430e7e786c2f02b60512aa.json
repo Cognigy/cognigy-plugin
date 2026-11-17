@@ -1,0 +1,12 @@
+{
+  "input": {
+    "aiAgentId": "agent-phone",
+    "endpointId": "ep-voice",
+    "projectId": "proj-demo",
+    "apply": true
+  },
+  "output": "{\"resourceType\":\"voiceAgentAudit\",\"projectId\":\"proj-demo\",\"aiAgentId\":\"agent-phone\",\"flowId\":\"flow-phone\",\"endpointId\":\"ep-voice\",\"apply\":true,\"changesApplied\":true,\"appliedFixes\":[{\"id\":\"vg.session-config-first\",\"fix\":\"Prepended a setSessionConfig node before the AI Agent node in flow-phone.\"},{\"id\":\"agent.stream-output\",\"fix\":\"Enabled streaming output on the AI Agent node.\"},{\"id\":\"agent.error-message\",\"fix\":\"Set a default spoken error message on the AI Agent node.\"}],\"checks\":[{\"id\":\"vg.session-config-first\",\"section\":\"voice-gateway\",\"title\":\"Session config node is first in flow\",\"status\":\"pass\",\"detail\":\"setSessionConfig node precedes the AI Agent node in flow-phone.\",\"autoFixable\":false},{\"id\":\"vg.barge-in-off\",\"section\":\"voice-gateway\",\"title\":\"Barge-in disabled\",\"status\":\"na\",\"detail\":\"Barge-in setting does not apply to this endpoint configuration.\",\"autoFixable\":false},{\"id\":\"vg.stt-hints\",\"section\":\"voice-gateway\",\"title\":\"Speech-to-text hints configured\",\"status\":\"warn\",\"detail\":\"No STT hint phrases are configured for domain terms.\",\"autoFixable\":false},{\"id\":\"vg.endpoint-bound\",\"section\":\"voice-gateway\",\"title\":\"Endpoint bound to agent\",\"status\":\"pass\",\"detail\":\"ep-voice is bound to agent-phone.\",\"autoFixable\":false},{\"id\":\"agent.stream-output\",\"section\":\"ai-agent\",\"title\":\"Streaming output enabled\",\"status\":\"pass\",\"detail\":\"Streaming output is enabled on the AI Agent node.\",\"autoFixable\":false},{\"id\":\"agent.error-message\",\"section\":\"ai-agent\",\"title\":\"Error message configured\",\"status\":\"pass\",\"detail\":\"A spoken fallback message is set for AI Agent errors.\",\"autoFixable\":false},{\"id\":\"agent.persona-set\",\"section\":\"ai-agent\",\"title\":\"Persona defined\",\"status\":\"pass\",\"detail\":\"Persona is set on agent-phone.\",\"autoFixable\":false},{\"id\":\"agent.tools-valid\",\"section\":\"ai-agent\",\"title\":\"Tool definitions valid\",\"status\":\"pass\",\"detail\":\"All configured tools validate.\",\"autoFixable\":false}],\"summary\":{\"total\":9,\"pass\":7,\"fail\":0,\"warn\":1,\"na\":1}}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:35:57.692Z",
+  "model": "claude-haiku-5-5"
+}

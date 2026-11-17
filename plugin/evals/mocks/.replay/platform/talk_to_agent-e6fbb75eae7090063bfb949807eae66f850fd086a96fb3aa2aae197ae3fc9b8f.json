@@ -1,0 +1,11 @@
+{
+  "input": {
+    "aiAgentId": "agent-new-1",
+    "projectId": "proj-demo",
+    "message": "How long does standard shipping take?"
+  },
+  "output": "{\"aiAgentId\":\"agent-new-1\",\"projectId\":\"proj-demo\",\"reply\":\"Standard shipping usually takes 5-7 business days. It's free on orders over $50; otherwise it's $4.99. Orders placed before 2pm local time ship the same business day, and tracking is emailed when your order dispatches. Is there anything else I can help you with?\",\"status\":\"replied\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:25:00.853Z",
+  "model": "claude-haiku-5-5"
+}

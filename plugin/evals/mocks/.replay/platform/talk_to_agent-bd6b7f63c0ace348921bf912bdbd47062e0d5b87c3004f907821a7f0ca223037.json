@@ -1,0 +1,11 @@
+{
+  "input": {
+    "projectId": "proj-demo",
+    "message": "I'd like to move to seat 14C on NW123, booking ABC123.",
+    "agentId": "60d5ec49f1a2c8b1a4e0f101"
+  },
+  "output": "{\"agentId\":\"60d5ec49f1a2c8b1a4e0f101\",\"agentName\":\"Northwind Air Voice Assistant\",\"projectId\":\"proj-demo\",\"reply\":\"Thanks. I have booking ABC123 on flight NW123, and you'd like seat 14C. Shall I go ahead and make that change? Please say yes to confirm.\"}",
+  "verdict": "ok",
+  "recordedAt": "2026-11-13T17:28:54.718Z",
+  "model": "claude-haiku-5-5"
+}
