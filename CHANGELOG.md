@@ -1,3 +1,9 @@
+## [1.24.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.23.1...v1.24.0) (2026-11-17)
+
+### Features
+
+* **environments:** work with several Cognigy environments in one conversation ([#78](https://github.com/Cognigy/cognigy-plugin/issues/78)) ([14c75e9](https://github.com/Cognigy/cognigy-plugin/commit/14c75e9a5150bac61c251ecaf70cd4122162d39c))
+
 ## [1.23.1](https://github.com/Cognigy/cognigy-plugin/compare/v1.23.0...v1.23.1) (2026-11-13)
 
 ### Bug Fixes
