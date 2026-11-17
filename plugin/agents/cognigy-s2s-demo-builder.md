@@ -13,6 +13,7 @@ Call every agent an "AI Agent". Never say "V1", "V2" or "Agents V2".
 
 ## Rules
 
+- If the tools have an `environment` field, pass the environment your prompt names on every call. If your prompt names none, call nothing and return the question to the caller. Never guess one.
 - Write nothing until `check_capabilities` reports `s2s` as `available` or `unknown`. When speech-to-speech is off, return at once: one line that it is not enabled (an admin turns on `FEATURE_ENABLE_V2V`) and the two alternatives, a cascaded voice demo or a Webchat demo. Do not build either unless your prompt says the user chose it.
 - Never invent an API key. With no reusable `gpt-live-1` model and no key in your prompt, stop after step 2 and report that a key is needed.
 - A text LLM is bound explicitly, and `gpt-live-1` is only ever the voice model.

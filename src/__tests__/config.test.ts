@@ -17,7 +17,8 @@ jest.unstable_mockModule("../userConfigFile.js", () => ({
   USER_CONFIG_DIR: "/fake/.cognigy-plugin",
 }));
 
-const { loadConfig } = await import("../config.js");
+const { loadConfig, loadConfigForEnvironment, normalizeApiBaseUrl } =
+  await import("../config.js");
 
 describe("loadConfig", () => {
   let savedEnv: NodeJS.ProcessEnv;
@@ -373,5 +374,92 @@ describe("loadConfig", () => {
       process.env.COGNIGY_API_KEY = "ab$c{def}";
       expect(loadConfig().apiKey).toBe("ab$c{def}");
     });
+  });
+});
+
+describe("loadConfigForEnvironment", () => {
+  let savedEnv: NodeJS.ProcessEnv;
+
+  beforeEach(() => {
+    savedEnv = { ...process.env };
+  });
+
+  afterEach(() => {
+    process.env = savedEnv;
+  });
+
+  const trial = {
+    apiBaseUrl: "https://api-trial.cognigy.ai",
+    apiKey: "FAKE-KEY-123",
+  };
+
+  it("uses the entry's base URL and key, normalising a bare UI URL", () => {
+    const config = loadConfigForEnvironment({
+      apiBaseUrl: "https://trial.cognigy.ai/",
+      apiKey: "FAKE-KEY-123",
+    });
+    expect(config.apiBaseUrl).toBe("https://api-trial.cognigy.ai");
+    expect(config.apiKey).toBe("FAKE-KEY-123");
+  });
+
+  it("warns without pointing at variables it ignores when no host can be derived", () => {
+    const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      loadConfigForEnvironment({
+        ...trial,
+        apiBaseUrl: "https://cognigy.example.com",
+      });
+      const warning = String(spy.mock.calls[0]?.[0]);
+      expect(warning).toContain("Could not derive the endpoint host");
+      expect(warning).toContain("cannot set other hosts yet");
+      expect(warning).not.toContain("COGNIGY_ENDPOINT_BASE_URL");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("derives endpoint, webchat and static hosts from the API host", () => {
+    const config = loadConfigForEnvironment(trial);
+    expect(config.endpointBaseUrl).toBe("https://endpoint-trial.cognigy.ai");
+    expect(config.webchatBaseUrl).toBe("https://webchat-trial.cognigy.ai");
+    expect(config.staticFilesBaseUrl).toBe("https://static-trial.cognigy.ai");
+  });
+
+  it("ignores the credential and host override process variables", () => {
+    process.env.COGNIGY_API_BASE_URL = "https://api-stale.cognigy.ai";
+    process.env.COGNIGY_API_KEY = "STALE-KEY";
+    process.env.COGNIGY_ENDPOINT_BASE_URL = "https://stale-endpoint.example";
+    process.env.COGNIGY_WEBCHAT_BASE_URL = "https://stale-webchat.example";
+    process.env.COGNIGY_STATIC_FILES_BASE_URL = "https://stale-static.example";
+
+    const config = loadConfigForEnvironment(trial);
+    expect(config.apiBaseUrl).toBe("https://api-trial.cognigy.ai");
+    expect(config.apiKey).toBe("FAKE-KEY-123");
+    expect(config.endpointBaseUrl).toBe("https://endpoint-trial.cognigy.ai");
+    expect(config.webchatBaseUrl).toBe("https://webchat-trial.cognigy.ai");
+    expect(config.staticFilesBaseUrl).toBe("https://static-trial.cognigy.ai");
+  });
+
+  it("still honours the log level and rate-limit variables", () => {
+    process.env.LOG_LEVEL = "debug";
+    process.env.RATE_LIMIT_MAX_REQUESTS = "7";
+    process.env.RATE_LIMIT_WINDOW_MS = "1234";
+    const config = loadConfigForEnvironment(trial);
+    expect(config.logLevel).toBe("debug");
+    expect(config.rateLimit).toEqual({ maxRequests: 7, windowMs: 1234 });
+  });
+});
+
+describe("normalizeApiBaseUrl", () => {
+  it("is exported: maps a bare UI URL to its API host and drops trailing slashes", () => {
+    expect(normalizeApiBaseUrl("https://trial.cognigy.ai/")).toBe(
+      "https://api-trial.cognigy.ai",
+    );
+    expect(normalizeApiBaseUrl("https://api-eu.cognigy.ai//")).toBe(
+      "https://api-eu.cognigy.ai",
+    );
+    expect(normalizeApiBaseUrl("https://gateway.example")).toBe(
+      "https://gateway.example",
+    );
   });
 });

@@ -12,7 +12,7 @@ import { detectOnPath, runCliTool } from "./cliRunner.js";
 
 const MARKETPLACE = "Cognigy/cognigy-plugin";
 const MARKETPLACE_NAME = "cognigy-plugin";
-const PLUGIN_ID = "cognigy@cognigy-plugin";
+export const PLUGIN_ID = "cognigy@cognigy-plugin";
 
 /** `claude plugin marketplace add <owner/repo>` — idempotent (no-op if present). */
 export function buildMarketplaceAddArgs(): string[] {

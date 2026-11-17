@@ -60,6 +60,21 @@ Workflow guidance lives only as plugin skills `plugin/skills/<id>/SKILL.md` (han
 
 **One version.** semantic-release (on merge to `main`) decides the bump from conventional commits, sets that version in **both** `package.json` (`@cognigy/plugin-engine`) and `plugin/.claude-plugin/plugin.json` (via `scripts/sync-plugin-version.mjs`), publishes the engine, and commits both back. **Never hand-bump either** — no per-PR plugin bump, no CI version gate. The launcher pins the engine to the plugin version, so the two are always equal. Use release-triggering commit types (`feat`/`fix`/`docs`/…) for changes that must reach users; `chore`/`ci`/`test` cut no release.
 
+## Several environments (opt-in)
+
+`src/environments.ts`. The plugin's own credentials (`loadConfig()`) are the `default` environment. Extra ones are named entries in `~/.cognigy-plugin/environments.json` (`src/environmentsFile.ts`, the FDEs' flat `cognigy-env.py` format).
+
+- **Without the file nothing changes:** tools are listed as defined, calls run on `default`.
+- **With entries**, `withEnvironmentField` adds a required `environment` enum (`default` + names) to every tool. `src/index.ts` strips it before dispatch, and `Environments.resolve` picks the runtime: API client + `ToolHandlers`, cached per name, rebuilt only when that entry's URL or key changes, so per-environment state like backup holds survives.
+- **No server-side "current environment", on purpose.** The model remembers a conversation's environment, because Desktop/Codex/Antigravity share one engine across chats. Subagents cannot ask the user, so the main thread names the environment in their prompt and `plugin/agents/*.md` stop when none is named.
+- **Read once at start, per call after.** `Environments.start()` reads the file once for both the enum and the instructions line, so they always match (instructions cannot change after the client connects). A changed set of names applies after a restart; `cognigy-envs` says so on exit. Each call still reads the file, so a new key or URL applies at once and a deleted entry stops working at once.
+- **Never falls back to `default`** (wrong-tenant risk). A missing field fails with "ask the user which one", or, when the tools were listed without the field and environments were added since, with "restart your AI client". An invalid file fails every call, and so does a stored entry named `default` (old `cognigy-env.py` files may have one). The reader still accepts that entry, so `cognigy-envs` can open the file and ask for a new name.
+- **What the model sees:** results carry `_environment`, and the server instructions gain one line naming each environment's URL (from `Environments.start()`), so the model can map "dev" to a name before its first call.
+- **`talk_to_agent` guard:** an explicit `endpointUrl` on another host than the selected environment's endpoint host is refused (`foreignEndpointError`; skipped when that host could not be derived), since the result would otherwise claim the wrong environment.
+- **Context cost:** neither the field nor that line is in the static tool-surface budget. Only opt-in users pay, capped per tool in `environments.test.ts`.
+- **Editing:** `cognigy-envs` (`src/envs.ts`) is the only way to edit the file, an arrow-key menu with no subcommands. `cognigy-setup` installs it globally (`npm install -g`, non-fatal) and `update` refreshes it where present.
+- **Evals:** cases in `MULTI_ENVIRONMENT_CASES` (`scripts/gen-eval-tools.ts`) get a per-case `_tools.json` with the field.
+
 ## API client & config
 
 - `src/config.ts` `loadConfig()` reads env `COGNIGY_API_BASE_URL` + `COGNIGY_API_KEY` (both required). `normalizeApiBaseUrl` rewrites `*.cognigy.ai` → `api-*.cognigy.ai`.

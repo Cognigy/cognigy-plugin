@@ -27,6 +27,7 @@ Call every agent an "AI Agent". Say "legacy" only when you must tell the two kin
 
 ## Rules
 
+- If the tools have an `environment` field, pass the environment your prompt names on every call. If your prompt names none, call nothing and return the question to the caller. Never guess one.
 - LLM before `talk_to_agent`, always. No working LLM → no test.
 - Legacy agents: all custom logic belongs INSIDE tools (`create_tool`), never as standalone nodes before the AI Agent Job node — that causes loops.
 - Reuse an existing LLM + connection via packages before `setup_llm`.
