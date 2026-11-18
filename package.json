@@ -68,25 +68,25 @@
     "@semantic-release/commit-analyzer": "^13.0.1",
     "@semantic-release/exec": "^7.1.0",
     "@semantic-release/git": "^11.0.1",
-    "@semantic-release/github": "^12.0.10",
+    "@semantic-release/github": "^12.0.11",
     "@semantic-release/release-notes-generator": "^14.1.1",
     "@types/jest": "30.0.0",
     "@types/node": "20.19.43",
     "conventional-changelog-conventionalcommits": "^9.3.1",
-    "eslint": "10.14.0",
+    "eslint": "10.15.0",
     "globals": "17.14.0",
     "husky": "^9.1.7",
     "jest": "30.5.2",
     "mermaid": "^12.3.0",
-    "prettier": "3.9.10",
+    "prettier": "3.10.1",
     "semantic-release": "^25.0.9",
     "ts-jest": "29.4.15",
     "tsx": "4.23.15",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.72.2"
+    "typescript-eslint": "8.73.0"
   },
   "overrides": {
-    "glob": "14.0.4",
-    "minimatch": "11.0.5"
+    "glob": "14.0.6",
+    "minimatch": "11.0.9"
   }
 }
