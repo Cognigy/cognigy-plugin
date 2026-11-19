@@ -74,7 +74,7 @@ Templates: `${CLAUDE_SKILL_DIR}/templates/definition.ts`, `schema.ts` and `handl
 
 ## 5. Check against a real tenant
 
-Unit tests and eval mocks only show what their author assumed. Before the PR, run the changed workflow once on a real test tenant, with `npm run plugin:dev` or a headless `claude -p` in the repo.
+Unit tests and eval mocks only show what their author assumed. Before the PR, run `npm run plugin:dev`. It points the plugin at your working tree: the engine runs from `src/`, and skills and agents are copied. Without it, Claude Code runs the installed release and you test nothing you changed. Then run the changed workflow once on a real test tenant, interactively or with a headless `claude -p`. `npm run plugin:dev:off` restores the release.
 
 - Response shapes and field projections. `GET /chart/nodes` returns each node type's defaults, not the stored config.
 - Paging per endpoint: `skip`, `offset` or `page`/`pageSize` differ.
