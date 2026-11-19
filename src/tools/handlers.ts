@@ -27,6 +27,7 @@ import {
   filterResponse,
   filterList,
   filterFlowNodeDetail,
+  normalizeLogEntry,
   withHints,
   type ResponseHints,
 } from "./filters.js";
@@ -166,6 +167,13 @@ const DEFAULT_AGENT_IMAGE = "default-avatar:1";
 
 // Prefix applied to agents/flows/projects instead of deleting them.
 const DELETE_PREFIX = "DELETE_";
+
+// Logs API v2.1: ask for the v2 entry model, and for a session lookup read the
+// widest tail window the platform accepts (1, 6 or 12 hours).
+const LOG_MODEL_HEADER = { "x-cognigy-log-model-version": "v2" };
+const LOG_TAIL_WINDOW_HOURS = 12;
+
+type ListResourcesInput = z.infer<typeof schemas.listResourcesSchema>;
 
 // Cognigy resource names are capped at 200 chars (see schemas/tools.ts).
 const MAX_RESOURCE_NAME_LENGTH = 200;
@@ -4684,11 +4692,27 @@ export class ToolHandlers {
 
     if (resourceType === "agent") return this.listAgents(projectId!, paging);
 
+    // The platform answers an unparsable date with HTTP 500, which the API
+    // client then retries three times, so reject it here instead.
+    if (resourceType === "log") {
+      for (const key of ["startDate", "endDate"] as const) {
+        const value = data[key];
+        if (value !== undefined && Number.isNaN(Date.parse(value))) {
+          return withHints(
+            { error: `${key} is not a valid ISO 8601 date: '${value}'.` },
+            { action: "Use a form like 2026-11-19T10:00:00Z." },
+          );
+        }
+      }
+    }
+
     let items: any[];
     let total: number | undefined;
     // Set when the platform rejected the audit_event filters and this plugin
     // applied them instead, so the response can say so.
     let filteredClientSide = false;
+    // Set for logs: what the caller should know about an empty or cut-off list.
+    let logHint: string | undefined;
 
     switch (resourceType) {
       case "project": {
@@ -4881,6 +4905,13 @@ export class ToolHandlers {
         }
         break;
       }
+      case "log": {
+        const logs = await this.listLogs(projectId!, data, paging);
+        items = logs.items;
+        total = logs.total;
+        logHint = logs.hint;
+        break;
+      }
       default:
         throw new Error(`Unknown resourceType: ${resourceType}`);
     }
@@ -4916,7 +4947,98 @@ export class ToolHandlers {
       });
     }
 
+    if (resourceType === "log") {
+      const hint = filtered.length === 0 ? this.emptyLogsHint(data) : logHint;
+      if (hint) return withHints(result, { hint });
+    }
+
     return result;
+  }
+
+  /**
+   * Project logs (Logs API v2.1). With a sessionId the tail endpoint is the
+   * only one that can filter by session: `/logs` silently ignores `sessionId`
+   * and returns unfiltered entries, so it must never get one. Tail reads only
+   * the last hour unless `lastTimeWindow` widens it (1, 6 or 12 hours, v2
+   * model only), so a session lookup asks for the widest.
+   */
+  private async listLogs(
+    projectId: string,
+    data: ListResourcesInput,
+    paging: { limit: number; skip: number; sort?: string },
+  ): Promise<{ items: any[]; total?: number; hint?: string }> {
+    const base = `/v2.1/projects/${projectId}/logs`;
+    const filters = {
+      ...(data.level ? { type: data.level } : {}),
+      ...(data.flowName ? { flowName: data.flowName } : {}),
+      ...(data.userId ? { userId: data.userId } : {}),
+    };
+
+    if (data.sessionId) {
+      const tailFilters = { sessionId: data.sessionId, ...filters };
+      const res: any = await this.getLogApi(
+        `${base}/tail`,
+        { ...tailFilters, lastTimeWindow: LOG_TAIL_WINDOW_HOURS },
+        tailFilters,
+      );
+      const all = Array.isArray(res?.items) ? res.items : [];
+      const notes: string[] = [];
+      if (all.length > paging.limit)
+        notes.push(
+          `Showing ${paging.limit} of ${all.length} entries for this session; raise limit (max 100) to see more.`,
+        );
+      if (res?.nextCursor)
+        notes.push(
+          "More entries exist beyond the latest 100; narrow with level or flowName.",
+        );
+      return {
+        items: all.slice(0, paging.limit),
+        total: all.length,
+        hint: notes.length ? notes.join(" ") : undefined,
+      };
+    }
+
+    const res: any = await this.getLogApi(base, {
+      limit: paging.limit,
+      skip: paging.skip,
+      ...(paging.sort ? { sort: paging.sort } : {}),
+      ...filters,
+      ...(data.startDate ? { startDate: data.startDate } : {}),
+      ...(data.endDate ? { endDate: data.endDate } : {}),
+    });
+    return { items: res?.items ?? res, total: res?.total };
+  }
+
+  private emptyLogsHint(data: ListResourcesInput): string {
+    if (data.sessionId)
+      return "No log entries for that session in the last 12 hours. The session id must match exactly, and older sessions are not reachable here.";
+    if (!data.startDate && !data.endDate)
+      return "No log entries in the last hour, the default window. Pass startDate (ISO 8601) to look further back.";
+    return "No log entries matched. Widen startDate/endDate or drop a filter.";
+  }
+
+  /**
+   * GET a Logs API v2.1 URL asking for the v2 entry model. A platform that
+   * rejects the header (400) is asked again without it, with `fallbackParams`
+   * (params that need the v2 model, such as lastTimeWindow, are left out).
+   */
+  private async getLogApi(
+    url: string,
+    params?: Record<string, unknown>,
+    fallbackParams: Record<string, unknown> | undefined = params,
+  ): Promise<any> {
+    try {
+      return await this.apiClient.get(url, {
+        ...(params ? { params } : {}),
+        headers: LOG_MODEL_HEADER,
+      });
+    } catch (error: any) {
+      if (error?.status !== 400) throw error;
+      return await this.apiClient.get(
+        url,
+        fallbackParams ? { params: fallbackParams } : {},
+      );
+    }
   }
 
   /**
@@ -5033,6 +5155,22 @@ export class ToolHandlers {
         const f = RESOURCE_FILTERS_GET.agent_v2(v2);
         return { ...f, use: { agentId: f.id } };
       }
+    }
+
+    if (resourceType === "log") {
+      if (!projectId) {
+        return withHints(
+          { error: "projectId is required for resourceType 'log'." },
+          {
+            action:
+              "Use list_resources { resourceType: 'project' } to find projectIds first.",
+          },
+        );
+      }
+      const entry = await this.getLogApi(
+        `/v2.1/projects/${projectId}/logs/${encodeURIComponent(id)}`,
+      );
+      return raw ? entry : RESOURCE_FILTERS_GET.log(entry);
     }
 
     const endpointMap: Record<string, string> = {
@@ -10100,6 +10238,7 @@ function summarizeCatalogItem(component: string, r: any): any {
 }
 
 const RESOURCE_FILTERS_GET: Record<string, (raw: any) => any> = {
+  log: (r) => normalizeLogEntry(r, { full: true }),
   agent_v2: (r) => ({
     id: r.id ?? r._id,
     referenceId: r.referenceId,

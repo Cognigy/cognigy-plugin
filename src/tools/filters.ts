@@ -147,6 +147,7 @@ export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
   // this filter did: both only matter for downloading, which this plugin
   // deliberately does not do.)
   snapshot: summarizeSnapshot,
+  log: (r) => normalizeLogEntry(r),
   // Audit events are verbose and mostly opaque ids. `performedBy` is the point
   // of this view — it is absent on human-performed events (the platform only
   // stores it for non-human actors), so a missing key means "a person did
@@ -209,6 +210,56 @@ export function filterFlowNodeDetail(raw: any): any {
     ...(raw.isDisabled ? { isDisabled: true } : {}),
     ...(raw.comment ? { comment: raw.comment } : {}),
     config,
+  };
+}
+
+/** Longest `msg` in a log list; get_resource returns the full text. */
+export const LOG_MSG_MAX_CHARS = 500;
+/** Longest single `meta` value in a log list (errors can carry whole stacks). */
+export const LOG_META_VALUE_MAX_CHARS = 200;
+
+const cutText = (text: string, max: number): string =>
+  text.length > max ? `${text.slice(0, max)}…` : text;
+
+/**
+ * One log entry for the LLM. The platform has two shapes: the v1 model keeps
+ * the level in a top-level `type`, the v2 model (requested with the
+ * x-cognigy-log-model-version header) in `metadata.type`. Both become `level`.
+ * Lists cut a long `msg` and long `meta` values and say so; `full` (a single
+ * get) keeps everything.
+ */
+export function normalizeLogEntry(
+  raw: any,
+  opts: { full?: boolean } = {},
+): any {
+  const text = String(raw?.msg ?? "");
+  const msgTruncated = !opts.full && text.length > LOG_MSG_MAX_CHARS;
+  const meta: Record<string, unknown> | undefined =
+    raw?.meta && typeof raw.meta === "object" ? { ...raw.meta } : undefined;
+  let metaTruncated = false;
+  if (meta && !opts.full) {
+    for (const [key, value] of Object.entries(meta)) {
+      const asText =
+        typeof value === "string"
+          ? value
+          : value !== null && typeof value === "object"
+            ? (JSON.stringify(value) ?? "")
+            : "";
+      if (asText.length > LOG_META_VALUE_MAX_CHARS) {
+        meta[key] = cutText(asText, LOG_META_VALUE_MAX_CHARS);
+        metaTruncated = true;
+      }
+    }
+  }
+  return {
+    id: rid(raw),
+    timestamp: raw?.timestamp,
+    level: raw?.type ?? raw?.metadata?.type,
+    msg: msgTruncated ? cutText(text, LOG_MSG_MAX_CHARS - 1) : text,
+    ...(msgTruncated ? { msgTruncated: true } : {}),
+    ...(raw?.traceId ? { traceId: raw.traceId } : {}),
+    ...(meta ? { meta } : {}),
+    ...(metaTruncated ? { metaTruncated: true } : {}),
   };
 }
 
