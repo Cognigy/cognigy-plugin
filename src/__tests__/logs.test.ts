@@ -133,9 +133,13 @@ describe("project logs", () => {
       sessionId: SESSION,
     });
 
+    // Without lastTimeWindow the tail reads only the cluster's cutoff.
     expect(api.get).toHaveBeenCalledWith(
       `/v2.1/projects/${PROJECT}/logs/tail`,
-      { params: { sessionId: SESSION } },
+      {
+        params: { sessionId: SESSION, lastTimeWindow: 12 },
+        headers: { "x-cognigy-log-model-version": "v2" },
+      },
     );
     expect(result.items.map((e: any) => e.message)).toEqual([
       "Received message from user",
@@ -288,23 +292,132 @@ describe("project logs", () => {
 
     expect(api.get).toHaveBeenLastCalledWith(
       `/v2.0/projects/${PROJECT}/logs/tail`,
-      { params: { sessionId: SESSION } },
+      {
+        params: { sessionId: SESSION, lastTimeWindow: 12 },
+        headers: { "x-cognigy-log-model-version": "v2" },
+      },
     );
     expect(result.items).toHaveLength(3);
   });
 
-  it("keeps the original 404 when v2.0 fails too", async () => {
-    const original = httpError(404);
+  it("on an old platform, also drops the 12-hour window that v2.0 refuses", async () => {
     api.get
-      .mockRejectedValueOnce(original)
+      .mockRejectedValueOnce(httpError(404)) // v2.1 tail
+      .mockRejectedValueOnce(httpError(400)) // v2.0 tail + lastTimeWindow
+      .mockRejectedValueOnce(httpError(404)) // v2.1 tail, no window
+      .mockResolvedValueOnce({ items: sessionEntries }); // v2.0 tail
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "log",
+      projectId: PROJECT,
+      sessionId: SESSION,
+    });
+
+    expect(api.get).toHaveBeenLastCalledWith(
+      `/v2.0/projects/${PROJECT}/logs/tail`,
+      { params: { sessionId: SESSION } },
+    );
+    expect(result.items).toHaveLength(3);
+    expect(result._hints.warning).toMatch(/refused the 12-hour window/);
+  });
+
+  it("retries a session read without the 12-hour window when the platform refuses it", async () => {
+    api.get
+      .mockRejectedValueOnce(httpError(400))
+      .mockResolvedValueOnce({ items: [] });
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "log",
+      projectId: PROJECT,
+      sessionId: SESSION,
+    });
+
+    expect(api.get).toHaveBeenLastCalledWith(
+      `/v2.1/projects/${PROJECT}/logs/tail`,
+      { params: { sessionId: SESSION } },
+    );
+    expect(result._hints.warning).toMatch(/default window/);
+    expect(result._hints.hint).toMatch(/in the default window/);
+  });
+
+  it("explains a 404 that v2.0 cannot answer either", async () => {
+    api.get
+      .mockRejectedValueOnce(httpError(404))
       .mockRejectedValueOnce(httpError(404));
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "log",
+      projectId: PROJECT,
+    });
+
+    expect(result.error).toMatch(/404/);
+    expect(result._hints.action).toMatch(/2026\.7\.0/);
+  });
+
+  it("rethrows errors it has no advice for", async () => {
+    const original = httpError(500);
+    api.get.mockRejectedValueOnce(original);
 
     await expect(
       h.handleToolCall("list_resources", {
         resourceType: "log",
         projectId: PROJECT,
+        level: ["error"],
       }),
     ).rejects.toBe(original);
+  });
+
+  it("rejects an unparsable date before calling the API", async () => {
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "log",
+      projectId: PROJECT,
+      startDate: "yesterday",
+    });
+
+    expect(result.error).toMatch(/startDate is not a valid ISO 8601 date/);
+    expect(api.get).not.toHaveBeenCalled();
+  });
+
+  it("says an empty list without dates covered only the last hour", async () => {
+    api.get.mockResolvedValue({ items: [], total: 0 });
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "log",
+      projectId: PROJECT,
+      level: ["error"],
+    });
+
+    expect(result._hints.hint).toMatch(/last hour/);
+  });
+
+  it("keeps a session's newest `limit` entries, oldest first", async () => {
+    const many = Array.from({ length: 30 }, (_, i) =>
+      entry(
+        `6aff000000000000000000${String(99 - i).padStart(2, "0")}`,
+        new Date(Date.UTC(2026, 10, 19, 16, 0, 59 - i)).toISOString(),
+        "info",
+        `entry ${29 - i}`,
+        { sessionId: SESSION },
+      ),
+    );
+    api.get.mockResolvedValue({ items: many });
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "log",
+      projectId: PROJECT,
+      sessionId: SESSION,
+      limit: 5,
+    });
+
+    expect(result.items.map((e: any) => e.message)).toEqual([
+      "entry 25",
+      "entry 26",
+      "entry 27",
+      "entry 28",
+      "entry 29",
+    ]);
+    expect(result.total).toBe(30);
+    expect(result._hints.warning).toMatch(/newest 5 entries/);
   });
 
   it("names the roles that can read logs on a 403", async () => {
@@ -345,7 +458,7 @@ describe("project logs", () => {
       sessionId: SESSION,
     });
 
-    expect(result._hints.warning).toMatch(/newest 100/);
+    expect(result._hints.warning).toMatch(/newest 3 entries/);
   });
 
   it("truncates very long messages", async () => {
@@ -404,6 +517,22 @@ describe("project logs", () => {
 
       expect(result.error).toMatch(/projectId is required/);
       expect(api.get).not.toHaveBeenCalled();
+    });
+
+    it("encodes the id and explains an expired entry", async () => {
+      api.get.mockRejectedValue(httpError(404));
+
+      const result = await h.handleToolCall("get_resource", {
+        resourceType: "log",
+        id: "../x",
+        projectId: PROJECT,
+      });
+
+      expect(api.get).toHaveBeenCalledWith(
+        `/v2.1/projects/${PROJECT}/logs/..%2Fx`,
+        { params: undefined },
+      );
+      expect(result._hints.action).toMatch(/kept 24 hours/);
     });
   });
 

@@ -23,15 +23,19 @@ turn's entries appear a few seconds after its reply.
   the `traceId` talk_to_agent returned. Use this for the full error: a failed
   node's error (with the node's label) and endpoint errors carry no sessionId.
 - **One conversation:** `list_resources { resourceType: "log", projectId, sessionId }`,
-  every turn, with a one-line error summary for each failed turn.
-- **Recent problems in a project:** `list_resources { resourceType: "log", projectId, level: ["error", "warn"] }`
-  (the last hour unless `startDate` / `endDate` say otherwise).
+  its newest `limit` entries (default 25) from the last 12 hours, with a one-line
+  error summary for each failed turn.
+- **Recent problems in a project:** `list_resources { resourceType: "log", projectId, level: ["error", "warn"] }`.
+  Without `startDate` / `endDate` the platform looks at the last hour only, so an
+  empty list does not mean nothing happened: widen the dates first.
 - **One entry in full:** `get_resource { resourceType: "log", id, projectId }`.
 
 Read the turn's logs whenever a reply is cut short or misses something the flow
 should have said: a flow that fails mid-turn still answers HTTP 200 with what it
-sent before the error, so talk_to_agent cannot tell. A 403 means the API key's
-user lacks the project role `logs` or `developer`.
+sent before the error, so talk_to_agent cannot tell. A 403 means a projectId
+from another environment, or an API key whose user lacks the project role `logs`
+or `developer`. A flow or endpoint can mask logged user data (Blind Mode node,
+`maskLogging`): `userId`, `text` and `data` then show as asterisks.
 
 Logs do not show everything. An HTTP Request node that cannot reach its host
 writes no entry and the flow carries on, so check the stored result (log it from

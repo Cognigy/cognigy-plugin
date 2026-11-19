@@ -167,6 +167,12 @@ const DEFAULT_AGENT_IMAGE = "default-avatar:1";
 // Prefix applied to agents/flows/projects instead of deleting them.
 const DELETE_PREFIX = "DELETE_";
 
+// A session's log tail reads only the cluster's cutoff (2 h on trial) unless
+// lastTimeWindow widens it. Every cluster accepts 12 hours, but the parameter
+// needs the v2 log model, which this header asks for.
+const LOG_TAIL_WINDOW_HOURS = 12;
+const LOG_V2_MODEL = { "x-cognigy-log-model-version": "v2" };
+
 // Cognigy resource names are capped at 200 chars (see schemas/tools.ts).
 const MAX_RESOURCE_NAME_LENGTH = 200;
 
@@ -4890,12 +4896,26 @@ export class ToolHandlers {
         break;
       }
       case "log": {
+        // The platform answers an unparsable date with HTTP 500, which the API
+        // client retries three times, so reject it before the call.
+        const badDate = (["startDate", "endDate"] as const).find(
+          (key) => data[key] && Number.isNaN(Date.parse(data[key]!)),
+        );
+        if (badDate)
+          return withHints(
+            {
+              error: `${badDate} is not a valid ISO 8601 date: '${data[badDate]}'.`,
+            },
+            { action: "Use a form like 2026-11-19T10:00:00Z." },
+          );
         // Only /logs/tail filters by session, and a turn's endpoint-level
         // entries (the node error among them) carry no sessionId, so a turn is
         // read through the list route's free-text `filter` by traceId. Both are
         // re-checked here: `filter` also matches messages, and a v2.0 fallback
         // may not know the session filter.
         let res: any;
+        // Set when the platform refused the 12-hour session window.
+        let shortWindow = false;
         try {
           if (traceId) {
             const now = Date.now();
@@ -4910,10 +4930,19 @@ export class ToolHandlers {
               endDate: data.endDate ?? new Date(now).toISOString(),
             });
           } else if (sessionId) {
-            res = await this.getLogs(projectId!, "/tail", {
-              sessionId,
-              ...(level ? { type: level } : {}),
-            });
+            const params = { sessionId, ...(level ? { type: level } : {}) };
+            try {
+              res = await this.getLogs(
+                projectId!,
+                "/tail",
+                { ...params, lastTimeWindow: LOG_TAIL_WINDOW_HOURS },
+                LOG_V2_MODEL,
+              );
+            } catch (error: any) {
+              if (error?.status !== 400) throw error;
+              res = await this.getLogs(projectId!, "/tail", params);
+              shortWindow = true;
+            }
           } else {
             res = await this.getLogs(projectId!, "", {
               ...paging,
@@ -4923,13 +4952,26 @@ export class ToolHandlers {
             });
           }
         } catch (error: any) {
-          if (error?.status === 403) return this.logsForbidden(error);
-          throw error;
+          return this.logError(error, "list");
         }
         let raw: any[] = Array.isArray(res?.items) ? res.items : [];
         if (traceId) raw = raw.filter((e) => e.traceId === traceId);
         else if (sessionId)
           raw = raw.filter((e) => e.meta?.sessionId === sessionId);
+        // The tail route never counts (-1), and a re-checked read is counted
+        // by what survived the check.
+        total =
+          traceId || sessionId
+            ? raw.length
+            : res.total >= 0
+              ? res.total
+              : undefined;
+        // A session keeps its newest `limit` entries: the latest turns.
+        const cut =
+          !traceId &&
+          sessionId &&
+          (raw.length > paging.limit || res.nextCursor);
+        if (!traceId && sessionId) raw = raw.slice(0, paging.limit);
         // The API answers newest first; one session or turn reads as a trace.
         if (traceId || sessionId) raw.reverse();
         items = raw.map((e) => {
@@ -4937,19 +4979,26 @@ export class ToolHandlers {
           if (traceId) delete f.traceId;
           return f;
         });
-        // The tail route never counts (-1), and a re-checked read is counted
-        // by what survived the check.
-        total =
-          !traceId && !sessionId && res.total >= 0 ? res.total : undefined;
-        if (!items.length && (traceId || sessionId))
-          logHints = {
-            hint: "No log entries found. Entries appear a few seconds after a turn and are kept 24 hours: if the turn just ran, read again shortly.",
-          };
-        else if (sessionId && !traceId && res.nextCursor)
-          logHints = {
-            warning:
-              "Only the newest 100 entries of this session are shown. Read one turn completely with its traceId.",
-          };
+        const hints: ResponseHints = {};
+        const warnings: string[] = [];
+        if (shortWindow)
+          warnings.push(
+            "This platform refused the 12-hour window, so the session was searched only in its default window (often the last hour or two).",
+          );
+        if (cut)
+          warnings.push(
+            `Showing the newest ${items.length} entries of this session. Raise limit (max 100), or read one turn completely with its traceId.`,
+          );
+        if (!items.length)
+          hints.hint = traceId
+            ? "No log entries for this turn. Entries appear a few seconds after a turn and are kept 24 hours: if the turn just ran, read again shortly."
+            : sessionId
+              ? `No log entries for this session in ${shortWindow ? "the default window" : "the last 12 hours"}. The id must match exactly; entries appear a few seconds after a turn, so if it just ran, read again shortly.`
+              : !data.startDate && !data.endDate
+                ? "No log entries in the last hour, the default window. Pass startDate (ISO 8601) to look further back; logs are kept 24 hours."
+                : "No log entries matched. Widen startDate / endDate or drop level.";
+        if (warnings.length) hints.warning = warnings.join(" ");
+        if (Object.keys(hints).length) logHints = hints;
         break;
       }
       default:
@@ -5097,31 +5146,50 @@ export class ToolHandlers {
     projectId: string,
     subPath: string,
     params?: Record<string, unknown>,
+    headers?: Record<string, string>,
   ): Promise<any> {
     const url = (version: string) =>
       `/${version}/projects/${projectId}/logs${subPath}`;
+    const config = { params, ...(headers ? { headers } : {}) };
     try {
-      return await this.apiClient.get(url("v2.1"), { params });
+      return await this.apiClient.get(url("v2.1"), config);
     } catch (error: any) {
       if (error?.status !== 404) throw error;
       try {
-        return await this.apiClient.get(url("v2.0"), { params });
-      } catch {
-        throw error;
+        return await this.apiClient.get(url("v2.0"), config);
+      } catch (fallbackError: any) {
+        throw fallbackError?.status === 404 ? error : fallbackError;
       }
     }
   }
 
-  private logsForbidden(error: any): any {
-    return withHints(
-      { error: error.message },
-      {
-        likely_cause:
-          "The API key's user cannot read this project's logs; the project role 'basic' does not include them.",
-        action:
-          "Use an API key whose user has the 'logs' or 'developer' role in this project.",
-      },
-    );
+  /**
+   * A Logs API 403 or 404 with the next step; any other error is rethrown. A
+   * projectId from another environment, or one the key cannot see, answers
+   * 403 rather than 404.
+   */
+  private logError(error: any, op: "list" | "get"): any {
+    if (error?.status === 403)
+      return withHints(
+        { error: error.message },
+        {
+          likely_cause:
+            "The projectId does not belong to this environment, or the API key's user cannot read this project's logs (the project role 'basic' does not include them).",
+          action:
+            "Check the projectId, and use an API key whose user has the 'logs' or 'developer' role in this project.",
+        },
+      );
+    if (error?.status === 404)
+      return withHints(
+        { error: error.message },
+        {
+          action:
+            op === "get"
+              ? "Take the id from list_resources { resourceType: 'log', projectId }; entries are kept 24 hours."
+              : "Check the projectId. Reading logs needs Cognigy 2026.7.0 or newer.",
+        },
+      );
+    throw error;
   }
 
   // =========================================================================
@@ -5154,10 +5222,9 @@ export class ToolHandlers {
         );
       let entry: any;
       try {
-        entry = await this.getLogs(projectId, `/${id}`);
+        entry = await this.getLogs(projectId, `/${encodeURIComponent(id)}`);
       } catch (error: any) {
-        if (error?.status === 403) return this.logsForbidden(error);
-        throw error;
+        return this.logError(error, "get");
       }
       return raw ? entry : RESOURCE_FILTERS_GET.log(entry);
     }

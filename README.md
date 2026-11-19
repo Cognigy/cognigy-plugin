@@ -203,6 +203,14 @@ Talk to it again and compare the responses.
 
 This triggers the self-improvement loop: `talk_to_agent` → evaluate → `update_ai_agent` → `talk_to_agent` again.
 
+When a reply is empty or stops halfway, ask why:
+
+```
+That reply stopped halfway. Read the logs for that turn and tell me what failed.
+```
+
+A flow that fails mid-turn still answers with what it sent before the error, so the project logs are often the only place the failure shows. `talk_to_agent` returns a `traceId` for each turn, and `list_resources { resourceType: "log", projectId, traceId }` reads every log entry of that turn, including a failing node's error. `sessionId` reads a whole conversation from the last 12 hours, and `level` with `startDate` finds recent problems in a project (without dates, only the last hour). Cognigy keeps logs for 24 hours, and the API key's user needs the `logs` or `developer` project role.
+
 ### 3. Add a knowledge store for RAG
 
 ```
@@ -344,7 +352,7 @@ https://wttr.in/Berlin?format=j1, then ask it what the weather is.
 | `update_ai_agent`         | Write | Update a legacy agent's persona, guardrails, job config (role, procedures, LLM, temperature)                          |
 | `setup_llm`               | Write | Create an LLM resource (GPT-4, Claude, Mistral, etc.) with automatic connection validation                            |
 | `talk_to_agent`           | Write | Send a message to an AI Agent and get its response (uses Endpoint Test Mode, so it is not counted as billable)        |
-| `list_resources`          | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, and more                                             |
+| `list_resources`          | Read  | List projects, agents, flows, endpoints, LLMs, knowledge stores, project logs, and more                               |
 | `get_resource`            | Read  | Get detailed information about a single resource                                                                      |
 | `delete_resource`         | Write | Permanently delete a resource                                                                                         |
 | `manage_knowledge`        | Write | Create knowledge stores, add sources (URL, text, file), list chunks for RAG                                           |
