@@ -199,10 +199,10 @@ describe("logs", () => {
 
   it("does not retry other errors", async () => {
     api.get.mockRejectedValue(
-      Object.assign(new Error("forbidden"), { status: 403 }) as never,
+      Object.assign(new Error("boom"), { status: 500 }) as never,
     );
 
-    await expect(list()).rejects.toThrow("forbidden");
+    await expect(list()).rejects.toThrow("boom");
     expect(api.get).toHaveBeenCalledTimes(1);
   });
 
@@ -222,6 +222,92 @@ describe("logs", () => {
     const result = await list({ sessionId: "abc" });
 
     expect(result._hints?.hint).toMatch(/12 hours/);
+  });
+
+  it("does not say the session is missing when other filters emptied the result", async () => {
+    api.get.mockResolvedValue({ items: [], total: -1 } as never);
+
+    const result = await list({ sessionId: "abc", level: ["error"] });
+
+    expect(result._hints?.hint).toMatch(/only sessionId/);
+    expect(result._hints?.hint).not.toMatch(/must match exactly/);
+  });
+
+  it("pages a session with skip instead of repeating the first page", async () => {
+    const second = v2Entry({ _id: "60d5ec49f1a2c8b1a4e0f0a2" });
+    api.get.mockResolvedValue({
+      items: [v2Entry(), second],
+      total: -1,
+    } as never);
+
+    const result = await list({ sessionId: "abc", limit: 1, skip: 1 });
+
+    expect(result.items.map((i: any) => i.id)).toEqual([second._id]);
+  });
+
+  it("says when skip is past the entries of a session", async () => {
+    api.get.mockResolvedValue({ items: [v2Entry()], total: -1 } as never);
+
+    const result = await list({ sessionId: "abc", skip: 5 });
+
+    expect(result.items).toEqual([]);
+    expect(result._hints?.hint).toMatch(/skip/);
+  });
+
+  it("warns that a header fallback shortened the session window", async () => {
+    api.get
+      .mockRejectedValueOnce(
+        Object.assign(new Error("unsupported"), { status: 400 }) as never,
+      )
+      .mockResolvedValueOnce({ items: [], total: -1 } as never);
+
+    const result = await list({ sessionId: "abc" });
+
+    expect(result._hints?.warning).toMatch(/last hour/);
+    expect(result._hints?.hint).toMatch(/last hour/);
+    expect(result._hints?.hint).not.toMatch(/12 hours/);
+  });
+
+  it("gives a next step on a 403 when listing logs", async () => {
+    api.get.mockRejectedValue(
+      Object.assign(new Error("Forbidden. Insufficient rights."), {
+        status: 403,
+      }) as never,
+    );
+
+    const result = await list();
+
+    expect(result.error).toMatch(/Forbidden/);
+    expect(result._hints?.action).toMatch(/projectId/);
+    expect(result._hints?.action).toMatch(/user/);
+  });
+
+  it("says the Logs API v2.1 may be missing on a 404 when listing logs", async () => {
+    api.get.mockRejectedValue(
+      Object.assign(new Error("Not Found"), { status: 404 }) as never,
+    );
+
+    const result = await list({ sessionId: "abc" });
+
+    expect(result.error).toMatch(/Not Found/);
+    expect(result._hints?.action).toMatch(/v2\.1/);
+  });
+
+  it("points get_resource 404s back to list_resources", async () => {
+    api.get.mockRejectedValue(
+      Object.assign(new Error("Unable to find the log entry"), {
+        status: 404,
+      }) as never,
+    );
+
+    const result = await h.handleToolCall("get_resource", {
+      resourceType: "log",
+      id: LOG_ID,
+      projectId: PROJECT,
+    });
+
+    expect(result.error).toMatch(/Unable to find/);
+    expect(result._hints?.action).toMatch(/list_resources/);
   });
 
   it("requires projectId for log", async () => {

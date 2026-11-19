@@ -4713,6 +4713,8 @@ export class ToolHandlers {
     let filteredClientSide = false;
     // Set for logs: what the caller should know about an empty or cut-off list.
     let logHint: string | undefined;
+    let logWarning: string | undefined;
+    let fellBack = false;
 
     switch (resourceType) {
       case "project": {
@@ -4906,10 +4908,19 @@ export class ToolHandlers {
         break;
       }
       case "log": {
-        const logs = await this.listLogs(projectId!, data, paging);
+        let logs: Awaited<ReturnType<typeof this.listLogs>>;
+        try {
+          logs = await this.listLogs(projectId!, data, paging);
+        } catch (error: any) {
+          const hinted = this.logErrorWithHints(error, "list");
+          if (hinted) return hinted;
+          throw error;
+        }
         items = logs.items;
         total = logs.total;
         logHint = logs.hint;
+        logWarning = logs.warning;
+        fellBack = logs.fellBack === true;
         break;
       }
       default:
@@ -4948,8 +4959,16 @@ export class ToolHandlers {
     }
 
     if (resourceType === "log") {
-      const hint = filtered.length === 0 ? this.emptyLogsHint(data) : logHint;
-      if (hint) return withHints(result, { hint });
+      const hint =
+        logHint ??
+        (filtered.length === 0
+          ? this.emptyLogsHint(data, fellBack)
+          : undefined);
+      if (hint || logWarning)
+        return withHints(result, {
+          ...(hint ? { hint } : {}),
+          ...(logWarning ? { warning: logWarning } : {}),
+        });
     }
 
     return result;
@@ -4966,7 +4985,13 @@ export class ToolHandlers {
     projectId: string,
     data: ListResourcesInput,
     paging: { limit: number; skip: number; sort?: string },
-  ): Promise<{ items: any[]; total?: number; hint?: string }> {
+  ): Promise<{
+    items: any[];
+    total?: number;
+    hint?: string;
+    warning?: string;
+    fellBack?: boolean;
+  }> {
     const base = `/v2.1/projects/${projectId}/logs`;
     const filters = {
       ...(data.level ? { type: data.level } : {}),
@@ -4976,25 +5001,41 @@ export class ToolHandlers {
 
     if (data.sessionId) {
       const tailFilters = { sessionId: data.sessionId, ...filters };
+      let fellBack = false;
       const res: any = await this.getLogApi(
         `${base}/tail`,
         { ...tailFilters, lastTimeWindow: LOG_TAIL_WINDOW_HOURS },
         tailFilters,
+        () => {
+          fellBack = true;
+        },
       );
       const all = Array.isArray(res?.items) ? res.items : [];
+      const items = all.slice(paging.skip, paging.skip + paging.limit);
       const notes: string[] = [];
-      if (all.length > paging.limit)
+      if (all.length > 0 && items.length === 0)
         notes.push(
-          `Showing ${paging.limit} of ${all.length} entries for this session; raise limit (max 100) to see more.`,
+          `skip ${paging.skip} is past the ${all.length} entries found for this session.`,
+        );
+      else if (all.length > paging.skip + paging.limit)
+        notes.push(
+          `Showing ${items.length} of ${all.length} entries for this session; raise limit (max 100) or skip to see more.`,
         );
       if (res?.nextCursor)
         notes.push(
           "More entries exist beyond the latest 100; narrow with level or flowName.",
         );
       return {
-        items: all.slice(0, paging.limit),
+        items,
         total: all.length,
         hint: notes.length ? notes.join(" ") : undefined,
+        ...(fellBack
+          ? {
+              fellBack,
+              warning:
+                "This platform rejected the v2 log model, so the session lookup covered only about the last hour, not 12 hours.",
+            }
+          : {}),
       };
     }
 
@@ -5009,12 +5050,43 @@ export class ToolHandlers {
     return { items: res?.items ?? res, total: res?.total };
   }
 
-  private emptyLogsHint(data: ListResourcesInput): string {
-    if (data.sessionId)
-      return "No log entries for that session in the last 12 hours. The session id must match exactly, and older sessions are not reachable here.";
+  private emptyLogsHint(data: ListResourcesInput, fellBack = false): string {
+    if (data.sessionId) {
+      const window = fellBack ? "about the last hour" : "the last 12 hours";
+      if (data.level || data.flowName || data.userId)
+        return `No entries matching the level/flowName/userId filters for this session in ${window}. Retry with only sessionId to check that the session logged anything.`;
+      return `No log entries for that session in ${window}. The session id must match exactly, and older sessions are not reachable here.`;
+    }
     if (!data.startDate && !data.endDate)
       return "No log entries in the last hour, the default window. Pass startDate (ISO 8601) to look further back.";
     return "No log entries matched. Widen startDate/endDate or drop a filter.";
+  }
+
+  /**
+   * A 403 or 404 from the Logs API, with what to do next; undefined for any
+   * other error so the caller rethrows it. A wrong projectId (or a key without
+   * access to the project) answers 403, not 404.
+   */
+  private logErrorWithHints(error: any, op: "list" | "get"): any {
+    if (error?.status === 403)
+      return withHints(
+        { error: error.message },
+        {
+          action:
+            "Check that projectId belongs to this environment, and that the API key's user may read the project's logs (get_resource { resourceType: 'user', id: 'me' } shows its roles).",
+        },
+      );
+    if (error?.status === 404)
+      return withHints(
+        { error: error.message },
+        {
+          action:
+            op === "get"
+              ? "Take the log id from list_resources { resourceType: 'log', projectId }; entries expire with the project's log retention."
+              : "This Cognigy version may not have the Logs API v2.1 (/v2.1/projects/{projectId}/logs); check the projectId and the version.",
+        },
+      );
+    return undefined;
   }
 
   /**
@@ -5026,6 +5098,7 @@ export class ToolHandlers {
     url: string,
     params?: Record<string, unknown>,
     fallbackParams: Record<string, unknown> | undefined = params,
+    onFallback?: () => void,
   ): Promise<any> {
     try {
       return await this.apiClient.get(url, {
@@ -5034,6 +5107,7 @@ export class ToolHandlers {
       });
     } catch (error: any) {
       if (error?.status !== 400) throw error;
+      onFallback?.();
       return await this.apiClient.get(
         url,
         fallbackParams ? { params: fallbackParams } : {},
@@ -5167,9 +5241,16 @@ export class ToolHandlers {
           },
         );
       }
-      const entry = await this.getLogApi(
-        `/v2.1/projects/${projectId}/logs/${encodeURIComponent(id)}`,
-      );
+      let entry: any;
+      try {
+        entry = await this.getLogApi(
+          `/v2.1/projects/${projectId}/logs/${encodeURIComponent(id)}`,
+        );
+      } catch (error: any) {
+        const hinted = this.logErrorWithHints(error, "get");
+        if (hinted) return hinted;
+        throw error;
+      }
       return raw ? entry : RESOURCE_FILTERS_GET.log(entry);
     }
 
