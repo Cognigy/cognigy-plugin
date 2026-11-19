@@ -60,6 +60,7 @@ import { dirname, join } from "path";
 import { runNpm } from "./install/npmRunner.js";
 import { PACKAGE_VERSION } from "./config.js";
 import { ENVS_COMMAND } from "./environmentsFile.js";
+import { runEnvs, terminalEnvsIo } from "./envs.js";
 import {
   ask,
   askHidden,
@@ -68,6 +69,7 @@ import {
   dim,
   green,
   isMainModule,
+  PromptEscaped,
   yellow,
 } from "./utils/cli.js";
 
@@ -544,7 +546,9 @@ function refreshEnvsCommand(version: string = PACKAGE_VERSION): void {
   if (res.status === 0) {
     process.stdout.write(green("✓ cognigy-envs") + ": updated.\n");
   } else {
-    process.stdout.write(envsTip("could not be updated"));
+    process.stdout.write(
+      envsTip("could not be updated. To open the menu, run:"),
+    );
   }
 }
 
@@ -559,13 +563,61 @@ function envsCommandInstalled(): boolean {
   );
 }
 
-function envsTip(reason?: string): string {
+function envsTip(
+  lead = "Working with several Cognigy environments? Run:",
+): string {
   return (
-    yellow("• cognigy-envs") +
-    (reason ? `: ${reason}. ` : ": ") +
-    "Working with several Cognigy environments? Run:\n" +
-    cyan(`    ${ENVS_COMMAND}\n`)
+    yellow("• cognigy-envs") + `: ${lead}\n` + cyan(`    ${ENVS_COMMAND}\n`)
   );
+}
+
+export interface OfferEnvironmentsIo {
+  ask(question: string): Promise<string>;
+  write(text: string): void;
+  /** Opens the cognigy-envs menu; resolves to its exit code. */
+  openMenu(): Promise<number>;
+}
+
+const terminalOfferIo: OfferEnvironmentsIo = {
+  ask,
+  write: (text) => process.stdout.write(text),
+  openMenu: () => runEnvs(terminalEnvsIo()),
+};
+
+/**
+ * Offer the cognigy-envs menu at the end of an interactive install (Enter means
+ * no), so someone with several tenants adds them in the same terminal, before
+ * the client restart the installer asks for anyway. A no shows the npx line
+ * for later. Never fatal: the install is already done.
+ */
+export async function offerEnvironments(
+  io: OfferEnvironmentsIo = terminalOfferIo,
+): Promise<void> {
+  const answer = (
+    await io.ask(
+      "\nAdd more Cognigy environments now, e.g. a trial or a customer tenant? [y/N] ",
+    )
+  )
+    .trim()
+    .toLowerCase();
+  if (answer !== "y" && answer !== "yes") {
+    io.write(envsTip("To add environments later, run:"));
+    return;
+  }
+  let code: number;
+  try {
+    code = await io.openMenu();
+  } catch (error) {
+    // Esc or Ctrl-C in one of the menu's prompts: back out, change nothing.
+    const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof PromptEscaped || message === "cancelled") {
+      io.write("Nothing changed.\n");
+      return;
+    }
+    io.write(`${message}\n`);
+    code = 1;
+  }
+  if (code !== 0) io.write(envsTip("To open the menu again, run:"));
 }
 
 /** `status` — report what's installed on each surface + the latest available. */
@@ -974,8 +1026,12 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  if (interactive && envsCommandInstalled()) refreshEnvsCommand();
-  else process.stdout.write("\n" + envsTip());
+  if (interactive) {
+    if (envsCommandInstalled()) refreshEnvsCommand();
+    await offerEnvironments();
+  } else {
+    process.stdout.write("\n" + envsTip());
+  }
 
   process.stdout.write(green(bold("\n✓ Done.\n")));
 }

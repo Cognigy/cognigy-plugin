@@ -79,6 +79,27 @@ const TRIAL = {
 };
 
 describe("cognigy-envs menu", () => {
+  it("draws on the alternate screen, then lists what is saved", async () => {
+    // The installer opens the menu too: its output must be back afterwards.
+    const t = scripted(freshDir({ trial: TRIAL }), {});
+    expect(await runEnvs(t.io)).toBe(0);
+    const out = t.output();
+    const on = out.indexOf("\x1b[?1049h");
+    const off = out.indexOf("\x1b[?1049l");
+    expect(on).toBeGreaterThanOrEqual(0);
+    expect(off).toBeGreaterThan(on);
+    expect(out.slice(off)).toMatch(/trial\s+https:\/\/api-trial\.cognigy\.ai/);
+  });
+
+  it("leaves the alternate screen when a prompt is cancelled", async () => {
+    const t = scripted(freshDir(), { keys: [ENTER] });
+    t.io.ask = async () => {
+      throw new Error("cancelled");
+    };
+    await expect(runEnvs(t.io)).rejects.toThrow("cancelled");
+    expect(t.output().endsWith("\x1b[?1049l")).toBe(true);
+  });
+
   it("adds an environment, accepting a URL without https://", async () => {
     const dir = freshDir();
     const t = scripted(dir, {
