@@ -216,8 +216,9 @@ describe("project logs", () => {
     const { startDate, endDate } = (api.get.mock.calls[0][1] as any).params;
     // Logs are kept 24 hours, so a turn is looked for in the whole window.
     expect(Date.parse(endDate) - Date.parse(startDate)).toBe(24 * 3600e3);
-    expect(result.items).toHaveLength(4);
-    expect(result.items[2]).toEqual({
+    // The info entry the mock returns despite level: ["error"] is dropped too.
+    expect(result.items).toHaveLength(3);
+    expect(result.items[1]).toEqual({
       id: ENTRY_ID,
       timestamp: "2026-11-19T16:36:00.0025Z",
       level: "error",
@@ -365,6 +366,64 @@ describe("project logs", () => {
         level: ["error"],
       }),
     ).rejects.toBe(original);
+  });
+
+  it("keeps the role advice when v2.0 answers 403 after a v2.1 404", async () => {
+    api.get
+      .mockRejectedValueOnce(httpError(404))
+      .mockRejectedValueOnce(httpError(403));
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "log",
+      projectId: PROJECT,
+    });
+
+    expect(result.error).toMatch(/403/);
+    expect(result._hints.action).toMatch(/'logs' or 'developer'/);
+  });
+
+  it("warns that an old platform's session read may cover only the latest entries, and applies level itself", async () => {
+    api.get
+      .mockRejectedValueOnce(httpError(404)) // v2.1 tail
+      .mockResolvedValueOnce({ items: sessionEntries }); // v2.0 ignores type
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "log",
+      projectId: PROJECT,
+      sessionId: SESSION,
+      level: ["error"],
+    });
+
+    expect(result.items.map((e: any) => e.level)).toEqual(["error", "error"]);
+    expect(result._hints.warning).toMatch(/no v2\.1 logs API/);
+  });
+
+  it("says when a turn has more entries than one read returned", async () => {
+    api.get.mockResolvedValue({
+      items: [sessionEntries[0], nodeError],
+      total: 7,
+    });
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "log",
+      projectId: PROJECT,
+      traceId: TRACE,
+      limit: 2,
+    });
+
+    expect(result._hints.warning).toMatch(/Read on with skip: 2/);
+  });
+
+  it("accepts the trace level", async () => {
+    api.get.mockResolvedValue({ items: [], total: 0 });
+
+    await h.handleToolCall("list_resources", {
+      resourceType: "log",
+      projectId: PROJECT,
+      level: ["trace"],
+    });
+
+    expect((api.get.mock.calls[0][1] as any).params.type).toEqual(["trace"]);
   });
 
   it("rejects an unparsable date before calling the API", async () => {
@@ -554,6 +613,23 @@ describe("project logs", () => {
       });
 
       expect(result.traceId).toBe(TRACE);
+    });
+
+    it("points an empty reply with a traceId at that turn's log entries", async () => {
+      // A data-only output before a crash: no text, but a traceId.
+      post.mockResolvedValueOnce({
+        data: { text: "", outputStack: [{ data: { x: 1 }, traceId: TRACE }] },
+      });
+
+      const result = await h.handleTalkToAgent({
+        endpointUrl: "https://endpoint-trial.cognigy.ai/abc123token",
+        message: "Hi",
+        sessionId: SESSION,
+      });
+
+      expect(result._hints.action).toContain(
+        `list_resources { resourceType: 'log', projectId, traceId: '${TRACE}' }`,
+      );
     });
 
     it("points an empty reply at the session's log entries", async () => {

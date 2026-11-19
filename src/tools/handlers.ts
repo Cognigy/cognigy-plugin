@@ -4618,7 +4618,9 @@ export class ToolHandlers {
         return withHints(result, {
           likely_cause:
             "Agent returned no text. Possible causes: 1) no LLM configured, 2) empty agent description, 3) endpoint not connected to flow, 4) the flow failed.",
-          action: `Read the turn's log entries for the error: list_resources { resourceType: 'log', projectId, sessionId: '${sessionId}' } (they appear a few seconds after the turn). Then follow the troubleshooting guide.`,
+          // A turn with only non-text outputs still carries a traceId, and a
+          // trace read also finds the node and endpoint errors.
+          action: `Read the turn's log entries for the error: list_resources { resourceType: 'log', projectId, ${traceId ? `traceId: '${traceId}'` : `sessionId: '${sessionId}'`} } (they appear a few seconds after the turn). Then follow the troubleshooting guide.`,
         });
       }
       return result;
@@ -4916,19 +4918,32 @@ export class ToolHandlers {
         let res: any;
         // Set when the platform refused the 12-hour session window.
         let shortWindow = false;
+        // Set when only v2.0 answered (before 2026.7.0); its tail may not
+        // filter by session or level, so both are applied below as well.
+        let oldPlatform = false;
+        const fellBack = () => {
+          oldPlatform = true;
+        };
+        const traceLimit = limit ?? 100;
         try {
           if (traceId) {
             const now = Date.now();
-            res = await this.getLogs(projectId!, "", {
-              ...paging,
-              limit: limit ?? 100,
-              filter: traceId,
-              ...(level ? { type: level } : {}),
-              // Logs are kept 24 hours; the route's default window is one.
-              startDate:
-                data.startDate ?? new Date(now - 24 * 3600e3).toISOString(),
-              endDate: data.endDate ?? new Date(now).toISOString(),
-            });
+            res = await this.getLogs(
+              projectId!,
+              "",
+              {
+                ...paging,
+                limit: traceLimit,
+                filter: traceId,
+                ...(level ? { type: level } : {}),
+                // Logs are kept 24 hours; the route's default window is one.
+                startDate:
+                  data.startDate ?? new Date(now - 24 * 3600e3).toISOString(),
+                endDate: data.endDate ?? new Date(now).toISOString(),
+              },
+              undefined,
+              fellBack,
+            );
           } else if (sessionId) {
             const params = { sessionId, ...(level ? { type: level } : {}) };
             try {
@@ -4937,10 +4952,17 @@ export class ToolHandlers {
                 "/tail",
                 { ...params, lastTimeWindow: LOG_TAIL_WINDOW_HOURS },
                 LOG_V2_MODEL,
+                fellBack,
               );
             } catch (error: any) {
               if (error?.status !== 400) throw error;
-              res = await this.getLogs(projectId!, "/tail", params);
+              res = await this.getLogs(
+                projectId!,
+                "/tail",
+                params,
+                undefined,
+                fellBack,
+              );
               shortWindow = true;
             }
           } else {
@@ -4955,9 +4977,17 @@ export class ToolHandlers {
           return this.logError(error, "list");
         }
         let raw: any[] = Array.isArray(res?.items) ? res.items : [];
+        // A turn longer than one page: the list route counts what `filter`
+        // matched, so more matches than this page reached means more entries.
+        const turnContinues =
+          traceId &&
+          typeof res?.total === "number" &&
+          res.total > (skip ?? 0) + raw.length;
         if (traceId) raw = raw.filter((e) => e.traceId === traceId);
         else if (sessionId)
           raw = raw.filter((e) => e.meta?.sessionId === sessionId);
+        if (level)
+          raw = raw.filter((e) => level.includes(e.type ?? e.metadata?.type));
         // The tail route never counts (-1), and a re-checked read is counted
         // by what survived the check.
         total =
@@ -4985,9 +5015,17 @@ export class ToolHandlers {
           warnings.push(
             "This platform refused the 12-hour window, so the session was searched only in its default window (often the last hour or two).",
           );
+        if (oldPlatform && sessionId && !traceId)
+          warnings.push(
+            "This Cognigy version has no v2.1 logs API, so the session may have been looked for only among the project's latest 100 entries. Read a turn by its traceId instead.",
+          );
         if (cut)
           warnings.push(
             `Showing the newest ${items.length} entries of this session. Raise limit (max 100), or read one turn completely with its traceId.`,
+          );
+        if (turnContinues)
+          warnings.push(
+            `This turn has more log entries than this read returned. Read on with skip: ${(skip ?? 0) + traceLimit}.`,
           );
         if (!items.length)
           hints.hint = traceId
@@ -5147,6 +5185,7 @@ export class ToolHandlers {
     subPath: string,
     params?: Record<string, unknown>,
     headers?: Record<string, string>,
+    onFallback?: () => void,
   ): Promise<any> {
     const url = (version: string) =>
       `/${version}/projects/${projectId}/logs${subPath}`;
@@ -5156,7 +5195,9 @@ export class ToolHandlers {
     } catch (error: any) {
       if (error?.status !== 404) throw error;
       try {
-        return await this.apiClient.get(url("v2.0"), config);
+        const res = await this.apiClient.get(url("v2.0"), config);
+        onFallback?.();
+        return res;
       } catch (fallbackError: any) {
         throw fallbackError?.status === 404 ? error : fallbackError;
       }

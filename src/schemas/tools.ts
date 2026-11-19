@@ -312,7 +312,14 @@ export const AUDIT_EVENT_TYPES = [
 ] as const;
 
 /** Log levels a project log entry can have (the API's `type`). */
-export const LOG_LEVELS = ["fatal", "error", "warn", "info", "debug"] as const;
+export const LOG_LEVELS = [
+  "fatal",
+  "error",
+  "warn",
+  "info",
+  "debug",
+  "trace",
+] as const;
 
 // Tool 5: list_resources
 export const listResourcesSchema = z

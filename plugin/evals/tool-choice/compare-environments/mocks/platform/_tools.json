@@ -443,7 +443,8 @@
                 "error",
                 "warn",
                 "info",
-                "debug"
+                "debug",
+                "trace"
               ]
             },
             "description": "log only: levels to return."
