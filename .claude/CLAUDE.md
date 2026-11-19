@@ -115,4 +115,4 @@ Endpoints under `/v2.0/flows/{flowId}/chart`:
 
 - Conventional Commits (`fix:`, `feat:`, `chore:`, with scopes).
 - Tests mock the api client; mocks may not match real API field projections — verify against the real REST shape (see chart gotchas).
-- Dev skill `.claude/skills/add-tool/SKILL.md` documents the add/extend-a-tool workflow.
+- Dev skill `.claude/skills/contribute/SKILL.md` is the entry point for any change to skills, agents or tools. It routes to `add-eval` for evals and to `add-client-platform` for a new AI client.
