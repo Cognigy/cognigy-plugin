@@ -6,6 +6,7 @@ import {
   AUDIT_ACTORS,
   AUDIT_EVENT_TYPES,
   BEDROCK_LOCATIONS,
+  LOG_LEVELS,
   SETUP_LLM_PROVIDERS,
 } from "../schemas/tools.js";
 
@@ -261,7 +262,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "talk_to_agent",
     description:
-      "Send one message to a Cognigy AI Agent through its REST endpoint and return the reply, for testing during iterative development. Pass endpointUrl directly, agentId + projectId for an AI Agent, or aiAgentId for a legacy AI Agent; with an id the tool finds or creates a REST endpoint for the agent. Reuse the returned sessionId across calls for a multi-turn conversation. The project needs a working LLM, otherwise the reply is empty. Messages go through Cognigy Endpoint Test Mode by default, which is not billed (fair use: about 600 test messages per hour). A failed send is never re-sent automatically, because it may already have run; its hints say how to check before retrying. Returns agentResponse, sessionId, endpointUrl and testMode; verbose: true adds the raw API response.",
+      "Send one message to a Cognigy AI Agent through its REST endpoint and return the reply, for testing during iterative development. Pass endpointUrl directly, agentId + projectId for an AI Agent, or aiAgentId for a legacy AI Agent; with an id the tool finds or creates a REST endpoint for the agent. Reuse the returned sessionId across calls for a multi-turn conversation. The project needs a working LLM, otherwise the reply is empty. Messages go through Cognigy Endpoint Test Mode by default, which is not billed (fair use: about 600 test messages per hour). A failed send is never re-sent automatically, because it may already have run; its hints say how to check before retrying. Returns agentResponse, sessionId, traceId, endpointUrl and testMode; verbose: true adds the raw API response.",
     annotations: {
       title: "Talk to Agent",
       readOnlyHint: false,
@@ -328,7 +329,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "list_resources",
     description:
-      "List Cognigy resources of one type, paginated, with optional server-side sort. Types: project (no projectId needed), tool (takes aiAgentId, or flowId for an LLM Prompt flow, instead of projectId), audit_event (organisation-wide, no projectId; answers \"who changed what\" via the actor and eventType filters, Cognigy 2026.17.0+), and the project-scoped agent, flow, endpoint, llm_model, knowledge_store, conversation, extension, function, speech_provider (STT/TTS credentials; niceProvided ones need no Connection). Packages and snapshots are listed by manage_packages and manage_snapshots. Returns id, name and a few type-specific fields per item; use get_resource for full detail. For recency questions use sort (e.g. 'lastChanged:desc' with a small limit) instead of paging through everything. agent lists both kinds: where the project has AI Agents they are the items and legacy AI Agents move to legacyAgents; each agent's use is the id argument to pass on.",
+      "List Cognigy resources of one type, paginated, with optional server-side sort. Types: project (no projectId needed), tool (takes aiAgentId, or flowId for an LLM Prompt flow, instead of projectId), audit_event (organisation-wide, no projectId; answers \"who changed what\" via the actor and eventType filters, Cognigy 2026.17.0+), and the project-scoped agent, flow, endpoint, llm_model, knowledge_store, conversation, extension, function, speech_provider (STT/TTS credentials; niceProvided ones need no Connection), log (runtime logs, kept 24h). Packages and snapshots are listed by manage_packages and manage_snapshots. Returns id, name and a few type-specific fields per item; use get_resource for full detail. For recency questions use sort (e.g. 'lastChanged:desc' with a small limit) instead of paging through everything. agent lists both kinds: where the project has AI Agents they are the items and legacy AI Agents move to legacyAgents; each agent's use is the id argument to pass on.",
     annotations: {
       title: "List Resources",
       readOnlyHint: true,
@@ -354,6 +355,7 @@ export const tools: ToolDefinition[] = [
             "tool",
             "audit_event",
             "speech_provider",
+            "log",
           ],
           description: "Type of resource to list",
         },
@@ -374,11 +376,11 @@ export const tools: ToolDefinition[] = [
         },
         startDate: {
           type: "string",
-          description: "ISO 8601 date filter (conversations only)",
+          description: "ISO 8601 date filter (conversation, log)",
         },
         endDate: {
           type: "string",
-          description: "ISO 8601 date filter (conversations only)",
+          description: "ISO 8601 date filter (conversation, log)",
         },
         channel: {
           type: "string",
@@ -419,6 +421,22 @@ export const tools: ToolDefinition[] = [
           type: "string",
           description:
             "audit_event only — filter by the email of the user the action ran as.",
+        },
+        sessionId: {
+          type: "string",
+          description:
+            "log only: one conversation, oldest first (from talk_to_agent).",
+        },
+        traceId: {
+          type: "string",
+          description:
+            "log only: one turn, oldest first, incl. errors that carry no sessionId (from talk_to_agent).",
+        },
+        level: {
+          type: "array",
+          minItems: 1,
+          items: { type: "string", enum: [...LOG_LEVELS] },
+          description: "log only: levels to return.",
         },
         limit: {
           type: "number",
@@ -463,6 +481,7 @@ export const tools: ToolDefinition[] = [
             "function",
             "user",
             "audit_event",
+            "log",
           ],
           description: "Type of resource to retrieve",
         },
@@ -474,7 +493,7 @@ export const tools: ToolDefinition[] = [
         projectId: {
           type: "string",
           description:
-            "24-char hex project ID. Required for endpoint lookups; for agent, also finds AI Agents (tried first) besides legacy ones.",
+            "24-char hex project ID. Required for endpoint and log lookups; for agent, also finds AI Agents (tried first) besides legacy ones.",
         },
         raw: {
           type: "boolean",

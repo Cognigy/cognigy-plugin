@@ -1210,7 +1210,7 @@ function talkToAgentFailureHints(
   sessionId: string,
   testMode: boolean,
 ): Record<string, string> {
-  const checkOutcome = `FIRST establish whether the original message was processed: get_resource { resourceType: 'conversation', id: '${sessionId}' } returns the transcript when the endpoint collects conversations; otherwise continue this same sessionId with a neutral follow-up ("what did you just do?") or verify the side effects of the agent's tools. Re-send only if it was NOT processed.`;
+  const checkOutcome = `FIRST establish whether the original message was processed: list_resources { resourceType: 'log', projectId, sessionId: '${sessionId}' } shows whether the flow ran, and get_resource { resourceType: 'conversation', id: '${sessionId}' } returns the transcript when the endpoint collects conversations; otherwise continue this same sessionId with a neutral follow-up ("what did you just do?") or verify the side effects of the agent's tools. Re-send only if it was NOT processed.`;
   const billable = testMode
     ? " Re-sending with testMode: false is a billable production message and is not a way around an error: only after the outcome check, only once the test-mode cause is confirmed, and only with the user's explicit consent."
     : "";
@@ -4575,9 +4575,13 @@ export class ToolHandlers {
         .map((o: any) => o.text);
       if (textOutputs.length > 0) agentResponse = textOutputs.join(" ");
 
+      // A flow that crashes still answers 200 with the outputs sent before the
+      // crash; only the turn's log entries, read by this id, show the error.
+      const traceId = outputStack.find((o: any) => o.traceId)?.traceId;
       const result: any = {
         agentResponse,
         sessionId,
+        ...(traceId ? { traceId } : {}),
         endpointUrl,
         testMode: useTestMode,
       };
@@ -4607,8 +4611,8 @@ export class ToolHandlers {
       if (!agentResponse) {
         return withHints(result, {
           likely_cause:
-            "Agent returned no text. Possible causes: 1) no LLM configured, 2) empty agent description, 3) endpoint not connected to flow.",
-          action: "Read the troubleshooting guide for diagnostic steps.",
+            "Agent returned no text. Possible causes: 1) no LLM configured, 2) empty agent description, 3) endpoint not connected to flow, 4) the flow failed.",
+          action: `Read the turn's log entries for the error: list_resources { resourceType: 'log', projectId, sessionId: '${sessionId}' } (they appear a few seconds after the turn). Then follow the troubleshooting guide.`,
         });
       }
       return result;
@@ -4647,6 +4651,9 @@ export class ToolHandlers {
       actor,
       eventType,
       user,
+      sessionId,
+      traceId,
+      level,
     } = data;
     // `sort` rides along with paging so every server-backed list endpoint gets
     // it. 'tool' builds its own params and has no server-side sort.
@@ -4689,6 +4696,7 @@ export class ToolHandlers {
     // Set when the platform rejected the audit_event filters and this plugin
     // applied them instead, so the response can say so.
     let filteredClientSide = false;
+    let logHints: ResponseHints | undefined;
 
     switch (resourceType) {
       case "project": {
@@ -4881,13 +4889,78 @@ export class ToolHandlers {
         }
         break;
       }
+      case "log": {
+        // Only /logs/tail filters by session, and a turn's endpoint-level
+        // entries (the node error among them) carry no sessionId, so a turn is
+        // read through the list route's free-text `filter` by traceId. Both are
+        // re-checked here: `filter` also matches messages, and a v2.0 fallback
+        // may not know the session filter.
+        let res: any;
+        try {
+          if (traceId) {
+            const now = Date.now();
+            res = await this.getLogs(projectId!, "", {
+              ...paging,
+              limit: limit ?? 100,
+              filter: traceId,
+              ...(level ? { type: level } : {}),
+              // Logs are kept 24 hours; the route's default window is one.
+              startDate:
+                data.startDate ?? new Date(now - 24 * 3600e3).toISOString(),
+              endDate: data.endDate ?? new Date(now).toISOString(),
+            });
+          } else if (sessionId) {
+            res = await this.getLogs(projectId!, "/tail", {
+              sessionId,
+              ...(level ? { type: level } : {}),
+            });
+          } else {
+            res = await this.getLogs(projectId!, "", {
+              ...paging,
+              ...(level ? { type: level } : {}),
+              ...(data.startDate ? { startDate: data.startDate } : {}),
+              ...(data.endDate ? { endDate: data.endDate } : {}),
+            });
+          }
+        } catch (error: any) {
+          if (error?.status === 403) return this.logsForbidden(error);
+          throw error;
+        }
+        let raw: any[] = Array.isArray(res?.items) ? res.items : [];
+        if (traceId) raw = raw.filter((e) => e.traceId === traceId);
+        else if (sessionId)
+          raw = raw.filter((e) => e.meta?.sessionId === sessionId);
+        // The API answers newest first; one session or turn reads as a trace.
+        if (traceId || sessionId) raw.reverse();
+        items = raw.map((e) => {
+          const f = filterResponse("log", e);
+          if (traceId) delete f.traceId;
+          return f;
+        });
+        // The tail route never counts (-1), and a re-checked read is counted
+        // by what survived the check.
+        total =
+          !traceId && !sessionId && res.total >= 0 ? res.total : undefined;
+        if (!items.length && (traceId || sessionId))
+          logHints = {
+            hint: "No log entries found. Entries appear a few seconds after a turn and are kept 24 hours: if the turn just ran, read again shortly.",
+          };
+        else if (sessionId && !traceId && res.nextCursor)
+          logHints = {
+            warning:
+              "Only the newest 100 entries of this session are shown. Read one turn completely with its traceId.",
+          };
+        break;
+      }
       default:
         throw new Error(`Unknown resourceType: ${resourceType}`);
     }
 
     if (!Array.isArray(items)) items = [];
     const filtered =
-      resourceType === "tool" || resourceType === "speech_provider"
+      resourceType === "tool" ||
+      resourceType === "speech_provider" ||
+      resourceType === "log"
         ? items
         : filterList(resourceType, items);
 
@@ -4899,6 +4972,8 @@ export class ToolHandlers {
     }
 
     const result: any = { items: filtered, total: total ?? filtered.length };
+
+    if (logHints) return withHints(result, logHints);
 
     if (filteredClientSide) {
       return withHints(result, {
@@ -5013,6 +5088,42 @@ export class ToolHandlers {
     );
   }
 
+  /**
+   * GET a project's logs route on v2.1. Platforms older than 2026.7.0, which
+   * introduced v2.1, answer 404 there, so retry on v2.0; when that fails too
+   * the 404 was about the project or entry, and the original stands.
+   */
+  private async getLogs(
+    projectId: string,
+    subPath: string,
+    params?: Record<string, unknown>,
+  ): Promise<any> {
+    const url = (version: string) =>
+      `/${version}/projects/${projectId}/logs${subPath}`;
+    try {
+      return await this.apiClient.get(url("v2.1"), { params });
+    } catch (error: any) {
+      if (error?.status !== 404) throw error;
+      try {
+        return await this.apiClient.get(url("v2.0"), { params });
+      } catch {
+        throw error;
+      }
+    }
+  }
+
+  private logsForbidden(error: any): any {
+    return withHints(
+      { error: error.message },
+      {
+        likely_cause:
+          "The API key's user cannot read this project's logs; the project role 'basic' does not include them.",
+        action:
+          "Use an API key whose user has the 'logs' or 'developer' role in this project.",
+      },
+    );
+  }
+
   // =========================================================================
   // Tool 6: get_resource
   // =========================================================================
@@ -5033,6 +5144,22 @@ export class ToolHandlers {
         const f = RESOURCE_FILTERS_GET.agent_v2(v2);
         return { ...f, use: { agentId: f.id } };
       }
+    }
+
+    if (resourceType === "log") {
+      if (!projectId)
+        return withHints(
+          { error: "projectId is required for resourceType 'log'." },
+          { action: "Pass the projectId the log entry belongs to." },
+        );
+      let entry: any;
+      try {
+        entry = await this.getLogs(projectId, `/${id}`);
+      } catch (error: any) {
+        if (error?.status === 403) return this.logsForbidden(error);
+        throw error;
+      }
+      return raw ? entry : RESOURCE_FILTERS_GET.log(entry);
     }
 
     const endpointMap: Record<string, string> = {
@@ -10100,6 +10227,12 @@ function summarizeCatalogItem(component: string, r: any): any {
 }
 
 const RESOURCE_FILTERS_GET: Record<string, (raw: any) => any> = {
+  // The stack trace shows the platform's internal paths and the URLToken lets
+  // anyone talk to the endpoint; neither helps debug the flow.
+  log: (r) => {
+    const { URLToken: _token, originalError: _error, ...meta } = r.meta ?? {};
+    return { ...filterResponse("log", r), meta };
+  },
   agent_v2: (r) => ({
     id: r.id ?? r._id,
     referenceId: r.referenceId,

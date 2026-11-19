@@ -110,8 +110,9 @@ describe("talk_to_agent — endpoint test mode", () => {
   // prove nothing was processed. Every failure must come back as an error
   // after a single request, and every hint must put the outcome check first.
   describe("never replays a failed test-mode request", () => {
+    // Logs first (always on), then the transcript (needs collect conversations).
     const outcomeCheck = new RegExp(
-      `FIRST establish whether the original message was processed: get_resource \\{ resourceType: 'conversation', id: '${SESSION}' \\}`,
+      `FIRST establish whether the original message was processed: list_resources \\{ resourceType: 'log', projectId, sessionId: '${SESSION}' \\} shows whether the flow ran, and get_resource \\{ resourceType: 'conversation', id: '${SESSION}' \\}`,
     );
 
     const expectSingleUnreplayedAttempt = (

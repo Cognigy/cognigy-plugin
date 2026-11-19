@@ -185,6 +185,23 @@ export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
         : {}),
     };
   },
+  // Project log entry. meta.text is the user's message or the agent's output,
+  // so it stays out of this view; get_resource returns the rest of meta.
+  // `type` moves into `metadata` on the v2 log model.
+  log: (r) => ({
+    id: rid(r),
+    timestamp: r.timestamp,
+    level: r.type ?? r.metadata?.type,
+    // ponytail: a fixed cap; a Code Node can api.log() any size of string.
+    message:
+      typeof r.msg === "string" && r.msg.length > 1000
+        ? `${r.msg.slice(0, 1000)}…`
+        : r.msg,
+    traceId: r.traceId,
+    flowName: r.meta?.flowName,
+    nodeLabel: r.meta?.nodeLabel,
+    error: r.meta?.error,
+  }),
 };
 
 /**
