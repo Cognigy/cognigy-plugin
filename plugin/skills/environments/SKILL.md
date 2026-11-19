@@ -46,9 +46,8 @@ environment, or asks for a tenant you have no environment for, give them these s
 in its own code block so they can copy it:
 
 1. Run in a terminal: `cognigy-envs`
-2. If the terminal says the command is not found, add it, then run `cognigy-envs` again. This only
-   adds terminal commands; it does not reinstall the plugin or change the login:
-   `npm install -g @cognigy/plugin-engine@latest`
+2. If the terminal says the command is not found, add it by running
+   `npm install -g @cognigy/plugin-engine@latest`, then run `cognigy-envs` again.
    On a permission error, or to install nothing, open the menu with this line instead (it adds no
    command, so they use the same line next time):
    `npx -y -p @cognigy/plugin-engine@latest cognigy-envs`
@@ -57,11 +56,11 @@ in its own code block so they can copy it:
    environments they started with.
 5. Test it in the new conversation: "Which Cognigy environments do you have access to?"
 
-To replace the plugin's own login (`default`) instead, the user runs the installer again:
+To replace the plugin's own login (`default`) instead, the user needs to run the installer again:
 `npx -y -p @cognigy/plugin-engine@latest cognigy-setup`
 In Cursor that changes nothing, because Cursor's Plugins → Configure values win over the
-installer's file: the user changes `COGNIGY_API_BASE_URL` and `COGNIGY_API_KEY` there for Cognigy,
-then reloads Cursor.
+installer's file: the user needs to change `COGNIGY_API_BASE_URL` and `COGNIGY_API_KEY` there for
+Cognigy, then reload Cursor.
 
 Never ask for, repeat or read an API key, and never open `~/.cognigy-plugin/environments.json` or
 `config.json`. Keys never pass through the chat.

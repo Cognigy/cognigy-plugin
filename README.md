@@ -14,7 +14,6 @@ A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy
   - [Corporate proxies](#corporate-proxies)
   - [Self-hosted and local clusters](#self-hosted-and-local-clusters)
   - [Several Cognigy environments](#several-cognigy-environments)
-    - [How to add environments](#how-to-add-environments)
 - [Usage Examples](#usage-examples)
 - [Tools](#tools)
 - [Security](#security)
