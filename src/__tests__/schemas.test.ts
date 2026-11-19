@@ -900,6 +900,40 @@ describe("listResourcesSchema", () => {
       }),
     ).toThrow();
   });
+
+  it("accepts resourceType log with sessionId, level, flowName, userId", () => {
+    const result = schemas.listResourcesSchema.parse({
+      resourceType: "log",
+      projectId: VALID_ID,
+      sessionId: "session-1",
+      level: ["error", "warn"],
+      flowName: "Main",
+      userId: "user-1",
+      startDate: "2026-11-19T10:00:00Z",
+    });
+    expect(result.level).toEqual(["error", "warn"]);
+    expect(result.sessionId).toBe("session-1");
+  });
+
+  it("rejects an empty level array", () => {
+    expect(() =>
+      schemas.listResourcesSchema.parse({
+        resourceType: "log",
+        projectId: VALID_ID,
+        level: [],
+      }),
+    ).toThrow();
+  });
+
+  it("rejects an unknown level", () => {
+    expect(() =>
+      schemas.listResourcesSchema.parse({
+        resourceType: "log",
+        projectId: VALID_ID,
+        level: ["critical"],
+      }),
+    ).toThrow();
+  });
 });
 
 describe("getResourceSchema", () => {
@@ -926,6 +960,15 @@ describe("getResourceSchema", () => {
       id: VALID_ID,
     });
     expect(result.id).toBe(VALID_ID);
+  });
+
+  it("accepts log resource type with a projectId", () => {
+    const result = schemas.getResourceSchema.parse({
+      resourceType: "log",
+      id: VALID_ID,
+      projectId: VALID_ID,
+    });
+    expect(result.resourceType).toBe("log");
   });
 });
 

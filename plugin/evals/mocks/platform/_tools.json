@@ -288,7 +288,7 @@
     },
     {
       "name": "list_resources",
-      "description": "List Cognigy resources of one type, paginated, with optional server-side sort. Types: project (no projectId needed), tool (takes aiAgentId, or flowId for an LLM Prompt flow, instead of projectId), audit_event (organisation-wide, no projectId; answers \"who changed what\" via the actor and eventType filters, Cognigy 2026.17.0+), and the project-scoped agent, flow, endpoint, llm_model, knowledge_store, conversation, extension, function, speech_provider (STT/TTS credentials; niceProvided ones need no Connection). Packages and snapshots are listed by manage_packages and manage_snapshots. Returns id, name and a few type-specific fields per item; use get_resource for full detail. For recency questions use sort (e.g. 'lastChanged:desc' with a small limit) instead of paging through everything. agent lists both kinds: where the project has AI Agents they are the items and legacy AI Agents move to legacyAgents; each agent's use is the id argument to pass on.",
+      "description": "List Cognigy resources of one type, paginated, with optional server-side sort. Types: project (no projectId needed), tool (takes aiAgentId, or flowId for an LLM Prompt flow, instead of projectId), audit_event (organisation-wide, no projectId; answers \"who changed what\" via the actor and eventType filters, Cognigy 2026.17.0+), log (project logs: did a call arrive, what errored; sessionId reads one session's last 12 h, else startDate/endDate, default last hour), and the project-scoped agent, flow, endpoint, llm_model, knowledge_store, conversation, extension, function, speech_provider. Packages and snapshots are listed by manage_packages and manage_snapshots. Returns id, name and a few type-specific fields per item; use get_resource for full detail. For recency questions sort server-side ('lastChanged:desc', small limit). agent lists both kinds: where the project has AI Agents they are the items and legacy AI Agents move to legacyAgents; each agent's use is the id argument to pass on.",
       "annotations": {
         "title": "List Resources",
         "readOnlyHint": true,
@@ -313,13 +313,14 @@
               "function",
               "tool",
               "audit_event",
-              "speech_provider"
+              "speech_provider",
+              "log"
             ],
             "description": "Type of resource to list"
           },
           "projectId": {
             "type": "string",
-            "description": "24-char hex project ID. Required for all types except 'project', 'tool' and 'audit_event'."
+            "description": "24-char hex project ID. Required for all types except 'project', 'tool' and 'audit_event' (so for 'log')."
           },
           "aiAgentId": {
             "type": "string",
@@ -331,11 +332,11 @@
           },
           "startDate": {
             "type": "string",
-            "description": "ISO 8601 date filter (conversations only)"
+            "description": "ISO 8601 date filter (conversations, logs; logs default to the last hour)"
           },
           "endDate": {
             "type": "string",
-            "description": "ISO 8601 date filter (conversations only)"
+            "description": "ISO 8601 date filter (conversations, logs)"
           },
           "channel": {
             "type": "string",
@@ -361,7 +362,7 @@
                 "system"
               ]
             },
-            "description": "audit_event only: who performed the action. 'mcp-plugin' is this plugin, 'ask-ai' the Cognigy Ask AI agent, 'human' a person in the UI or API. Filtered server-side on Cognigy 2026.17.0+, otherwise on the fetched page."
+            "description": "audit_event only: who performed the action. 'mcp-plugin' is this plugin, 'ask-ai' the Cognigy Ask AI agent, 'human' a person in the UI or API."
           },
           "eventType": {
             "type": "array",
@@ -378,11 +379,39 @@
                 "authorization"
               ]
             },
-            "description": "audit_event only: operation type filter. Filtered server-side on Cognigy 2026.17.0+, otherwise on the fetched page."
+            "description": "audit_event only: operation type filter."
           },
           "user": {
             "type": "string",
             "description": "audit_event only — filter by the email of the user the action ran as."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "log only: exact session id; reads the session's last 12 h and ignores startDate/endDate."
+          },
+          "level": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "fatal",
+                "error",
+                "warn",
+                "info",
+                "debug",
+                "trace"
+              ]
+            },
+            "description": "log only: keep these levels, e.g. ['error', 'fatal']."
+          },
+          "flowName": {
+            "type": "string",
+            "description": "log only: exact flow name."
+          },
+          "userId": {
+            "type": "string",
+            "description": "log only: exact end-user id."
           },
           "limit": {
             "type": "number",
@@ -425,7 +454,8 @@
               "extension",
               "function",
               "user",
-              "audit_event"
+              "audit_event",
+              "log"
             ],
             "description": "Type of resource to retrieve"
           },
@@ -435,7 +465,7 @@
           },
           "projectId": {
             "type": "string",
-            "description": "24-char hex project ID. Required for endpoint lookups; for agent, also finds AI Agents (tried first) besides legacy ones."
+            "description": "24-char hex project ID. Required for endpoint and log lookups; for agent, also finds AI Agents (tried first) besides legacy ones."
           },
           "raw": {
             "type": "boolean",

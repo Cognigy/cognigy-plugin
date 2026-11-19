@@ -311,6 +311,16 @@ export const AUDIT_EVENT_TYPES = [
   "authorization",
 ] as const;
 
+/** Project log levels (`type` on a log entry), most to least severe. */
+export const LOG_LEVELS = [
+  "fatal",
+  "error",
+  "warn",
+  "info",
+  "debug",
+  "trace",
+] as const;
+
 // Tool 5: list_resources
 export const listResourcesSchema = z
   .object({
@@ -327,6 +337,7 @@ export const listResourcesSchema = z
       "tool",
       "audit_event",
       "speech_provider",
+      "log",
     ]),
     projectId: idSchema.optional(),
     aiAgentId: agentIdSchema.optional(),
@@ -342,6 +353,11 @@ export const listResourcesSchema = z
     actor: z.array(z.enum(AUDIT_ACTORS)).nonempty().optional(),
     eventType: z.array(z.enum(AUDIT_EVENT_TYPES)).nonempty().optional(),
     user: z.string().min(1).optional(),
+    // log filters. `startDate` / `endDate` are shared with conversations.
+    sessionId: z.string().min(1).optional(),
+    level: z.array(z.enum(LOG_LEVELS)).nonempty().optional(),
+    flowName: z.string().min(1).optional(),
+    userId: z.string().min(1).optional(),
     sort: z
       .string()
       .regex(
@@ -371,6 +387,7 @@ export const getResourceSchema = z.object({
     "function",
     "user",
     "audit_event",
+    "log",
   ]),
   id: z.string().min(1),
   projectId: idSchema.optional(),
