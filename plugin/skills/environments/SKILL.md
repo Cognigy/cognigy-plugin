@@ -59,6 +59,9 @@ in its own code block so they can copy it:
 
 To replace the plugin's own login (`default`) instead, the user runs the installer again:
 `npx -y -p @cognigy/plugin-engine@latest cognigy-setup`
+In Cursor that changes nothing, because Cursor's Plugins → Configure values win over the
+installer's file: the user changes `COGNIGY_API_BASE_URL` and `COGNIGY_API_KEY` there for Cognigy,
+then reloads Cursor.
 
 Never ask for, repeat or read an API key, and never open `~/.cognigy-plugin/environments.json` or
 `config.json`. Keys never pass through the chat.

@@ -236,7 +236,7 @@ Your environments are stored in `~/.cognigy-plugin/environments.json`, readable 
 
 How it works once you have added an environment:
 
-- **`default` is the login you gave the installer.** Change it with `cognigy-setup`, as before.
+- **`default` is the plugin's own login**: the one you gave the installer, or in Cursor the one under Plugins → Configure. To change it, run the installer again with `npx -y -p @cognigy/plugin-engine@latest cognigy-setup`. In Cursor, change the two variables under Plugins → Configure instead, then reload Cursor.
 - **Picked once per conversation.** Your AI client asks which environment to use at the start of a conversation and keeps it.
 - **One step, or the rest of the conversation.** Name another environment for a single step ("copy this agent to acme"), or switch for the rest of the conversation ("from now on use trial").
 - **Every result names its environment**, so you can always tell where a change was made.
