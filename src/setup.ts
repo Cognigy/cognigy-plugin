@@ -196,12 +196,14 @@ export function parseClientSelection(answer: string, menu: Client[]): Client[] {
 
 /**
  * Interactive checkbox list: ↑/↓ (or j/k) move, Space toggles, Enter confirms
- * (requires at least one selection), Ctrl-C cancels. Redraws in place via ANSI
- * cursor moves. Requires a raw-mode TTY — callers fall back otherwise.
+ * (requires at least one selection), Ctrl-C cancels. `extra` adds one more key
+ * that leaves the list and resolves to null. Redraws in place via ANSI cursor
+ * moves. Requires a raw-mode TTY — callers fall back otherwise.
  */
 function checkboxSelect(
   items: { label: string; checked: boolean }[],
-): Promise<number[]> {
+  extra?: { key: string; hint: string },
+): Promise<number[] | null> {
   return new Promise((resolve, reject) => {
     const stdin = process.stdin;
     const state = items.map((it) => it.checked);
@@ -216,8 +218,9 @@ function checkboxSelect(
         const box = state[i] ? green("[x]") : "[ ]";
         process.stdout.write(`\x1b[2K\r ${pointer} ${box} ${it.label}\n`);
       });
+      const help = "   ↑/↓ move · Space check/uncheck · Enter confirm";
       process.stdout.write(
-        `\x1b[2K\r${dim("   ↑/↓ move · Space check/uncheck · Enter confirm")}\n`,
+        `\x1b[2K\r${dim(extra ? `${help} · ${extra.key} ${extra.hint}` : help)}\n`,
       );
     };
 
@@ -241,6 +244,12 @@ function checkboxSelect(
         cleanup();
         process.stdout.write("\n");
         resolve(picked);
+        return;
+      }
+      if (extra && chunk.toLowerCase() === extra.key) {
+        cleanup();
+        process.stdout.write("\n");
+        resolve(null);
         return;
       }
       if (chunk === " ") {
@@ -268,7 +277,8 @@ function checkboxSelect(
   });
 }
 
-async function chooseClients(): Promise<Client[]> {
+/** The clients to install into, or "environments" to only open that menu. */
+async function chooseClients(): Promise<Client[] | "environments"> {
   const detected = detectClients();
   const menu = ALL_CLIENTS;
   process.stdout.write(
@@ -302,8 +312,12 @@ async function chooseClients(): Promise<Client[]> {
     label: `${CLIENT_LABELS[c]}${detected[c] ? green(" (detected)") : ""}`,
     checked: detected[c],
   }));
-  const picked = await checkboxSelect(items);
-  return picked.map((i) => menu[i]);
+  const picked = await checkboxSelect(items, {
+    key: "e",
+    // Keeps the help line under 80 columns: a wrapped line breaks the redraw.
+    hint: "skip to environments",
+  });
+  return picked ? picked.map((i) => menu[i]) : "environments";
 }
 
 function runInstall(client: Client, creds: UserConfigFile): void {
@@ -604,6 +618,17 @@ export async function offerEnvironments(
     io.write(envsTip("To add environments later, run:"));
     return;
   }
+  await openEnvironmentsMenu(io);
+}
+
+/**
+ * Open the cognigy-envs menu from the installer: after "Add more Cognigy
+ * environments now?", or straight from the client list with `e`. A failed or
+ * cancelled menu prints how to open it again; it never throws.
+ */
+export async function openEnvironmentsMenu(
+  io: Pick<OfferEnvironmentsIo, "write" | "openMenu"> = terminalOfferIo,
+): Promise<void> {
   let code: number;
   try {
     code = await io.openMenu();
@@ -967,7 +992,13 @@ async function main(): Promise<void> {
 
   if (interactive) {
     process.stdout.write(bold(cyan("\n🚀 NiCE Cognigy Plugin Setup\n\n")));
-    clients = await chooseClients();
+    const choice = await chooseClients();
+    if (choice === "environments") {
+      // Only the environments menu: no login asked, nothing installed.
+      await openEnvironmentsMenu();
+      return;
+    }
+    clients = choice;
     process.stdout.write("\n");
     const urlAnswer = await ask(`Cognigy API base URL [${DEFAULT_BASE_URL}]: `);
     apiBaseUrl = urlAnswer || DEFAULT_BASE_URL;

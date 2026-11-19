@@ -41,7 +41,7 @@ A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy
 
 ### Step 1 — run the installer
 
-One installer covers every client. Run it, pick your client(s), enter your Cognigy API base URL (Enter for the trial default) and API key (masked as you type), then restart the client. At the end it asks whether to add [more Cognigy environments](#several-cognigy-environments); Enter skips it.
+One installer covers every client. Run it, pick your client(s), enter your Cognigy API base URL (Enter for the trial default) and API key (masked as you type), then restart the client. At the end it asks whether to add [more Cognigy environments](#several-cognigy-environments); Enter skips it. To manage environments without installing anything, press `e` on its first screen.
 
 **macOS / Linux** — one line (checks for Node.js, then runs the installer):
 
@@ -206,7 +206,7 @@ Most users work in one Cognigy environment and need nothing here. If you work in
    npx -y -p @cognigy/plugin-engine@latest cognigy-envs
    ```
 
-   Running the installer anyway? Answer `y` when it asks "Add more Cognigy environments now?" at the end. It opens the same menu.
+   The installer opens the same menu: answer `y` when it asks "Add more Cognigy environments now?" at the end, or press `e` on its first screen to skip the install.
 
 2. **Add your environments.** Pick "+ Add an environment", then enter a name you choose (for example `trial`), the API base URL and the API key (typed hidden). In the menu, ↑/↓ moves, Enter adds or changes, `d` deletes and `q` quits.
 3. **Restart your AI client.** In Claude Code, a new session is enough. Open conversations keep the environments they started with.

@@ -36,6 +36,7 @@ import {
 import {
   detectClients,
   offerEnvironments,
+  openEnvironmentsMenu,
   parseClientSelection,
   parseFlags,
   parseSubcommand,
@@ -538,6 +539,19 @@ describe("offerEnvironments", () => {
       expect(t.opened()).toBe(1);
       expect(t.output()).not.toContain(ENVS_COMMAND);
     }
+  });
+
+  it("opens the menu straight away from the client list's e key", async () => {
+    let asked = 0;
+    const t = fake("");
+    t.io.ask = async () => {
+      asked++;
+      return "";
+    };
+    await openEnvironmentsMenu(t.io);
+    expect(asked).toBe(0);
+    expect(t.opened()).toBe(1);
+    expect(t.output()).toBe("");
   });
 
   it("never fails the finished install when the menu does", async () => {
