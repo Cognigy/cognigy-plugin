@@ -91,6 +91,17 @@ test mode, and the user has accepted the billing.
 - UUIDs (36-char with dashes) are referenceIds — most tools need \_id, not referenceId
 - Use list_resources to find valid IDs
 
+## Reading project logs
+
+Use the logs to see whether a call reached the project and what failed. Read-only, Logs API v2.1.
+
+- After `talk_to_agent`, or when the user names a session: `list_resources { resourceType: "log", projectId, sessionId }`. It returns the latest entries of that session from the last 12 hours, newest first; the id must match exactly and a session older than 12 hours cannot be found. `talk_to_agent` returns the `sessionId` to use.
+- "Any errors lately?": `list_resources { resourceType: "log", projectId, level: ["error", "fatal"], startDate }`. Add `flowName` or `userId` to narrow it. Levels: fatal, error, warn, info, debug, trace.
+- Without `startDate`/`endDate` the platform looks at the **last hour only**, so an empty list does not mean "nothing happened"; widen the dates (ISO 8601) before concluding that. `sessionId` ignores the dates.
+- Lists cut a long `msg` and long `meta` values (`msgTruncated` / `metaTruncated`). `get_resource { resourceType: "log", id, projectId }` returns one entry in full, including the `meta` with the error details; `raw: true` gives the API body.
+- A project can mask `userId`, `text` and `data` in its logs (`maskLogging`); masked fields show as asterisks.
+- On a 403, check the API key's user roles (see below).
+
 ## 401 / 403 errors, or "who changed this?"
 
 - get_resource { resourceType: "user", id: "me" } returns the account the API key

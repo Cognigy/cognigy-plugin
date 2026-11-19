@@ -132,6 +132,10 @@ Requires Cognigy.AI 2026.17.0 or newer; older versions ignore the attribution an
 
 Set `COGNIGY_DISABLE_AUDIT_ATTRIBUTION=1` to opt out; plugin actions are then recorded like any other API action.
 
+### Project logs
+
+`list_resources { resourceType: "log", projectId }` reads a project's logs (the same entries as Test → Logs), filtered by `level`, `flowName`, `userId`, `startDate`/`endDate`, or by `sessionId` for one conversation (last 12 hours). `get_resource { resourceType: "log", id, projectId }` returns one full entry. Without dates the platform only looks at the last hour. It uses the Logs API v2.1 (the v2.0 log endpoints are deprecated).
+
 ### Corporate proxies
 
 If your network requires a proxy, set it in the MCP server `env` block (or export it before starting your client) and the plugin tunnels every Cognigy request through it:
