@@ -59,6 +59,7 @@ import { homedir } from "os";
 import { dirname, join } from "path";
 import { runNpm } from "./install/npmRunner.js";
 import { PACKAGE_VERSION } from "./config.js";
+import { ENVS_COMMAND } from "./environmentsFile.js";
 import {
   ask,
   askHidden,
@@ -530,25 +531,20 @@ function npmLatestVersion(): string | null {
 }
 
 /**
- * Put `cognigy-envs` (the menu for extra Cognigy environments) on the PATH with
- * a global npm install of this package, this version unless told otherwise. Never fatal:
- * the npx form below works without it (a global install can need admin rights).
+ * Refresh the global `cognigy-envs` an earlier setup (1.24.x) installed, so it
+ * matches this engine. Setup no longer adds one: users open the menu with
+ * ENVS_COMMAND, which needs no install. Never fatal.
  */
-function installEnvsCommand(version: string = PACKAGE_VERSION): void {
-  process.stdout.write(
-    dim("\nAdding the cognigy-envs command to your terminal…\n"),
-  );
+function refreshEnvsCommand(version: string = PACKAGE_VERSION): void {
+  process.stdout.write(dim("\nUpdating the cognigy-envs command…\n"));
   const res = runNpm(["install", "-g", `${PKG}@${version}`], {
     capture: true,
     timeout: 180_000,
   });
   if (res.status === 0) {
-    process.stdout.write(
-      green("✓ cognigy-envs") +
-        ": run it in a terminal to work with several Cognigy environments.\n",
-    );
+    process.stdout.write(green("✓ cognigy-envs") + ": updated.\n");
   } else {
-    process.stdout.write(envsTip("could not be added to your terminal"));
+    process.stdout.write(envsTip("could not be updated"));
   }
 }
 
@@ -563,30 +559,12 @@ function envsCommandInstalled(): boolean {
   );
 }
 
-/**
- * Offer the global install of cognigy-envs (Enter means yes). Where an earlier
- * run added it, refresh it without asking. A no is not remembered, so the next
- * setup run asks again.
- */
-async function offerEnvsCommand(): Promise<void> {
-  if (envsCommandInstalled()) return installEnvsCommand();
-  const answer = (
-    await ask(
-      "\nAdd the cognigy-envs command to your terminal, to work with several Cognigy environments? [Y/n] ",
-    )
-  )
-    .trim()
-    .toLowerCase();
-  if (answer === "" || answer === "y" || answer === "yes") installEnvsCommand();
-  else process.stdout.write(envsTip());
-}
-
 function envsTip(reason?: string): string {
   return (
     yellow("• cognigy-envs") +
     (reason ? `: ${reason}. ` : ": ") +
     "Working with several Cognigy environments? Run:\n" +
-    cyan(`    npx -y -p ${PKG}@latest cognigy-envs\n`)
+    cyan(`    ${ENVS_COMMAND}\n`)
   );
 }
 
@@ -664,10 +642,10 @@ function runUpdate(): void {
   // an engine bump cannot refresh. Rewrite it — but only where one already
   // exists, so this never creates a launcher on a machine using neither client.
   if (existsSync(DESKTOP_LAUNCHER_FILE)) writeDesktopLauncher();
-  // Refresh the global cognigy-envs only where setup put one; never add it here.
+  // Refresh the global cognigy-envs only where an earlier setup put one.
   // "latest": the global install also adds cognigy-setup, and running that old
   // copy's update must not just reinstall its own version.
-  if (envsCommandInstalled()) installEnvsCommand("latest");
+  if (envsCommandInstalled()) refreshEnvsCommand("latest");
   process.stdout.write(
     dim(
       "• Claude Desktop chat connector auto-updates its engine on every restart — nothing to do.\n",
@@ -996,7 +974,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  if (interactive) await offerEnvsCommand();
+  if (interactive && envsCommandInstalled()) refreshEnvsCommand();
   else process.stdout.write("\n" + envsTip());
 
   process.stdout.write(green(bold("\n✓ Done.\n")));

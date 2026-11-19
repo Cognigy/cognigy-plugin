@@ -180,7 +180,7 @@ describe("Environments with an unusable file", () => {
   it("fails every call instead of falling back to the default", () => {
     for (const requested of [undefined, "default", "trial"]) {
       expect(() => envs(invalid).resolve(requested)).toThrow(
-        /not valid JSON\. Fix it with cognigy-envs/,
+        /not valid JSON\. Fix it in a terminal with: npx .* cognigy-envs$/,
       );
     }
   });
@@ -197,7 +197,7 @@ describe("Environments with a stored environment named default", () => {
   it("refuses every call and says how to fix it", () => {
     for (const requested of [undefined, "default", "trial"]) {
       expect(() => envs(clash).resolve(requested)).toThrow(
-        /named "default".*Rename it with cognigy-envs/,
+        /named "default".*Rename it in a terminal with: npx .* cognigy-envs$/,
       );
     }
   });

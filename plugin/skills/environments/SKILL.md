@@ -42,19 +42,14 @@ ID across environments: look the resource up by name in the target environment.
 
 You cannot add, change or remove environments, and do not run the menu yourself: it needs the
 user's keyboard, and the key is typed there, not in the chat. When the user wants another
-environment, or asks for a tenant you have no environment for, give them these steps, each command
-in its own code block so they can copy it:
+environment, or asks for a tenant you have no environment for, give them these steps, with the
+command in its own code block so they can copy it:
 
-1. Run in a terminal: `cognigy-envs`
-2. If the terminal says the command is not found, add it by running
-   `npm install -g @cognigy/plugin-engine@latest`, then run `cognigy-envs` again.
-   On a permission error, or to install nothing, open the menu with this line instead (it adds no
-   command, so they use the same line next time):
-   `npx -y -p @cognigy/plugin-engine@latest cognigy-envs`
-3. In the menu, pick "+ Add an environment" and enter a name, the API base URL and the API key.
-4. Restart the AI client (in Claude Code, a new session is enough). Open conversations keep the
+1. Run in a terminal: `npx -y -p @cognigy/plugin-engine@latest cognigy-envs`
+2. In the menu, pick "+ Add an environment" and enter a name, the API base URL and the API key.
+3. Restart the AI client (in Claude Code, a new session is enough). Open conversations keep the
    environments they started with.
-5. Test it in the new conversation: "Which Cognigy environments do you have access to?"
+4. Test it in the new conversation: "Which Cognigy environments do you have access to?"
 
 To replace the plugin's own login (`default`) instead, the user needs to run the installer again:
 `npx -y -p @cognigy/plugin-engine@latest cognigy-setup`
@@ -70,4 +65,4 @@ Never ask for, repeat or read an API key, and never open `~/.cognigy-plugin/envi
 - "Several Cognigy environments are configured…": ask the user which one, then retry with it.
 - "…changed after this conversation's tools were loaded…": nothing was sent. Tell the user to restart
   the AI client (in Claude Code, a new session), then continue there.
-- A problem with `environments.json`: relay the message as is; the user fixes it in `cognigy-envs`.
+- A problem with `environments.json`: relay the message as is; it names the command that opens the menu.

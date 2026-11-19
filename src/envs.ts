@@ -229,7 +229,7 @@ export async function runEnvs(io: EnvsIo): Promise<number> {
     file = load(path);
   } catch (error: any) {
     io.write(
-      `${error.message}\nFix or delete that file, then run cognigy-envs again.\n`,
+      `${error.message}\nFix or delete that file, then open this menu again.\n`,
     );
     return 1;
   }

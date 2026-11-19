@@ -41,7 +41,7 @@ A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy
 
 ### Step 1 — run the installer
 
-One installer covers every client. Run it, pick your client(s), enter your Cognigy API base URL (Enter for the trial default) and API key (masked as you type), then restart the client. At the end it offers the `cognigy-envs` command, which you only need to [work with several Cognigy environments](#several-cognigy-environments).
+One installer covers every client. Run it, pick your client(s), enter your Cognigy API base URL (Enter for the trial default) and API key (masked as you type), then restart the client.
 
 **macOS / Linux** — one line (checks for Node.js, then runs the installer):
 
@@ -200,27 +200,15 @@ Most users work in one Cognigy environment and need nothing here. If you work in
 
 #### How to add environments
 
-1. **Open the menu.** Run `cognigy-envs` in a terminal. The installer adds this command (since version 1.24.0, when you answer yes).
-
-   ```
-   cognigy-envs
-   ```
-
-2. **If your terminal says the command is not found**, add it with the line below, then run `cognigy-envs` again. It only adds terminal commands, `cognigy-envs` among them. It doesn't reinstall the plugin or change your login.
-
-   ```
-   npm install -g @cognigy/plugin-engine@latest
-   ```
-
-   If npm reports a permission error (`EACCES`), or you'd rather not install anything, open the menu with this line instead. It adds no command, so use the same line again next time.
+1. **Open the menu.** Run this in a terminal:
 
    ```
    npx -y -p @cognigy/plugin-engine@latest cognigy-envs
    ```
 
-3. **Add your environments.** Pick "+ Add an environment", then enter a name you choose (for example `trial`), the API base URL and the API key (typed hidden). In the menu, ↑/↓ moves, Enter adds or changes, `d` deletes and `q` quits.
-4. **Restart your AI client.** In Claude Code, a new session is enough. Open conversations keep the environments they started with.
-5. **Test it.** Ask your AI client "Which Cognigy environments do you have access to?" It should list `default` and the environments you added, each with its URL.
+2. **Add your environments.** Pick "+ Add an environment", then enter a name you choose (for example `trial`), the API base URL and the API key (typed hidden). In the menu, ↑/↓ moves, Enter adds or changes, `d` deletes and `q` quits.
+3. **Restart your AI client.** In Claude Code, a new session is enough. Open conversations keep the environments they started with.
+4. **Test it.** Ask your AI client "Which Cognigy environments do you have access to?" It should list `default` and the environments you added, each with its URL.
 
 ![The cognigy-envs menu: the default login above a dotted line, then trial and "+ Add an environment"](docs/cognigy-envs.png)
 

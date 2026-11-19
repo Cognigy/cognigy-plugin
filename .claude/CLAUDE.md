@@ -72,7 +72,7 @@ Workflow guidance lives only as plugin skills `plugin/skills/<id>/SKILL.md` (han
 - **What the model sees:** results carry `_environment`, and the server instructions gain one line naming each environment's URL (from `Environments.start()`), so the model can map "dev" to a name before its first call.
 - **`talk_to_agent` guard:** an explicit `endpointUrl` on another host than the selected environment's endpoint host is refused (`foreignEndpointError`; skipped when that host could not be derived), since the result would otherwise claim the wrong environment.
 - **Context cost:** neither the field nor that line is in the static tool-surface budget. Only opt-in users pay, capped per tool in `environments.test.ts`.
-- **Editing:** `cognigy-envs` (`src/envs.ts`) is the only way to edit the file, an arrow-key menu with no subcommands. `cognigy-setup` installs it globally (`npm install -g`, non-fatal) and `update` refreshes it where present.
+- **Editing:** `cognigy-envs` (`src/envs.ts`) is the only way to edit the file, an arrow-key menu with no subcommands. Users open it with `ENVS_COMMAND` (`npx -y -p @cognigy/plugin-engine@latest cognigy-envs`), which always runs the latest engine and needs no install; every message that sends the user to the menu shows that line. `cognigy-setup` installs nothing for it. It only refreshes a global copy that a 1.24.x installer added, at setup and on `update`.
 - **Evals:** cases in `MULTI_ENVIRONMENT_CASES` (`scripts/gen-eval-tools.ts`) get a per-case `_tools.json` with the field.
 
 ## API client & config
