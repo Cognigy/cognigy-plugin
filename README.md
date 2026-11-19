@@ -4,7 +4,24 @@
 
 A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy.com) REST API. Create, test, and improve LLM-based AI Agents through a self-improvement loop — without leaving your client.
 
-**Quick links:** [Installation](#installation) · [Staying up to date](#staying-up-to-date)
+## Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Staying up to date](#staying-up-to-date)
+- [Configuration](#configuration)
+  - [Audit attribution](#audit-attribution)
+  - [Corporate proxies](#corporate-proxies)
+  - [Self-hosted and local clusters](#self-hosted-and-local-clusters)
+  - [Several Cognigy environments](#several-cognigy-environments)
+    - [How to add environments](#how-to-add-environments)
+- [Usage Examples](#usage-examples)
+- [Tools](#tools)
+- [Security](#security)
+- [Privacy Policy](#privacy-policy)
+- [Support](#support)
+- [Documentation](#documentation)
+- [License](#license)
 
 ## Features
 
@@ -14,6 +31,7 @@ A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy
 - **Knowledge store support**: attach RAG knowledge stores to agents as tools
 - **Browser voice deployment**: create Voice Gateway endpoints with WebRTC demo URLs
 - **Voice preview setup**: configure supported speech providers for voice experiences
+- **Several Cognigy environments**: work in a trial, a customer tenant and production from one conversation, for example to compare them or copy an agent from one to another ([how to add them](#how-to-add-environments))
 - **Skills + agents**: workflow guidance auto-loads as skills in supporting clients; build/go-live loops run as subagents
 - **Built-in docs lookup**: bundles the official [Cognigy documentation](https://docs.cognigy.com) MCP server — your assistant searches and reads the docs before answering platform questions, instead of guessing from training data
 - Built-in rate limiting, Zod input validation, and RFC 7807 error responses
@@ -24,7 +42,7 @@ A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy
 
 ### Step 1 — run the installer
 
-One installer covers every client. Run it, pick your client(s), enter your Cognigy API base URL (Enter for the trial default) and API key (masked as you type), then restart the client.
+One installer covers every client. Run it, pick your client(s), enter your Cognigy API base URL (Enter for the trial default) and API key (masked as you type), then restart the client. At the end it offers the `cognigy-envs` command, which you only need to [work with several Cognigy environments](#several-cognigy-environments).
 
 **macOS / Linux** — one line (checks for Node.js, then runs the installer):
 
@@ -99,14 +117,24 @@ npx -y -p @cognigy/plugin-engine@latest cognigy-setup uninstall   # remove from 
 
 Beyond the MCP tools, the plugin ships **skills** and **agents** that surface the workflows automatically:
 
-- **Skills** (`/skills`) — one per workflow (agent creation, knowledge/RAG, voice gateway, speech-to-speech (S2S) voice demos, voice go-live checklist, webchat, flow nodes, packages, settings, LLM providers, tools, red-teaming, troubleshooting). Claude loads the matching skill automatically when your request fits. Red-teaming runs in your main session — not as a subagent — so it can agree the scope contract, get approval before applying fixes, and open the finished report for you.
-- **Agents** (`/agents`) — `cognigy-agent-builder` runs the full build-and-test loop for a new agent, `cognigy-voice-go-live` audits a voice agent against the Go-Live Checklist and applies the safe fixes, and `cognigy-s2s-demo-builder` builds a speech-to-speech (S2S) voice demo and returns its click-to-call link. Each runs in its own context and reports back a summary.
+- **Skills** (`/skills` in Claude Code) — one per workflow (agent creation, knowledge/RAG, voice gateway, speech-to-speech (S2S) voice demos, voice go-live checklist, webchat, flow nodes, packages, settings, LLM providers, tools, red-teaming, troubleshooting). Your AI client loads the matching skill automatically when your request fits. Red-teaming runs in your main session — not as a subagent — so it can agree the scope contract, get approval before applying fixes, and open the finished report for you.
+- **Agents** (`/agents` in Claude Code) — `cognigy-agent-builder` runs the full build-and-test loop for a new agent, `cognigy-voice-go-live` audits a voice agent against the Go-Live Checklist and applies the safe fixes, and `cognigy-s2s-demo-builder` builds a speech-to-speech (S2S) voice demo and returns its click-to-call link. Each runs in its own context and reports back a summary.
 
 ## Configuration
 
-The [installer](#installation) collects your **Cognigy API base URL** and **API key** and wires them per client: on Claude Code into the system **keychain**, on Claude Desktop into `claude_desktop_config.json` (`chmod 600`). The engine receives them as environment variables. If either is missing for a given launch, the engine falls back to `~/.cognigy-plugin/config.json` (`chmod 600`), which the installer also writes — so credentials resolve from the environment first, then that file. ChatGPT + Codex, Antigravity, and other hosts rely on that file exclusively: their client configs carry no secrets.
+The [installer](#installation) collects your **Cognigy API base URL** and **API key** and stores them per client:
 
-A value that arrives as an unexpanded `${...}` placeholder counts as missing. Hosts other than Claude Code don't implement `userConfig` and pass the manifest's `${user_config.cognigy_api_key}` through literally; treating that as a real credential would both fail the request and shadow the file fallback. The optional variables below can be set in the MCP server `env` if you need to override defaults.
+- **Claude Code:** in the system **keychain**.
+- **Claude Desktop:** in `claude_desktop_config.json` (`chmod 600`).
+- **Every client:** in `~/.cognigy-plugin/config.json` (`chmod 600`). ChatGPT + Codex, Antigravity and other hosts use only this file, so their client configs carry no secrets.
+
+How the engine finds them:
+
+- **Environment variables first.** Claude Code and Claude Desktop pass `COGNIGY_API_BASE_URL` and `COGNIGY_API_KEY` to the engine.
+- **Then the file.** If either is missing for a launch, the engine reads `~/.cognigy-plugin/config.json`.
+- **Placeholders count as missing.** Hosts other than Claude Code don't implement `userConfig` and pass the manifest's `${user_config.cognigy_api_key}` through literally. Treating that as a real key would fail the request and hide the file.
+
+The optional variables below can be set in the MCP server `env` if you need to override defaults.
 
 | Variable                            | Required | Default | Description                                                    |
 | ----------------------------------- | -------- | ------- | -------------------------------------------------------------- |
@@ -126,11 +154,13 @@ A value that arrives as an unexpanded `${...}` placeholder counts as missing. Ho
 
 ### Audit attribution
 
-Everything this plugin changes is recorded in **Admin Center → Audit Events** with `performedBy.actor = "mcp-plugin"`, so plugin-made changes are distinguishable from ones people made by hand (which carry no `performedBy`). Each MCP tool call gets its own `taskId` and each engine run its own `sessionId`, so the writes of one tool call group together.
+Everything this plugin changes is recorded in **Admin Center → Audit Events**:
 
-Requires Cognigy.AI 2026.17.0 or newer; older versions ignore the attribution and record the action normally. The "Performed by" column in the UI is gated behind the platform's `FEATURE_ENABLE_PLATFORM_AGENT_MFE` flag, but the attribution is always recorded and always readable through `list_resources { resourceType: "audit_event", actor: ["mcp-plugin"] }`.
-
-Set `COGNIGY_DISABLE_AUDIT_ATTRIBUTION=1` to opt out; plugin actions are then recorded like any other API action.
+- **Marked as the plugin's.** Plugin changes carry `performedBy.actor = "mcp-plugin"`. Changes people make by hand carry no `performedBy`.
+- **Grouped per tool call.** Each MCP tool call gets its own `taskId` and each engine run its own `sessionId`, so the writes of one tool call group together.
+- **Needs Cognigy.AI 2026.17.0 or newer.** Older versions ignore the attribution and record the action normally.
+- **Readable without the UI column.** The "Performed by" column is behind the platform's `FEATURE_ENABLE_PLATFORM_AGENT_MFE` flag, but the attribution is always recorded and readable through `list_resources { resourceType: "audit_event", actor: ["mcp-plugin"] }`.
+- **Opt out** with `COGNIGY_DISABLE_AUDIT_ATTRIBUTION=1`. Plugin actions are then recorded like any other API action.
 
 ### Corporate proxies
 
@@ -144,29 +174,58 @@ If your network requires a proxy, set it in the MCP server `env` block (or expor
 }
 ```
 
-Lower-case spellings (`https_proxy`) work too, as do credentials in the URL (`http://user:password@proxy.corp.example:8080`). HTTP and HTTPS proxies are supported; SOCKS proxies are not.
-
-The proxy is chosen per request, so `NO_PROXY` can exclude one host while another still goes through the proxy — a package download link, for example, points at wherever the platform staged the archive rather than at the API host.
-
-If a proxy is configured but cannot be used — a malformed URL, or a SOCKS proxy — requests **fail with a configuration error** rather than quietly connecting directly, which would send your API key outside the sanctioned path. Exclude the host with `NO_PROXY` if you genuinely want a direct connection.
-
-A proxy that accepts the connection and then never completes the tunnel would otherwise hang a tool call indefinitely, so connecting and negotiating is bounded at 30 seconds. Raise `COGNIGY_PROXY_CONNECT_TIMEOUT_MS` if your proxy is simply slow.
-
-**If your proxy inspects TLS** (Zscaler, Netskope, BlueCoat and similar), it presents its own certificate signed by a corporate root CA that Node does not trust by default. Point `NODE_EXTRA_CA_CERTS` at that CA file — Node reads it only at startup, so restart your client afterwards. Never set `NODE_TLS_REJECT_UNAUTHORIZED=0` instead; that disables certificate verification for every connection the engine makes.
-
-To confirm the engine picked the settings up, set `LOG_LEVEL=debug` and look for `Cognigy API requests route through a proxy` in your client's MCP log. GUI clients (Claude Desktop, Antigravity) start the engine with a minimal environment and often do not inherit your shell's proxy variables, so set them in the config file rather than your shell profile.
+- **Supported:** HTTP and HTTPS proxies, lower-case spellings (`https_proxy`) and credentials in the URL (`http://user:password@proxy.corp.example:8080`). SOCKS proxies are not supported.
+- **Chosen per request.** `NO_PROXY` can exclude one host while another still goes through the proxy. A package download link, for example, points at wherever the platform staged the archive, not at the API host.
+- **No silent direct connection.** If a proxy is configured but unusable (a malformed URL, a SOCKS proxy), requests **fail with a configuration error** instead of connecting directly, which would send your API key outside the sanctioned path. To connect directly on purpose, exclude the host with `NO_PROXY`.
+- **30-second limit.** Connecting through the proxy is limited to 30 seconds, so a proxy that never completes the tunnel can't hang a tool call. Raise `COGNIGY_PROXY_CONNECT_TIMEOUT_MS` if your proxy is just slow.
+- **If your proxy inspects TLS** (Zscaler, Netskope, BlueCoat and similar), it presents a certificate signed by a corporate root CA that Node doesn't trust by default. Point `NODE_EXTRA_CA_CERTS` at that CA file and restart your client, since Node reads it only at startup. Never set `NODE_TLS_REJECT_UNAUTHORIZED=0` instead: that turns off certificate checks for every connection the engine makes.
+- **Check it works.** Set `LOG_LEVEL=debug` and look for `Cognigy API requests route through a proxy` in your client's MCP log.
+- **GUI clients** (Claude Desktop, Antigravity) start the engine with a minimal environment and often don't inherit your shell's proxy variables. Set them in the client's config file, not in your shell profile.
 
 ### Self-hosted and local clusters
 
-The engine talks to more than one Cognigy host: the API for everything, the endpoint host for `talk_to_agent`, and the webchat and static hosts for embed snippets. The other three are derived from `COGNIGY_API_BASE_URL` by swapping its `api` segment — `api-dev.cognigy.ai` gives `endpoint-dev.cognigy.ai`, `cognigy-api-na1.nicecxone.com` gives `cognigy-endpoint-na1.nicecxone.com`, and a local cluster's `api.test` gives `endpoint.test`. If your hostnames follow no such pattern, set `COGNIGY_ENDPOINT_BASE_URL`, `COGNIGY_WEBCHAT_BASE_URL` and `COGNIGY_STATIC_FILES_BASE_URL` explicitly; the engine warns at startup (`Could not derive the endpoint host`) when it had to fall back to the API host.
+The engine talks to four Cognigy hosts: the API for everything, the endpoint host for `talk_to_agent`, and the webchat and static-files hosts for embed snippets. It derives the other three from `COGNIGY_API_BASE_URL` by swapping its `api` segment:
 
-A cluster that serves a self-signed certificate is rejected with `DEPTH_ZERO_SELF_SIGNED_CERT`, because Node does not consult the operating-system trust store. Point `NODE_EXTRA_CA_CERTS` at the certificate (or the local CA that issued it), exactly as for a TLS-inspecting proxy above.
+- `api-dev.cognigy.ai` → `endpoint-dev.cognigy.ai`
+- `cognigy-api-na1.nicecxone.com` → `cognigy-endpoint-na1.nicecxone.com`
+- a local cluster's `api.test` → `endpoint.test`
+
+When that doesn't fit your setup:
+
+- **Hostnames without that pattern:** set `COGNIGY_ENDPOINT_BASE_URL`, `COGNIGY_WEBCHAT_BASE_URL` and `COGNIGY_STATIC_FILES_BASE_URL` explicitly. The engine warns at startup (`Could not derive the endpoint host`) when it had to fall back to the API host.
+- **Self-signed certificates** are rejected with `DEPTH_ZERO_SELF_SIGNED_CERT`, because Node doesn't use the operating system's trust store. Point `NODE_EXTRA_CA_CERTS` at the certificate (or the local CA that issued it), as for a TLS-inspecting proxy above.
 
 ### Several Cognigy environments
 
-Most users work in one Cognigy environment and need nothing here. If you work in several (a trial, a customer tenant, a staging cluster), add them once and Claude can use any of them in the same conversation, for example to compare two deployments or copy an agent from one to another.
+Most users work in one Cognigy environment and need nothing here. If you work in several (a trial, a customer tenant, a staging cluster), add them once and your AI client can use any of them in the same conversation, for example to compare two deployments or copy an agent from one to another.
 
-Run `cognigy-envs` in a terminal. The installer adds the command; without it, run `npx -y -p @cognigy/plugin-engine cognigy-envs`. It opens a small menu (↑/↓, Enter, `d`, `q`) that lists your environments and lets you add, change and delete them. Each one has a name you pick, its API base URL and its API key, which you type hidden. They are stored in `~/.cognigy-plugin/environments.json`, readable only by you:
+#### How to add environments
+
+1. **Open the menu.** Run `cognigy-envs` in a terminal. The installer adds this command (since version 1.24.0, when you answer yes).
+
+   ```
+   cognigy-envs
+   ```
+
+2. **If your terminal says the command is not found**, add it with the line below, then run `cognigy-envs` again. It only adds terminal commands, `cognigy-envs` among them. It doesn't reinstall the plugin or change your login.
+
+   ```
+   npm install -g @cognigy/plugin-engine@latest
+   ```
+
+   If npm reports a permission error (`EACCES`), or you'd rather not install anything, open the menu with this line instead. It adds no command, so use the same line again next time.
+
+   ```
+   npx -y -p @cognigy/plugin-engine@latest cognigy-envs
+   ```
+
+3. **Add your environments.** Pick "+ Add an environment", then enter a name you choose (for example `trial`), the API base URL and the API key (typed hidden). In the menu, ↑/↓ moves, Enter adds or changes, `d` deletes and `q` quits.
+4. **Restart your AI client.** In Claude Code, a new session is enough. Open conversations keep the environments they started with.
+5. **Test it.** Ask your AI client "Which Cognigy environments do you have access to?" It should list `default` and the environments you added, each with its URL.
+
+![The cognigy-envs menu: the default login above a dotted line, then trial and "+ Add an environment"](docs/cognigy-envs.png)
+
+Your environments are stored in `~/.cognigy-plugin/environments.json`, readable only by you:
 
 ```json
 {
@@ -175,9 +234,13 @@ Run `cognigy-envs` in a terminal. The installer adds the command; without it, ru
 }
 ```
 
-![The cognigy-envs menu: the default login above a dotted line, then trial and "+ Add an environment"](docs/cognigy-envs.png)
+How it works once you have added an environment:
 
-The login you gave the installer stays the `default` environment and is changed with `cognigy-setup`, as before. Once the file has an entry, Claude asks which environment to use at the start of a conversation and keeps it. You can name another one for a single step ("copy this agent to acme") or switch for the rest of the conversation ("from now on use trial"). Every tool result says which environment it ran on. Claude only ever sees names and URLs, never keys. An environment you add works by name right away and shows up in Claude's list of choices after the session restarts.
+- **`default` is the login you gave the installer.** Change it with `cognigy-setup`, as before.
+- **Picked once per conversation.** Your AI client asks which environment to use at the start of a conversation and keeps it.
+- **One step, or the rest of the conversation.** Name another environment for a single step ("copy this agent to acme"), or switch for the rest of the conversation ("from now on use trial").
+- **Every result names its environment**, so you can always tell where a change was made.
+- **Keys stay out of the conversation.** Your AI client only ever sees names and URLs.
 
 ## Usage Examples
 

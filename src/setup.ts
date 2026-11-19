@@ -586,7 +586,7 @@ function envsTip(reason?: string): string {
     yellow("• cognigy-envs") +
     (reason ? `: ${reason}. ` : ": ") +
     "Working with several Cognigy environments? Run:\n" +
-    cyan(`    npx -y -p ${PKG} cognigy-envs\n`)
+    cyan(`    npx -y -p ${PKG}@latest cognigy-envs\n`)
   );
 }
 

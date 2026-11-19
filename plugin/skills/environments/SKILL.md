@@ -1,6 +1,6 @@
 ---
 name: environments
-description: "Use when Cognigy tools ask for an \"environment\", when the user works with several Cognigy environments or tenants (trial, a customer tenant), wants to compare or copy something between environments, or asks how to add another Cognigy environment."
+description: "Use when Cognigy tools ask for an \"environment\", when the user works with several Cognigy environments or tenants (trial, a customer tenant), wants to compare or copy something between environments, wants you to also reach another Cognigy tenant, URL or API key, or asks how to add another Cognigy environment."
 ---
 
 # Working with several Cognigy environments
@@ -40,10 +40,25 @@ ID across environments: look the resource up by name in the target environment.
 
 ## Adding environments
 
-You cannot add, change or remove environments. Tell the user to run `cognigy-envs` in a terminal
-(or `npx -y -p @cognigy/plugin-engine cognigy-envs`), an arrow-key menu that asks for a name, the
-API base URL and the key. Open conversations keep the environments they started with: a new
-environment shows up after the user restarts the AI client (in Claude Code, a new session).
+You cannot add, change or remove environments, and do not run the menu yourself: it needs the
+user's keyboard, and the key is typed there, not in the chat. When the user wants another
+environment, or asks for a tenant you have no environment for, give them these steps, each command
+in its own code block so they can copy it:
+
+1. Run in a terminal: `cognigy-envs`
+2. If the terminal says the command is not found, add it, then run `cognigy-envs` again. This only
+   adds terminal commands; it does not reinstall the plugin or change the login:
+   `npm install -g @cognigy/plugin-engine@latest`
+   On a permission error, or to install nothing, open the menu with this line instead (it adds no
+   command, so they use the same line next time):
+   `npx -y -p @cognigy/plugin-engine@latest cognigy-envs`
+3. In the menu, pick "+ Add an environment" and enter a name, the API base URL and the API key.
+4. Restart the AI client (in Claude Code, a new session is enough). Open conversations keep the
+   environments they started with.
+5. Test it in the new conversation: "Which Cognigy environments do you have access to?"
+
+To replace the plugin's own login (`default`) instead, the user runs the installer again:
+`npx -y -p @cognigy/plugin-engine@latest cognigy-setup`
 
 Never ask for, repeat or read an API key, and never open `~/.cognigy-plugin/environments.json` or
 `config.json`. Keys never pass through the chat.

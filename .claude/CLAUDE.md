@@ -116,3 +116,5 @@ Endpoints under `/v2.0/flows/{flowId}/chart`:
 - Conventional Commits (`fix:`, `feat:`, `chore:`, with scopes).
 - Tests mock the api client; mocks may not match real API field projections — verify against the real REST shape (see chart gotchas).
 - Dev skill `.claude/skills/add-tool/SKILL.md` documents the add/extend-a-tool workflow.
+- User-facing text (README, `docs/`, skills, agents, hints, CLI output) is client-agnostic: say "your AI client", never "Claude" for the assistant. Name a client only for what is specific to it ("in Claude Code, a new session is enough").
+- When a doc tells the user to run something ("run the installer again"), put the command right there.
