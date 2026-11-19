@@ -350,6 +350,8 @@ Run custom **TypeScript** (a single source string — not multiple files, not HT
 - `api.deleteContext("a.b")` — only removes **top-level** keys; a dot-path silently does nothing. Use `delete context.a.b;`.
 - More than 100 `api.*` calls per execution — the platform aborts the node ([limits](https://docs.cognigy.com/ai/administer/limitations)).
 
+**Debugging:** `api.log("error" | "warn" | "info" | "debug", message)` writes to the project logs as `Flow Node - <message>`. Pass a string: an object is logged as `[object Object]`, so `JSON.stringify` it. An error thrown in the code stops the flow, and the turn still answers HTTP 200 with what it sent before. Read the turn with `list_resources { resourceType: "log", projectId, traceId }` (traceId from talk_to_agent); the error entry names the node by its label.
+
 Anything the platform supports is not gated: there is no required code shape, no `api.*` allowlist, and `Date.prototype.toLocaleString()` and friends work (the editor's red underline on `Date` is the browser's type checker, not a runtime error).
 
 **Config:**
@@ -426,7 +428,7 @@ Pause execution for a duration.
 
 Category: service
 
-Call an external API.
+Call an external API. A request that cannot reach its host writes no log entry and the flow carries on, so check the stored result before relying on it.
 
 **Config:**
 | Field | Type | Required | Description |
