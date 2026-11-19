@@ -329,7 +329,7 @@ export const tools: ToolDefinition[] = [
   {
     name: "list_resources",
     description:
-      "List Cognigy resources of one type, paginated, with optional server-side sort. Types: project (no projectId needed), tool (takes aiAgentId, or flowId for an LLM Prompt flow, instead of projectId), audit_event (organisation-wide, no projectId; answers \"who changed what\" via the actor and eventType filters, Cognigy 2026.17.0+), log (project logs: did a call arrive, what errored; sessionId reads one session's last 12 h, else startDate/endDate, default last hour), and the project-scoped agent, flow, endpoint, llm_model, knowledge_store, conversation, extension, function, speech_provider. Packages and snapshots are listed by manage_packages and manage_snapshots. Returns id, name and a few type-specific fields per item; use get_resource for full detail. For recency questions sort server-side ('lastChanged:desc', small limit). agent lists both kinds: where the project has AI Agents they are the items and legacy AI Agents move to legacyAgents; each agent's use is the id argument to pass on.",
+      "List Cognigy resources of one type, paginated, with optional server-side sort. Types: project (no projectId needed), tool (takes aiAgentId, or flowId for an LLM Prompt flow, instead of projectId), audit_event (organisation-wide, no projectId; answers \"who changed what\" via the actor and eventType filters, Cognigy 2026.17.0+), and the project-scoped agent, flow, endpoint, llm_model, knowledge_store, conversation, extension, function, log, speech_provider (STT/TTS credentials; niceProvided ones need no Connection). Packages and snapshots are listed by manage_packages and manage_snapshots. Returns id, name and a few type-specific fields per item; use get_resource for full detail. For recency questions use sort (e.g. 'lastChanged:desc' with a small limit) instead of paging through everything. agent lists both kinds: where the project has AI Agents they are the items and legacy AI Agents move to legacyAgents; each agent's use is the id argument to pass on.",
     annotations: {
       title: "List Resources",
       readOnlyHint: true,
@@ -362,7 +362,7 @@ export const tools: ToolDefinition[] = [
         projectId: {
           type: "string",
           description:
-            "24-char hex project ID. Required for all types except 'project', 'tool' and 'audit_event' (so for 'log').",
+            "24-char hex project ID. Required for all types except 'project', 'tool' and 'audit_event'.",
         },
         aiAgentId: {
           type: "string",
@@ -406,7 +406,7 @@ export const tools: ToolDefinition[] = [
             enum: [...AUDIT_ACTORS],
           },
           description:
-            "audit_event only: who performed the action. 'mcp-plugin' is this plugin, 'ask-ai' the Cognigy Ask AI agent, 'human' a person in the UI or API.",
+            "audit_event only: who performed the action. 'mcp-plugin' is this plugin, 'ask-ai' the Cognigy Ask AI agent, 'human' a person in the UI or API. Filtered server-side on Cognigy 2026.17.0+, otherwise on the fetched page.",
         },
         eventType: {
           type: "array",
@@ -415,7 +415,8 @@ export const tools: ToolDefinition[] = [
             type: "string",
             enum: [...AUDIT_EVENT_TYPES],
           },
-          description: "audit_event only: operation type filter.",
+          description:
+            "audit_event only: operation type filter. Filtered server-side on Cognigy 2026.17.0+, otherwise on the fetched page.",
         },
         user: {
           type: "string",
@@ -424,14 +425,13 @@ export const tools: ToolDefinition[] = [
         },
         sessionId: {
           type: "string",
-          description:
-            "log only: exact session id; reads the session's last 12 h and ignores startDate/endDate.",
+          description: "log only: exact session id (last 12 h; ignores dates).",
         },
         level: {
           type: "array",
           minItems: 1,
           items: { type: "string", enum: [...LOG_LEVELS] },
-          description: "log only: keep these levels, e.g. ['error', 'fatal'].",
+          description: "log only: keep these levels.",
         },
         flowName: {
           type: "string",
