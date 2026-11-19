@@ -1,6 +1,6 @@
 ---
 name: environments
-description: "Use when Cognigy tools ask for an \"environment\", when the user works with several Cognigy environments or tenants (trial, a customer tenant), wants to compare or copy something between environments, or asks how to add another Cognigy environment."
+description: "Use when Cognigy tools ask for an \"environment\", when the user works with several Cognigy environments or tenants (trial, a customer tenant), wants to compare or copy something between environments, wants you to also reach another Cognigy tenant, URL or API key, or asks how to add another Cognigy environment."
 ---
 
 # Working with several Cognigy environments
@@ -40,10 +40,22 @@ ID across environments: look the resource up by name in the target environment.
 
 ## Adding environments
 
-You cannot add, change or remove environments. Tell the user to run `cognigy-envs` in a terminal
-(or `npx -y -p @cognigy/plugin-engine cognigy-envs`), an arrow-key menu that asks for a name, the
-API base URL and the key. Open conversations keep the environments they started with: a new
-environment shows up after the user restarts the AI client (in Claude Code, a new session).
+You cannot add, change or remove environments, and do not run the menu yourself: it needs the
+user's keyboard, and the key is typed there, not in the chat. When the user wants another
+environment, or asks for a tenant you have no environment for, give them these steps, with the
+command in its own code block so they can copy it:
+
+1. Run in a terminal: `npx -y -p @cognigy/plugin-engine@latest cognigy-envs`
+2. In the menu, pick "+ Add an environment" and enter a name, the API base URL and the API key.
+3. Restart the AI client (in Claude Code, a new session is enough). Open conversations keep the
+   environments they started with.
+4. Test it in the new conversation: "Which Cognigy environments do you have access to?"
+
+To replace the plugin's own login (`default`) instead, the user needs to run the installer again:
+`npx -y -p @cognigy/plugin-engine@latest cognigy-setup`
+In Cursor that changes nothing, because Cursor's Plugins → Configure values win over the
+installer's file: the user needs to change `COGNIGY_API_BASE_URL` and `COGNIGY_API_KEY` there for
+Cognigy, then reload Cursor.
 
 Never ask for, repeat or read an API key, and never open `~/.cognigy-plugin/environments.json` or
 `config.json`. Keys never pass through the chat.
@@ -53,4 +65,4 @@ Never ask for, repeat or read an API key, and never open `~/.cognigy-plugin/envi
 - "Several Cognigy environments are configured…": ask the user which one, then retry with it.
 - "…changed after this conversation's tools were loaded…": nothing was sent. Tell the user to restart
   the AI client (in Claude Code, a new session), then continue there.
-- A problem with `environments.json`: relay the message as is; the user fixes it in `cognigy-envs`.
+- A problem with `environments.json`: relay the message as is; it names the command that opens the menu.

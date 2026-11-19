@@ -55,6 +55,11 @@ const QUIT = new Set(["q", "\x1b", "\x03"]);
 // Clear the screen and home the cursor: each frame redraws from the top, so
 // long lines that wrap can never leave a stale frame behind.
 const CLEAR = "\x1b[H\x1b[2J";
+// The menu draws on the terminal's alternate screen, as less and vim do, so
+// what was on screen before (the installer's output, the shell) is back when it
+// closes.
+const ALT_SCREEN_ON = "\x1b[?1049h";
+const ALT_SCREEN_OFF = "\x1b[?1049l";
 
 const LOGO = [
   "┌─┐┌─┐┌─┐┌┐┌┬┌─┐┬ ┬  ┌─┐┌┐┌┬  ┬┌─┐",
@@ -229,7 +234,7 @@ export async function runEnvs(io: EnvsIo): Promise<number> {
     file = load(path);
   } catch (error: any) {
     io.write(
-      `${error.message}\nFix or delete that file, then run cognigy-envs again.\n`,
+      `${error.message}\nFix or delete that file, then open this menu again.\n`,
     );
     return 1;
   }
@@ -266,43 +271,49 @@ export async function runEnvs(io: EnvsIo): Promise<number> {
 
   let cursor = 0;
   let status = "";
-  for (;;) {
-    const names = Object.keys(file);
-    const items = names.length + 1; // the environments, then "+ Add"
-    cursor = Math.min(cursor, items - 1);
-    io.write(`${CLEAR}${frame(file, io, cursor, status)}\n`);
+  io.write(ALT_SCREEN_ON);
+  try {
+    for (;;) {
+      const names = Object.keys(file);
+      const items = names.length + 1; // the environments, then "+ Add"
+      cursor = Math.min(cursor, items - 1);
+      io.write(`${CLEAR}${frame(file, io, cursor, status)}\n`);
 
-    const key = await io.readKey();
-    status = "";
-    if (QUIT.has(key)) break;
-    if (UP.has(key)) cursor = (cursor - 1 + items) % items;
-    else if (DOWN.has(key)) cursor = (cursor + 1) % items;
-    else if (ENTER.has(key) || (DELETE.has(key) && cursor < names.length)) {
-      try {
-        status = ENTER.has(key)
-          ? cursor === names.length
-            ? await addEnvironment(io, path)
-            : await changeEnvironment(io, path, names[cursor])
-          : await deleteEnvironment(io, path, names[cursor]);
-      } catch (error: any) {
-        if (error?.message === "cancelled") throw error;
-        status = String(error?.message ?? error);
+      const key = await io.readKey();
+      status = "";
+      if (QUIT.has(key)) break;
+      if (UP.has(key)) cursor = (cursor - 1 + items) % items;
+      else if (DOWN.has(key)) cursor = (cursor + 1) % items;
+      else if (ENTER.has(key) || (DELETE.has(key) && cursor < names.length)) {
+        try {
+          status = ENTER.has(key)
+            ? cursor === names.length
+              ? await addEnvironment(io, path)
+              : await changeEnvironment(io, path, names[cursor])
+            : await deleteEnvironment(io, path, names[cursor]);
+        } catch (error: any) {
+          if (error?.message === "cancelled") throw error;
+          status = String(error?.message ?? error);
+        }
+        // What is on disk is the truth: another terminal may have changed it too.
+        file = load(path);
       }
-      // What is on disk is the truth: another terminal may have changed it too.
-      file = load(path);
     }
+  } finally {
+    io.write(ALT_SCREEN_OFF);
   }
-  io.write("\n");
+  // The menu is gone with the alternate screen: show what is saved now.
+  io.write(`${list(file, io)}\n`);
   // A changed key or URL applies on the next call; a changed set of names does not.
   if (Object.keys(file).join("\n") !== namesAtStart) {
-    io.write(`  ${RESTART_NOTE}\n`);
+    io.write(`${RESTART_NOTE}\n`);
   }
   return 0;
 }
 
-// Run only when invoked as the bin, not when imported (e.g. by tests).
-if (isMainModule(import.meta.url, process.argv[1])) {
-  runEnvs({
+/** The menu on the real terminal: for the cognigy-envs bin and the installer. */
+export function terminalEnvsIo(): EnvsIo {
+  return {
     write: (text) => process.stdout.write(text),
     ask: (question) => askOrEscape(question),
     askHidden: (question) => askOrEscape(question, true),
@@ -313,7 +324,12 @@ if (isMainModule(import.meta.url, process.argv[1])) {
       process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"),
       "settings.json",
     ),
-  }).then(
+  };
+}
+
+// Run only when invoked as the bin, not when imported (e.g. by tests).
+if (isMainModule(import.meta.url, process.argv[1])) {
+  runEnvs(terminalEnvsIo()).then(
     (code) => process.exit(code),
     (error: unknown) => {
       // Esc at the rename prompt shown before the menu.

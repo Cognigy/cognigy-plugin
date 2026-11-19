@@ -59,6 +59,8 @@ import { homedir } from "os";
 import { dirname, join } from "path";
 import { runNpm } from "./install/npmRunner.js";
 import { PACKAGE_VERSION } from "./config.js";
+import { ENVS_COMMAND } from "./environmentsFile.js";
+import { runEnvs, terminalEnvsIo } from "./envs.js";
 import {
   ask,
   askHidden,
@@ -67,6 +69,7 @@ import {
   dim,
   green,
   isMainModule,
+  PromptEscaped,
   yellow,
 } from "./utils/cli.js";
 
@@ -193,12 +196,14 @@ export function parseClientSelection(answer: string, menu: Client[]): Client[] {
 
 /**
  * Interactive checkbox list: ↑/↓ (or j/k) move, Space toggles, Enter confirms
- * (requires at least one selection), Ctrl-C cancels. Redraws in place via ANSI
- * cursor moves. Requires a raw-mode TTY — callers fall back otherwise.
+ * (requires at least one selection), Ctrl-C cancels. `extra` adds one more key
+ * that leaves the list and resolves to null. Redraws in place via ANSI cursor
+ * moves. Requires a raw-mode TTY — callers fall back otherwise.
  */
 function checkboxSelect(
   items: { label: string; checked: boolean }[],
-): Promise<number[]> {
+  extra?: { key: string; hint: string },
+): Promise<number[] | null> {
   return new Promise((resolve, reject) => {
     const stdin = process.stdin;
     const state = items.map((it) => it.checked);
@@ -213,8 +218,9 @@ function checkboxSelect(
         const box = state[i] ? green("[x]") : "[ ]";
         process.stdout.write(`\x1b[2K\r ${pointer} ${box} ${it.label}\n`);
       });
+      const help = "   ↑/↓ move · Space check/uncheck · Enter confirm";
       process.stdout.write(
-        `\x1b[2K\r${dim("   ↑/↓ move · Space check/uncheck · Enter confirm")}\n`,
+        `\x1b[2K\r${dim(extra ? `${help} · ${extra.key} ${extra.hint}` : help)}\n`,
       );
     };
 
@@ -238,6 +244,12 @@ function checkboxSelect(
         cleanup();
         process.stdout.write("\n");
         resolve(picked);
+        return;
+      }
+      if (extra && chunk.toLowerCase() === extra.key) {
+        cleanup();
+        process.stdout.write("\n");
+        resolve(null);
         return;
       }
       if (chunk === " ") {
@@ -265,7 +277,8 @@ function checkboxSelect(
   });
 }
 
-async function chooseClients(): Promise<Client[]> {
+/** The clients to install into, or "environments" to only open that menu. */
+async function chooseClients(): Promise<Client[] | "environments"> {
   const detected = detectClients();
   const menu = ALL_CLIENTS;
   process.stdout.write(
@@ -299,8 +312,12 @@ async function chooseClients(): Promise<Client[]> {
     label: `${CLIENT_LABELS[c]}${detected[c] ? green(" (detected)") : ""}`,
     checked: detected[c],
   }));
-  const picked = await checkboxSelect(items);
-  return picked.map((i) => menu[i]);
+  const picked = await checkboxSelect(items, {
+    key: "e",
+    // Keeps the help line under 80 columns: a wrapped line breaks the redraw.
+    hint: "skip to environments",
+  });
+  return picked ? picked.map((i) => menu[i]) : "environments";
 }
 
 function runInstall(client: Client, creds: UserConfigFile): void {
@@ -530,25 +547,22 @@ function npmLatestVersion(): string | null {
 }
 
 /**
- * Put `cognigy-envs` (the menu for extra Cognigy environments) on the PATH with
- * a global npm install of this package, this version unless told otherwise. Never fatal:
- * the npx form below works without it (a global install can need admin rights).
+ * Refresh the global `cognigy-envs` an earlier setup (1.24.x) installed, so it
+ * matches this engine. Setup no longer adds one: users open the menu with
+ * ENVS_COMMAND, which needs no install. Never fatal.
  */
-function installEnvsCommand(version: string = PACKAGE_VERSION): void {
-  process.stdout.write(
-    dim("\nAdding the cognigy-envs command to your terminal…\n"),
-  );
+function refreshEnvsCommand(version: string = PACKAGE_VERSION): void {
+  process.stdout.write(dim("\nUpdating the cognigy-envs command…\n"));
   const res = runNpm(["install", "-g", `${PKG}@${version}`], {
     capture: true,
     timeout: 180_000,
   });
   if (res.status === 0) {
-    process.stdout.write(
-      green("✓ cognigy-envs") +
-        ": run it in a terminal to work with several Cognigy environments.\n",
-    );
+    process.stdout.write(green("✓ cognigy-envs") + ": updated.\n");
   } else {
-    process.stdout.write(envsTip("could not be added to your terminal"));
+    process.stdout.write(
+      envsTip("could not be updated. To open the menu, run:"),
+    );
   }
 }
 
@@ -563,31 +577,72 @@ function envsCommandInstalled(): boolean {
   );
 }
 
+function envsTip(
+  lead = "Working with several Cognigy environments? Run:",
+): string {
+  return (
+    yellow("• cognigy-envs") + `: ${lead}\n` + cyan(`    ${ENVS_COMMAND}\n`)
+  );
+}
+
+export interface OfferEnvironmentsIo {
+  ask(question: string): Promise<string>;
+  write(text: string): void;
+  /** Opens the cognigy-envs menu; resolves to its exit code. */
+  openMenu(): Promise<number>;
+}
+
+const terminalOfferIo: OfferEnvironmentsIo = {
+  ask,
+  write: (text) => process.stdout.write(text),
+  openMenu: () => runEnvs(terminalEnvsIo()),
+};
+
 /**
- * Offer the global install of cognigy-envs (Enter means yes). Where an earlier
- * run added it, refresh it without asking. A no is not remembered, so the next
- * setup run asks again.
+ * Offer the cognigy-envs menu at the end of an interactive install (Enter means
+ * no), so someone with several tenants adds them in the same terminal, before
+ * the client restart the installer asks for anyway. A no shows the npx line
+ * for later. Never fatal: the install is already done.
  */
-async function offerEnvsCommand(): Promise<void> {
-  if (envsCommandInstalled()) return installEnvsCommand();
+export async function offerEnvironments(
+  io: OfferEnvironmentsIo = terminalOfferIo,
+): Promise<void> {
   const answer = (
-    await ask(
-      "\nAdd the cognigy-envs command to your terminal, to work with several Cognigy environments? [Y/n] ",
+    await io.ask(
+      "\nAdd more Cognigy environments now, e.g. a trial or a customer tenant? [y/N] ",
     )
   )
     .trim()
     .toLowerCase();
-  if (answer === "" || answer === "y" || answer === "yes") installEnvsCommand();
-  else process.stdout.write(envsTip());
+  if (answer !== "y" && answer !== "yes") {
+    io.write(envsTip("To add environments later, run:"));
+    return;
+  }
+  await openEnvironmentsMenu(io);
 }
 
-function envsTip(reason?: string): string {
-  return (
-    yellow("• cognigy-envs") +
-    (reason ? `: ${reason}. ` : ": ") +
-    "Working with several Cognigy environments? Run:\n" +
-    cyan(`    npx -y -p ${PKG} cognigy-envs\n`)
-  );
+/**
+ * Open the cognigy-envs menu from the installer: after "Add more Cognigy
+ * environments now?", or straight from the client list with `e`. A failed or
+ * cancelled menu prints how to open it again; it never throws.
+ */
+export async function openEnvironmentsMenu(
+  io: Pick<OfferEnvironmentsIo, "write" | "openMenu"> = terminalOfferIo,
+): Promise<void> {
+  let code: number;
+  try {
+    code = await io.openMenu();
+  } catch (error) {
+    // Esc or Ctrl-C in one of the menu's prompts: back out, change nothing.
+    const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof PromptEscaped || message === "cancelled") {
+      io.write("Nothing changed.\n");
+      return;
+    }
+    io.write(`${message}\n`);
+    code = 1;
+  }
+  if (code !== 0) io.write(envsTip("To open the menu again, run:"));
 }
 
 /** `status` — report what's installed on each surface + the latest available. */
@@ -664,10 +719,10 @@ function runUpdate(): void {
   // an engine bump cannot refresh. Rewrite it — but only where one already
   // exists, so this never creates a launcher on a machine using neither client.
   if (existsSync(DESKTOP_LAUNCHER_FILE)) writeDesktopLauncher();
-  // Refresh the global cognigy-envs only where setup put one; never add it here.
+  // Refresh the global cognigy-envs only where an earlier setup put one.
   // "latest": the global install also adds cognigy-setup, and running that old
   // copy's update must not just reinstall its own version.
-  if (envsCommandInstalled()) installEnvsCommand("latest");
+  if (envsCommandInstalled()) refreshEnvsCommand("latest");
   process.stdout.write(
     dim(
       "• Claude Desktop chat connector auto-updates its engine on every restart — nothing to do.\n",
@@ -937,7 +992,13 @@ async function main(): Promise<void> {
 
   if (interactive) {
     process.stdout.write(bold(cyan("\n🚀 NiCE Cognigy Plugin Setup\n\n")));
-    clients = await chooseClients();
+    const choice = await chooseClients();
+    if (choice === "environments") {
+      // Only the environments menu: no login asked, nothing installed.
+      await openEnvironmentsMenu();
+      return;
+    }
+    clients = choice;
     process.stdout.write("\n");
     const urlAnswer = await ask(`Cognigy API base URL [${DEFAULT_BASE_URL}]: `);
     apiBaseUrl = urlAnswer || DEFAULT_BASE_URL;
@@ -996,8 +1057,12 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  if (interactive) await offerEnvsCommand();
-  else process.stdout.write("\n" + envsTip());
+  if (interactive) {
+    if (envsCommandInstalled()) refreshEnvsCommand();
+    await offerEnvironments();
+  } else {
+    process.stdout.write("\n" + envsTip());
+  }
 
   process.stdout.write(green(bold("\n✓ Done.\n")));
 }
