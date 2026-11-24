@@ -426,6 +426,101 @@ describe("project logs", () => {
     expect((api.get.mock.calls[0][1] as any).params.type).toEqual(["trace"]);
   });
 
+  it("rejects a date Date.parse accepts but the Logs API cannot read", async () => {
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "log",
+      projectId: PROJECT,
+      startDate: "Nov 19 2026",
+    });
+
+    expect(result.error).toMatch(/startDate is not a valid ISO 8601 date/);
+    expect(api.get).not.toHaveBeenCalled();
+  });
+
+  it("rejects a startDate after the endDate", async () => {
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "log",
+      projectId: PROJECT,
+      startDate: "2026-11-19T12:00:00Z",
+      endDate: "2026-11-19T10:00:00Z",
+    });
+
+    expect(result.error).toMatch(/startDate is after endDate/);
+    expect(api.get).not.toHaveBeenCalled();
+  });
+
+  it("looks for a turn in the 24 hours before an endDate", async () => {
+    api.get.mockResolvedValue({ items: [] });
+
+    await h.handleToolCall("list_resources", {
+      resourceType: "log",
+      projectId: PROJECT,
+      traceId: TRACE,
+      endDate: "2026-11-01T12:00:00.000Z",
+    });
+
+    const { startDate, endDate } = (api.get.mock.calls[0][1] as any).params;
+    expect(endDate).toBe("2026-11-01T12:00:00.000Z");
+    expect(startDate).toBe("2026-10-31T12:00:00.000Z");
+  });
+
+  it("ignores sort, which would break the reads' order, and says so", async () => {
+    api.get.mockResolvedValue({ items: sessionEntries, total: 3 });
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "log",
+      projectId: PROJECT,
+      sort: "timestamp:asc",
+    });
+
+    expect((api.get.mock.calls[0][1] as any).params).not.toHaveProperty("sort");
+    expect(result._hints.warning).toMatch(/sort was ignored/);
+  });
+
+  it("says skip and dates do not apply to a session read", async () => {
+    api.get.mockResolvedValue({ items: sessionEntries });
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "log",
+      projectId: PROJECT,
+      sessionId: SESSION,
+      skip: 100,
+    });
+
+    expect(result._hints.warning).toMatch(
+      /do not apply to a session read.*traceId/,
+    );
+  });
+
+  it("keeps the original 400 when the read without the window fails too", async () => {
+    const original = httpError(400);
+    api.get
+      .mockRejectedValueOnce(original)
+      .mockRejectedValueOnce(httpError(400));
+
+    await expect(
+      h.handleToolCall("list_resources", {
+        resourceType: "log",
+        projectId: PROJECT,
+        sessionId: SESSION,
+      }),
+    ).rejects.toBe(original);
+  });
+
+  it("does not promise more of a turn when the page was not full", async () => {
+    // total counts free-text matches too, so it is not a continuation signal.
+    api.get.mockResolvedValue({ items: [nodeError], total: 3 });
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "log",
+      projectId: PROJECT,
+      traceId: TRACE,
+      limit: 2,
+    });
+
+    expect(result._hints?.warning).toBeUndefined();
+  });
+
   it("rejects an unparsable date before calling the API", async () => {
     const result = await h.handleToolCall("list_resources", {
       resourceType: "log",
@@ -553,6 +648,20 @@ describe("project logs", () => {
       expect(result.meta.nodeId).toBe("ce47d468-8a0e-4c25-9e7f-8294d090e632");
       expect(JSON.stringify(result)).not.toContain(URL_TOKEN);
       expect(JSON.stringify(result)).not.toContain("/app/build");
+    });
+
+    it("returns the whole message, which list results cap", async () => {
+      api.get.mockResolvedValue(
+        entry(ENTRY_ID, "2026-11-19T16:36:00.000Z", "error", "x".repeat(3000)),
+      );
+
+      const result = await h.handleToolCall("get_resource", {
+        resourceType: "log",
+        id: ENTRY_ID,
+        projectId: PROJECT,
+      });
+
+      expect(result.message).toHaveLength(3000);
     });
 
     it("returns the complete entry with raw: true", async () => {

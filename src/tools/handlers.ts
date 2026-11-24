@@ -172,6 +172,9 @@ const DELETE_PREFIX = "DELETE_";
 // needs the v2 log model, which this header asks for.
 const LOG_TAIL_WINDOW_HOURS = 12;
 const LOG_V2_MODEL = { "x-cognigy-log-model-version": "v2" };
+// Date.parse also accepts "Nov 19 2026" or "1", which the Logs API cannot.
+const ISO_8601_DATE =
+  /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/;
 
 // Cognigy resource names are capped at 200 chars (see schemas/tools.ts).
 const MAX_RESOURCE_NAME_LENGTH = 200;
@@ -4899,9 +4902,12 @@ export class ToolHandlers {
       }
       case "log": {
         // The platform answers an unparsable date with HTTP 500, which the API
-        // client retries three times, so reject it before the call.
+        // client retries three times, so only ISO 8601 dates reach it.
         const badDate = (["startDate", "endDate"] as const).find(
-          (key) => data[key] && Number.isNaN(Date.parse(data[key]!)),
+          (key) =>
+            data[key] !== undefined &&
+            (!ISO_8601_DATE.test(data[key]!) ||
+              Number.isNaN(Date.parse(data[key]!))),
         );
         if (badDate)
           return withHints(
@@ -4910,6 +4916,18 @@ export class ToolHandlers {
             },
             { action: "Use a form like 2026-11-19T10:00:00Z." },
           );
+        if (
+          data.startDate &&
+          data.endDate &&
+          Date.parse(data.startDate) > Date.parse(data.endDate)
+        )
+          return withHints(
+            { error: "startDate is after endDate." },
+            { action: "Swap the two dates. Logs are kept 24 hours." },
+          );
+        // A user-supplied sort would break the newest-first order the reads
+        // below rely on, and log entries have no lastChanged to sort by.
+        const logPaging = { limit: paging.limit, skip: paging.skip };
         // Only /logs/tail filters by session, and a turn's endpoint-level
         // entries (the node error among them) carry no sessionId, so a turn is
         // read through the list route's free-text `filter` by traceId. Both are
@@ -4932,13 +4950,17 @@ export class ToolHandlers {
               projectId!,
               "",
               {
-                ...paging,
+                ...logPaging,
                 limit: traceLimit,
                 filter: traceId,
                 ...(level ? { type: level } : {}),
                 // Logs are kept 24 hours; the route's default window is one.
                 startDate:
-                  data.startDate ?? new Date(now - 24 * 3600e3).toISOString(),
+                  data.startDate ??
+                  new Date(
+                    (data.endDate ? Date.parse(data.endDate) : now) -
+                      24 * 3600e3,
+                  ).toISOString(),
                 endDate: data.endDate ?? new Date(now).toISOString(),
               },
               undefined,
@@ -4956,18 +4978,24 @@ export class ToolHandlers {
               );
             } catch (error: any) {
               if (error?.status !== 400) throw error;
-              res = await this.getLogs(
-                projectId!,
-                "/tail",
-                params,
-                undefined,
-                fellBack,
-              );
+              // The same request without the window and its header: if that
+              // works, the window was refused; if not, the original 400 stands.
+              try {
+                res = await this.getLogs(
+                  projectId!,
+                  "/tail",
+                  params,
+                  undefined,
+                  fellBack,
+                );
+              } catch {
+                throw error;
+              }
               shortWindow = true;
             }
           } else {
             res = await this.getLogs(projectId!, "", {
-              ...paging,
+              ...logPaging,
               ...(level ? { type: level } : {}),
               ...(data.startDate ? { startDate: data.startDate } : {}),
               ...(data.endDate ? { endDate: data.endDate } : {}),
@@ -4977,12 +5005,9 @@ export class ToolHandlers {
           return this.logError(error, "list");
         }
         let raw: any[] = Array.isArray(res?.items) ? res.items : [];
-        // A turn longer than one page: the list route counts what `filter`
-        // matched, so more matches than this page reached means more entries.
-        const turnContinues =
-          traceId &&
-          typeof res?.total === "number" &&
-          res.total > (skip ?? 0) + raw.length;
+        // A full page may mean the turn goes on. The route's total is no help:
+        // it also counts entries that only mention the traceId.
+        const turnContinues = traceId && raw.length >= traceLimit;
         if (traceId) raw = raw.filter((e) => e.traceId === traceId);
         else if (sessionId)
           raw = raw.filter((e) => e.meta?.sessionId === sessionId);
@@ -5019,13 +5044,23 @@ export class ToolHandlers {
           warnings.push(
             "This Cognigy version has no v2.1 logs API, so the session may have been looked for only among the project's latest 100 entries. Read a turn by its traceId instead.",
           );
+        const olderTurns =
+          "For older turns, read one by its traceId, or list a dated window (startDate / endDate) without sessionId.";
+        if (sessionId && !traceId && (skip || data.startDate || data.endDate))
+          warnings.push(
+            `skip, startDate and endDate do not apply to a session read, which returns the session's newest entries from the last 12 hours. ${olderTurns}`,
+          );
         if (cut)
           warnings.push(
-            `Showing the newest ${items.length} entries of this session. Raise limit (max 100), or read one turn completely with its traceId.`,
+            `Showing the newest ${items.length} entries of this session${items.length < 100 ? "; raise limit (up to 100) for more" : ""}. ${olderTurns}`,
           );
         if (turnContinues)
           warnings.push(
-            `This turn has more log entries than this read returned. Read on with skip: ${(skip ?? 0) + traceLimit}.`,
+            `This read returned a full page, so the turn may have more entries. Read on with skip: ${(skip ?? 0) + traceLimit}.`,
+          );
+        if (sort)
+          warnings.push(
+            "sort was ignored: log entries come back newest first, and a session or turn oldest first.",
           );
         if (!items.length)
           hints.hint = traceId
@@ -10337,9 +10372,10 @@ function summarizeCatalogItem(component: string, r: any): any {
 const RESOURCE_FILTERS_GET: Record<string, (raw: any) => any> = {
   // The stack trace shows the platform's internal paths and the URLToken lets
   // anyone talk to the endpoint; neither helps debug the flow.
+  // The message is not capped here: this is the read of one entry in full.
   log: (r) => {
     const { URLToken: _token, originalError: _error, ...meta } = r.meta ?? {};
-    return { ...filterResponse("log", r), meta };
+    return { ...filterResponse("log", r), message: r.msg, meta };
   },
   agent_v2: (r) => ({
     id: r.id ?? r._id,

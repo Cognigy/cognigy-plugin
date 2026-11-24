@@ -209,7 +209,7 @@ When a reply is empty or stops halfway, ask why:
 That reply stopped halfway. Read the logs for that turn and tell me what failed.
 ```
 
-A flow that fails mid-turn still answers with what it sent before the error, so the project logs are often the only place the failure shows. `talk_to_agent` returns a `traceId` for each turn, and `list_resources { resourceType: "log", projectId, traceId }` reads every log entry of that turn, including a failing node's error. `sessionId` reads a whole conversation from the last 12 hours, and `level` with `startDate` finds recent problems in a project (without dates, only the last hour). Cognigy keeps logs for 24 hours, and the API key's user needs the `logs` or `developer` project role.
+A flow that fails mid-turn still answers with what it sent before the error, so the project logs are often the only place the failure shows. `talk_to_agent` returns a `traceId` for each turn, and `list_resources { resourceType: "log", projectId, traceId }` reads every log entry of that turn, including a failing node's error. `sessionId` reads the newest entries of a conversation (25 by default, at most 100) from the last 12 hours, and `level` with `startDate` finds recent problems in a project (without dates, only the last hour). Cognigy keeps logs for 24 hours, and the API key's user needs the `logs` or `developer` project role.
 
 ### 3. Add a knowledge store for RAG
 
