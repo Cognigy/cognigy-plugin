@@ -123,7 +123,8 @@ export class Environments {
       // Never fall back to the default: the user meant to use the file, and a
       // silent fallback would aim the call at the wrong tenant.
       throw new EnvironmentError(
-        `${state.reason} Fix it in a terminal with: ${ENVS_COMMAND}`,
+        // The menu cannot open an unusable file either: the user fixes it by hand.
+        `${state.reason} Fix or delete that file, then try again.`,
       );
     }
     const file = state.state === "ok" ? state.file : {};

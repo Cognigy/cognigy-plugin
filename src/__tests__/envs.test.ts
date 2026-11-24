@@ -91,13 +91,21 @@ describe("cognigy-envs menu", () => {
     expect(out.slice(off)).toMatch(/trial\s+https:\/\/api-trial\.cognigy\.ai/);
   });
 
-  it("leaves the alternate screen when a prompt is cancelled", async () => {
-    const t = scripted(freshDir(), { keys: [ENTER] });
+  it("closes like q on Ctrl-C in a prompt, still showing what was saved", async () => {
+    const dir = freshDir();
+    // Add trial, then Enter on trial and Ctrl-C at its URL prompt.
+    const t = scripted(dir, { keys: [ENTER, ENTER], hidden: [TRIAL.apiKey] });
+    const answers = ["trial", TRIAL.apiBaseUrl];
     t.io.ask = async () => {
-      throw new Error("cancelled");
+      const answer = answers.shift();
+      if (answer === undefined) throw new Error("cancelled");
+      return answer;
     };
-    await expect(runEnvs(t.io)).rejects.toThrow("cancelled");
-    expect(t.output().endsWith("\x1b[?1049l")).toBe(true);
+    expect(await runEnvs(t.io)).toBe(0);
+    expect(saved(dir)).toEqual({ trial: TRIAL });
+    const after = t.output().split("\x1b[?1049l")[1];
+    expect(after).toMatch(/trial\s+https:\/\/api-trial\.cognigy\.ai/);
+    expect(after).toContain("Restart your AI client");
   });
 
   it("adds an environment, accepting a URL without https://", async () => {

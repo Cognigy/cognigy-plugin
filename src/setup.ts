@@ -633,7 +633,7 @@ export async function openEnvironmentsMenu(
   try {
     code = await io.openMenu();
   } catch (error) {
-    // Esc or Ctrl-C in one of the menu's prompts: back out, change nothing.
+    // Esc or Ctrl-C at the rename prompt shown before the menu: nothing saved.
     const message = error instanceof Error ? error.message : String(error);
     if (error instanceof PromptEscaped || message === "cancelled") {
       io.write("Nothing changed.\n");

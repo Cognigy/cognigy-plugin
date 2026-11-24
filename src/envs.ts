@@ -292,7 +292,9 @@ export async function runEnvs(io: EnvsIo): Promise<number> {
               : await changeEnvironment(io, path, names[cursor])
             : await deleteEnvironment(io, path, names[cursor]);
         } catch (error: any) {
-          if (error?.message === "cancelled") throw error;
+          // Ctrl-C in a prompt closes the menu like q, so the list and the
+          // restart note below still show what an earlier step saved.
+          if (error?.message === "cancelled") break;
           status = String(error?.message ?? error);
         }
         // What is on disk is the truth: another terminal may have changed it too.

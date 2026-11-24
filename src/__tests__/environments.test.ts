@@ -180,7 +180,7 @@ describe("Environments with an unusable file", () => {
   it("fails every call instead of falling back to the default", () => {
     for (const requested of [undefined, "default", "trial"]) {
       expect(() => envs(invalid).resolve(requested)).toThrow(
-        /not valid JSON\. Fix it in a terminal with: npx .* cognigy-envs$/,
+        /not valid JSON\. Fix or delete that file, then try again\.$/,
       );
     }
   });
