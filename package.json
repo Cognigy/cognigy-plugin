@@ -83,7 +83,7 @@
     "ts-jest": "29.4.15",
     "tsx": "4.23.15",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.73.0"
+    "typescript-eslint": "8.74.0"
   },
   "overrides": {
     "glob": "14.0.6",
