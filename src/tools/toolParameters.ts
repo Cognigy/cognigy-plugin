@@ -23,6 +23,10 @@
  * (strict providers require an explicit type on every level), and
  * `additionalProperties: false` is injected wherever an object level defines
  * `properties` without it.
+ *
+ * A `type` array may hold one type plus "null" only (["string","null"]).
+ * Multi-type arrays such as ["string","boolean","null"] are rejected: OpenAI
+ * strict mode refuses them, so they are not portable across models.
  */
 
 const ALLOWED_TYPES = new Set([
@@ -130,6 +134,15 @@ function validateSchema(
       } else {
         types.push(t);
       }
+    }
+    // OpenAI strict mode only accepts a type array of one type plus "null"
+    // (e.g. ["string","null"]); wider mixes like ["string","boolean","null"]
+    // are rejected or handled inconsistently across providers.
+    const nonNull = [...new Set(types.filter((t) => t !== "null"))];
+    if (nonNull.length > 1) {
+      ctx.errors.push(
+        `${path}: "type" mixes ${nonNull.length} types (${JSON.stringify(schema.type)}) — use ONE type, optionally plus "null" (e.g. ["${nonNull[0]}","null"]); strict-mode models (OpenAI Responses API, e.g. gpt-5.x) reject wider type arrays. If several types are truly needed, use "anyOf" with one single-typed schema per alternative`,
+      );
     }
   }
 
@@ -288,6 +301,7 @@ export function normalizeToolParameters(raw: string): NormalizedToolParameters {
       `Invalid tool parameters schema:\n- ${ctx.errors.join("\n- ")}\n` +
         `Fix the schema and retry. Contract: top level is {"type":"object","properties":{...},"required":[...]}; ` +
         `every entry in a "properties" map needs "description" and a "type" (inferred as "object" when it defines "properties"; optional only when "enum", "const", or anyOf/oneOf/allOf is used); allowed types: ${[...ALLOWED_TYPES].join(", ")}; ` +
+        `a "type" array may hold only one type plus "null" (e.g. ["string","null"]); ` +
         `"array" needs "items"; any level defining "properties" also needs a "required" array. ` +
         `Strict-mode models (OpenAI Responses API, e.g. gpt-5.x) additionally require every property key listed in "required" — make a parameter optional with a nullable type such as {"type":["string","null"]}.`,
     );

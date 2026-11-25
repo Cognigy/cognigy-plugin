@@ -684,7 +684,7 @@ export const tools: ToolDefinition[] = [
             parameters: {
               type: "string",
               description:
-                'JSON Schema string for the tool parameters (tool, http). Top level must be {"type":"object","properties":{...},"required":[...]}: "required" is mandatory (use [] if none), every property needs "type" and "description", arrays need "items", nested objects their own "required". "additionalProperties": false is added automatically. Strict-mode models (OpenAI Responses API) need every key in "required", optional ones nullable.',
+                'JSON Schema string for the tool parameters (tool, http). Top level must be {"type":"object","properties":{...},"required":[...]}: "required" is mandatory (use [] if none), every property needs "description" and ONE "type" (or [type,"null"]), arrays need "items", nested objects their own "required". "additionalProperties": false is added automatically. Strict-mode models (OpenAI Responses API) need every key in "required", optional ones nullable.',
             },
             knowledgeStoreId: {
               type: "string",

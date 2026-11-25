@@ -247,4 +247,77 @@ describe("normalizeToolParameters", () => {
     });
     expect(normalizeToolParameters(raw).warnings).toEqual([]);
   });
+
+  it("hard-fails on a type array mixing several non-null types", () => {
+    const raw = JSON.stringify({
+      type: "object",
+      properties: {
+        my_parameter: {
+          type: ["string", "boolean", "null"],
+          description: "Can be text, true/false, or null.",
+        },
+      },
+      required: ["my_parameter"],
+    });
+    expect(() => normalizeToolParameters(raw)).toThrow(
+      /my_parameter: "type" mixes 2 types .*\["string","null"\]/,
+    );
+  });
+
+  it("hard-fails on a multi-type array without null", () => {
+    const raw = JSON.stringify({
+      type: "object",
+      properties: {
+        amount: { type: ["number", "string"], description: "Amount" },
+      },
+      required: ["amount"],
+    });
+    expect(() => normalizeToolParameters(raw)).toThrow(/amount: "type" mixes/);
+  });
+
+  it("checks type arrays inside nested items and anyOf branches", () => {
+    const raw = JSON.stringify({
+      type: "object",
+      properties: {
+        tags: {
+          type: "array",
+          description: "Tags",
+          items: { type: ["string", "integer"] },
+        },
+        value: {
+          description: "Value",
+          anyOf: [{ type: ["string", "boolean"] }, { type: "null" }],
+        },
+      },
+      required: ["tags", "value"],
+    });
+    expect(() => normalizeToolParameters(raw)).toThrow(
+      /tags\.items: "type" mixes[\s\S]*value\.anyOf\[0\]: "type" mixes/,
+    );
+  });
+
+  it("accepts anyOf with single-typed alternatives", () => {
+    const raw = JSON.stringify({
+      type: "object",
+      properties: {
+        my_parameter: {
+          anyOf: [{ type: "string" }, { type: "boolean" }, { type: "null" }],
+          description: "Can be text, true/false, or null.",
+        },
+      },
+      required: ["my_parameter"],
+    });
+    expect(normalizeToolParameters(raw).warnings).toEqual([]);
+  });
+
+  it("accepts a type array with a duplicated single type", () => {
+    const raw = JSON.stringify({
+      type: "object",
+      properties: {
+        note: { type: ["string", "string", "null"], description: "Note" },
+      },
+      required: ["note"],
+    });
+    expect(() => normalizeToolParameters(raw)).not.toThrow();
+  });
 });

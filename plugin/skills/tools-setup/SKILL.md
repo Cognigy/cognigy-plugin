@@ -29,6 +29,7 @@ Rule of thumb: each tool in an agent flow should have a unique `toolId`. If you 
 
 - Top level: `{"type":"object","properties":{...},"required":[...]}` — `required` is mandatory (use `[]` if nothing is required).
 - EVERY property needs `"type"` AND `"description"`. Allowed types: `string`, `number`, `integer`, `boolean`, `object`, `array`, `null`.
+- ONE type per parameter, optionally plus `null`: `"type":"string"` or `"type":["string","null"]`. Never mix types like `["string","boolean","null"]` — OpenAI strict mode rejects it, so create_tool / update_tool do too. Prefer a single type (e.g. a `string` with an `enum`); if several types are truly needed, use `anyOf` with one single-typed schema per alternative.
 - `array` properties need `"items"`. Nested objects with `"properties"` also need their own `"required"`.
 - `"additionalProperties": false` is injected automatically at every object level.
 - Strict-mode models (OpenAI Responses API, e.g. gpt-5.x, where strict is forced on): list EVERY property key in `required`; make a parameter optional with a nullable type — `{"type":["string","null"],"description":"..."}`. Non-strict providers ignore this, so it is the safe default.
