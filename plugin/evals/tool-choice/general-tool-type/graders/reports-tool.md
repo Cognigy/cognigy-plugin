@@ -1,6 +1,6 @@
 ---
 type: regex
 target: last_message
-pattern: '^(?![\s\S]*(?:\bcould not|\bcouldn''t|\bunable to|\bfailed to|\bwas(?:n''t| not) able to)\s+(?:add|attach|create|build|set up)\b)(?=[\s\S]*\bunlock)(?=[\s\S]*(?<!(?:\bno|\bnot|n''t|\bnothing|\bnever|\bnone|\bfailed|\bunable|\bneeds?|\bstill|\bto be|\bwill|\bpending)\b[^.,;:!?\n]*)\b(?:added|attached|created|built|set up|now has)\b)'
+pattern: '^(?![\s\S]*(?:\bcould not|\bcouldn''t|\bunable to|\bfailed to|\bwas(?:n''t| not) able to)\s+(?:add|attach|create|build|set up)\b)(?=[\s\S]*\bunlock)(?=[\s\S]*(?<!(?:\bno|\bnot|n''t|\bnothing|\bnever|\bnone|\bfailed|\bunable|\bneeds?|\bstill|\bto be|\bbe|\bwill|\bcan|\bcould|\bmay|\bmight|\bshould|\bpending)\b[^.,;:!?\n]*)\b(?:added|attached|created|built|set up|now has)\b)'
 flags: i
 ---

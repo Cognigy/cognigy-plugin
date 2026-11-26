@@ -1,1 +1,1 @@
-{"created":true,"endpointId":"ep-new-1","name":"{{input.name}}","channel":"voiceGateway2","webrtcProvisioned":true,"webrtcDemoUrl":"https://static-demo.cognigy.ai/webrtc/?token=7f3c9a1e","_integration":{"wsEndpointUrl":"wss://endpoint-demo.cognigy.ai/7f3c9a1e/voiceGateway"},"_instruction":"ALWAYS show webrtcDemoUrl to the user as a clickable link. This is the live demo page they can open in a browser to talk to the agent via voice. Only mention _integration details if the user asks about embedding."}
+{{file:fixtures/manage_voice_gateway/{input.projectId}.json}}

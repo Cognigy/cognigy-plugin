@@ -2147,6 +2147,25 @@ describe("voice agents run speech-to-speech when they can", () => {
     expect(r._hints.hint).not.toMatch(/best|fallback|unfortunately/i);
   });
 
+  it("doesn't promise NiCE speech in the offer when setting the speech failed", async () => {
+    const h: any = handlers(createApi([]));
+    h.setPreferredSpeech = () => Promise.reject(httpError(500));
+    const r = await h.handleToolCall("manage_agent", {
+      operation: "create",
+      projectId: ID.project,
+      name: "Clinic Desk",
+      largeLanguageModelReferenceId: LLM,
+      createEndpoint: false,
+      agentType: "voice",
+    });
+    expect(r._hints.warning).toContain("its speech was not set");
+    expect(r._hints.hint).toContain("except the speech warning");
+    expect(r._hints.hint).toContain(
+      "\"It runs on the project's speech settings.",
+    );
+    expect(r._hints.hint).not.toContain("works right away");
+  });
+
   it("never mentions speech-to-speech where it is not enabled", async () => {
     const api = createApi([liveModel], {
       [`GET ${V1}/v1/agents/capability-probe/voice-prompt`]: () => {

@@ -3757,7 +3757,8 @@ export class ToolHandlers {
     if (voiceModel && !voiceDropped.length)
       hints.hint = `Calls run speech-to-speech (S2S) on "${voiceModel.name}", the project's GPT Live model. Say so in the build summary, in speech-to-speech terms.`;
     else if (offerS2S)
-      hints.hint = `Unless the user asked for a particular speech setup or declined speech-to-speech, make this line the last paragraph of the build summary, whole and word for word, with no label or bullet. It already says which speech the agent uses, so don't describe the speech anywhere else in the summary: "${s2sOfferLine((await this.getNiceSpeech()) === "available")}"`;
+      // When setting the speech failed, the line must not claim NiCE speech, and the warning still goes in the summary.
+      hints.hint = `Unless the user asked for a particular speech setup or declined speech-to-speech, make this line the last paragraph of the build summary, whole and word for word, with no label or bullet. It already says which speech the agent uses, so don't describe the speech anywhere else in the summary${speechError ? " except the speech warning" : ""}: "${s2sOfferLine(!speechError && (await this.getNiceSpeech()) === "available")}"`;
     return withHints(
       {
         projectId,
