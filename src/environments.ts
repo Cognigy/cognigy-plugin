@@ -18,6 +18,7 @@ import { CognigyApiClient } from "./api/client.js";
 import { loadConfigForEnvironment, type Config } from "./config.js";
 import {
   DEFAULT_ENVIRONMENT,
+  ENVS_COMMAND,
   findEnvironmentName,
   readEnvironmentsFile,
   reservedNameIn,
@@ -122,7 +123,8 @@ export class Environments {
       // Never fall back to the default: the user meant to use the file, and a
       // silent fallback would aim the call at the wrong tenant.
       throw new EnvironmentError(
-        `${state.reason} Fix it with cognigy-envs in a terminal.`,
+        // The menu cannot open an unusable file either: the user fixes it by hand.
+        `${state.reason} Fix or delete that file, then try again.`,
       );
     }
     const file = state.state === "ok" ? state.file : {};
@@ -130,7 +132,7 @@ export class Environments {
     if (clash) {
       // Which one would "default" mean? Refuse rather than guess the tenant.
       throw new EnvironmentError(
-        `environments.json has an environment named "${clash}", but "${DEFAULT_ENVIRONMENT}" is reserved for the plugin's own login. Rename it with cognigy-envs in a terminal.`,
+        `environments.json has an environment named "${clash}", but "${DEFAULT_ENVIRONMENT}" is reserved for the plugin's own login. Rename it in a terminal with: ${ENVS_COMMAND}`,
       );
     }
     const multiple = Object.keys(file).length > 0;
@@ -176,7 +178,7 @@ export class Environments {
       throw new EnvironmentError(
         multiple
           ? `Unknown Cognigy environment "${wanted}". Configured: ${this.describe(file)}.`
-          : `No Cognigy environment "${wanted}" is configured. The user adds one in a terminal with cognigy-envs.`,
+          : `No Cognigy environment "${wanted}" is configured. The user adds one in a terminal with: ${ENVS_COMMAND}`,
       );
     }
     return {
