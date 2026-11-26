@@ -13,16 +13,13 @@ import {
   redactProxyUrl,
   resolveProxyForUrl,
 } from "../utils/proxy.js";
-import {
-  ACTOR_CONTEXT_HEADER,
-  getActorContextHeader,
-} from "../utils/actorContext.js";
+import { getActorContextHeaders } from "../utils/actorContext.js";
 
 export interface CognigyApiClientConfig {
   baseUrl: string;
   apiKey: string;
   /**
-   * Declare plugin-performed actions as `mcp-plugin` in Cognigy's audit events.
+   * Declare plugin-performed actions as `agent-plugin` in Cognigy's audit events.
    * Defaults to true; the `COGNIGY_DISABLE_AUDIT_ATTRIBUTION` env var turns it
    * off for anyone who does not want the plugin named in their audit log.
    */
@@ -208,9 +205,10 @@ export class CognigyApiClient {
         // including uploadFile's own headers object. Absent outside a tool
         // call, which leaves the request byte-identical to before.
         if (this.auditAttribution) {
-          const actorContext = getActorContextHeader();
-          if (actorContext) {
-            reqConfig.headers[ACTOR_CONTEXT_HEADER] = actorContext;
+          for (const [name, value] of Object.entries(
+            getActorContextHeaders() ?? {},
+          )) {
+            reqConfig.headers[name] = value;
           }
         }
         logger.debug(

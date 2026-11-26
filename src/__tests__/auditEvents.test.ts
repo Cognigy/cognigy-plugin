@@ -93,7 +93,7 @@ describe("audit events", () => {
 
     await h.handleToolCall("list_resources", {
       resourceType: "audit_event",
-      actor: ["mcp-plugin"],
+      actor: ["agent-plugin"],
       eventType: ["create", "patch"],
       user: "someone@example.com",
       sort: "timestamp:desc",
@@ -105,7 +105,7 @@ describe("audit events", () => {
         limit: 5,
         skip: 0,
         sort: "timestamp:desc",
-        actor: ["mcp-plugin"],
+        actor: ["agent-plugin"],
         // The platform's query param is `type`; `eventType` is only the tool's
         // argument name, so it cannot be confused with `resourceType`.
         type: ["create", "patch"],
@@ -119,7 +119,7 @@ describe("audit events", () => {
       items: [
         rawEvent({
           performedBy: {
-            actor: "mcp-plugin",
+            actor: "agent-plugin",
             taskId: "task-1",
             sessionId: "session-1",
           },
@@ -130,11 +130,11 @@ describe("audit events", () => {
 
     const result = await h.handleToolCall("list_resources", {
       resourceType: "audit_event",
-      actor: ["mcp-plugin"],
+      actor: ["agent-plugin"],
     });
 
     expect(result.items[0].performedBy).toEqual({
-      actor: "mcp-plugin",
+      actor: "agent-plugin",
       taskId: "task-1",
       sessionId: "session-1",
     });
@@ -173,6 +173,8 @@ describe("audit events", () => {
     error.status = 400;
     api.get.mockRejectedValueOnce(error as never).mockResolvedValueOnce({
       items: [
+        // A 2026.17.0–2026.21.x platform stores the old actor names, which
+        // still count as today's.
         rawEvent({ performedBy: { actor: "mcp-plugin" } }),
         rawEvent({
           _id: "60d5ec49f1a2c8b1a4e0f0c1",
@@ -187,7 +189,7 @@ describe("audit events", () => {
 
     const result = await h.handleToolCall("list_resources", {
       resourceType: "audit_event",
-      actor: ["mcp-plugin"],
+      actor: ["agent-plugin"],
     });
 
     expect(result.items).toHaveLength(1);
@@ -254,7 +256,7 @@ describe("audit events", () => {
     await expect(
       h.handleToolCall("list_resources", {
         resourceType: "audit_event",
-        actor: ["mcp-plugin"],
+        actor: ["agent-plugin"],
         sort: "nope:desc",
       }),
     ).rejects.toThrow(/Field 'sort' is invalid/);

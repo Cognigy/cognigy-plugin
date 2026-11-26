@@ -17,7 +17,7 @@ export interface Config {
   serverVersion: string;
   logLevel: "debug" | "info" | "warn" | "error";
   /**
-   * Whether to declare plugin-performed actions as the `mcp-plugin` actor in
+   * Whether to declare plugin-performed actions as the `agent-plugin` actor in
    * Cognigy's audit events (see utils/actorContext.ts). On by default.
    */
   auditAttribution: boolean;

@@ -292,13 +292,20 @@ export const talkToAgentSchema = z
     path: ["projectId"],
   });
 
-/** Actor values Cognigy records in `auditEvent.performedBy.actor`. */
+/** Actor values Cognigy records in `auditEvent.performedBy.actor` (2026.22.0+). */
 export const AUDIT_ACTORS = [
   "human",
-  "ask-ai",
-  "mcp-plugin",
+  "ai-assist",
+  "agent-plugin",
   "system",
+  "api-key",
 ] as const;
+
+/** Names events stored before Cognigy 2026.22.0 carry, mapped to today's. */
+export const LEGACY_AUDIT_ACTORS: Record<string, string> = {
+  "mcp-plugin": "agent-plugin",
+  "ask-ai": "ai-assist",
+};
 
 /** Audit event operation types (`auditEvent.type`). */
 export const AUDIT_EVENT_TYPES = [

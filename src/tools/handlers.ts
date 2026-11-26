@@ -4868,7 +4868,8 @@ export class ToolHandlers {
           total = res.total;
         } catch (error: any) {
           // A 400 while either filter is set is most likely a platform older
-          // than 2026.17.0 rejecting the repeatable actor[]/type[] params.
+          // than 2026.17.0 rejecting the repeatable actor[]/type[] params, or
+          // one older than 2026.22.0 rejecting today's actor names.
           // Recover by doing what the alternative would only have *told* the
           // caller to do — refetch without the filters and apply them here —
           // rather than sniffing the free-text error message, which misfires
@@ -4885,12 +4886,18 @@ export class ToolHandlers {
               throw error;
             }
             const raw = retried?.items ?? retried;
-            items = (Array.isArray(raw) ? raw : []).filter(
-              (e: any) =>
-                // `performedBy` is absent on human-performed events.
-                (!actor || actor.includes(e?.performedBy?.actor ?? "human")) &&
-                (!eventType || eventType.includes(e?.type)),
-            );
+            items = (Array.isArray(raw) ? raw : []).filter((e: any) => {
+              // `performedBy` is absent on human-performed events, and events
+              // stored before 2026.22.0 carry the old actor names.
+              const stored = e?.performedBy?.actor ?? "human";
+              return (
+                (!actor ||
+                  (actor as readonly string[]).includes(
+                    schemas.LEGACY_AUDIT_ACTORS[stored] ?? stored,
+                  )) &&
+                (!eventType || eventType.includes(e?.type))
+              );
+            });
             total = items.length;
             filteredClientSide = true;
             break;
@@ -5100,7 +5107,7 @@ export class ToolHandlers {
     if (filteredClientSide) {
       return withHints(result, {
         warning:
-          "actor / eventType were applied by this plugin, not by the platform: this Cognigy version rejected the actor[]/type[] query filters, which need 2026.17.0 or newer.",
+          "actor / eventType were applied by this plugin, not by the platform: this Cognigy version rejected the actor[]/type[] query filters, which need 2026.17.0 or newer (these actor names 2026.22.0).",
         action:
           "Only the requested page was fetched and then filtered, so `total` counts matches within that page, not across the whole audit log. Raise `limit` or page through with `skip` to see more.",
       });

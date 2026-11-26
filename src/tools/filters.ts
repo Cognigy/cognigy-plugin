@@ -150,7 +150,7 @@ export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
   // Audit events are verbose and mostly opaque ids. `performedBy` is the point
   // of this view — it is absent on human-performed events (the platform only
   // stores it for non-human actors), so a missing key means "a person did
-  // this", and `mcp-plugin` means this plugin did.
+  // this", and `agent-plugin` (`mcp-plugin` before 2026.22.0) means this plugin did.
   audit_event: (r) => {
     // The live API returns the modification chain as `chain`, even though the
     // REST docs name the field `modifiedResources` — accept either. `chain`

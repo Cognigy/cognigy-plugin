@@ -130,8 +130,9 @@ test mode, and the user has accepted the billing.
   one is the current user — compare it to the `id` from `user`/`me`. List
   responses omit them; read them with get_resource { ..., raw: true }.
 - Audit events answer "what did the plugin change?" / "who changed what?":
-  list_resources { resourceType: "audit_event", actor: ["mcp-plugin"], sort: "timestamp:desc" }
-  lists this plugin's changes; `actor: ["human"]` the ones people made by hand. It is
+  list_resources { resourceType: "audit_event", actor: ["agent-plugin"], sort: "timestamp:desc" }
+  lists this plugin's changes (events stored before Cognigy 2026.22.0 say `mcp-plugin`);
+  `actor: ["human"]` the ones people made by hand, `["api-key"]` other API-key calls. It is
   organisation-scoped (no projectId) and needs Cognigy 2026.17.0+ plus an API key with
   Admin Center access. `performedBy` is set only for non-human actors — an event without
   it was performed by a person. On older platforms the `actor` / `eventType` filters are

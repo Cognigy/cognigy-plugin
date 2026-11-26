@@ -405,7 +405,7 @@ export const tools: ToolDefinition[] = [
             enum: [...AUDIT_ACTORS],
           },
           description:
-            "audit_event only: who performed the action. 'mcp-plugin' is this plugin, 'ask-ai' the Cognigy Ask AI agent, 'human' a person in the UI or API. Filtered server-side on Cognigy 2026.17.0+, otherwise on the fetched page.",
+            "audit_event only: who performed the action. 'agent-plugin' is this plugin, 'ai-assist' Cognigy AI Assist, 'api-key' an unattributed API-key call, 'human' a person. Events stored before Cognigy 2026.22.0 say 'mcp-plugin' / 'ask-ai'.",
         },
         eventType: {
           type: "array",

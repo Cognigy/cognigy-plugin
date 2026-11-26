@@ -126,9 +126,9 @@ A value that arrives as an unexpanded `${...}` placeholder counts as missing. Ho
 
 ### Audit attribution
 
-Everything this plugin changes is recorded in **Admin Center → Audit Events** with `performedBy.actor = "mcp-plugin"`, so plugin-made changes are distinguishable from ones people made by hand (which carry no `performedBy`). Each MCP tool call gets its own `taskId` and each engine run its own `sessionId`, so the writes of one tool call group together.
+Everything this plugin changes is recorded in **Admin Center → Audit Events** with `performedBy.actor = "agent-plugin"` (`"mcp-plugin"` on Cognigy 2026.17.0–2026.21.x), so plugin-made changes are distinguishable from ones people made by hand (which carry no `performedBy`) and from other API-key calls (`"api-key"`). Each MCP tool call gets its own `taskId` and each engine run its own `sessionId`, so the writes of one tool call group together.
 
-Requires Cognigy.AI 2026.17.0 or newer; older versions ignore the attribution and record the action normally. The "Performed by" column in the UI is gated behind the platform's `FEATURE_ENABLE_PLATFORM_AGENT_MFE` flag, but the attribution is always recorded and always readable through `list_resources { resourceType: "audit_event", actor: ["mcp-plugin"] }`.
+Requires Cognigy.AI 2026.17.0 or newer; older versions ignore the attribution and record the action normally. The "Performed by" column in the UI is gated behind the platform's `FEATURE_ENABLE_PLATFORM_AGENT_MFE` flag, but the attribution is always recorded and always readable through `list_resources { resourceType: "audit_event", actor: ["agent-plugin"] }`.
 
 Set `COGNIGY_DISABLE_AUDIT_ATTRIBUTION=1` to opt out; plugin actions are then recorded like any other API action.
 
