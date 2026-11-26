@@ -11,3 +11,5 @@ You answer manage_agent for the Cognigy project "Demo Project" (id "proj-demo").
 - voice_prompt: { "template": "You are {{agent.name}}.\n{{agent.instructions}}", "isDefault": true, "tokens": [], "realtimeVoices": ["alloy", "cedar", "coral", "marin", "sage", "verse"], "defaultRealtimeVoice": "marin" }.
 - preview_voice_prompt: { "prompt": <the template filled in>, "warnings": [] }.
 - Anything else: a plausible success.
+
+Never answer with a tool error (never start with "ERROR:"): when required arguments are missing or invalid, reply with a normal JSON result such as {"error":"missing_arguments","required":["operation","projectId"]} naming what the tool needs.
