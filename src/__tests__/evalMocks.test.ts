@@ -16,10 +16,41 @@ describe("plugin eval mocks", () => {
     expect(saved).toEqual(JSON.parse(JSON.stringify({ tools })));
   });
 
-  it("_server.md answers every tool", () => {
+  it("every tool is answered by _server.md or its own <tool>.md", () => {
     const server = readFileSync(join(mocksDir, "_server.md"), "utf8");
-    const listed = server.match(/tools:\s*\[([^\]]*)\]/)![1].match(/[\w]+/g);
-    expect(listed!.sort()).toEqual(tools.map((t) => t.name).sort());
+    const listed = server.match(/tools:\s*\[([^\]]*)\]/)![1].match(/[\w]+/g)!;
+    const fixed = readdirSync(mocksDir)
+      .filter((f) => f.endsWith(".md") && f !== "_server.md")
+      .map((f) => f.slice(0, -3));
+    // A <tool>.md overrides _server.md, so listing it in both hides a dead entry.
+    expect(listed.filter((t) => fixed.includes(t))).toEqual([]);
+    expect([...listed, ...fixed].sort()).toEqual(
+      tools.map((t) => t.name).sort(),
+    );
+  });
+});
+
+describe("fixture-backed eval mocks", () => {
+  // A {{file:fixtures/list_resources/{input.resourceType}.json}} mock turns a
+  // valid resourceType without its file into a tool error.
+  const evalsDir = join(process.cwd(), "plugin/evals");
+  const fixtureDirs = readdirSync(evalsDir, { withFileTypes: true })
+    .filter((suite) => suite.isDirectory())
+    .flatMap((suite) =>
+      readdirSync(join(evalsDir, suite.name)).map((c) =>
+        join(evalsDir, suite.name, c, "mocks/platform/fixtures/list_resources"),
+      ),
+    )
+    .filter((dir) => existsSync(dir));
+  const resourceTypes = (
+    tools.find((t) => t.name === "list_resources")!.inputSchema.properties as {
+      resourceType: { enum: string[] };
+    }
+  ).resourceType.enum;
+
+  it.each(fixtureDirs)("%s has a file for every resourceType", (dir) => {
+    const files = readdirSync(dir).map((f) => f.replace(/\.json$/, ""));
+    expect(resourceTypes.filter((t) => !files.includes(t))).toEqual([]);
   });
 });
 

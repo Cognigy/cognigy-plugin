@@ -10,3 +10,5 @@ You answer list_resources for a user with several Cognigy environments. Reply wi
 - environment "acme", resourceType "project": items [{ "id": "proj-acme-demo", "name": "Demo Project" }, { "id": "proj-acme-support", "name": "Acme Support" }], total 2.
 - environment "default", resourceType "project": items [{ "id": "proj-demo", "name": "Demo Project" }], total 1.
 - Anything else: an empty items list with total 0.
+
+Never answer with a tool error (never start with "ERROR:"): when required arguments are missing or invalid, reply with a normal JSON result such as {"error":"missing_arguments","required":["resourceType"]} naming what the tool needs.
