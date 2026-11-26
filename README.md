@@ -155,10 +155,10 @@ The optional variables below can be set in the MCP server `env` if you need to o
 
 Everything this plugin changes is recorded in **Admin Center → Audit Events**:
 
-- **Marked as the plugin's.** Plugin changes carry `performedBy.actor = "mcp-plugin"`. Changes people make by hand carry no `performedBy`.
+- **Marked as the plugin's.** Plugin changes carry `performedBy.actor = "agent-plugin"` (`"mcp-plugin"` on Cognigy 2026.17.0–2026.21.x). Other API-key calls carry `"api-key"` when recorded on 2026.21.0+. API-key writes recorded before that carry no `performedBy`, like changes people make by hand, even after the tenant is upgraded, so a missing `performedBy` alone does not prove a person made the change.
 - **Grouped per tool call.** Each MCP tool call gets its own `taskId` and each engine run its own `sessionId`, so the writes of one tool call group together.
 - **Needs Cognigy.AI 2026.17.0 or newer.** Older versions ignore the attribution and record the action normally.
-- **Readable without the UI column.** The "Performed by" column is behind the platform's `FEATURE_ENABLE_PLATFORM_AGENT_MFE` flag, but the attribution is always recorded and readable through `list_resources { resourceType: "audit_event", actor: ["mcp-plugin"] }`.
+- **Readable without the UI column.** The "Performed by" column is behind the platform's `FEATURE_ENABLE_PLATFORM_AGENT_MFE` flag, but the attribution is always recorded and readable through `list_resources { resourceType: "audit_event", actor: ["agent-plugin"] }`.
 - **Opt out** with `COGNIGY_DISABLE_AUDIT_ATTRIBUTION=1`. Plugin actions are then recorded like any other API action.
 
 ### Corporate proxies

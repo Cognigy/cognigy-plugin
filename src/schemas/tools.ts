@@ -292,13 +292,20 @@ export const talkToAgentSchema = z
     path: ["projectId"],
   });
 
-/** Actor values Cognigy records in `auditEvent.performedBy.actor`. */
+/** Actor values Cognigy records in `auditEvent.performedBy.actor` (2026.22.0+). */
 export const AUDIT_ACTORS = [
   "human",
-  "ask-ai",
-  "mcp-plugin",
+  "ai-assist",
+  "agent-plugin",
   "system",
+  "api-key",
 ] as const;
+
+/** Names events stored before Cognigy 2026.22.0 carry, mapped to today's. */
+export const LEGACY_AUDIT_ACTORS: Record<string, string> = {
+  "mcp-plugin": "agent-plugin",
+  "ask-ai": "ai-assist",
+};
 
 /** Audit event operation types (`auditEvent.type`). */
 export const AUDIT_EVENT_TYPES = [
@@ -350,7 +357,16 @@ export const listResourcesSchema = z
     // params (actor[]=…), which the platform supports from 2026.17.0 onwards.
     // Named `eventType` rather than `type` so it cannot be confused with
     // `resourceType` at the call site.
-    actor: z.array(z.enum(AUDIT_ACTORS)).nonempty().optional(),
+    // The pre-2026.22.0 names are still accepted and mapped to today's.
+    actor: z
+      .array(
+        z.preprocess(
+          (v) => LEGACY_AUDIT_ACTORS[v as string] ?? v,
+          z.enum(AUDIT_ACTORS),
+        ),
+      )
+      .nonempty()
+      .optional(),
     eventType: z.array(z.enum(AUDIT_EVENT_TYPES)).nonempty().optional(),
     user: z.string().min(1).optional(),
     // log filters: one conversation (sessionId) or one turn (traceId).

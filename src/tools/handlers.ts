@@ -4707,6 +4707,11 @@ export class ToolHandlers {
     // Set when the platform rejected the audit_event filters and this plugin
     // applied them instead, so the response can say so.
     let filteredClientSide = false;
+    // Set when the platform filtered by a renamed actor, so events stored
+    // under its old name were left out.
+    let legacyActorsMissed = false;
+    // Set when an empty filtered page left the platform's total unchecked.
+    let unverifiedTotal = false;
     let logHints: ResponseHints | undefined;
 
     switch (resourceType) {
@@ -4853,29 +4858,81 @@ export class ToolHandlers {
       case "audit_event": {
         // Organisation-scoped, so no projectId. `actor` / `type` are sent as
         // repeatable params (axios serialises arrays as `actor[]=…`), matching
-        // what GET /v2.0/auditevents documents. Both filters need the platform
-        // at 2026.17.0 or newer; the catch below covers older ones.
+        // what GET /v2.0/auditevents documents. Platforms before 2026.17.0
+        // have neither filter, and every version silently drops actor names it
+        // does not know (2026.17.0–2026.21.x know `mcp-plugin` / `ask-ai`,
+        // 2026.22.0+ today's names; `api-key` exists from 2026.21.0), applying
+        // no actor filter when none is left. So each renamed actor is sent in
+        // both spellings, and the returned page is checked: anything outside
+        // the filters means the platform did not apply them, and they are
+        // applied here instead.
+        // ponytail: a page that matches only by chance keeps the platform's
+        // unfiltered total (realistic only for eventType before 2026.17.0);
+        // GET / returns the release version if that ever needs closing.
+        // Selecting every actor is the same as none (2026.22.0+ skips the
+        // filter for it), and must not warn about missed old names.
+        const wanted =
+          actor && new Set(actor).size < schemas.AUDIT_ACTORS.length
+            ? (actor as readonly string[])
+            : undefined;
+        const legacy = Object.keys(schemas.LEGACY_AUDIT_ACTORS);
+        const sentActors = wanted && [
+          ...wanted,
+          ...legacy.filter((old) =>
+            wanted.includes(schemas.LEGACY_AUDIT_ACTORS[old]),
+          ),
+        ];
+        const matches = (e: any) => {
+          // `performedBy` is absent on human-performed events, and events
+          // stored before 2026.22.0 carry the old actor names.
+          const stored = e?.performedBy?.actor ?? "human";
+          return (
+            (!wanted ||
+              wanted.includes(schemas.LEGACY_AUDIT_ACTORS[stored] ?? stored)) &&
+            (!eventType || eventType.includes(e?.type))
+          );
+        };
+        const filterHere = (raw: any) =>
+          (Array.isArray(raw) ? raw : []).filter(matches);
         try {
           const res: any = await this.apiClient.get("/v2.0/auditevents", {
             params: {
               ...paging,
-              ...(actor ? { actor } : {}),
+              ...(sentActors ? { actor: sentActors } : {}),
               ...(eventType ? { type: eventType } : {}),
               ...(user ? { user } : {}),
             },
           });
           items = res.items ?? res;
           total = res.total;
+          if (
+            (wanted || eventType) &&
+            !(Array.isArray(items) && items.every(matches))
+          ) {
+            items = filterHere(items);
+            total = items.length;
+            filteredClientSide = true;
+          } else {
+            // Past the last record an empty page proves nothing: the total may
+            // be the whole audit log's.
+            unverifiedTotal = !!(
+              (wanted || eventType) &&
+              !items.length &&
+              total
+            );
+            // On 2026.22.0+ the filter cannot match events stored under the
+            // old names. ponytail: drop with LEGACY_AUDIT_ACTORS.
+            legacyActorsMissed = !!wanted?.some((a) =>
+              Object.values(schemas.LEGACY_AUDIT_ACTORS).includes(a),
+            );
+          }
         } catch (error: any) {
-          // A 400 while either filter is set is most likely a platform older
-          // than 2026.17.0 rejecting the repeatable actor[]/type[] params.
-          // Recover by doing what the alternative would only have *told* the
-          // caller to do — refetch without the filters and apply them here —
-          // rather than sniffing the free-text error message, which misfires
-          // both ways (a rejected `sort` field reads as "type", and an old
-          // platform's 400 need not name either filter). If the refetch fails
-          // too, the 400 was about something else and the original stands.
-          if (error?.status === 400 && (actor || eventType)) {
+          // Kept for a platform that answers the filters with a 400 instead of
+          // ignoring them. Recover by refetching without the filters and
+          // applying them here, rather than sniffing the free-text error
+          // message, which misfires both ways. If the refetch fails too, the
+          // 400 was about something else and the original stands.
+          if (error?.status === 400 && (sentActors || eventType)) {
             let retried: any;
             try {
               retried = await this.apiClient.get("/v2.0/auditevents", {
@@ -4884,13 +4941,7 @@ export class ToolHandlers {
             } catch {
               throw error;
             }
-            const raw = retried?.items ?? retried;
-            items = (Array.isArray(raw) ? raw : []).filter(
-              (e: any) =>
-                // `performedBy` is absent on human-performed events.
-                (!actor || actor.includes(e?.performedBy?.actor ?? "human")) &&
-                (!eventType || eventType.includes(e?.type)),
-            );
+            items = filterHere(retried?.items ?? retried);
             total = items.length;
             filteredClientSide = true;
             break;
@@ -5097,14 +5148,37 @@ export class ToolHandlers {
 
     if (logHints) return withHints(result, logHints);
 
+    const legacyHints = {
+      warning:
+        "On Cognigy 2026.22.0+ the platform's actor filter cannot match events stored before the tenant's upgrade, which name the actor 'mcp-plugin' / 'ask-ai', so those may be missing from this list.",
+      action:
+        "To include them, repeat the call without `actor` and check each item's `performedBy.actor`.",
+    };
+
+    if (unverifiedTotal) {
+      delete result.total;
+      return withHints(result, {
+        warning: [
+          "This page is empty, so this plugin could not check that the platform applied the actor / eventType filters, and its total (possibly the whole audit log) is left out.",
+          ...(legacyActorsMissed ? [legacyHints.warning] : []),
+        ].join(" "),
+        action: [
+          "There are no more matches from this skip on. Use `total` from an earlier page, or repeat with skip 0.",
+          ...(legacyActorsMissed ? [legacyHints.action] : []),
+        ].join(" "),
+      });
+    }
+
     if (filteredClientSide) {
       return withHints(result, {
         warning:
-          "actor / eventType were applied by this plugin, not by the platform: this Cognigy version rejected the actor[]/type[] query filters, which need 2026.17.0 or newer.",
+          "actor / eventType were applied by this plugin, not by the platform: this Cognigy version did not apply them (the filters need 2026.17.0 or newer, the 'api-key' actor 2026.21.0).",
         action:
           "Only the requested page was fetched and then filtered, so `total` counts matches within that page, not across the whole audit log. Raise `limit` or page through with `skip` to see more.",
       });
     }
+
+    if (legacyActorsMissed) return withHints(result, legacyHints);
 
     if (sort && resourceType === "tool") {
       return withHints(result, {
