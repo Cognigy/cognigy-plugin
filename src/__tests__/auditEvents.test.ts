@@ -105,7 +105,8 @@ describe("audit events", () => {
         limit: 5,
         skip: 0,
         sort: "timestamp:desc",
-        actor: ["agent-plugin"],
+        // Both spellings: each platform version ignores the one it does not know.
+        actor: ["agent-plugin", "mcp-plugin"],
         // The platform's query param is `type`; `eventType` is only the tool's
         // argument name, so it cannot be confused with `resourceType`.
         type: ["create", "patch"],
@@ -162,10 +163,87 @@ describe("audit events", () => {
     ]);
   });
 
-  // A platform older than 2026.17.0 rejects the repeatable actor[]/type[]
-  // params. Detection deliberately does not read the error message — which
-  // misfires both ways — so the recovery has to be behavioural: refetch
-  // unfiltered and apply the filters here.
+  // Every platform version silently drops actor names it does not know and
+  // then applies no actor filter, so a 200 can hold unrelated events.
+  it("filters the page here when the platform ignored the actor filter", async () => {
+    api.get.mockResolvedValue({
+      items: [
+        rawEvent(),
+        rawEvent({
+          _id: "60d5ec49f1a2c8b1a4e0f0c5",
+          performedBy: { actor: "agent-plugin" },
+        }),
+        rawEvent({
+          _id: "60d5ec49f1a2c8b1a4e0f0c6",
+          performedBy: { actor: "system" },
+        }),
+      ],
+      total: 3,
+    } as never);
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "audit_event",
+      actor: ["agent-plugin"],
+    });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].performedBy.actor).toBe("agent-plugin");
+    expect(result.total).toBe(1);
+    expect(result._hints.warning).toContain("did not apply them");
+  });
+
+  it("keeps the platform's total when 2026.17–2026.21 filtered by the old name", async () => {
+    api.get.mockResolvedValue({
+      items: [rawEvent({ performedBy: { actor: "mcp-plugin" } })],
+      total: 7,
+    } as never);
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "audit_event",
+      actor: ["agent-plugin"],
+    });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.total).toBe(7);
+    expect(result._hints.warning).not.toContain("did not apply them");
+  });
+
+  it("sends no actor filter and no warning when every actor is selected", async () => {
+    api.get.mockResolvedValue({
+      items: [rawEvent({ performedBy: { actor: "mcp-plugin" } })],
+      total: 1,
+    } as never);
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "audit_event",
+      actor: ["human", "ai-assist", "agent-plugin", "system", "api-key"],
+    });
+
+    expect(api.get.mock.calls[0][1]).toMatchObject({
+      params: expect.not.objectContaining({ actor: expect.anything() }),
+    });
+    expect(result.items).toHaveLength(1);
+    expect(result._hints).toBeUndefined();
+  });
+
+  it("accepts the pre-2026.22.0 actor names as input", async () => {
+    api.get.mockResolvedValue({ items: [], total: 0 } as never);
+
+    await h.handleToolCall("list_resources", {
+      resourceType: "audit_event",
+      actor: ["mcp-plugin", "ask-ai"],
+    });
+
+    expect(api.get.mock.calls[0][1]).toMatchObject({
+      params: {
+        actor: ["agent-plugin", "ai-assist", "mcp-plugin", "ask-ai"],
+      },
+    });
+  });
+
+  // A platform that answers the filters with a 400. Detection deliberately
+  // does not read the error message — which misfires both ways — so the
+  // recovery is behavioural: refetch unfiltered and apply the filters here.
   it("warns that a server-side renamed-actor filter misses events stored under the old name", async () => {
     // 2026.22.0+ accepts `agent-plugin` but cannot match stored `mcp-plugin`.
     api.get.mockResolvedValue({
