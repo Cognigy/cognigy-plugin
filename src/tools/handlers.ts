@@ -4707,6 +4707,9 @@ export class ToolHandlers {
     // Set when the platform rejected the audit_event filters and this plugin
     // applied them instead, so the response can say so.
     let filteredClientSide = false;
+    // Set when the platform filtered by a renamed actor, so events stored
+    // under its old name were left out.
+    let legacyActorsMissed = false;
     let logHints: ResponseHints | undefined;
 
     switch (resourceType) {
@@ -4866,6 +4869,12 @@ export class ToolHandlers {
           });
           items = res.items ?? res;
           total = res.total;
+          // A platform that accepted today's names is 2026.22.0+, and its
+          // filter cannot match events stored under the old ones.
+          // ponytail: drop with LEGACY_AUDIT_ACTORS.
+          legacyActorsMissed = !!actor?.some((a) =>
+            Object.values(schemas.LEGACY_AUDIT_ACTORS).includes(a),
+          );
         } catch (error: any) {
           // A 400 while either filter is set is most likely a platform older
           // than 2026.17.0 rejecting the repeatable actor[]/type[] params, or
@@ -5110,6 +5119,15 @@ export class ToolHandlers {
           "actor / eventType were applied by this plugin, not by the platform: this Cognigy version rejected the actor[]/type[] query filters, which need 2026.17.0 or newer (these actor names 2026.22.0).",
         action:
           "Only the requested page was fetched and then filtered, so `total` counts matches within that page, not across the whole audit log. Raise `limit` or page through with `skip` to see more.",
+      });
+    }
+
+    if (legacyActorsMissed) {
+      return withHints(result, {
+        warning:
+          "Events stored before this tenant moved to Cognigy 2026.22.0 name the actor 'mcp-plugin' / 'ask-ai'. The platform's actor filter cannot match those, so they are not in this list.",
+        action:
+          "To include them, repeat the call without `actor` and check each item's `performedBy.actor`.",
       });
     }
 

@@ -166,6 +166,36 @@ describe("audit events", () => {
   // params. Detection deliberately does not read the error message — which
   // misfires both ways — so the recovery has to be behavioural: refetch
   // unfiltered and apply the filters here.
+  it("warns that a server-side renamed-actor filter misses events stored under the old name", async () => {
+    // 2026.22.0+ accepts `agent-plugin` but cannot match stored `mcp-plugin`.
+    api.get.mockResolvedValue({
+      items: [
+        rawEvent({ performedBy: { actor: "agent-plugin", taskId: "t" } }),
+      ],
+      total: 1,
+    } as never);
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "audit_event",
+      actor: ["agent-plugin"],
+    });
+
+    expect(result.total).toBe(1);
+    expect(result._hints.warning).toContain("'mcp-plugin'");
+    expect(result._hints.action).toContain("without `actor`");
+  });
+
+  it("does not warn when no renamed actor was filtered", async () => {
+    api.get.mockResolvedValue({ items: [rawEvent()], total: 1 } as never);
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "audit_event",
+      actor: ["human"],
+    });
+
+    expect(result._hints).toBeUndefined();
+  });
+
   it("filters client-side when the platform rejects the array filters", async () => {
     const error: any = new Error(
       "Validation failed. Field 'actor' is not allowed.",
