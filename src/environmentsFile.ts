@@ -29,6 +29,14 @@ export const ENVIRONMENTS_FILE = join(USER_CONFIG_DIR, "environments.json");
 /** The name for the plugin's own credentials (keychain or config.json). */
 export const DEFAULT_ENVIRONMENT = "default";
 
+/**
+ * How users open the cognigy-envs menu: through npx, so it always runs the
+ * latest engine and needs no global install. Every message that sends the user
+ * to the menu shows this line.
+ */
+export const ENVS_COMMAND =
+  "npx -y -p @cognigy/plugin-engine@latest cognigy-envs";
+
 export interface EnvironmentEntry {
   apiBaseUrl: string;
   apiKey: string;

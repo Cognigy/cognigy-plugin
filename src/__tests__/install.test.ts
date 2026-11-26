@@ -35,10 +35,14 @@ import {
 } from "../install/desktopLauncher.js";
 import {
   detectClients,
+  offerEnvironments,
+  openEnvironmentsMenu,
   parseClientSelection,
   parseFlags,
   parseSubcommand,
+  type OfferEnvironmentsIo,
 } from "../setup.js";
+import { ENVS_COMMAND } from "../environmentsFile.js";
 import { isMainModule } from "../utils/cli.js";
 
 const tmpDirs: string[] = [];
@@ -501,5 +505,64 @@ describe("parseSubcommand", () => {
 
   it("returns an unknown non-flag word verbatim (so main can reject it)", () => {
     expect(parseSubcommand(["bogus"])).toEqual({ sub: "bogus", rest: [] });
+  });
+});
+
+describe("offerEnvironments", () => {
+  function fake(answer: string, menu: () => Promise<number> = async () => 0) {
+    let output = "";
+    let opened = 0;
+    const io: OfferEnvironmentsIo = {
+      ask: async () => answer,
+      write: (text) => {
+        output += text;
+      },
+      openMenu: () => {
+        opened++;
+        return menu();
+      },
+    };
+    return { io, output: () => output, opened: () => opened };
+  }
+
+  it("skips the menu on Enter and shows the line for later", async () => {
+    const t = fake("");
+    await offerEnvironments(t.io);
+    expect(t.opened()).toBe(0);
+    expect(t.output()).toContain(ENVS_COMMAND);
+  });
+
+  it("opens the menu on yes", async () => {
+    for (const answer of ["y", "Yes "]) {
+      const t = fake(answer);
+      await offerEnvironments(t.io);
+      expect(t.opened()).toBe(1);
+      expect(t.output()).not.toContain(ENVS_COMMAND);
+    }
+  });
+
+  it("opens the menu straight away from the client list's e key", async () => {
+    let asked = 0;
+    const t = fake("");
+    t.io.ask = async () => {
+      asked++;
+      return "";
+    };
+    await openEnvironmentsMenu(t.io);
+    expect(asked).toBe(0);
+    expect(t.opened()).toBe(1);
+    expect(t.output()).toBe("");
+  });
+
+  it("never fails the finished install when the menu does", async () => {
+    const broken = fake("y", async () => 1);
+    await offerEnvironments(broken.io);
+    expect(broken.output()).toContain(ENVS_COMMAND);
+
+    const cancelled = fake("y", async () => {
+      throw new Error("cancelled");
+    });
+    await expect(offerEnvironments(cancelled.io)).resolves.toBeUndefined();
+    expect(cancelled.output()).toContain("Nothing changed.");
   });
 });
