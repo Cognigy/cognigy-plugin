@@ -1,11 +1,11 @@
 {
-  "takenAt": "2026-11-26T14:29:40.091Z",
-  "commit": "0b96a48",
+  "takenAt": "2026-11-26T14:49:18.861Z",
+  "commit": "8e11b63",
   "claudeVersion": "2.1.330",
   "pluginVersion": "1.26.0",
   "cases": {
     "add-environment": {
-      "fingerprint": "3ab804f86cd2",
+      "fingerprint": "6debae7853cf",
       "score": 1,
       "graders": {
         "gives-the-npx-command": "3/3",
@@ -15,7 +15,7 @@
       }
     },
     "add-knowledge": {
-      "fingerprint": "5666e560652e",
+      "fingerprint": "0f20dedaf41e",
       "score": 1,
       "graders": {
         "calls-manage_knowledge": "3/3",
@@ -24,7 +24,7 @@
       }
     },
     "agent-voice-speech": {
-      "fingerprint": "043a410d6708",
+      "fingerprint": "e9ea8d467cc6",
       "score": 1,
       "graders": {
         "lists-speech-providers": "3/3",
@@ -37,7 +37,7 @@
       }
     },
     "build-agent": {
-      "fingerprint": "aa35f63e4120",
+      "fingerprint": "27e43f06e361",
       "score": 1,
       "graders": {
         "calls-create_ai_agent": "3/3",
@@ -46,7 +46,7 @@
       }
     },
     "deploy-webchat": {
-      "fingerprint": "42e276a39176",
+      "fingerprint": "7ca6f7172606",
       "score": 1,
       "graders": {
         "calls-manage_webchat": "3/3",
@@ -55,7 +55,7 @@
       }
     },
     "other-tenant": {
-      "fingerprint": "9defd2c1e691",
+      "fingerprint": "f5d18e35c72e",
       "score": 1,
       "graders": {
         "gives-the-npx-command": "3/3",
@@ -65,7 +65,7 @@
       }
     },
     "s2s-demo-reuse": {
-      "fingerprint": "d9b59194cfa7",
+      "fingerprint": "3548d0cb18c5",
       "score": 1,
       "graders": {
         "answers-in-s2s-terms": "3/3",
@@ -78,7 +78,7 @@
       }
     },
     "s2s-no-key": {
-      "fingerprint": "21c68d74a5c8",
+      "fingerprint": "033d8ca92344",
       "score": 1,
       "graders": {
         "asks-for-key": "3/3",
@@ -86,7 +86,7 @@
       }
     },
     "s2s-off": {
-      "fingerprint": "8c59c143db17",
+      "fingerprint": "388176643910",
       "score": 1,
       "graders": {
         "no-agent-create": "3/3",
@@ -97,7 +97,7 @@
       }
     },
     "unrelated-request": {
-      "fingerprint": "2b812e6361f3",
+      "fingerprint": "1c4be42dc4e2",
       "score": 1,
       "graders": {
         "answers-question": "3/3",
@@ -105,7 +105,7 @@
       }
     },
     "voice-agent-s2s-model": {
-      "fingerprint": "5726598d50cc",
+      "fingerprint": "c44237b2651e",
       "score": 1,
       "graders": {
         "creates-voice-agent": "3/3",
@@ -114,7 +114,7 @@
       }
     },
     "voice-agent-speech-offer": {
-      "fingerprint": "6db1ad69ff10",
+      "fingerprint": "1f2b81a82972",
       "score": 1,
       "graders": {
         "creates-voice-agent": "3/3",
@@ -124,7 +124,7 @@
       }
     },
     "voice-apply-fixes": {
-      "fingerprint": "3b560ff6b9b1",
+      "fingerprint": "9bf5241fabf8",
       "score": 1,
       "graders": {
         "checklist-loaded": "3/3",
@@ -136,7 +136,7 @@
       }
     },
     "voice-apply-fixes-agent": {
-      "fingerprint": "431b23072296",
+      "fingerprint": "ef4e94060d7e",
       "score": 1,
       "graders": {
         "checklist-loaded": "3/3",
@@ -148,7 +148,7 @@
       }
     },
     "voice-go-live": {
-      "fingerprint": "c3d08931084e",
+      "fingerprint": "3ff19c7bc07f",
       "score": 1,
       "graders": {
         "calls-audit_voice_agent": "3/3",
@@ -157,7 +157,7 @@
       }
     },
     "voice-go-live-agent": {
-      "fingerprint": "27f51364d015",
+      "fingerprint": "f2ca23daf861",
       "score": 1,
       "graders": {
         "audits-by-agentId": "3/3",
@@ -167,7 +167,7 @@
       }
     },
     "backup-gate": {
-      "fingerprint": "766f74d522d2",
+      "fingerprint": "e01fac457c18",
       "score": 1,
       "graders": {
         "asks-about-backup": "3/3",
@@ -175,7 +175,7 @@
       }
     },
     "compare-environments": {
-      "fingerprint": "58a4ff18e9d6",
+      "fingerprint": "70dd1ec8d7de",
       "score": 1,
       "graders": {
         "lists-acme": "3/3",
@@ -184,7 +184,7 @@
       }
     },
     "general-tool-type": {
-      "fingerprint": "f69344778f35",
+      "fingerprint": "525dddf0a760",
       "score": 1,
       "graders": {
         "calls-create_tool": "3/3",
@@ -193,7 +193,7 @@
       }
     },
     "list-projects": {
-      "fingerprint": "f8e0ca702722",
+      "fingerprint": "3b227af42b84",
       "score": 1,
       "graders": {
         "calls-list_resources": "3/3",
@@ -201,7 +201,7 @@
       }
     },
     "new-agent-default": {
-      "fingerprint": "e52b066b8477",
+      "fingerprint": "7c8870b66afa",
       "score": 1,
       "graders": {
         "calls-manage_agent": "3/3",
@@ -209,7 +209,7 @@
       }
     },
     "which-environment": {
-      "fingerprint": "43e1cb079dcb",
+      "fingerprint": "04964325df44",
       "score": 1,
       "graders": {
         "asks-which-environment": "3/3",
