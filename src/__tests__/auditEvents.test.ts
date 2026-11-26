@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach, jest } from "@jest/globals";
 
 import { CognigyApiClient } from "../api/client.js";
 import { ToolHandlers } from "../tools/handlers.js";
+import { tools } from "../tools/definitions.js";
 
 const EVENT_ID = "60d5ec49f1a2c8b1a4e0f0a1";
 
@@ -224,6 +225,40 @@ describe("audit events", () => {
     });
     expect(result.items).toHaveLength(1);
     expect(result._hints).toBeUndefined();
+  });
+
+  it("leaves out an unverifiable total on an empty page past the last record", async () => {
+    // 2026.20 ignores `api-key`, so the total is the whole audit log's.
+    api.get.mockResolvedValue({ items: [], total: 4 } as never);
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "audit_event",
+      actor: ["api-key"],
+      skip: 4,
+    });
+
+    expect(result.items).toEqual([]);
+    expect(result).not.toHaveProperty("total");
+    expect(result._hints.warning).toContain("page is empty");
+  });
+
+  it("keeps a zero total on an empty filtered page", async () => {
+    api.get.mockResolvedValue({ items: [], total: 0 } as never);
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "audit_event",
+      actor: ["human"],
+    });
+
+    expect(result.total).toBe(0);
+    expect(result._hints).toBeUndefined();
+  });
+
+  it("advertises the pre-2026.22.0 actor names in the tool schema", () => {
+    const listResources: any = tools.find((t) => t.name === "list_resources");
+    expect(listResources.inputSchema.properties.actor.items.enum).toEqual(
+      expect.arrayContaining(["agent-plugin", "mcp-plugin", "ask-ai"]),
+    );
   });
 
   it("accepts the pre-2026.22.0 actor names as input", async () => {

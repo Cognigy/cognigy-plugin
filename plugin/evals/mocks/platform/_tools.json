@@ -360,10 +360,12 @@
                 "ai-assist",
                 "agent-plugin",
                 "system",
-                "api-key"
+                "api-key",
+                "mcp-plugin",
+                "ask-ai"
               ]
             },
-            "description": "audit_event only: who performed the action. 'agent-plugin' is this plugin, 'ai-assist' Cognigy AI Assist, 'api-key' an unattributed API-key call, 'human' a person. Events stored before Cognigy 2026.22.0 say 'mcp-plugin' / 'ask-ai'."
+            "description": "audit_event only: who acted. 'agent-plugin' this plugin and 'ai-assist' AI Assist (before 2026.22.0 'mcp-plugin' / 'ask-ai'), 'api-key' other API-key calls, 'human' a person, or an API-key write before 2026.21.0."
           },
           "eventType": {
             "type": "array",

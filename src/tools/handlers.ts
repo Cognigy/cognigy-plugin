@@ -4710,6 +4710,8 @@ export class ToolHandlers {
     // Set when the platform filtered by a renamed actor, so events stored
     // under its old name were left out.
     let legacyActorsMissed = false;
+    // Set when an empty filtered page left the platform's total unchecked.
+    let unverifiedTotal = false;
     let logHints: ResponseHints | undefined;
 
     switch (resourceType) {
@@ -4865,7 +4867,8 @@ export class ToolHandlers {
         // the filters means the platform did not apply them, and they are
         // applied here instead.
         // ponytail: a page that matches only by chance keeps the platform's
-        // unfiltered total.
+        // unfiltered total (realistic only for eventType before 2026.17.0);
+        // GET / returns the release version if that ever needs closing.
         // Selecting every actor is the same as none (2026.22.0+ skips the
         // filter for it), and must not warn about missed old names.
         const wanted =
@@ -4909,6 +4912,10 @@ export class ToolHandlers {
             items = filterHere(items);
             total = items.length;
             filteredClientSide = true;
+          } else if ((wanted || eventType) && !items.length && total) {
+            // Past the last record an empty page proves nothing: the total may
+            // be the whole audit log's.
+            unverifiedTotal = true;
           } else {
             // On 2026.22.0+ the filter cannot match events stored under the
             // old names. ponytail: drop with LEGACY_AUDIT_ACTORS.
@@ -5137,6 +5144,16 @@ export class ToolHandlers {
     const result: any = { items: filtered, total: total ?? filtered.length };
 
     if (logHints) return withHints(result, logHints);
+
+    if (unverifiedTotal) {
+      delete result.total;
+      return withHints(result, {
+        warning:
+          "This page is empty, so this plugin could not check that the platform applied the actor / eventType filters, and its total (possibly the whole audit log) is left out.",
+        action:
+          "There are no more matches from this skip on. Use `total` from an earlier page, or repeat with skip 0.",
+      });
+    }
 
     if (filteredClientSide) {
       return withHints(result, {

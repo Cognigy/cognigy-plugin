@@ -4,6 +4,7 @@
 // never told about one it accepts).
 import {
   AUDIT_ACTORS,
+  LEGACY_AUDIT_ACTORS,
   AUDIT_EVENT_TYPES,
   BEDROCK_LOCATIONS,
   LOG_LEVELS,
@@ -402,10 +403,10 @@ export const tools: ToolDefinition[] = [
           minItems: 1,
           items: {
             type: "string",
-            enum: [...AUDIT_ACTORS],
+            enum: [...AUDIT_ACTORS, ...Object.keys(LEGACY_AUDIT_ACTORS)],
           },
           description:
-            "audit_event only: who performed the action. 'agent-plugin' is this plugin, 'ai-assist' Cognigy AI Assist, 'api-key' an unattributed API-key call, 'human' a person. Events stored before Cognigy 2026.22.0 say 'mcp-plugin' / 'ask-ai'.",
+            "audit_event only: who acted. 'agent-plugin' this plugin and 'ai-assist' AI Assist (before 2026.22.0 'mcp-plugin' / 'ask-ai'), 'api-key' other API-key calls, 'human' a person, or an API-key write before 2026.21.0.",
         },
         eventType: {
           type: "array",

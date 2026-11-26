@@ -132,13 +132,14 @@ test mode, and the user has accepted the billing.
 - Audit events answer "what did the plugin change?" / "who changed what?":
   list_resources { resourceType: "audit_event", actor: ["agent-plugin"], sort: "timestamp:desc" }
   lists this plugin's changes (events stored before Cognigy 2026.22.0 say `mcp-plugin`);
-  `actor: ["human"]` the ones with no attribution, `["api-key"]` other API-key calls (2026.21.0+). It is
+  `actor: ["human"]` the ones with no attribution, `["api-key"]` other API-key calls recorded on 2026.21.0+. It is
   organisation-scoped (no projectId) and needs Cognigy 2026.17.0+ plus an API key with
-  Admin Center access. `performedBy` is set only for non-human actors. On 2026.21.0+ an
-  event without it was performed by a person; before that, ordinary API-key calls carry
-  none either, so it does not prove a person made the change. When the platform does not
-  apply the `actor` / `eventType` filters, they are applied to the fetched page only (the
-  result says so, and `total` then counts that page).
+  Admin Center access. `performedBy` is set only for non-human actors. What counts is the
+  version the event was recorded on, not the tenant's version today: API-key writes
+  recorded before 2026.21.0 carry no `performedBy` either, also on a tenant upgraded
+  since, so an event without it proves a person only if it was recorded on 2026.21.0+.
+  When the platform does not apply the `actor` / `eventType` filters, they are applied
+  to the fetched page only (the result says so, and `total` then counts that page).
   get_resource { resourceType: "audit_event", id } returns one event with its attribution.
 
 ## Finding the most recently touched resource
