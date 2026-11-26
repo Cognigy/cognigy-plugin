@@ -1,6 +1,6 @@
 {
-  "takenAt": "2026-11-26T13:46:05.427Z",
-  "commit": "0e3f2fa",
+  "takenAt": "2026-11-26T14:13:21.271Z",
+  "commit": "f4e9a84",
   "claudeVersion": "2.1.330",
   "pluginVersion": "1.25.0",
   "cases": {
@@ -14,7 +14,7 @@
       }
     },
     "add-knowledge": {
-      "fingerprint": "389ad8c0463d",
+      "fingerprint": "5666e560652e",
       "score": 1,
       "graders": {
         "calls-manage_knowledge": "3/3",
@@ -23,7 +23,7 @@
       }
     },
     "agent-voice-speech": {
-      "fingerprint": "5f6e9b547612",
+      "fingerprint": "043a410d6708",
       "score": 1,
       "graders": {
         "lists-speech-providers": "3/3",
@@ -45,7 +45,7 @@
       }
     },
     "deploy-webchat": {
-      "fingerprint": "5cb9602060b4",
+      "fingerprint": "42e276a39176",
       "score": 1,
       "graders": {
         "calls-manage_webchat": "3/3",
@@ -86,7 +86,7 @@
       }
     },
     "unrelated-request": {
-      "fingerprint": "18882be5ebef",
+      "fingerprint": "2b812e6361f3",
       "score": 1,
       "graders": {
         "answers-question": "3/3",
@@ -94,7 +94,7 @@
       }
     },
     "voice-agent-s2s-model": {
-      "fingerprint": "0940270ff518",
+      "fingerprint": "5726598d50cc",
       "score": 1,
       "graders": {
         "creates-voice-agent": "3/3",
@@ -104,16 +104,16 @@
     },
     "voice-agent-speech-offer": {
       "fingerprint": "6db1ad69ff10",
-      "score": 0.92,
+      "score": 1,
       "graders": {
         "creates-voice-agent": "3/3",
-        "no-downgrade-elsewhere": "2/3",
+        "no-downgrade-elsewhere": "3/3",
         "no-new-model": "3/3",
         "offer-line": "3/3"
       }
     },
     "voice-apply-fixes": {
-      "fingerprint": "6fadc63d868c",
+      "fingerprint": "3b560ff6b9b1",
       "score": 1,
       "graders": {
         "checklist-loaded": "3/3",
@@ -125,7 +125,7 @@
       }
     },
     "voice-apply-fixes-agent": {
-      "fingerprint": "d287883036f7",
+      "fingerprint": "431b23072296",
       "score": 1,
       "graders": {
         "checklist-loaded": "3/3",
@@ -146,7 +146,7 @@
       }
     },
     "voice-go-live-agent": {
-      "fingerprint": "ddbd852335d1",
+      "fingerprint": "27f51364d015",
       "score": 1,
       "graders": {
         "audits-by-agentId": "3/3",
@@ -173,7 +173,7 @@
       }
     },
     "general-tool-type": {
-      "fingerprint": "9f1e3fef2196",
+      "fingerprint": "f69344778f35",
       "score": 1,
       "graders": {
         "calls-create_tool": "3/3",
