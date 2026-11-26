@@ -1,13 +1,14 @@
 {
-  "takenAt": "2026-11-26T14:13:21.271Z",
-  "commit": "f4e9a84",
+  "takenAt": "2026-11-26T14:29:40.091Z",
+  "commit": "0b96a48",
   "claudeVersion": "2.1.330",
-  "pluginVersion": "1.25.0",
+  "pluginVersion": "1.26.0",
   "cases": {
     "add-environment": {
-      "fingerprint": "07bc61dafd33",
+      "fingerprint": "3ab804f86cd2",
       "score": 1,
       "graders": {
+        "gives-the-npx-command": "3/3",
         "never-reads-the-environments-file": "3/3",
         "points-to-cognigy-envs": "3/3",
         "skill-fired": "3/3"
@@ -50,6 +51,16 @@
       "graders": {
         "calls-manage_webchat": "3/3",
         "gives-snippet": "3/3",
+        "skill-fired": "3/3"
+      }
+    },
+    "other-tenant": {
+      "fingerprint": "9defd2c1e691",
+      "score": 1,
+      "graders": {
+        "gives-the-npx-command": "3/3",
+        "never-reads-the-environments-file": "3/3",
+        "points-to-cognigy-envs": "3/3",
         "skill-fired": "3/3"
       }
     },
