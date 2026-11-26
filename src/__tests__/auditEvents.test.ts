@@ -242,6 +242,23 @@ describe("audit events", () => {
     expect(result._hints.warning).toContain("page is empty");
   });
 
+  it("keeps the old-name instruction on an empty last page", async () => {
+    // 2026.22: one agent-plugin event plus two older mcp-plugin ones; the
+    // platform's filter sees only the first, so skip 1 is empty.
+    api.get.mockResolvedValue({ items: [], total: 1 } as never);
+
+    const result = await h.handleToolCall("list_resources", {
+      resourceType: "audit_event",
+      actor: ["agent-plugin"],
+      skip: 1,
+    });
+
+    expect(result).not.toHaveProperty("total");
+    expect(result._hints.warning).toContain("page is empty");
+    expect(result._hints.warning).toContain("'mcp-plugin'");
+    expect(result._hints.action).toContain("without `actor`");
+  });
+
   it("keeps a zero total on an empty filtered page", async () => {
     api.get.mockResolvedValue({ items: [], total: 0 } as never);
 

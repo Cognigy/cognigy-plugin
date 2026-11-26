@@ -4912,11 +4912,14 @@ export class ToolHandlers {
             items = filterHere(items);
             total = items.length;
             filteredClientSide = true;
-          } else if ((wanted || eventType) && !items.length && total) {
+          } else {
             // Past the last record an empty page proves nothing: the total may
             // be the whole audit log's.
-            unverifiedTotal = true;
-          } else {
+            unverifiedTotal = !!(
+              (wanted || eventType) &&
+              !items.length &&
+              total
+            );
             // On 2026.22.0+ the filter cannot match events stored under the
             // old names. ponytail: drop with LEGACY_AUDIT_ACTORS.
             legacyActorsMissed = !!wanted?.some((a) =>
@@ -5145,13 +5148,24 @@ export class ToolHandlers {
 
     if (logHints) return withHints(result, logHints);
 
+    const legacyHints = {
+      warning:
+        "On Cognigy 2026.22.0+ the platform's actor filter cannot match events stored before the tenant's upgrade, which name the actor 'mcp-plugin' / 'ask-ai', so those may be missing from this list.",
+      action:
+        "To include them, repeat the call without `actor` and check each item's `performedBy.actor`.",
+    };
+
     if (unverifiedTotal) {
       delete result.total;
       return withHints(result, {
-        warning:
+        warning: [
           "This page is empty, so this plugin could not check that the platform applied the actor / eventType filters, and its total (possibly the whole audit log) is left out.",
-        action:
+          ...(legacyActorsMissed ? [legacyHints.warning] : []),
+        ].join(" "),
+        action: [
           "There are no more matches from this skip on. Use `total` from an earlier page, or repeat with skip 0.",
+          ...(legacyActorsMissed ? [legacyHints.action] : []),
+        ].join(" "),
       });
     }
 
@@ -5164,14 +5178,7 @@ export class ToolHandlers {
       });
     }
 
-    if (legacyActorsMissed) {
-      return withHints(result, {
-        warning:
-          "On Cognigy 2026.22.0+ the platform's actor filter cannot match events stored before the tenant's upgrade, which name the actor 'mcp-plugin' / 'ask-ai', so those may be missing from this list.",
-        action:
-          "To include them, repeat the call without `actor` and check each item's `performedBy.actor`.",
-      });
-    }
+    if (legacyActorsMissed) return withHints(result, legacyHints);
 
     if (sort && resourceType === "tool") {
       return withHints(result, {
