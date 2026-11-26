@@ -1,3 +1,9 @@
+## [1.25.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.24.0...v1.25.0) (2026-11-26)
+
+### Features
+
+* **logs:** read a project's Cognigy logs to debug agent test turns ([#85](https://github.com/Cognigy/cognigy-plugin/issues/85)) ([72af8f2](https://github.com/Cognigy/cognigy-plugin/commit/72af8f24e80432f020a7075a47e38127733c2156))
+
 ## [1.24.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.23.1...v1.24.0) (2026-11-17)
 
 ### Features
