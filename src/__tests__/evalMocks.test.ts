@@ -30,6 +30,30 @@ describe("plugin eval mocks", () => {
   });
 });
 
+describe("fixture-backed eval mocks", () => {
+  // A {{file:fixtures/list_resources/{input.resourceType}.json}} mock turns a
+  // valid resourceType without its file into a tool error.
+  const evalsDir = join(process.cwd(), "plugin/evals");
+  const fixtureDirs = readdirSync(evalsDir, { withFileTypes: true })
+    .filter((suite) => suite.isDirectory())
+    .flatMap((suite) =>
+      readdirSync(join(evalsDir, suite.name)).map((c) =>
+        join(evalsDir, suite.name, c, "mocks/platform/fixtures/list_resources"),
+      ),
+    )
+    .filter((dir) => existsSync(dir));
+  const resourceTypes = (
+    tools.find((t) => t.name === "list_resources")!.inputSchema.properties as {
+      resourceType: { enum: string[] };
+    }
+  ).resourceType.enum;
+
+  it.each(fixtureDirs)("%s has a file for every resourceType", (dir) => {
+    const files = readdirSync(dir).map((f) => f.replace(/\.json$/, ""));
+    expect(resourceTypes.filter((t) => !files.includes(t))).toEqual([]);
+  });
+});
+
 describe("multi-environment eval cases", () => {
   // Every case with its own tool list (MULTI_ENVIRONMENT_CASES in
   // scripts/gen-eval-tools.ts) carries the tools a user with extra environments
