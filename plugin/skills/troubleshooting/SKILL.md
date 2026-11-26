@@ -1,6 +1,6 @@
 ---
 name: troubleshooting
-description: "Use when a Cognigy agent returns empty responses, a tool call or create_ai_agent fails, a resource is not found, setup_llm fails, or you need to diagnose a Cognigy MCP problem."
+description: "Use when a Cognigy agent returns empty or incomplete responses, a flow or tool call fails, create_ai_agent fails, a resource is not found, setup_llm fails, you need to read a project's Cognigy logs, or you need to diagnose a Cognigy MCP problem."
 ---
 
 # Troubleshooting
@@ -11,10 +11,39 @@ description: "Use when a Cognigy agent returns empty responses, a tool call or c
 - `error: "ai_agents_unavailable"` from manage_agent — this environment or organisation has no AI Agents. Build the agent with `create_ai_agent` and say nothing about agent kinds.
 - `error: "custom_system_prompt_unavailable"` — the environment does not offer a custom system prompt; shape the agent through role, description and instructions.
 - An AI Agent answers with empty text although its LLM works — check for a pre-turn hook (`get_resource { resourceType: "agent", id, projectId }` → `hooks`). The hook Flow runs before every answer and must end with the Continue to AI Agent node (`continueToAgent`); a Flow without it leaves the turn without a reply. Test with `manage_agent { operation: "update", hooks: null }`.
-- An AI Agent's Execute Tool Flow tool returns "The flow finished without returning an answer." — the Flow ended without reaching its Tool Result node (`toolResult`), or its answer rendered empty. "The flow failed before returning an answer." means the Flow hit an error; check the project logs.
+- An AI Agent's Execute Tool Flow tool returns "The flow finished without returning an answer." — the Flow ended without reaching its Tool Result node (`toolResult`), or its answer rendered empty. "The flow failed before returning an answer." means the Flow hit an error; read the turn's project logs (next section).
 - A 404 on an agent id whose message says "legacy" or "AI Agent" — the id belongs to the other kind. Use the `use` argument from list_resources { resourceType: 'agent', projectId }.
 
+## Reading the project logs
+
+Logs show what a turn did and where it failed. Cognigy keeps them 24 hours, and a
+turn's entries appear a few seconds after its reply.
+
+- **One turn:** `list_resources { resourceType: "log", projectId, traceId }` with
+  the `traceId` talk_to_agent returned. Use this for the full error: a failed
+  node's error (with the node's label) and endpoint errors carry no sessionId.
+- **One conversation:** `list_resources { resourceType: "log", projectId, sessionId }`,
+  its newest `limit` entries (default 25) from the last 12 hours, with a one-line
+  error summary for each failed turn.
+- **Recent problems in a project:** `list_resources { resourceType: "log", projectId, level: ["error", "warn"] }`.
+  Without `startDate` / `endDate` the platform looks at the last hour only, so an
+  empty list does not mean nothing happened: widen the dates first.
+- **One entry in full:** `get_resource { resourceType: "log", id, projectId }`.
+
+Read the turn's logs whenever a reply is cut short or misses something the flow
+should have said: a flow that fails mid-turn still answers HTTP 200 with what it
+sent before the error, so talk_to_agent cannot tell. A 403 means a projectId
+from another environment, or an API key whose user lacks the project role `logs`
+or `developer`. A flow or endpoint can mask logged user data (Blind Mode node,
+`maskLogging`): `userId`, `text` and `data` then show as asterisks.
+
+Logs do not show everything. An HTTP Request node that cannot reach its host
+writes no entry and the flow carries on, so check the stored result (log it from
+a Code Node with `api.log`).
+
 ## Agent returns empty response
+
+Start with the turn's logs (section above): an error there usually names the cause.
 
 1. Inspect the agent flow and tools first:
    - list_resources { resourceType: "tool", aiAgentId }
@@ -45,6 +74,8 @@ after the flow and can return any status (a 404 included), and a gateway timeout
 can hide a completed execution. Waiting or reusing the `sessionId` does not
 prevent a duplicate. Check:
 
+- `list_resources { resourceType: "log", projectId, sessionId: "<sessionId>" }`:
+  entries for the turn mean the flow ran (logs are always on), or
 - `get_resource { resourceType: "conversation", id: "<sessionId>" }` for the
   transcript (needs the endpoint to collect conversations), or
 - continue the **same** `sessionId` with a neutral follow-up ("what did you

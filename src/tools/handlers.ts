@@ -167,6 +167,15 @@ const DEFAULT_AGENT_IMAGE = "default-avatar:1";
 // Prefix applied to agents/flows/projects instead of deleting them.
 const DELETE_PREFIX = "DELETE_";
 
+// A session's log tail reads only the cluster's cutoff (2 h on trial) unless
+// lastTimeWindow widens it. Every cluster accepts 12 hours, but the parameter
+// needs the v2 log model, which this header asks for.
+const LOG_TAIL_WINDOW_HOURS = 12;
+const LOG_V2_MODEL = { "x-cognigy-log-model-version": "v2" };
+// Date.parse also accepts "Nov 19 2026" or "1", which the Logs API cannot.
+const ISO_8601_DATE =
+  /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/;
+
 // Cognigy resource names are capped at 200 chars (see schemas/tools.ts).
 const MAX_RESOURCE_NAME_LENGTH = 200;
 
@@ -1210,7 +1219,7 @@ function talkToAgentFailureHints(
   sessionId: string,
   testMode: boolean,
 ): Record<string, string> {
-  const checkOutcome = `FIRST establish whether the original message was processed: get_resource { resourceType: 'conversation', id: '${sessionId}' } returns the transcript when the endpoint collects conversations; otherwise continue this same sessionId with a neutral follow-up ("what did you just do?") or verify the side effects of the agent's tools. Re-send only if it was NOT processed.`;
+  const checkOutcome = `FIRST establish whether the original message was processed: list_resources { resourceType: 'log', projectId, sessionId: '${sessionId}' } shows whether the flow ran, and get_resource { resourceType: 'conversation', id: '${sessionId}' } returns the transcript when the endpoint collects conversations; otherwise continue this same sessionId with a neutral follow-up ("what did you just do?") or verify the side effects of the agent's tools. Re-send only if it was NOT processed.`;
   const billable = testMode
     ? " Re-sending with testMode: false is a billable production message and is not a way around an error: only after the outcome check, only once the test-mode cause is confirmed, and only with the user's explicit consent."
     : "";
@@ -4575,9 +4584,13 @@ export class ToolHandlers {
         .map((o: any) => o.text);
       if (textOutputs.length > 0) agentResponse = textOutputs.join(" ");
 
+      // A flow that crashes still answers 200 with the outputs sent before the
+      // crash; only the turn's log entries, read by this id, show the error.
+      const traceId = outputStack.find((o: any) => o.traceId)?.traceId;
       const result: any = {
         agentResponse,
         sessionId,
+        ...(traceId ? { traceId } : {}),
         endpointUrl,
         testMode: useTestMode,
       };
@@ -4607,8 +4620,10 @@ export class ToolHandlers {
       if (!agentResponse) {
         return withHints(result, {
           likely_cause:
-            "Agent returned no text. Possible causes: 1) no LLM configured, 2) empty agent description, 3) endpoint not connected to flow.",
-          action: "Read the troubleshooting guide for diagnostic steps.",
+            "Agent returned no text. Possible causes: 1) no LLM configured, 2) empty agent description, 3) endpoint not connected to flow, 4) the flow failed.",
+          // A turn with only non-text outputs still carries a traceId, and a
+          // trace read also finds the node and endpoint errors.
+          action: `Read the turn's log entries for the error: list_resources { resourceType: 'log', projectId, ${traceId ? `traceId: '${traceId}'` : `sessionId: '${sessionId}'`} } (they appear a few seconds after the turn). Then follow the troubleshooting guide.`,
         });
       }
       return result;
@@ -4647,6 +4662,9 @@ export class ToolHandlers {
       actor,
       eventType,
       user,
+      sessionId,
+      traceId,
+      level,
     } = data;
     // `sort` rides along with paging so every server-backed list endpoint gets
     // it. 'tool' builds its own params and has no server-side sort.
@@ -4689,6 +4707,7 @@ export class ToolHandlers {
     // Set when the platform rejected the audit_event filters and this plugin
     // applied them instead, so the response can say so.
     let filteredClientSide = false;
+    let logHints: ResponseHints | undefined;
 
     switch (resourceType) {
       case "project": {
@@ -4881,13 +4900,189 @@ export class ToolHandlers {
         }
         break;
       }
+      case "log": {
+        // The platform answers an unparsable date with HTTP 500, which the API
+        // client retries three times, so only ISO 8601 dates reach it.
+        const badDate = (["startDate", "endDate"] as const).find(
+          (key) =>
+            data[key] !== undefined &&
+            (!ISO_8601_DATE.test(data[key]!) ||
+              Number.isNaN(Date.parse(data[key]!))),
+        );
+        if (badDate)
+          return withHints(
+            {
+              error: `${badDate} is not a valid ISO 8601 date: '${data[badDate]}'.`,
+            },
+            { action: "Use a form like 2026-11-19T10:00:00Z." },
+          );
+        if (
+          data.startDate &&
+          data.endDate &&
+          Date.parse(data.startDate) > Date.parse(data.endDate)
+        )
+          return withHints(
+            { error: "startDate is after endDate." },
+            { action: "Swap the two dates. Logs are kept 24 hours." },
+          );
+        // A user-supplied sort would break the newest-first order the reads
+        // below rely on, and log entries have no lastChanged to sort by.
+        const logPaging = { limit: paging.limit, skip: paging.skip };
+        // Only /logs/tail filters by session, and a turn's endpoint-level
+        // entries (the node error among them) carry no sessionId, so a turn is
+        // read through the list route's free-text `filter` by traceId. Both are
+        // re-checked here: `filter` also matches messages, and a v2.0 fallback
+        // may not know the session filter.
+        let res: any;
+        // Set when the platform refused the 12-hour session window.
+        let shortWindow = false;
+        // Set when only v2.0 answered (before 2026.7.0); its tail may not
+        // filter by session or level, so both are applied below as well.
+        let oldPlatform = false;
+        const fellBack = () => {
+          oldPlatform = true;
+        };
+        const traceLimit = limit ?? 100;
+        try {
+          if (traceId) {
+            const now = Date.now();
+            res = await this.getLogs(
+              projectId!,
+              "",
+              {
+                ...logPaging,
+                limit: traceLimit,
+                filter: traceId,
+                ...(level ? { type: level } : {}),
+                // Logs are kept 24 hours; the route's default window is one.
+                startDate:
+                  data.startDate ??
+                  new Date(
+                    (data.endDate ? Date.parse(data.endDate) : now) -
+                      24 * 3600e3,
+                  ).toISOString(),
+                endDate: data.endDate ?? new Date(now).toISOString(),
+              },
+              undefined,
+              fellBack,
+            );
+          } else if (sessionId) {
+            const params = { sessionId, ...(level ? { type: level } : {}) };
+            try {
+              res = await this.getLogs(
+                projectId!,
+                "/tail",
+                { ...params, lastTimeWindow: LOG_TAIL_WINDOW_HOURS },
+                LOG_V2_MODEL,
+                fellBack,
+              );
+            } catch (error: any) {
+              if (error?.status !== 400) throw error;
+              // The same request without the window and its header: if that
+              // works, the window was refused; if not, the original 400 stands.
+              try {
+                res = await this.getLogs(
+                  projectId!,
+                  "/tail",
+                  params,
+                  undefined,
+                  fellBack,
+                );
+              } catch {
+                throw error;
+              }
+              shortWindow = true;
+            }
+          } else {
+            res = await this.getLogs(projectId!, "", {
+              ...logPaging,
+              ...(level ? { type: level } : {}),
+              ...(data.startDate ? { startDate: data.startDate } : {}),
+              ...(data.endDate ? { endDate: data.endDate } : {}),
+            });
+          }
+        } catch (error: any) {
+          return this.logError(error, "list");
+        }
+        let raw: any[] = Array.isArray(res?.items) ? res.items : [];
+        // A full page may mean the turn goes on. The route's total is no help:
+        // it also counts entries that only mention the traceId.
+        const turnContinues = traceId && raw.length >= traceLimit;
+        if (traceId) raw = raw.filter((e) => e.traceId === traceId);
+        else if (sessionId)
+          raw = raw.filter((e) => e.meta?.sessionId === sessionId);
+        if (level)
+          raw = raw.filter((e) => level.includes(e.type ?? e.metadata?.type));
+        // The tail route never counts (-1), and a re-checked read is counted
+        // by what survived the check.
+        total =
+          traceId || sessionId
+            ? raw.length
+            : res.total >= 0
+              ? res.total
+              : undefined;
+        // A session keeps its newest `limit` entries: the latest turns.
+        const cut =
+          !traceId &&
+          sessionId &&
+          (raw.length > paging.limit || res.nextCursor);
+        if (!traceId && sessionId) raw = raw.slice(0, paging.limit);
+        // The API answers newest first; one session or turn reads as a trace.
+        if (traceId || sessionId) raw.reverse();
+        items = raw.map((e) => {
+          const f = filterResponse("log", e);
+          if (traceId) delete f.traceId;
+          return f;
+        });
+        const hints: ResponseHints = {};
+        const warnings: string[] = [];
+        if (shortWindow)
+          warnings.push(
+            "This platform refused the 12-hour window, so the session was searched only in its default window (often the last hour or two).",
+          );
+        if (oldPlatform && sessionId && !traceId)
+          warnings.push(
+            "This Cognigy version has no v2.1 logs API, so the session may have been looked for only among the project's latest 100 entries. Read a turn by its traceId instead.",
+          );
+        const olderTurns =
+          "For older turns, read one by its traceId, or list a dated window (startDate / endDate) without sessionId.";
+        if (sessionId && !traceId && (skip || data.startDate || data.endDate))
+          warnings.push(
+            `skip, startDate and endDate do not apply to a session read, which returns the session's newest entries from the last 12 hours. ${olderTurns}`,
+          );
+        if (cut)
+          warnings.push(
+            `Showing the newest ${items.length} entries of this session${items.length < 100 ? "; raise limit (up to 100) for more" : ""}. ${olderTurns}`,
+          );
+        if (turnContinues)
+          warnings.push(
+            `This read returned a full page, so the turn may have more entries. Read on with skip: ${(skip ?? 0) + traceLimit}.`,
+          );
+        if (sort)
+          warnings.push(
+            "sort was ignored: log entries come back newest first, and a session or turn oldest first.",
+          );
+        if (!items.length)
+          hints.hint = traceId
+            ? "No log entries for this turn. Entries appear a few seconds after a turn and are kept 24 hours: if the turn just ran, read again shortly."
+            : sessionId
+              ? `No log entries for this session in ${shortWindow ? "the default window" : "the last 12 hours"}. The id must match exactly; entries appear a few seconds after a turn, so if it just ran, read again shortly.`
+              : !data.startDate && !data.endDate
+                ? "No log entries in the last hour, the default window. Pass startDate (ISO 8601) to look further back; logs are kept 24 hours."
+                : "No log entries matched. Widen startDate / endDate or drop level.";
+        if (warnings.length) hints.warning = warnings.join(" ");
+        if (Object.keys(hints).length) logHints = hints;
+        break;
+      }
       default:
         throw new Error(`Unknown resourceType: ${resourceType}`);
     }
 
     if (!Array.isArray(items)) items = [];
     const filtered =
-      resourceType === "tool" || resourceType === "speech_provider"
+      resourceType === "tool" ||
+      resourceType === "speech_provider" ||
+      resourceType === "log"
         ? items
         : filterList(resourceType, items);
 
@@ -4899,6 +5094,8 @@ export class ToolHandlers {
     }
 
     const result: any = { items: filtered, total: total ?? filtered.length };
+
+    if (logHints) return withHints(result, logHints);
 
     if (filteredClientSide) {
       return withHints(result, {
@@ -5013,6 +5210,64 @@ export class ToolHandlers {
     );
   }
 
+  /**
+   * GET a project's logs route on v2.1. Platforms older than 2026.7.0, which
+   * introduced v2.1, answer 404 there, so retry on v2.0; when that fails too
+   * the 404 was about the project or entry, and the original stands.
+   */
+  private async getLogs(
+    projectId: string,
+    subPath: string,
+    params?: Record<string, unknown>,
+    headers?: Record<string, string>,
+    onFallback?: () => void,
+  ): Promise<any> {
+    const url = (version: string) =>
+      `/${version}/projects/${projectId}/logs${subPath}`;
+    const config = { params, ...(headers ? { headers } : {}) };
+    try {
+      return await this.apiClient.get(url("v2.1"), config);
+    } catch (error: any) {
+      if (error?.status !== 404) throw error;
+      try {
+        const res = await this.apiClient.get(url("v2.0"), config);
+        onFallback?.();
+        return res;
+      } catch (fallbackError: any) {
+        throw fallbackError?.status === 404 ? error : fallbackError;
+      }
+    }
+  }
+
+  /**
+   * A Logs API 403 or 404 with the next step; any other error is rethrown. A
+   * projectId from another environment, or one the key cannot see, answers
+   * 403 rather than 404.
+   */
+  private logError(error: any, op: "list" | "get"): any {
+    if (error?.status === 403)
+      return withHints(
+        { error: error.message },
+        {
+          likely_cause:
+            "The projectId does not belong to this environment, or the API key's user cannot read this project's logs (the project role 'basic' does not include them).",
+          action:
+            "Check the projectId, and use an API key whose user has the 'logs' or 'developer' role in this project.",
+        },
+      );
+    if (error?.status === 404)
+      return withHints(
+        { error: error.message },
+        {
+          action:
+            op === "get"
+              ? "Take the id from list_resources { resourceType: 'log', projectId }; entries are kept 24 hours."
+              : "Check the projectId. Reading logs needs Cognigy 2026.7.0 or newer.",
+        },
+      );
+    throw error;
+  }
+
   // =========================================================================
   // Tool 6: get_resource
   // =========================================================================
@@ -5033,6 +5288,21 @@ export class ToolHandlers {
         const f = RESOURCE_FILTERS_GET.agent_v2(v2);
         return { ...f, use: { agentId: f.id } };
       }
+    }
+
+    if (resourceType === "log") {
+      if (!projectId)
+        return withHints(
+          { error: "projectId is required for resourceType 'log'." },
+          { action: "Pass the projectId the log entry belongs to." },
+        );
+      let entry: any;
+      try {
+        entry = await this.getLogs(projectId, `/${encodeURIComponent(id)}`);
+      } catch (error: any) {
+        return this.logError(error, "get");
+      }
+      return raw ? entry : RESOURCE_FILTERS_GET.log(entry);
     }
 
     const endpointMap: Record<string, string> = {
@@ -10100,6 +10370,13 @@ function summarizeCatalogItem(component: string, r: any): any {
 }
 
 const RESOURCE_FILTERS_GET: Record<string, (raw: any) => any> = {
+  // The stack trace shows the platform's internal paths and the URLToken lets
+  // anyone talk to the endpoint; neither helps debug the flow.
+  // The message is not capped here: this is the read of one entry in full.
+  log: (r) => {
+    const { URLToken: _token, originalError: _error, ...meta } = r.meta ?? {};
+    return { ...filterResponse("log", r), message: r.msg, meta };
+  },
   agent_v2: (r) => ({
     id: r.id ?? r._id,
     referenceId: r.referenceId,
