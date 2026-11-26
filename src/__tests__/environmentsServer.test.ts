@@ -281,7 +281,9 @@ describe("an unusable environments.json", () => {
       resetCounts();
       const result = await server.call({});
       expect(result.isError).toBe(true);
-      expect(result.body.error).toMatch(/not valid JSON.*cognigy-envs/);
+      expect(result.body.error).toMatch(
+        /not valid JSON\. Fix or delete that file/,
+      );
       expect(result.text).not.toContain("FAKE-BROKEN");
       expect([...defaultApi.keys, ...trialApi.keys]).toEqual([]);
     },

@@ -72,7 +72,7 @@ Workflow guidance lives only as plugin skills `plugin/skills/<id>/SKILL.md` (han
 - **What the model sees:** results carry `_environment`, and the server instructions gain one line naming each environment's URL (from `Environments.start()`), so the model can map "dev" to a name before its first call.
 - **`talk_to_agent` guard:** an explicit `endpointUrl` on another host than the selected environment's endpoint host is refused (`foreignEndpointError`; skipped when that host could not be derived), since the result would otherwise claim the wrong environment.
 - **Context cost:** neither the field nor that line is in the static tool-surface budget. Only opt-in users pay, capped per tool in `environments.test.ts`.
-- **Editing:** `cognigy-envs` (`src/envs.ts`) is the only way to edit the file, an arrow-key menu with no subcommands. `cognigy-setup` installs it globally (`npm install -g`, non-fatal) and `update` refreshes it where present.
+- **Editing:** `cognigy-envs` (`src/envs.ts`) is the only way to edit the file, an arrow-key menu with no subcommands. Users open it with `ENVS_COMMAND` (`npx -y -p @cognigy/plugin-engine@latest cognigy-envs`), which always runs the latest engine and needs no install; every message that sends the user to the menu shows that line. An interactive `cognigy-setup` offers the menu at its end (`offerEnvironments`, Enter skips), and `e` in its client list opens only the menu, with no install (`openEnvironmentsMenu`) and installs nothing for it; it only refreshes a global copy that a 1.24.x installer added, at setup and on `update`. The menu draws on the terminal's alternate screen, so the installer's output is back when it closes.
 - **Evals:** cases in `MULTI_ENVIRONMENT_CASES` (`scripts/gen-eval-tools.ts`) get a per-case `_tools.json` with the field.
 
 ## API client & config
@@ -118,3 +118,5 @@ Endpoints under `/v2.0/flows/{flowId}/chart`:
 - Conventional Commits (`fix:`, `feat:`, `chore:`, with scopes).
 - Tests mock the api client; mocks may not match real API field projections — verify against the real REST shape (see chart gotchas).
 - Dev skill `.claude/skills/contribute/SKILL.md` is the entry point for any change to skills, agents or tools. It routes to `add-eval` for evals and to `add-client-platform` for a new AI client.
+- User-facing text (README, `docs/`, skills, agents, hints, CLI output) is client-agnostic: say "your AI client", never "Claude" for the assistant. Name a client only for what is specific to it ("in Claude Code, a new session is enough").
+- When a doc tells the user to run something ("run the installer again"), put the command right there.

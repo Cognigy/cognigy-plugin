@@ -1,3 +1,9 @@
+## [1.26.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.25.0...v1.26.0) (2026-11-26)
+
+### Features
+
+* **environments:** make adding environments easy to find and follow ([#83](https://github.com/Cognigy/cognigy-plugin/issues/83)) ([14388b1](https://github.com/Cognigy/cognigy-plugin/commit/14388b157ac61d9e1db44c03c49c25a99cb3cbd6))
+
 ## [1.25.0](https://github.com/Cognigy/cognigy-plugin/compare/v1.24.0...v1.25.0) (2026-11-26)
 
 ### Features

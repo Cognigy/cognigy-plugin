@@ -79,6 +79,35 @@ const TRIAL = {
 };
 
 describe("cognigy-envs menu", () => {
+  it("draws on the alternate screen, then lists what is saved", async () => {
+    // The installer opens the menu too: its output must be back afterwards.
+    const t = scripted(freshDir({ trial: TRIAL }), {});
+    expect(await runEnvs(t.io)).toBe(0);
+    const out = t.output();
+    const on = out.indexOf("\x1b[?1049h");
+    const off = out.indexOf("\x1b[?1049l");
+    expect(on).toBeGreaterThanOrEqual(0);
+    expect(off).toBeGreaterThan(on);
+    expect(out.slice(off)).toMatch(/trial\s+https:\/\/api-trial\.cognigy\.ai/);
+  });
+
+  it("closes like q on Ctrl-C in a prompt, still showing what was saved", async () => {
+    const dir = freshDir();
+    // Add trial, then Enter on trial and Ctrl-C at its URL prompt.
+    const t = scripted(dir, { keys: [ENTER, ENTER], hidden: [TRIAL.apiKey] });
+    const answers = ["trial", TRIAL.apiBaseUrl];
+    t.io.ask = async () => {
+      const answer = answers.shift();
+      if (answer === undefined) throw new Error("cancelled");
+      return answer;
+    };
+    expect(await runEnvs(t.io)).toBe(0);
+    expect(saved(dir)).toEqual({ trial: TRIAL });
+    const after = t.output().split("\x1b[?1049l")[1];
+    expect(after).toMatch(/trial\s+https:\/\/api-trial\.cognigy\.ai/);
+    expect(after).toContain("Restart your AI client");
+  });
+
   it("adds an environment, accepting a URL without https://", async () => {
     const dir = freshDir();
     const t = scripted(dir, {
