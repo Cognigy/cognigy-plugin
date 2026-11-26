@@ -1,6 +1,6 @@
 {
-  "takenAt": "2026-11-26T14:49:18.861Z",
-  "commit": "8e11b63",
+  "takenAt": "2026-11-26T15:05:36.378Z",
+  "commit": "09b1016",
   "claudeVersion": "2.1.330",
   "pluginVersion": "1.26.0",
   "cases": {
@@ -24,12 +24,12 @@
       }
     },
     "agent-voice-speech": {
-      "fingerprint": "e9ea8d467cc6",
-      "score": 1,
+      "fingerprint": "45862ca4cc6f",
+      "score": 0.95,
       "graders": {
         "lists-speech-providers": "3/3",
         "nice-tts-credential": "3/3",
-        "no-unasked-changes": "3/3",
+        "no-unasked-changes": "2/3",
         "offered-british-female-voice": "3/3",
         "reports-outcome": "3/3",
         "two-words-to-interrupt": "3/3",
@@ -185,11 +185,11 @@
     },
     "general-tool-type": {
       "fingerprint": "525dddf0a760",
-      "score": 1,
+      "score": 0.89,
       "graders": {
         "calls-create_tool": "3/3",
         "not-mcp-or-http": "3/3",
-        "reports-tool": "3/3"
+        "reports-tool": "2/3"
       }
     },
     "list-projects": {
@@ -202,10 +202,10 @@
     },
     "new-agent-default": {
       "fingerprint": "7c8870b66afa",
-      "score": 1,
+      "score": 0.83,
       "graders": {
         "calls-manage_agent": "3/3",
-        "no-version-talk": "3/3"
+        "no-version-talk": "2/3"
       }
     },
     "which-environment": {
