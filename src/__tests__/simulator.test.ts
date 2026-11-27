@@ -908,6 +908,60 @@ describe("manage_simulations personas", () => {
       { timeout: SIMULATOR_LLM_TIMEOUT_MS, noRetry: true },
     );
   });
+
+  it("returns drafts whose criteria create accepts verbatim", async () => {
+    // The live service answers with type "TEXT", which create rejects.
+    const draft = (type: string) => ({
+      simulationName: "Rebook",
+      successCriteria: [
+        { type, params: { name: "Done", text: "booked" } },
+        { type: "GOAL_COMPLETED", params: { name: "Goal", referenceId: "g" } },
+      ],
+    });
+    const api = routedApi({
+      [`POST ${T}/personas/generate`]: () => ({
+        success: true,
+        personaPackages: [draft("TEXT")],
+      }),
+      [`POST ${T}/personas/regenerate-field`]: () => ({
+        personaPackage: draft("Text"),
+      }),
+    });
+    const type = { name: "Busy", description: "In a hurry" };
+    const generated: any = await run(api, {
+      operation: "generate_persona",
+      flowId: FLOW_ID,
+      selectedMissionType: type,
+      selectedPersonaType: type,
+    });
+    const regenerated: any = await run(api, {
+      operation: "regenerate_persona_field",
+      fieldToRegenerate: "mission",
+      ...scenario,
+    });
+
+    for (const pkg of [
+      generated.personaPackages[0],
+      regenerated.personaPackage,
+    ]) {
+      expect(pkg.successCriteria.map((c: any) => c.type)).toEqual([
+        "text",
+        "goalCompleted",
+      ]);
+      expect(
+        manageSimulationsSchema.safeParse({
+          operation: "create",
+          projectId: P,
+          name: "n",
+          persona: "p",
+          personaName: "pn",
+          mission: "m",
+          successCriteria: pkg.successCriteria,
+          flowReferenceId: FLOW_UUID,
+        }).success,
+      ).toBe(true);
+    }
+  });
 });
 
 describe("manage_simulations import_transcript", () => {
@@ -918,7 +972,17 @@ describe("manage_simulations import_transcript", () => {
     routedApi({
       [`POST ${T}/v1/transcript-request`]: () => ({ requestId: "req-1" }),
       [`POST ${T}/v1/generate-from-transcript`]: () => ({
-        scenarios: [{ name: "A" }, { name: "B" }, { name: "C" }],
+        scenarios: [
+          {
+            name: "A",
+            successCriteria: [
+              { type: "TEXT", params: { name: "Done", text: "booked" } },
+              { type: "custom", params: { name: "Other" } },
+            ],
+          },
+          { name: "B" },
+          { name: "C" },
+        ],
       }),
     });
 
@@ -956,6 +1020,15 @@ describe("manage_simulations import_transcript", () => {
       { timeout: SIMULATOR_LLM_TIMEOUT_MS, noRetry: true },
     ]);
     expect(result.scenarios).toHaveLength(3);
+    // Draft criteria come back in the form create accepts; unknown types
+    // and every other field pass through untouched.
+    expect(result.scenarios[0]).toEqual({
+      name: "A",
+      successCriteria: [
+        { type: "text", params: { name: "Done", text: "booked" } },
+        { type: "custom", params: { name: "Other" } },
+      ],
+    });
     expect(result._hints.action).toContain("create");
   });
 

@@ -89,7 +89,9 @@ Success criteria:
 
 Ask the user for the path of a CSV transcript on their machine, then
 `import_transcript { filePath, flowReferenceId? }`. One call uploads the file and returns up to
-three scenario drafts. Show them, and `create` the one the user picks with its target. If the
+three scenario drafts. The service rejects a file without the header row
+`speaker,message,created_at` or with fewer than 100 words of conversation; if it does, tell the
+user what to change rather than editing their file. Show them, and `create` the one the user picks with its target. If the
 result is `transcript_import_disabled`, use the persona operations above instead.
 
 ## Schedule recurring runs

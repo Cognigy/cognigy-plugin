@@ -510,6 +510,42 @@ async function dashboard(
   );
 }
 
+const CREATE_CRITERION_TYPES: Record<string, "text" | "goalCompleted"> = {
+  text: "text",
+  goalcompleted: "goalCompleted",
+  goal_completed: "goalCompleted",
+};
+
+/**
+ * Drafts (generate_persona, regenerate_persona_field, import_transcript) come
+ * back with criterion types like "TEXT", while create accepts only "text" and
+ * "goalCompleted". Rewrite them so a draft can be passed to create verbatim.
+ */
+export function withCreateCriterionTypes<T>(value: T): T {
+  if (Array.isArray(value))
+    return value.map((item) => withCreateCriterionTypes(item)) as T;
+  if (!value || typeof value !== "object") return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    out[key] =
+      key === "successCriteria" && Array.isArray(child)
+        ? child.map((criterion) => {
+            const type =
+              criterion &&
+              typeof criterion.type === "string" &&
+              Object.hasOwn(
+                CREATE_CRITERION_TYPES,
+                criterion.type.toLowerCase(),
+              )
+                ? CREATE_CRITERION_TYPES[criterion.type.toLowerCase()]
+                : undefined;
+            return type ? { ...criterion, type } : criterion;
+          })
+        : withCreateCriterionTypes(child);
+  }
+  return out as T;
+}
+
 async function importTranscript(
   sim: Simulator,
   data: Extract<ManageSimulationsInput, { operation: "import_transcript" }>,
@@ -547,7 +583,11 @@ async function importTranscript(
     timeout: SIMULATOR_LLM_TIMEOUT_MS,
   });
   return withHints(
-    { operation: "import_transcript", fileName: file.name, ...generated },
+    withCreateCriterionTypes({
+      operation: "import_transcript",
+      fileName: file.name,
+      ...generated,
+    }),
     {
       action:
         "Show the user the suggestions and create the one they pick with create, adding its flowReferenceId or agentReferenceId.",
@@ -734,33 +774,37 @@ async function runOperation(
         timeout: SIMULATOR_LLM_TIMEOUT_MS,
       });
     case "generate_persona":
-      return call(sim, "generatePersona", {
-        body: compact({
-          projectReference: sim.projectId,
-          // The wire field is misnamed: it takes the Flow's 24-hex _id.
-          flowReferenceId: data.flowId,
-          selectedMissionType: data.selectedMissionType,
-          selectedPersonaType: data.selectedPersonaType,
-          numberOfSuccessCriteria: data.numberOfSuccessCriteria,
-          language: data.language,
+      return withCreateCriterionTypes(
+        await call(sim, "generatePersona", {
+          body: compact({
+            projectReference: sim.projectId,
+            // The wire field is misnamed: it takes the Flow's 24-hex _id.
+            flowReferenceId: data.flowId,
+            selectedMissionType: data.selectedMissionType,
+            selectedPersonaType: data.selectedPersonaType,
+            numberOfSuccessCriteria: data.numberOfSuccessCriteria,
+            language: data.language,
+          }),
+          timeout: SIMULATOR_LLM_TIMEOUT_MS,
         }),
-        timeout: SIMULATOR_LLM_TIMEOUT_MS,
-      });
+      );
     case "regenerate_persona_field":
-      return call(sim, "regeneratePersonaField", {
-        body: compact({
-          projectReference: sim.projectId,
-          fieldToRegenerate: DRAFT_FIELD_API_NAMES[data.fieldToRegenerate],
-          simulationName: data.name,
-          personaName: data.personaName,
-          personaDescription: data.persona,
-          mission: data.mission,
-          successCriteria: data.successCriteria,
-          successCriteriaIndex: data.successCriteriaIndex,
-          language: data.language,
+      return withCreateCriterionTypes(
+        await call(sim, "regeneratePersonaField", {
+          body: compact({
+            projectReference: sim.projectId,
+            fieldToRegenerate: DRAFT_FIELD_API_NAMES[data.fieldToRegenerate],
+            simulationName: data.name,
+            personaName: data.personaName,
+            personaDescription: data.persona,
+            mission: data.mission,
+            successCriteria: data.successCriteria,
+            successCriteriaIndex: data.successCriteriaIndex,
+            language: data.language,
+          }),
+          timeout: SIMULATOR_LLM_TIMEOUT_MS,
         }),
-        timeout: SIMULATOR_LLM_TIMEOUT_MS,
-      });
+      );
     case "import_transcript":
       return importTranscript(sim, data);
   }
