@@ -2908,6 +2908,245 @@
           "environment"
         ]
       }
+    },
+    {
+      "name": "manage_simulations",
+      "description": "Test an agent with the Cognigy Simulator: a simulation is a scenario (persona, mission, success criteria) for one Flow or AI Agent, and running it starts a batch of simulated conversations. Operations: list, get, create, update, clone, delete (returns a preflight until confirm is true; removes its batches, runs and schedules permanently); run starts a batch; list_batches, get_batch, get_runs (one run with its transcript when runReference is set), stop_batch (only after the user agrees), rerun_batch (replays a batch's target, snapshot, locale, LLM, evaluation profiles, run count and stop condition); list_schedules, upsert_schedule (one schedule per simulation); dashboard; persona_options, generate_persona and regenerate_persona_field draft scenarios; import_transcript turns a local CSV transcript into up to 3 drafts. Times come with <field>Local values in the project timezone. The simulator skill covers the workflow.",
+      "annotations": {
+        "title": "Manage Simulations",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": [
+              "list",
+              "get",
+              "create",
+              "update",
+              "delete",
+              "clone",
+              "run",
+              "list_batches",
+              "get_batch",
+              "get_runs",
+              "stop_batch",
+              "rerun_batch",
+              "list_schedules",
+              "upsert_schedule",
+              "dashboard",
+              "persona_options",
+              "generate_persona",
+              "regenerate_persona_field",
+              "import_transcript"
+            ]
+          },
+          "projectId": {
+            "type": "string",
+            "description": "24-char hex project ID."
+          },
+          "simulationReference": {
+            "type": "string",
+            "description": "24-char hex simulation id, never its UUID. Required for every operation on one simulation, its batches or schedules; optional filter for list_batches."
+          },
+          "batchReference": {
+            "type": "string",
+            "description": "24-char hex batch id. Required for get_batch, get_runs, stop_batch, rerun_batch."
+          },
+          "runReference": {
+            "type": "string",
+            "description": "get_runs: one run's id, to read it in full."
+          },
+          "scheduleReference": {
+            "type": "string",
+            "description": "upsert_schedule: the schedule to change; omit to create one."
+          },
+          "name": {
+            "type": "string",
+            "description": "Simulation name (create, clone, update, regenerate_persona_field), batch name (run, rerun_batch) or schedule name (upsert_schedule, required to create)."
+          },
+          "nameFilter": {
+            "type": "string",
+            "description": "list: case-insensitive name match."
+          },
+          "persona": {
+            "type": "string",
+            "description": "Persona description."
+          },
+          "personaName": {
+            "type": "string",
+            "description": "Short persona name."
+          },
+          "mission": {
+            "type": "string",
+            "description": "What the persona tries to achieve."
+          },
+          "successCriteria": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "description": "{ type: 'text', params: { name, text } } or { type: 'goalCompleted', params: { name, referenceId } }, referenceId a goal UUID only the user provides.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "goalCompleted"
+                  ]
+                },
+                "params": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "type",
+                "params"
+              ]
+            }
+          },
+          "evaluationProfileReferenceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Evaluation profile ids; only ids the user provides."
+          },
+          "maxTurns": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "description": "Default 15. Each turn is a model call."
+          },
+          "flowReferenceId": {
+            "type": "string",
+            "description": "Flow UUID: the target on create/update (this or agentReferenceId), or the target of import_transcript drafts."
+          },
+          "agentReferenceId": {
+            "type": "string",
+            "description": "AI Agent UUID: the target on create/update."
+          },
+          "flowId": {
+            "type": "string",
+            "description": "24-char hex Flow id. Required for persona_options and generate_persona."
+          },
+          "numberOfExecutions": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 150,
+            "description": "run: conversations in the batch. Default 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Page size. Default 20."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Items to skip."
+          },
+          "frequency": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "every three days",
+              "weekly",
+              "biweekly",
+              "monthly"
+            ],
+            "description": "How often the schedule runs."
+          },
+          "time": {
+            "type": "string",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "description": "24-hour 'HH:mm' in the project timezone, never ISO or UTC."
+          },
+          "numberOfRuns": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 150,
+            "description": "Conversations per scheduled run. Default 10."
+          },
+          "enableSchedule": {
+            "type": "boolean",
+            "description": "false pauses the schedule."
+          },
+          "section": {
+            "type": "string",
+            "enum": [
+              "overview",
+              "success_rate_trend",
+              "upcoming_scheduled_runs"
+            ],
+            "description": "dashboard section. Default overview."
+          },
+          "selectedMissionType": {
+            "type": "object",
+            "description": "{ name, description } from persona_options."
+          },
+          "selectedPersonaType": {
+            "type": "object",
+            "description": "{ name, description } from persona_options."
+          },
+          "fieldToRegenerate": {
+            "type": "string",
+            "enum": [
+              "name",
+              "personaName",
+              "persona",
+              "mission",
+              "successCriteria"
+            ]
+          },
+          "successCriteriaIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "0-based criterion to regenerate."
+          },
+          "numberOfSuccessCriteria": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "description": "Criteria to draft. import_transcript default 3."
+          },
+          "language": {
+            "type": "string",
+            "maxLength": 40,
+            "pattern": "^[A-Za-z ()\\-]+$",
+            "description": "English name of the drafts' language, e.g. 'Spanish'."
+          },
+          "filePath": {
+            "type": "string",
+            "description": "import_transcript: absolute path to a local .csv file."
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "delete: true deletes; omitted returns a preflight."
+          },
+          "environment": {
+            "type": "string",
+            "enum": [
+              "default",
+              "trial",
+              "acme"
+            ],
+            "description": "Cognigy environment (default = the plugin's own login). Unless the user named one, ask once per conversation and reuse it."
+          }
+        },
+        "required": [
+          "operation",
+          "projectId",
+          "environment"
+        ]
+      }
     }
   ]
 }

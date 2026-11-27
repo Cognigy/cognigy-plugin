@@ -24,9 +24,10 @@ A plugin that connects your AI assistant to the [Cognigy.AI](https://www.cognigy
 
 ## Features
 
-- **18 workflow tools** for agent creation, deployment, packaging, backup, voice setup, and agent-to-agent (A2A) delegation
+- **22 workflow tools** for agent creation, deployment, packaging, backup, voice setup, agent-to-agent (A2A) delegation and Simulator testing
 - **One-call agent setup**: creates Agent + Flow + AI Agent Job Node + REST Endpoint automatically
 - **Self-improvement loop**: talk to your agent, evaluate responses, update the job description, repeat
+- **Simulator testing**: create, run and schedule simulations that test an agent with simulated conversations, read the results, generate personas, and turn a CSV transcript into test scenarios
 - **Knowledge store support**: attach RAG knowledge stores to agents as tools
 - **Browser voice deployment**: create Voice Gateway endpoints with WebRTC demo URLs
 - **Voice preview setup**: configure supported speech providers for voice experiences
@@ -418,6 +419,7 @@ https://wttr.in/Berlin?format=j1, then ask it what the weather is.
 | `manage_settings`         | Write | Manage project-level settings including voice preview and Knowledge AI configuration                                  |
 | `audit_voice_agent`       | Write | Audit a voice agent against the Go-Live Checklist; reports by default, applies safe fixes on demand                   |
 | `manage_snapshots`        | Write | Create and restore project Snapshots so agent changes can be rolled back                                              |
+| `manage_simulations`      | Write | Create, run and schedule Simulator tests, read batch and run results, generate personas, import CSV transcripts       |
 
 Detailed workflow guidance (agent creation, knowledge/RAG, voice, webchat, A2A, flow nodes, packages, settings, LLM providers, tools, troubleshooting) ships as **skills** that load automatically when your request matches, in clients that support them (e.g. Claude Code) — see the **Skills** column in the client table under [Installation](#installation). The tools are built to be used with these skills: if the assistant skips steps or gets a Cognigy workflow wrong, check that the skills are loaded (in Claude Code, `/skills` lists them) and reinstall the plugin if they are missing.
 

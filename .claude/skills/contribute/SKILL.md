@@ -34,7 +34,7 @@ The plugin has two layers. Skills and agents (`plugin/skills`, `plugin/agents`) 
 Order of preference:
 
 1. **Extend an existing skill.** Add a new skill only for a new user intent. There is no one-skill-per-tool rule.
-2. **Extend an existing tool.** Add an operation before you add a tool, and add a tool only for a new domain. There are 21 tools, most of them dispatchers with an `operation` field. Fewer tools mean better tool choice.
+2. **Extend an existing tool.** Add an operation before you add a tool, and add a tool only for a new domain. There are 22 tools, most of them dispatchers with an `operation` field. Fewer tools mean better tool choice.
 3. **A next step goes in the hint, not the skill.** A hint fires exactly after the result it belongs to, in every client. The skill names it only when the step needs workflow context the hint can't carry.
 4. **Enforce in code what must hold.** The Claude Desktop connector loads no skills, and evals run without `src/instructions.ts`. If a miss is irreversible or leaves broken state, the handler enforces it. Examples: the backup gate holds the first change with `backup_not_offered`, and deleting a brand persona that agents still use is refused with `persona_in_use`.
 

@@ -23,6 +23,7 @@ tools:
     check_capabilities,
     manage_agent,
     manage_agent_components,
+    manage_simulations,
   ]
 abort_when: Never abort the run.
 ---
@@ -43,6 +44,8 @@ The tenant contains exactly this, and stays consistent with earlier calls in the
   Gateway endpoint "ep-voice"; its voice settings use defaults (no barge-in, no
   silence timeout, no fallback handover).
 - No knowledge stores, no Webchat endpoints, no snapshots, no packages.
+- Simulator: one simulation "Billing dispute", simulationReference
+  "60d5ec49f1a2c8b1a4e0a001", targeting flow "flow-billing"; no batches or schedules yet.
 - check_capabilities returns { aiAgents: "available", customSystemPrompt: "available" }.
   The two agents above are legacy AI Agents: list_resources { resourceType: "agent" }
   returns them with legacy: true and use { aiAgentId }, plus _hints.action "This

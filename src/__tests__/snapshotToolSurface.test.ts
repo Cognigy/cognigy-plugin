@@ -70,6 +70,7 @@ describe("backup gate classification", () => {
     manage_voice_gateway: "endpoints are NOT captured in a snapshot",
     manage_a2a_server: "endpoints are NOT captured in a snapshot",
     manage_snapshots: "the backup tool itself",
+    manage_simulations: "simulations are NOT captured in a snapshot",
     talk_to_agent: "sends a message; changes no configuration",
   };
 

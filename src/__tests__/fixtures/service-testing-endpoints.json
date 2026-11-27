@@ -1,0 +1,32 @@
+{
+  "source": "service-testing openapi/generic-openapi.json",
+  "endpoints": [
+    "GET /simulations",
+    "POST /simulations",
+    "GET /simulations/batches",
+    "GET /simulations/{simulationReference}",
+    "PATCH /simulations/{simulationReference}",
+    "DELETE /simulations/{simulationReference}",
+    "POST /simulations/{simulationReference}/schedule",
+    "GET /simulations/{simulationReference}/batches",
+    "GET /simulations/{simulationReference}/batches/{simulationRunBatchReference}",
+    "POST /simulations/{simulationReference}/batches/{simulationRunBatchReference}",
+    "GET /simulations/{simulationReference}/batches/{simulationRunBatchReference}/runs",
+    "GET /simulations/{simulationReference}/batches/{simulationRunBatchReference}/runs/{simulationRunReference}",
+    "POST /simulations/{simulationReference}/clone",
+    "GET /simulations/{simulationReference}/schedules",
+    "POST /simulations/{simulationReference}/schedules",
+    "PATCH /simulations/{simulationReference}/schedules/{schedulerReference}",
+    "POST /personas/options",
+    "POST /personas/generate",
+    "POST /personas/regenerate-field",
+    "POST /personas/generate-bulk",
+    "POST /personas/from-transcript",
+    "GET /dashboard/overview",
+    "GET /dashboard/success-rate-trend",
+    "GET /dashboard/upcoming-scheduled-runs",
+    "POST /v1/transcript-request",
+    "POST /v1/transcript-upload",
+    "POST /v1/generate-from-transcript"
+  ]
+}

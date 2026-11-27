@@ -63,6 +63,8 @@ import {
   readAgentV2,
   resolveLocaleReferenceId,
 } from "./agentsV2.js";
+import { manageSimulations } from "./simulator.js";
+import { expandHome } from "../utils/localInputFile.js";
 import {
   evaluateAgentChecks,
   type AgentAuditContext,
@@ -1276,6 +1278,8 @@ export class ToolHandlers {
     "body",
     "preProcessCode",
     "postProcessCode",
+    // A local path names the user's directories (and often their user name).
+    "filePath",
   ]);
   private static readonly DEFAULT_PACKAGE_TIMEOUT_MS = 600000;
   /** Pagination guard for listAllSnapshots (100 per page). */
@@ -1507,9 +1511,7 @@ export class ToolHandlers {
   }
 
   private resolvePackageFilePath(filePath: string): string {
-    const resolvedPath = filePath.startsWith("~")
-      ? filePath.replace(/^~/, process.env.HOME || "")
-      : filePath;
+    const resolvedPath = expandHome(filePath);
 
     if (!isAbsolute(resolvedPath)) {
       throw new Error("filePath must be an absolute path to a local .zip file");
@@ -1561,9 +1563,7 @@ export class ToolHandlers {
     outputPath: string,
     suggestedFileName: string,
   ): string {
-    const resolvedPath = outputPath.startsWith("~")
-      ? outputPath.replace(/^~/, process.env.HOME || "")
-      : outputPath;
+    const resolvedPath = expandHome(outputPath);
 
     if (!isAbsolute(resolvedPath)) {
       throw new Error(
@@ -5921,9 +5921,7 @@ export class ToolHandlers {
             );
           }
 
-          const resolvedPath = data.filePath.startsWith("~")
-            ? data.filePath.replace(/^~/, process.env.HOME || "")
-            : data.filePath;
+          const resolvedPath = expandHome(data.filePath);
 
           if (!existsSync(resolvedPath)) {
             throw new Error(`File not found: ${resolvedPath}`);
@@ -10197,6 +10195,15 @@ export class ToolHandlers {
   }
 
   // =========================================================================
+  // manage_simulations: the Cognigy Simulator, on the API host under /testing.
+  // Not backup-gated: snapshots do not hold simulations.
+  // =========================================================================
+  async handleManageSimulations(args: any): Promise<any> {
+    const data = schemas.manageSimulationsSchema.parse(args);
+    return manageSimulations(this.apiClient, this.agentsV2BaseUrl, data);
+  }
+
+  // =========================================================================
   // Main dispatcher
   // =========================================================================
   async handleToolCall(toolName: string, args: any): Promise<any> {
@@ -10291,6 +10298,9 @@ export class ToolHandlers {
         case "manage_snapshots":
           result = await this.handleManageSnapshots(args);
           break;
+        case "manage_simulations":
+          result = await this.handleManageSimulations(args);
+          break;
         default:
           throw new Error(`Unknown tool: ${toolName}`);
       }
@@ -10304,8 +10314,14 @@ export class ToolHandlers {
     } catch (error: any) {
       // service-agents answers an org without AI Agents with a bare 403/404 on
       // every route: say what that means instead of passing the status on.
+      // Anchored to the agents base: other services on the same host have
+      // /v1/ routes too (the Simulator's /testing/v1/transcript-*).
       const path = String(error?.url ?? "").split("?")[0];
-      if (/\/v1\//.test(path) && isAgentsV2Absent(error)) {
+      if (
+        this.agentsV2BaseUrl &&
+        path.startsWith(`${this.agentsV2BaseUrl}/v1/`) &&
+        isAgentsV2Absent(error)
+      ) {
         const refusal = await this.aiAgentsUnavailable(
           "Use create_ai_agent, update_ai_agent, create_tool and talk_to_agent { aiAgentId } on this environment.",
         ).catch(() => null);

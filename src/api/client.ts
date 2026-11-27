@@ -18,6 +18,17 @@ import {
   getActorContextHeader,
 } from "../utils/actorContext.js";
 
+declare module "axios" {
+  interface AxiosRequestConfig {
+    /**
+     * Do not retry this request on a 5xx or a network error. Set it on
+     * non-idempotent calls, where such a retry can repeat a write the server
+     * already made. A 429 is still retried: the server did nothing.
+     */
+    noRetry?: boolean;
+  }
+}
+
 export interface CognigyApiClientConfig {
   baseUrl: string;
   apiKey: string;
@@ -64,7 +75,10 @@ export function formatApiError(error: AxiosError): Error {
           .filter(Boolean)
       : [];
     const message =
-      (data.detail || data.title || describeUnexpectedBody(data, error)) +
+      (data.detail ||
+        data.title ||
+        plainErrorMessage(data, error) ||
+        describeUnexpectedBody(data, error)) +
       (fieldErrors.length ? ` (${fieldErrors.join("; ")})` : "");
     const enhancedError = new Error(message);
     (enhancedError as any).status = data.status || error.response?.status;
@@ -73,9 +87,45 @@ export function formatApiError(error: AxiosError): Error {
     (enhancedError as any).details = data.details;
     // Lets callers tell which resource 404'd (see annotateAgentKindMismatch).
     (enhancedError as any).url = error.config?.url;
+    // The parsed JSON body, so a caller can tell a service's own error from a
+    // gateway's (an HTML page or plain text leaves this unset).
+    if (typeof data === "object" && !Buffer.isBuffer(data)) {
+      (enhancedError as any).errorBody = data;
+    }
     return enhancedError;
   }
   return error;
+}
+
+/**
+ * A readable message from a body that is not a Cognigy error: a JSON object's
+ * string `message` or `error` (service-testing answers `{ error }`), or a short
+ * plain-text body. HTML, long text, and any text a proxy may have produced
+ * fall through to describeUnexpectedBody's diagnostic instead.
+ */
+function plainErrorMessage(data: any, error: AxiosError): string | undefined {
+  // Through a proxy, any body may be the proxy's; keep the diagnostic that says so.
+  if (safeGetProxyForUrl(resolveRequestUrl(error.config))) return undefined;
+  if (typeof data === "string") {
+    const text = data.trim();
+    if (!text || text.length >= BODY_SNIPPET_LIMIT || text.startsWith("<")) {
+      return undefined;
+    }
+    return text;
+  }
+  if (!data || typeof data !== "object" || Buffer.isBuffer(data)) {
+    return undefined;
+  }
+  for (const key of ["message", "error"]) {
+    if (typeof data[key] !== "string") continue;
+    // eslint-disable-next-line no-control-regex -- strip control chars from server text
+    const text = data[key].replace(/[\u0000-\u001f\u007f]/g, " ").trim();
+    if (!text) continue;
+    return text.length > BODY_SNIPPET_LIMIT
+      ? `${text.slice(0, BODY_SNIPPET_LIMIT)}…`
+      : text;
+  }
+  return undefined;
 }
 
 /**
@@ -235,7 +285,13 @@ export class CognigyApiClient {
         };
         const status = error.response?.status ?? 0;
 
-        if (config && isRetryable(error)) {
+        // A 429 means the server did nothing, so even a noRetry write is
+        // safe to retry; a 5xx or a dropped connection may have done the work.
+        if (
+          config &&
+          isRetryable(error) &&
+          (!config.noRetry || status === 429)
+        ) {
           config._retryCount = (config._retryCount ?? 0) + 1;
           if (config._retryCount <= MAX_RETRIES) {
             const delay = RETRY_BASE_MS * Math.pow(2, config._retryCount - 1);
@@ -320,7 +376,7 @@ export class CognigyApiClient {
     fileData: Buffer | ReadStream,
     fileName: string,
     extraFields?: Record<string, string>,
-    options?: { timeoutMs?: number },
+    options?: { timeoutMs?: number; noRetry?: boolean },
   ): Promise<T> {
     const form = new FormData();
     form.append("file", fileData, { filename: fileName });
@@ -335,6 +391,7 @@ export class CognigyApiClient {
         "X-API-Key": this.apiKey,
       },
       timeout: options?.timeoutMs ?? 120000,
+      ...(options?.noRetry ? { noRetry: true } : {}),
     });
     return response.data;
   }
