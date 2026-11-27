@@ -1280,3 +1280,234 @@ export const manageAgentComponentsSchema = z.union([
   voiceSettingsSchema,
   agentComponentOperationsSchema,
 ]);
+
+// manage_simulations (Cognigy Simulator, service-testing under <origin>/testing)
+export const SIMULATOR_SCHEDULE_FREQUENCIES = [
+  "daily",
+  "every three days",
+  "weekly",
+  "biweekly",
+  "monthly",
+] as const;
+
+export const SIMULATOR_DASHBOARD_SECTIONS = [
+  "overview",
+  "success_rate_trend",
+  "upcoming_scheduled_runs",
+] as const;
+
+/** Draft fields regenerate_persona_field can rewrite, named as on create. */
+export const SIMULATOR_DRAFT_FIELDS = [
+  "name",
+  "personaName",
+  "persona",
+  "mission",
+  "successCriteria",
+] as const;
+
+const simulatorSuccessCriterionSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("text"),
+    params: z.object({ name: z.string().min(1), text: z.string().min(1) }),
+  }),
+  z.object({
+    type: z.literal("goalCompleted"),
+    params: z.object({
+      name: z.string().min(1),
+      referenceId: z.string().min(1),
+    }),
+  }),
+]);
+const simulatorSuccessCriteriaSchema = z
+  .array(simulatorSuccessCriterionSchema)
+  .min(1)
+  .max(10);
+const simulatorPersonaOptionSchema = z.object({
+  name: z.string().min(1),
+  description: z.string(),
+});
+const simulatorUuidSchema = z
+  .string()
+  .regex(UUID_RE, "Must be a UUID referenceId");
+const simulatorCountSchema = z.number().int().min(1).max(150);
+const simulatorCriteriaCountSchema = z.number().int().min(1).max(10);
+/** The service puts it into an LLM prompt, so only a short language label. */
+const simulatorLanguageSchema = z
+  .string()
+  .max(40)
+  .regex(/^[A-Za-z ()-]+$/, "Must be a language name, e.g. 'English'");
+
+const simulatorScenarioFields = {
+  persona: z.string().min(1),
+  personaName: z.string().min(1),
+  mission: z.string().min(1),
+  successCriteria: simulatorSuccessCriteriaSchema,
+  evaluationProfileReferenceIds: z.array(z.string().min(1)).optional(),
+  maxTurns: z.number().int().min(1).max(30).optional(),
+  flowId: idSchema.optional(),
+};
+const simulatorBatchScope = {
+  projectId: idSchema,
+  simulationReference: idSchema,
+  batchReference: idSchema,
+};
+
+const ONE_TARGET_MESSAGE =
+  "Pass exactly one target: flowReferenceId (a Flow's UUID) or agentReferenceId (an AI Agent's UUID).";
+
+export const manageSimulationsSchema = z.discriminatedUnion("operation", [
+  z.object({
+    operation: z.literal("list"),
+    projectId: idSchema,
+    nameFilter: z.string().min(1).optional(),
+    ...paginationSchema,
+  }),
+  z.object({
+    operation: z.literal("get"),
+    projectId: idSchema,
+    simulationReference: idSchema,
+  }),
+  z
+    .object({
+      operation: z.literal("create"),
+      projectId: idSchema,
+      name: z.string().min(1),
+      ...simulatorScenarioFields,
+      flowReferenceId: simulatorUuidSchema.optional(),
+      agentReferenceId: simulatorUuidSchema.optional(),
+    })
+    .refine((d) => !d.flowReferenceId !== !d.agentReferenceId, {
+      message: ONE_TARGET_MESSAGE,
+      path: ["flowReferenceId"],
+    }),
+  z
+    .object({
+      operation: z.literal("update"),
+      projectId: idSchema,
+      simulationReference: idSchema,
+      name: z.string().min(1).optional(),
+      persona: z.string().min(1).optional(),
+      personaName: z.string().min(1).optional(),
+      mission: z.string().min(1).optional(),
+      successCriteria: simulatorSuccessCriteriaSchema.optional(),
+      evaluationProfileReferenceIds: z.array(z.string().min(1)).optional(),
+      maxTurns: z.number().int().min(1).max(30).optional(),
+      flowId: idSchema.optional(),
+      flowReferenceId: simulatorUuidSchema.optional(),
+      agentReferenceId: simulatorUuidSchema.optional(),
+    })
+    .refine((d) => !(d.flowReferenceId && d.agentReferenceId), {
+      message: ONE_TARGET_MESSAGE,
+      path: ["flowReferenceId"],
+    })
+    .refine(
+      (d) =>
+        Object.entries(d).some(
+          ([key, value]) =>
+            !["operation", "projectId", "simulationReference"].includes(key) &&
+            value !== undefined,
+        ),
+      { message: "Pass at least one field to change." },
+    ),
+  z.object({
+    operation: z.literal("delete"),
+    projectId: idSchema,
+    simulationReference: idSchema,
+    confirm: z.boolean().optional(),
+  }),
+  z.object({
+    operation: z.literal("clone"),
+    projectId: idSchema,
+    simulationReference: idSchema,
+    name: z.string().min(1).optional(),
+  }),
+  z.object({
+    operation: z.literal("run"),
+    projectId: idSchema,
+    simulationReference: idSchema,
+    name: z.string().min(1).optional(),
+    numberOfExecutions: simulatorCountSchema.optional(),
+    evaluationProfileReferenceIds: z.array(z.string().min(1)).optional(),
+  }),
+  z.object({
+    operation: z.literal("list_batches"),
+    projectId: idSchema,
+    simulationReference: idSchema.optional(),
+    ...paginationSchema,
+  }),
+  z.object({ operation: z.literal("get_batch"), ...simulatorBatchScope }),
+  z.object({
+    operation: z.literal("get_runs"),
+    ...simulatorBatchScope,
+    runReference: idSchema.optional(),
+    ...paginationSchema,
+  }),
+  z.object({ operation: z.literal("stop_batch"), ...simulatorBatchScope }),
+  z.object({
+    operation: z.literal("rerun_batch"),
+    ...simulatorBatchScope,
+    name: z.string().min(1).optional(),
+  }),
+  z.object({
+    operation: z.literal("list_schedules"),
+    projectId: idSchema,
+    simulationReference: idSchema,
+  }),
+  z.object({
+    operation: z.literal("upsert_schedule"),
+    projectId: idSchema,
+    simulationReference: idSchema,
+    scheduleReference: idSchema.optional(),
+    name: z.string().min(1).optional(),
+    frequency: z.enum(SIMULATOR_SCHEDULE_FREQUENCIES).optional(),
+    time: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Must be 24-hour 'HH:mm'")
+      .optional(),
+    numberOfRuns: simulatorCountSchema.optional(),
+    enableSchedule: z.boolean().optional(),
+  }),
+  z.object({
+    operation: z.literal("dashboard"),
+    projectId: idSchema,
+    section: z.enum(SIMULATOR_DASHBOARD_SECTIONS).optional(),
+  }),
+  z.object({
+    operation: z.literal("persona_options"),
+    projectId: idSchema,
+    flowId: idSchema,
+    numberOfSuccessCriteria: simulatorCriteriaCountSchema.optional(),
+    language: simulatorLanguageSchema.optional(),
+  }),
+  z.object({
+    operation: z.literal("generate_persona"),
+    projectId: idSchema,
+    flowId: idSchema,
+    selectedMissionType: simulatorPersonaOptionSchema,
+    selectedPersonaType: simulatorPersonaOptionSchema,
+    numberOfSuccessCriteria: simulatorCriteriaCountSchema.optional(),
+    language: simulatorLanguageSchema.optional(),
+  }),
+  z.object({
+    operation: z.literal("regenerate_persona_field"),
+    projectId: idSchema,
+    fieldToRegenerate: z.enum(SIMULATOR_DRAFT_FIELDS),
+    name: z.string().min(1),
+    persona: z.string().min(1),
+    personaName: z.string().min(1),
+    mission: z.string().min(1),
+    successCriteria: simulatorSuccessCriteriaSchema,
+    successCriteriaIndex: z.number().int().min(0).optional(),
+    language: simulatorLanguageSchema.optional(),
+  }),
+  z.object({
+    operation: z.literal("import_transcript"),
+    projectId: idSchema,
+    filePath: z.string().min(1),
+    flowReferenceId: simulatorUuidSchema.optional(),
+    numberOfSuccessCriteria: simulatorCriteriaCountSchema.optional(),
+    language: simulatorLanguageSchema.optional(),
+  }),
+]);
+
+export type ManageSimulationsInput = z.infer<typeof manageSimulationsSchema>;

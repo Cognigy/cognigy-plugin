@@ -19,6 +19,39 @@ export function withHints<T extends object>(
 
 const rid = (r: any): string => r._id || r.id;
 
+/** Ownership and audit ids the Simulator returns; no follow-up call takes them. */
+const SIMULATOR_INTERNAL_FIELDS = [
+  "projectReference",
+  "organisationReference",
+  "createdBy",
+  "lastChangedBy",
+];
+
+/** An AI Agent target, named as the tool takes it; users never hear "V2". */
+function renameAgentTarget(record: any): any {
+  if (record.aiAgentV2ReferenceId !== undefined) {
+    record.agentReferenceId = record.aiAgentV2ReferenceId;
+    delete record.aiAgentV2ReferenceId;
+  }
+  return record;
+}
+
+/**
+ * A Simulator document with its `_id` renamed to the reference the next call
+ * takes. `_id` is dropped only when there is one to rename, so nothing is lost.
+ */
+function simulatorRecord(r: any, referenceKey: string, drop: string[]): any {
+  const out: any = { ...r };
+  for (const key of [...SIMULATOR_INTERNAL_FIELDS, ...drop]) delete out[key];
+  renameAgentTarget(out);
+  if (out.simulationFrozen && typeof out.simulationFrozen === "object") {
+    out.simulationFrozen = renameAgentTarget({ ...out.simulationFrozen });
+  }
+  if (r._id === undefined) return out;
+  delete out._id;
+  return { [referenceKey]: r._id, ...out };
+}
+
 export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
   // `projectId` comes from the API as `projectReference`. It is exposed here
   // because snapshots are project-scoped: a caller holding only an agent id
@@ -185,6 +218,29 @@ export const RESOURCE_FILTERS: Record<string, (raw: any) => any> = {
         : {}),
     };
   },
+  // Simulator (manage_simulations). The UUID `referenceId` is dropped: a
+  // simulation is addressed by its `_id` only, and showing both invites the
+  // wrong one. flowId stays because the persona operations take it.
+  simulation: (r) =>
+    simulatorRecord(r, "simulationReference", [
+      "referenceId",
+      "resourceIds",
+      "jobNodeId",
+      "aiAgentId",
+    ]),
+  simulation_summary: (r) => ({
+    simulationReference: rid(r),
+    name: r.name,
+    personaName: r.personaName,
+    mission: r.mission,
+    flowReferenceId: r.flowReferenceId,
+    agentReferenceId: r.aiAgentV2ReferenceId,
+    lastChanged: r.lastChanged,
+  }),
+  // simulationReference is kept: a project-wide batch list is the only place a
+  // batch's scenario can be read from, and get_batch needs it.
+  simulation_batch: (r) => simulatorRecord(r, "batchReference", []),
+  simulation_run: (r) => simulatorRecord(r, "runReference", []),
   // Project log entry. meta.text is the user's message or the agent's output,
   // so it stays out of this view; get_resource returns the rest of meta.
   // `type` moves into `metadata` on the v2 log model.

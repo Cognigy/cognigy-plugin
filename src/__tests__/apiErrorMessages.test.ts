@@ -158,3 +158,90 @@ describe("formatApiError", () => {
     );
   });
 });
+
+describe("formatApiError fallback message", () => {
+  const withBody = (status: number, data: unknown) =>
+    formatApiError({
+      config: {
+        url: "https://api-trial.cognigy.ai/testing/simulations",
+      },
+      response: { status, data },
+    } as any);
+
+  it("uses a JSON body's message or error when it has no detail or title", () => {
+    expect(withBody(400, { message: "maxTurns is invalid" }).message).toBe(
+      "maxTurns is invalid",
+    );
+    expect(withBody(404, { error: "Simulation not found" }).message).toBe(
+      "Simulation not found",
+    );
+    // detail still wins.
+    expect(withBody(400, { detail: "d", error: "e" }).message).toBe("d");
+  });
+
+  it("uses a short plain-text body as is", () => {
+    const err = withBody(
+      401,
+      "You are not authorized to access this resource.",
+    );
+    expect(err.message).toBe("You are not authorized to access this resource.");
+    expect((err as any).status).toBe(401);
+  });
+
+  it("keeps the diagnostic for HTML, long text and bodies without a message", () => {
+    expect(withBody(404, "<html>Cannot POST</html>").message).toContain(
+      "did not match the expected Cognigy error format",
+    );
+    expect(withBody(502, "x".repeat(400)).message).toContain(
+      "did not match the expected Cognigy error format",
+    );
+    expect(withBody(500, { foo: 1 }).message).toContain(
+      "did not match the expected Cognigy error format",
+    );
+  });
+
+  it("keeps a JSON error body on the error for callers that classify it", () => {
+    expect((withBody(404, { error: "x", code: "C" }) as any).errorBody).toEqual(
+      { error: "x", code: "C" },
+    );
+    expect((withBody(404, "<html></html>") as any).errorBody).toBeUndefined();
+  });
+});
+
+describe("formatApiError JSON passthrough limits", () => {
+  const saved: Record<string, string | undefined> = {};
+  beforeEach(() => {
+    for (const key of PROXY_ENV_VARS) {
+      saved[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+  afterEach(() => {
+    for (const key of PROXY_ENV_VARS) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  });
+  const withBody = (data: unknown) =>
+    formatApiError({
+      config: { url: "https://api-trial.cognigy.ai/testing/simulations" },
+      response: { status: 400, data },
+    } as any);
+
+  it("replaces control characters and caps a long message", () => {
+    expect(withBody({ error: "  bad\n\tinput\u0000here " }).message).toBe(
+      "bad  input here",
+    );
+    const long = withBody({ message: "y".repeat(1000) }).message;
+    expect(long).toBe(`${"y".repeat(300)}…`);
+  });
+
+  it("keeps the proxy diagnostic when a proxy applies", () => {
+    process.env.HTTPS_PROXY = "http://proxy.corp.example:8080";
+    const message = withBody({ error: "denied" }).message;
+    expect(message).toContain(
+      "did not match the expected Cognigy error format",
+    );
+    expect(message).toContain("proxy.corp.example:8080");
+  });
+});
